@@ -304,6 +304,7 @@ fire
 firewall
 first \(1st\)
 flame
+[Ff]latten
 flight management
 flight simulator
 float
@@ -591,6 +592,7 @@ relative humidity
 remetal
 remote operation
 Removal
+[Rr]ender
 Repair Scheme
 Required Conditions
 resistance
