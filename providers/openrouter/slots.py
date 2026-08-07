@@ -5,13 +5,11 @@ sends one POST for each image, with temperature 0, a fixed instruction
 template, and a fixed JSON output format. Responses are parsed and
 validated at the boundary, and cached with the image hash and the
 provider config_hash in the path (R12). A response that does not
-parse, or a fraction out of [0, 1], raises (R14).
+parse, or a fraction out of [0, 1], raises (R14). The shared POST-body
+and cache machinery lives in providers/openrouter/resolve.py.
 """
 
-import base64
-import json
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
@@ -19,16 +17,21 @@ import numpy as np
 
 from core.canonical import JsonValue, canonical_json, sha256_hex
 from core.types import FloatArray
-from providers.openrouter.cache import load_cached_response, response_cache_path, store_response
 from providers.openrouter.client import OpenRouterClient
 from providers.openrouter.errors import OpenRouterResponseError
+from providers.openrouter.resolve import (
+    chat_request_body,
+    checked_response_format_mode,
+    default_clock,
+    json_payload,
+    resolve_chat,
+)
 
 TEMPERATURE = 0.0
 SEED = 0
 MAX_TOKENS = 512
 REASONING_ENABLED = False
 
-_RESPONSE_FORMAT_MODES = ("json_schema", "json_object")
 _LABEL_PLACEHOLDER = "{label_phrases}"
 
 
@@ -61,71 +64,8 @@ def slot_config_hash(config: OpenRouterSlotConfig) -> str:
 
 
 def _checked_slot_config(config: OpenRouterSlotConfig) -> OpenRouterSlotConfig:
-    if config.response_format_mode not in _RESPONSE_FORMAT_MODES:
-        raise ValueError(
-            f"response_format_mode must be one of {_RESPONSE_FORMAT_MODES}, "
-            f"got {config.response_format_mode!r}"
-        )
+    checked_response_format_mode(config.response_format_mode)
     return config
-
-
-def _default_clock() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _data_uri(image_bytes: bytes) -> str:
-    """The base64 data URI, with the mime type read from magic bytes."""
-    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-        mime = "image/png"
-    elif image_bytes.startswith(b"\xff\xd8\xff"):
-        mime = "image/jpeg"
-    elif image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
-        mime = "image/webp"
-    elif image_bytes[:6] in (b"GIF87a", b"GIF89a"):
-        mime = "image/gif"
-    else:
-        raise OpenRouterResponseError(
-            "unknown image magic bytes: PNG, JPEG, WEBP, and GIF are supported"
-        )
-    encoded = base64.b64encode(image_bytes).decode("ascii")
-    return f"data:{mime};base64,{encoded}"
-
-
-def _response_format(
-    config: OpenRouterSlotConfig, schema: dict[str, JsonValue]
-) -> dict[str, JsonValue]:
-    if config.response_format_mode == "json_object":
-        return {"type": "json_object"}
-    return {
-        "type": "json_schema",
-        "json_schema": {"name": config.slot, "strict": True, "schema": schema},
-    }
-
-
-def _request_body(
-    config: OpenRouterSlotConfig,
-    instruction: str,
-    image_bytes: bytes,
-    schema: dict[str, JsonValue],
-) -> dict[str, JsonValue]:
-    """The chat-completions POST body for one image."""
-    return {
-        "model": config.model,
-        "temperature": config.temperature,
-        "seed": config.seed,
-        "max_tokens": config.max_tokens,
-        "reasoning": {"enabled": config.reasoning_enabled},
-        "response_format": _response_format(config, schema),
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": instruction},
-                    {"type": "image_url", "image_url": {"url": _data_uri(image_bytes)}},
-                ],
-            }
-        ],
-    }
 
 
 def _fraction_schema(json_key: str) -> dict[str, JsonValue]:
@@ -155,38 +95,6 @@ def _choice_schema(phrases: tuple[str, ...]) -> dict[str, JsonValue]:
         "required": ["label", "confidence"],
         "additionalProperties": False,
     }
-
-
-def _content_text(response_body: object) -> str:
-    try:
-        content = response_body["choices"][0]["message"]["content"]  # type: ignore[index]
-    except (KeyError, IndexError, TypeError) as error:
-        raise OpenRouterResponseError(
-            f"response body has no message content: {error!r}"
-        ) from error
-    if not isinstance(content, str):
-        raise OpenRouterResponseError("message content is not a string")
-    return content
-
-
-def _strip_one_fence(text: str) -> str:
-    """Remove one Markdown fence wrapper, and nothing else."""
-    stripped = text.strip()
-    if stripped.startswith("```") and stripped.endswith("```") and "\n" in stripped:
-        head_end = stripped.index("\n")
-        stripped = stripped[head_end + 1 : -3].strip()
-    return stripped
-
-
-def _json_payload(response_body: object) -> dict[str, object]:
-    text = _strip_one_fence(_content_text(response_body))
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError as error:
-        raise OpenRouterResponseError(f"message content is not JSON: {error}") from error
-    if not isinstance(value, dict):
-        raise OpenRouterResponseError("message content is not a JSON object")
-    return value
 
 
 def _fraction_value(payload: Mapping[str, object], json_key: str) -> float:
@@ -246,53 +154,19 @@ def _resolved_values[T](
     cache_root: Path,
     clock: Callable[[], str],
 ) -> tuple[list[T], int]:
-    """Cache-first resolution of one parsed value for each image.
+    """Cache-first resolution keyed and named by the image hash.
 
-    A cache hit is re-validated through the same parser, and a bad
-    cached body raises. A cache miss becomes one POST, and the
-    validated response is then stored. The output rows are
-    index-aligned with images. The second output is the cache hit
-    count.
+    Thin wrapper: resolve_chat does the work, with the SHA-256 hex
+    digest of each image as the cache key and the error-text name.
     """
     keys = [sha256_hex(image) for image in images]
-    paths = [response_cache_path(cache_root, config_hash, key) for key in keys]
-    values: list[T | None] = [None] * len(images)
-    cache_hits = 0
-    miss_indexes: list[int] = []
-    miss_bodies: list[dict[str, JsonValue]] = []
-    for index, path in enumerate(paths):
-        entry = load_cached_response(path)
-        if entry is None:
-            miss_indexes.append(index)
-            miss_bodies.append(body_for_image(images[index]))
-            continue
-        if "response_body" not in entry:
-            raise OpenRouterResponseError(f"{path}: cache entry has no response_body")
-        try:
-            values[index] = parse(entry["response_body"])
-        except OpenRouterResponseError as error:
-            raise OpenRouterResponseError(f"cached image {keys[index]}: {error}") from error
-        cache_hits += 1
-    if miss_indexes:
-        responses = client.map_requests(miss_bodies)
-        for index, response_body in zip(miss_indexes, responses, strict=True):
-            try:
-                value = parse(response_body)
-            except OpenRouterResponseError as error:
-                raise OpenRouterResponseError(
-                    f"image {keys[index]} (model {model}): {error}"
-                ) from error
-            entry = {
-                "key": keys[index],
-                "config_hash": config_hash,
-                "model": model,
-                "response_body": response_body,
-                "usage": response_body.get("usage"),
-                "created_at": clock(),
-            }
-            store_response(paths[index], entry)
-            values[index] = value
-    return [value for value in values], cache_hits  # type: ignore[misc]
+
+    def body_at(index: int) -> dict[str, JsonValue]:
+        return body_for_image(images[index])
+
+    return resolve_chat(
+        keys, keys, body_at, parse, config_hash, model, client, cache_root, clock
+    )
 
 
 def _fraction_values(
@@ -306,10 +180,10 @@ def _fraction_values(
     schema = _fraction_schema(json_key)
 
     def body_for_image(image_bytes: bytes) -> dict[str, JsonValue]:
-        return _request_body(slot_config, slot_config.template, image_bytes, schema)
+        return chat_request_body(slot_config, slot_config.template, image_bytes, schema)
 
     def parse(response_body: object) -> float:
-        return _fraction_value(_json_payload(response_body), json_key)
+        return _fraction_value(json_payload(response_body), json_key)
 
     return _resolved_values(
         images,
@@ -338,7 +212,7 @@ class OpenRouterTextCoverageEstimator:
         self._slot_config = _checked_slot_config(slot_config)
         self._client = client
         self._cache_root = Path(cache_root)
-        self._clock = clock if clock is not None else _default_clock
+        self._clock = clock if clock is not None else default_clock
         self._config_hash = slot_config_hash(slot_config)
         self._cache_hit_count = 0
 
@@ -379,7 +253,7 @@ class OpenRouterSalientObjectEstimator:
         self._slot_config = _checked_slot_config(slot_config)
         self._client = client
         self._cache_root = Path(cache_root)
-        self._clock = clock if clock is not None else _default_clock
+        self._clock = clock if clock is not None else default_clock
         self._config_hash = slot_config_hash(slot_config)
         self._cache_hit_count = 0
 
@@ -430,7 +304,7 @@ class OpenRouterZeroShotImageClassifier:
         self._slot_config = checked
         self._client = client
         self._cache_root = Path(cache_root)
-        self._clock = clock if clock is not None else _default_clock
+        self._clock = clock if clock is not None else default_clock
         self._config_hash = slot_config_hash(slot_config)
         self._cache_hit_count = 0
 
@@ -454,10 +328,10 @@ class OpenRouterZeroShotImageClassifier:
         schema = _choice_schema(phrases)
 
         def body_for_image(image_bytes: bytes) -> dict[str, JsonValue]:
-            return _request_body(self._slot_config, instruction, image_bytes, schema)
+            return chat_request_body(self._slot_config, instruction, image_bytes, schema)
 
         def parse(response_body: object) -> tuple[float, ...]:
-            return _choice_row(_json_payload(response_body), phrases)
+            return _choice_row(json_payload(response_body), phrases)
 
         values, hits = _resolved_values(
             images,
