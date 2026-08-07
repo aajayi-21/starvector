@@ -116,8 +116,8 @@ class OpenRouterClient:
         self._executor.shutdown(wait=True)
         self._http.close()
 
-    def post_chat(self, body: Mapping[str, object]) -> dict[str, object]:
-        """POST one chat-completions body and give back the JSON object.
+    def _post_json(self, path: str, body: Mapping[str, object]) -> dict[str, object]:
+        """POST one JSON body to path and give back the JSON object.
 
         Status 429, status 500 and up, and timeouts get retried with
         deterministic exponential backoff, base one second, and a
@@ -136,7 +136,7 @@ class OpenRouterClient:
             with self._count_lock:
                 self._post_count += 1
             try:
-                response = self._http.post("/chat/completions", json=dict(body))
+                response = self._http.post(path, json=dict(body))
             except httpx.TimeoutException as error:
                 detail = f"timeout: {error!r}"
                 delay = _BACKOFF_BASE_SECONDS * (2.0 ** attempt_index)
@@ -174,6 +174,14 @@ class OpenRouterClient:
             f"OpenRouter POST did not succeed after {tries} tries ({detail}). "
             "Examine the rate limit and the retry limit in the client config."
         )
+
+    def post_chat(self, body: Mapping[str, object]) -> dict[str, object]:
+        """POST one chat-completions body through the shared retry engine."""
+        return self._post_json("/chat/completions", body)
+
+    def post_embeddings(self, body: Mapping[str, object]) -> dict[str, object]:
+        """POST one embeddings body through the shared retry engine."""
+        return self._post_json("/embeddings", body)
 
     def map_requests(self, bodies: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
         """POST all bodies through the shared thread pool.

@@ -1,20 +1,33 @@
 """Artifact I/O for the curation pipeline.
 
-Spec: docs/specs/pool-curation.md section 11. This module owns each
-file format in the data root: manifests, rejections, records, meta,
-timings, the content-addressed image store, and release records. All
-writes are atomic (temporary file, then rename). A stage directory is
+Spec: docs/specs/pool-curation.md section 11. This module owns the
+curation file formats in the data root: manifests, rejections, records,
+meta, and timings. The pipeline-agnostic primitives (atomic writes,
+canonical JSON rows, the image store, release records) live in
+pool/artifacts.py and are re-exported here. A stage directory is
 complete when its meta.json exists and parses - meta.json is always the
 last file a stage writes.
 """
 
 import json
-import os
-import re
 from pathlib import Path
-from typing import Iterable
 
-from core.canonical import JsonValue, canonical_json, canonical_json_pretty, sha256_hex
+from core.canonical import JsonValue
+from pool.artifacts import (
+    ManifestError,
+    _dict_to_pairs,
+    _pairs_to_dict,
+    corpus_slug,
+    image_path,
+    load_image_bytes,
+    read_jsonl,
+    store_image_bytes,
+    vector_path,
+    write_bytes_atomic,
+    write_json_pretty,
+    write_jsonl,
+    write_release_record,
+)
 from pool.curation.types import (
     ArtifactTree,
     CandidateRecord,
@@ -24,15 +37,34 @@ from pool.curation.types import (
     StageMeta,
 )
 
-
-class ManifestError(ValueError):
-    """A stored artifact did not parse or reconcile."""
-
-
-def corpus_slug(repo_id: str) -> str:
-    """Short human-readable corpus name for labels and paths."""
-    last = repo_id.rsplit("/", 1)[-1].lower()
-    return re.sub(r"[^a-z0-9_]", "-", last)
+__all__ = [
+    "ManifestError",
+    "corpus_slug",
+    "image_path",
+    "load_image_bytes",
+    "read_jsonl",
+    "store_image_bytes",
+    "vector_path",
+    "write_bytes_atomic",
+    "write_json_pretty",
+    "write_jsonl",
+    "write_release_record",
+    "stage_dir",
+    "stage_label",
+    "candidate_to_row",
+    "row_to_candidate",
+    "manifest_row",
+    "image_record_to_row",
+    "row_to_image_record",
+    "rejection_to_row",
+    "row_to_rejection",
+    "meta_to_json",
+    "json_to_meta",
+    "write_meta",
+    "read_meta",
+    "stage_is_complete",
+    "parse_review",
+]
 
 
 def stage_dir(tree: ArtifactTree, stage: str) -> Path:
@@ -47,58 +79,6 @@ def stage_dir(tree: ArtifactTree, stage: str) -> Path:
 
 def stage_label(tree: ArtifactTree, stage: str) -> str:
     return f"{tree.corpus_slug}-{tree.corpus_id[:8]}-c{tree.curation_config_hash[:8]}-{stage}"
-
-
-def image_path(data_root: Path, image_id: str) -> Path:
-    return data_root / "images" / "raw" / image_id[:2] / image_id
-
-
-def vector_path(data_root: Path, encoder_config_hash: str, image_id: str) -> Path:
-    return (
-        data_root / "cache" / "vectors" / encoder_config_hash[:8] / image_id[:2]
-        / f"{image_id}.npy"
-    )
-
-
-def write_bytes_atomic(path: Path, data: bytes) -> None:
-    """Write bytes through a temporary sibling, then rename."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
-
-
-def write_jsonl(path: Path, rows: Iterable[dict[str, JsonValue]]) -> None:
-    text = "".join(canonical_json(row) + "\n" for row in rows)
-    write_bytes_atomic(path, text.encode("utf-8"))
-
-
-def read_jsonl(path: Path) -> list[dict[str, JsonValue]]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise ManifestError(f"{path}: cannot read: {error}") from error
-    rows: list[dict[str, JsonValue]] = []
-    for number, line in enumerate(text.splitlines(), start=1):
-        try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError as error:
-            raise ManifestError(f"{path}:{number}: bad JSON row: {error}") from error
-    return rows
-
-
-def write_json_pretty(path: Path, value: JsonValue) -> None:
-    write_bytes_atomic(path, (canonical_json_pretty(value) + "\n").encode("utf-8"))
-
-
-def _pairs_to_dict(pairs: tuple[tuple[str, str], ...]) -> dict[str, str]:
-    return {k: v for k, v in pairs}
-
-
-def _dict_to_pairs(value: object, where: str) -> tuple[tuple[str, str], ...]:
-    if not isinstance(value, dict):
-        raise ManifestError(f"{where}: expected an object")
-    return tuple(sorted((str(k), str(v)) for k, v in value.items()))
 
 
 def candidate_to_row(candidate: CandidateRecord) -> dict[str, JsonValue]:
@@ -254,24 +234,6 @@ def stage_is_complete(tree: ArtifactTree, stage: str) -> bool:
     return True
 
 
-def store_image_bytes(data_root: Path, image_bytes: bytes) -> str:
-    """Store bytes content-addressed. Returns the image_id."""
-    image_id = sha256_hex(image_bytes)
-    path = image_path(data_root, image_id)
-    if not path.exists():
-        write_bytes_atomic(path, image_bytes)
-    return image_id
-
-
-def load_image_bytes(data_root: Path, image_id: str) -> bytes:
-    """Read stored bytes. A missing image raises - no fallback (R14)."""
-    path = image_path(data_root, image_id)
-    try:
-        return path.read_bytes()
-    except OSError as error:
-        raise ManifestError(f"{path}: image bytes absent from the store: {error}") from error
-
-
 def parse_review(raw: object, source: str) -> ReviewRecord:
     """Strict parse of review.json. See spec section 10, s08."""
     if not isinstance(raw, dict):
@@ -293,10 +255,3 @@ def parse_review(raw: object, source: str) -> ReviewRecord:
     if not record.reviewer or not record.date:
         raise ManifestError(f"{source}: reviewer and date must not be empty")
     return record
-
-
-def write_release_record(releases_root: Path, label: str, content: dict[str, JsonValue]) -> Path:
-    """Write the committed release record file (R11)."""
-    path = releases_root / f"{label}.json"
-    write_json_pretty(path, content)
-    return path

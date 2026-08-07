@@ -154,13 +154,19 @@ the same weight.
   them. Responses are cached (R12), thus a re-run or resume makes no new
   `POST` operations for unchanged config. There is no byte budget in
   this pipeline — there is no corpus extraction here.
-- **U2 — OpenRouter first for VLM slots, local encoders.** The
-  `VlmDescriber` and `ElementBoxDetector` slots run through OpenRouter in
-  the development configuration (user decision, 2026-08-07). Local
-  implementations stay drop-in replacements. OpenRouter serves chat and
-  vision-language models, not embedding encoders, thus the `TextEncoder`,
-  `ImageEncoder`, and `LineDrawer` slots always run locally. This spec
-  introduces `providers/local/` at implementation time.
+- **U2 — OpenRouter first, local drop-ins.** The `VlmDescriber` and
+  `ElementBoxDetector` slots run through OpenRouter chat completions in
+  the development configuration (user decision, 2026-08-07). The
+  `TextEncoder` and `ImageEncoder` slots run through the OpenRouter
+  embeddings endpoint — `POST /api/v1/embeddings`, with image input
+  through content blocks (checked live, 2026-08-07). An earlier version
+  of this constraint said no embedding models were served — that is no
+  longer so. The development default is the multimodal model
+  `google/gemini-embedding-2` (user decision, 2026-08-07). Local
+  implementations (SigLIP 2 towers) stay drop-in replacements for the
+  encoder slots. The `LineDrawer` slot always runs locally — no
+  OpenRouter equivalent exists. This spec introduces `providers/local/`
+  at implementation time.
 
 ## 5. Pipeline overview
 
@@ -254,8 +260,8 @@ are new. The fake implementations are required for the test suite.
 | Protocol | Contract (shape) | Used by | OpenRouter? |
 |---|---|---|---|
 | `VlmDescriber` | `Sequence[bytes] -> Sequence[ElementResponse]` — the R2 schema, parsed and validated | p01 | Yes (U2) |
-| `TextEncoder` | `Sequence[str] -> Vectors` — unit-norm, `(B, d)` | p04 | No — local only (U2) |
-| `ImageEncoder` | `Sequence[bytes] -> Vectors` — unit-norm, `(B, d)` | p06 | No — local only (U2) |
+| `TextEncoder` | `Sequence[str] -> Vectors` — unit-norm, `(B, d)` | p04 | Yes — embeddings endpoint (U2) |
+| `ImageEncoder` | `Sequence[bytes] -> Vectors` — unit-norm, `(B, d)` | p06 | Yes — embeddings endpoint (U2) |
 | `LineDrawer` | `Sequence[bytes] -> Sequence[bytes]` — canonical rendered line-drawing PNG bytes | p05 | No — local only (U2) |
 | `ElementBoxDetector` | `(Sequence[bytes], Sequence[Sequence[str]]) -> Sequence[Mapping[str, Box \| None]]` — for each image, each queried element maps to one normalized box or `None` | p07 | Yes (U2) |
 
@@ -286,10 +292,15 @@ Notes:
 ### Local providers
 
 `providers/local/` arrives with this spec: the SigLIP text and image
-towers behind `TextEncoder` and `ImageEncoder`, and the line-drawing model
-behind `LineDrawer` (open decisions D3, D4). Rules from `CLAUDE.md` §6
-apply: device placement, dtype, and batching are provider-internal, with
-deterministic inference parameters. The implementation must make sure
+towers as drop-in alternatives for the `TextEncoder` and `ImageEncoder`
+slots, and the line-drawing model behind `LineDrawer` — the one slot
+with no remote implementation (decisions D3, D4). Rules from
+`CLAUDE.md` §6 apply: device placement, dtype, and batching are
+provider-internal, with deterministic inference parameters. The torch
+stack lives in its own dependency groups — `local-cuda` for NVIDIA
+machines, `local-xpu` for Intel GPUs through the PyTorch XPU wheels —
+thus the default environment and the test suite stay free of it. The
+`runtime.device` config value selects the device at wiring time. The implementation must make sure
 that wheels for the pinned Python version are available before install.
 The test suite must not import the local stack.
 
@@ -301,8 +312,10 @@ the strict validation rule of P1a §9: a missing or unknown field stops the
 load (R14). Sections:
 
 - `input`: the release record path.
-- `elements`: the field-count contract for the R2 schema (D2) and
-  `max_elements` (the R3 cap, value 20).
+- `elements`: the field-count contract for the R2 schema (D2),
+  `max_elements` (the R3 cap, value 20), and `normalize_rule` — the
+  identifier of the D7 rule table (value `d7-v1`), in the config thus a
+  rule change moves the hash.
 - `linedraw`: binarize threshold, minimum segment length, and the
   canonical render parameters — canvas dimensions, line width,
   background, anti-aliasing (D5). These render parameters are shared
@@ -313,6 +326,11 @@ load (R14). Sections:
 - `providers`: the OpenRouter client section (P1a §9 shape), then one
   section for each of the five slots — provider selection, model, and
   instruction template where applicable.
+- `runtime`: machine-local execution values — `device`, one of `auto`,
+  `cuda`, `xpu`, `cpu`. This is the one section that is not part of
+  `preparation_config_hash`: the device is machine-local, and a device
+  change must not fork the artifact lineage. The determinism scope of
+  §14 stays one machine and environment.
 - `release`: `tag`, `dev_only`.
 
 The loaded object is passed as an argument. No code reads global config.
@@ -354,10 +372,12 @@ deduplicated, uncapped element sequence.
 ### p03 cap — R3
 
 Pool-level pure function. With `df(e)` = the count of images with `e` in
-their p02 sequence, each entry's capping rarity is `−log(df(e) / N)`.
+their p02 sequence, each entry's capping rarity is `−log(df(e) / N)`,
+with the natural logarithm — the project measures rarity in nats.
 For each image, keep the `max_elements` entries with the highest capping
 rarity. Break equal values by the flatten sequence position, first
-position first (D8). The stage records what was cut, for each image, with
+position first (D8). Kept entries keep their p02 relative sequence —
+selection is by rarity, presentation stays in flatten sequence. The stage records what was cut, for each image, with
 the measured `df` values — this is the §5 rule "keep the 20 with the
 highest rarity weights" applied with the document frequency the pool
 itself defines.
@@ -392,6 +412,10 @@ image: `image_id`, `line_drawing_key`, byte count.
 Pure crop geometry plus `ImageEncoder`. For each line drawing: the full
 image and the crop grid of D6 become individual images, encoded in one
 batch, giving `(1 + crops) × d` unit-norm float32 rows for each image.
+Row layout, fixed: row 0 is the full image, rows 1 through 5 are the
+crops in the sequence center, top-left, top-right, bottom-left,
+bottom-right. Crop pixel dimensions use the floor of canvas times
+fraction.
 Writes the pool-level stacked array `outline_vectors.npy` of shape
 `N × (1 + crops) × d`, rows in ascending `image_id` sequence, plus
 `outline_space_mean.npy` (D11). Image-level vectors are also cached with
@@ -405,7 +429,11 @@ query set. The response cache key contains `image_id`, the slot
 `config_hash`, and the hash of the queried element list (§6). Writes one
 row for each image: for each element, one box or `null`. Box coordinates
 must be in [0, 1] with `x_min < x_max` and `y_min < y_max` — the
-provider validates at the boundary (R14).
+provider validates at the boundary (R14). The provider sorts the min
+and max values of each axis before the check: models sometimes
+interchange the two (seen live with `gpt-5.6-luna`, 2026-08-08), and
+the sorted pair keeps the same limits. A pair that is equal after the
+sort is a violation.
 
 ### p08 neardup — R10
 
@@ -428,7 +456,9 @@ Calculate `preparation_version_id` (§6). Write the preparation record to
 `pool/preparations/<label>.json`, **committed to the repository** (R12,
 P1a R11 analog). Contents: pool version reference (label, id, record
 path), `preparation_config_hash`, config file path, `N`, the artifact
-inventory with content hashes of each pool artifact, provider config
+inventory with content hashes of each stage data file (`meta.json` and
+`timings.json` excluded — meta content includes `POST` counts, which
+are different between a cold and a warm run), provider config
 hashes, `POST` and cache-hit counts for each OpenRouter slot (U1),
 `dev_only`, pipeline code version, and creation timestamp.
 
@@ -488,7 +518,8 @@ pool/
   preparation/
     __init__.py
     __main__.py        # CLI entry
-    types.py           # frozen records: ElementResponse, Box, PreparationReport, ...
+    types.py           # frozen records; re-exports ElementResponse and Box
+                       #   from providers/protocols.py (the parse boundary owns them)
     config.py          # PreparationConfig, loading, preparation_config_hash
     manifest.py        # artifact read and write (I/O)
     run.py             # imperative runner, provider wiring, resume logic
@@ -587,18 +618,19 @@ record.
 ## 16. Open decisions — agreement required before implementation
 
 The architecture gives the structures and thresholds cited above, but not
-the items below. Each has a proposed default. Do not implement without
-agreement (`CLAUDE.md` §1).
+the items below. All twelve decisions were agreed individually with the
+project owner on 2026-08-07, with the concretizations recorded in the
+table. The "Proposed default" column is the agreed value.
 
 | # | Decision | Proposed default | Notes |
 |---|---|---|---|
 | D1 | `VlmDescriber` model and instruction template | The OpenRouter `default_model` in use (`openai/gpt-5.6-luna`), one fixed template asking for the R2 schema, strict JSON output format | Make sure of structured-output capability for the schema shape at implementation time. A slot-level override stays available (P1a §9). |
 | D2 | Element count contract | The response format pins counts for each field: 3 `objects`, 3 `materials`, 3 `colors`, 2 `shapes`, 1 `scale`, 1 `setting`, 3 `ambience` — 16 entries | This is how "keep the length roughly constant" (R3) is enforced by construction rather than repaired after. The §5 example of the architecture has this same shape. Normalization dedup can shrink an element list below 16. The cap handles more than 20 if the contract changes. |
-| D3 | Text and image encoder checkpoint | One SigLIP-family checkpoint, its text tower behind `TextEncoder` and image tower behind `ImageEncoder`, selected by live research at implementation time | §10 of the architecture suggests SigLIP or CLIP. Make sure that wheels and weights are available for the pinned Python version before install. |
-| D4 | Line-drawing implementation | Informative Drawings weights, reached through the `controlnet_aux` lineart interface (§11 of the architecture) | If that package does not install on the pinned Python and torch versions, vendor the generator inference directly from the released weights — the architecture names the model, not the package. |
+| D3 | Encoder slots | Agreed 2026-08-07: the OpenRouter embeddings endpoint with `google/gemini-embedding-2` for the two slots — one multimodal model, thus text and image vectors share one space. Config permits `openrouter`, `local` (a SigLIP 2 checkpoint), or `fake` for each slot | §10 of the architecture suggests SigLIP or CLIP. A multimodal embedding model gives the same shared-space property. The expected dimension is a config value, and a response with a different width raises (R14). The first development run confirms the served dimension. |
+| D4 | Line-drawing implementation | Informative Drawings weights, reached through the `controlnet_aux` lineart interface (§11 of the architecture). Wheels for the pinned Python checked live 2026-08-07 (`controlnet-aux` 0.0.10, torch 2.13) | If that package does not run on the pinned Python and torch versions, vendor the generator inference directly from the released weights — the architecture names the model, not the package. |
 | D5 | Canonical render parameters | Canvas 512 × 512, white background, black strokes, line width 3 px, no anti-aliasing. Binarize threshold 0.5. Minimum segment length 10 px | These are shared constants with the future Layer 0 sketch render (R7). V1 iterates on them. Each change is a new `LineDrawer` hash and a pool artifact recalculation — cheap at development scale. |
 | D6 | Crop grid | Full image plus 5 crops — center plus the 4 corners, each crop 60% of each side | §12.2 of the architecture asks for the full image plus a small crop grid of approximately five crops. The §18 memory table counts 5 vectors for each image. The two readings are different by one vector — this spec follows §12.2 and flags the table as approximate. |
-| D7 | Singularization rule table | Last word only: `-ies → -y`. Remove `-es` after `s`, `x`, `z`, `ch`, `sh`. Keep `-ss`. Drop one last `-s` in other cases. Words of 3 characters or fewer are kept as-is | Deterministic, no model, imperfect on irregular nouns — accepted, because the same rule applies to atoms at scoring time, and agreement between the two sides matters more than correct English plurals. |
+| D7 | Singularization rule table | Rule identifier `d7-v1` (the §9 config value). Last word only: `-ies → -y`. Remove `-es` after `s`, `x`, `z`, `ch`, `sh`. Keep `-ss`. Drop one last `-s` in other cases. Words of 3 characters or fewer are kept as-is | Deterministic, no model, imperfect on irregular nouns — accepted, because the same rule applies to atoms at scoring time, and agreement between the two sides matters more than correct English plurals. |
 | D8 | Flatten sequence and the equal-value rule | Flatten in the R2 field sequence. Break equal capping rarity by flatten position, first position kept | Position in the flatten sequence is unique in one image, thus the sequence is total and deterministic. |
 | D9 | Grouping method | Connected components on the at-or-above-0.95 graph, full-image vectors only, `group_id` = smallest member `image_id` | §5 of the architecture says "cluster ... at a tight threshold" without a method. Components are parameter-free and agree with the Layer 8 requirement: each image that encoder noise could put at the target's rank exits the decoy set with it. |
 | D10 | `ElementBoxDetector` provider and output format | OpenRouter first (U2): one `POST` for each image, the capped element list in the instruction, strict JSON with one box or `null` for each element, coordinates normalized to [0, 1] | A local open-vocabulary detector stays a drop-in replacement. Box quality is unmeasured until the placement channel is built. The artifact is cheap to calculate again (R12). |

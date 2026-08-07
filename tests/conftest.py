@@ -6,14 +6,23 @@ artifact trees byte-for-byte.
 """
 
 import json
+from collections.abc import Mapping, Sequence
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
-from core.canonical import canonical_json_pretty
+from core.canonical import canonical_json, canonical_json_pretty, sha256_hex
+from pool import artifacts
 from pool.curation.config import CurationConfig, parse_curation_config
 from pool.curation.run import run_curation
+from pool.curation.stages.release import pool_version_id
 from pool.curation.types import RunReport
+from pool.preparation.config import PreparationConfig, parse_preparation_config
+from pool.preparation.run import run_preparation
+from pool.preparation.types import PreparationReport
 
 FIXED_CLOCK = "2026-01-01T00:00:00+00:00"
 
@@ -220,3 +229,245 @@ def completed_run(tmp_path_factory: pytest.TempPathFactory):
     report = run_pipeline(config, data, releases)
     assert report.halted_at is None and report.pool_version_id is not None
     return {"data": data, "releases": releases, "config": config, "report": report}
+
+
+# --- preparation (P1b) fixtures --------------------------------------------
+
+PREP_ELEMENT_BASE: dict = {
+    "objects": ["tree", "bench", "path"],
+    "materials": ["wood", "stone", "gravel"],
+    "colors": ["green", "brown", "grey"],
+    "shapes": ["vertical trunk", "horizontal slat"],
+    "scale": "medium",
+    "setting": "outdoor park",
+    "ambience": ["calm", "quiet", "open"],
+}
+
+# The default pool of eight images: a near-duplicate pair in fam-a, far
+# members of fam-b, chunk-free images, and element sets that mix shared
+# strings, unique strings, plural forms, and articles. One image
+# scripts a null box for one of its elements.
+PrepImageSpec = tuple[dict, str | None, str | None, dict]
+PREP_DEFAULT_SPECS: tuple[PrepImageSpec, ...] = (
+    ({}, "fam-a", "dup", {}),
+    ({"objects": ["trees", "bench", "kite"]}, "fam-a", "dup", {}),
+    (
+        {"objects": ["windmill", "canal", "tulip"], "setting": "outdoor polder"},
+        "fam-b", "far", {},
+    ),
+    (
+        {
+            "objects": ["lighthouse", "breakwater", "gull"],
+            "materials": ["stone", "metal", "seawater"],
+            "colors": ["white", "red", "blue"],
+        },
+        "fam-b", "far", {},
+    ),
+    (
+        {"objects": ["a tree", "the bench", "fountain"],
+         "ambience": ["calm", "misty", "still"]},
+        "fam-c", "far", {},
+    ),
+    ({"objects": ["cat", "sofa", "lamp"], "scale": "small",
+      "setting": "indoor lounge"}, None, None, {}),
+    (
+        {"objects": ["mountain", "glacier", "valley"], "scale": "large",
+         "colors": ["white", "blue", "slate"]},
+        None, None, {"fake_boxes": '{"mountain": null}'},
+    ),
+    ({"objects": ["crate", "pallet", "drum"],
+      "materials": ["cardboard", "pine", "plastic"]}, "fam-d", "far", {}),
+)
+
+
+def build_released_pool(
+    data_root: Path, record_dir: Path, specs: Sequence[PrepImageSpec]
+) -> dict:
+    """Hand-build one released pool: image store, s09 manifest, record.
+
+    Each spec is a four-part tuple: overrides for the scripted
+    seven-field describer response, an embed family, an embed jitter,
+    and added PNG text chunks. A None family or jitter writes no chunk.
+    The record has the dev_only flag set and a "dev-" label. The output
+    maps record_path, pool_version_id, image_ids (ascending), and
+    label.
+    """
+    image_ids: list[str] = []
+    for position, (overrides, family, jitter, added_chunks) in enumerate(specs):
+        elements = {**PREP_ELEMENT_BASE, **overrides}
+        info = PngInfo()
+        info.add_text("fake_elements", canonical_json(elements))
+        if family is not None:
+            info.add_text("embed_family", family)
+        if jitter is not None:
+            info.add_text("embed_jitter", jitter)
+        for chunk_key, chunk_value in sorted(added_chunks.items()):
+            info.add_text(chunk_key, chunk_value)
+        # A position-derived color keeps each image's bytes unique.
+        color = ((37 * position) % 256, (91 * position) % 256, 40)
+        buffer = BytesIO()
+        Image.new("RGB", (64, 64), color=color).save(buffer, format="PNG", pnginfo=info)
+        image_ids.append(artifacts.store_image_bytes(data_root, buffer.getvalue()))
+    image_ids.sort()
+    corpus_id = sha256_hex("prep-test-corpus")
+    curation_hash = sha256_hex("prep-test-curation-config")
+    manifest_dir = data_root / "curation" / corpus_id[:8] / curation_hash[:8] / "s09-release"
+    artifacts.write_jsonl(
+        manifest_dir / "manifest.jsonl",
+        [
+            {"image_id": image_id, "source_key": f"fake://{image_id[:12]}"}
+            for image_id in image_ids
+        ],
+    )
+    pool_version = pool_version_id(corpus_id, curation_hash, image_ids)
+    label = f"dev-pool-{pool_version[:8]}"
+    record = {
+        "label": label,
+        "pool_version_id": pool_version,
+        "corpus_id": corpus_id,
+        "curation_config_hash": curation_hash,
+        "corpus_identity": {
+            "provider": "fake", "repo_id": "fake/fake-corpus", "revision": "fixed",
+            "config_name": None, "split": "train",
+        },
+        "config_path": "configs/curation/dev-wit.json",
+        "image_count": len(image_ids),
+        "funnel": {},
+        "review": {"verdict": "pass", "reviewer": "test", "date": FIXED_CLOCK, "notes": ""},
+        "dev_only": True,
+        "code_version": "test",
+        "created_at": FIXED_CLOCK,
+    }
+    record_dir.mkdir(parents=True, exist_ok=True)
+    record_path = record_dir / f"{label}.json"
+    record_path.write_text(canonical_json_pretty(record) + "\n", encoding="utf-8")
+    return {
+        "record_path": record_path,
+        "pool_version_id": pool_version,
+        "image_ids": image_ids,
+        "label": label,
+    }
+
+
+def prep_config_dict(record_path: Path | str, **overrides) -> dict:
+    """The raw JSON document for a fake-provider preparation config."""
+    document = {
+        "config_version": 1,
+        "input": {"release_record": str(record_path)},
+        "elements": {
+            "counts": {
+                "objects": 3, "materials": 3, "colors": 3, "shapes": 2,
+                "scale": 1, "setting": 1, "ambience": 3,
+            },
+            "max_elements": 20,
+            "normalize_rule": "d7-v1",
+        },
+        "linedraw": {
+            "binarize_threshold": 0.5,
+            "min_segment_px": 10,
+            "canvas_px": 512,
+            "line_width_px": 3,
+            "background": "white",
+            "antialias": False,
+        },
+        "outline": {"crop_fraction": 0.6, "crop_grid": "center-corners"},
+        "neardup": {"similarity_threshold": 0.95},
+        "providers": {
+            "openrouter": {
+                "default_model": "test/fake-model",
+                "max_concurrency": 1,
+                "requests_per_second": 100.0,
+                "timeout_seconds": 5.0,
+                "retry_limit": 0,
+                "response_format_mode": "json_schema",
+            },
+            "describer": {
+                "provider": "fake", "model": None,
+                "instruction_template": None, "dimension": None,
+            },
+            "text_encoder": {
+                "provider": "fake", "model": None,
+                "instruction_template": None, "dimension": 32,
+            },
+            "image_encoder": {
+                "provider": "fake", "model": None,
+                "instruction_template": None, "dimension": 32,
+            },
+            "line_drawer": {
+                "provider": "fake", "model": None,
+                "instruction_template": None, "dimension": None,
+            },
+            "element_boxes": {
+                "provider": "fake", "model": None,
+                "instruction_template": None, "dimension": None,
+            },
+        },
+        "runtime": {"device": "cpu"},
+        "release": {"tag": "dev-test-prep", "dev_only": True},
+    }
+    for dotted, value in overrides.items():
+        node = document
+        parts = dotted.split(".")
+        for part in parts[:-1]:
+            node = node[part]
+        node[parts[-1]] = value
+    return document
+
+
+def make_prep_config(record_path: Path | str, **overrides) -> PreparationConfig:
+    return parse_preparation_config(
+        prep_config_dict(record_path, **overrides), "test-prep-config"
+    )
+
+
+def run_prep(
+    config: PreparationConfig,
+    data_root: Path,
+    prep_releases_root: Path,
+    *,
+    through: str | None = None,
+    force_from: str | None = None,
+    providers: Mapping[str, object] | None = None,
+) -> PreparationReport:
+    return run_preparation(
+        config,
+        config_path=Path("test-prep-config.json"),
+        data_root=data_root,
+        releases_root=prep_releases_root,
+        code_version="test",
+        through=through,
+        force_from=force_from,
+        providers=providers,
+        clock=lambda: FIXED_CLOCK,
+    )
+
+
+def find_prep_stage_dir(data_root: Path, stage: str) -> Path:
+    matches = list(data_root.glob(f"preparation/*/*/{stage}"))
+    assert len(matches) == 1, f"expected one {stage} directory, found {matches}"
+    return matches[0]
+
+
+def read_prep_stage_jsonl(data_root: Path, stage: str, name: str) -> list[dict]:
+    path = find_prep_stage_dir(data_root, stage) / name
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+@pytest.fixture(scope="module")
+def completed_preparation(tmp_path_factory: pytest.TempPathFactory):
+    """One full preparation of the default released pool, shared by read-only tests."""
+    root = tmp_path_factory.mktemp("completed-prep")
+    data = root / "data"
+    releases = root / "releases"
+    pool = build_released_pool(data, root / "pool-releases", PREP_DEFAULT_SPECS)
+    config = make_prep_config(pool["record_path"])
+    report = run_prep(config, data, releases)
+    assert report.preparation_version_id is not None
+    assert not any(entry.skipped for entry in report.stages)
+    return {
+        "data": data,
+        "releases": releases,
+        "config": config,
+        "report": report,
+        "pool": pool,
+    }
