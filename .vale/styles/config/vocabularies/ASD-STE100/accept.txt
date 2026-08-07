@@ -1,0 +1,748 @@
+abort
+abort button
+accelerate
+acceleration
+Acceptance Test
+access ladder
+acid
+acknowledge
+action
+Activation
+add-in
+add-on
+adhesive
+AI
+aim
+air
+air conditioning
+air traffic control
+aircraft
+aircraft carrier
+airframe
+airport
+allergy
+Allowable Damage
+allowance
+altitude
+aluminum alloy
+ambiguity
+ammunition
+ampere \(A\)
+amplifying circuit
+anneal
+appeal
+approach
+apron
+arbitration
+arm
+armament
+armed forces
+arrow
+artificial intelligence
+aspirin
+assault
+asthma
+astronomy
+atmosphere
+atom
+attention
+attitude
+audio
+aural warning system
+authentication
+average
+axis
+backup
+backup file
+bacteria
+bank
+bankruptcy
+base
+beans
+beige
+bicycle
+biochemistry
+biology
+biome
+bird
+bisect
+black
+blade
+blend
+blood
+blood poisoning
+bolt
+bomb
+bookmark
+boot
+brake
+braze
+bread
+breathing
+British Broadcasting Corporation \(BBC\)
+brush
+buckle
+buff
+building
+bullet
+burnish
+burr
+cabin
+cable
+camp
+cap
+capacitance
+captain
+car
+carbon
+cargo compartment
+cargo hold
+cassowary
+cast
+cat
+category
+caution
+cavitation
+center
+chafing
+chapter
+chatbot
+Check
+Checklist
+checkpoint
+chock
+cigarette lighter
+circle
+circulation
+clamp
+Class
+Cleaning
+clear
+clearance
+click
+climb
+clip
+close
+clothing
+cloud
+cockpit
+coefficient
+coffee
+collapsed position
+combat plan
+combination
+commander
+communicate
+communication
+Compass Correction Card
+compensate for
+competence
+compliance
+comply with
+compound
+compress
+concession
+conductor
+configuration
+conform to
+conifer
+contact
+content
+contract
+contractor
+conversion
+convert
+coordinates
+copilot
+copper
+copy
+corrosion
+count
+couple
+court
+cover
+cow
+crack
+crack propagation
+crank
+crash
+crew
+crew chief
+crimp
+critical approach
+critical temperature
+cure
+cursor
+curve
+customer
+customer service
+customer support
+cut
+cyan blue
+cybersecurity
+cycle
+damages
+danger
+dark brown
+data module
+database
+datum
+day
+daylight
+Deactivation
+debris
+debug
+decay
+deceleration
+deck
+decouple
+deep learning
+defect
+deformation
+degree
+delay
+delete
+density
+dent
+deployment
+dermatitis
+descend
+describe
+Description and Operation
+deselect
+detect
+detergent
+deviate
+deviation
+diabetes
+diagram
+dialog check box
+diameter
+digestive system
+digitalization
+digitization
+digitize
+dirt
+disable
+discoloration
+disinfect
+disinfectant
+dispatch
+displacement
+display
+distill
+distortion
+dizziness
+dock
+dog
+download
+drag
+drag and drop
+dress
+drift
+drill
+dry-motor
+dust
+duty cycle
+e-mail
+ear
+east
+echelon
+ejection seat
+elapsed time
+electricity
+embedding
+emit
+emu
+enable
+encrypt
+end item
+end user
+energy
+enforce
+engine
+engine logbook
+engine room
+engine shop floor
+enter
+erase
+erosion
+European Aviation Safety Agency \(EASA\)
+evacuation
+exhaust
+EXIT sign
+explain
+explanation
+explanatory text
+explode
+exponent
+extract
+extrude
+eyes
+failure
+FASTEN SAFETY BELT sign
+Fault Isolation
+FAULT legend
+Federal Aviation Administration \(FAA\)
+Federal Aviation Regulations
+female
+fern
+ferret
+ferry flight
+ferry tank
+field
+figure
+file
+filter
+fire
+firewall
+first \(1st\)
+flame
+flight management
+flight simulator
+float
+flour
+flowchart
+flutter
+fly
+foam
+font
+footwear
+force
+foreign object
+format
+formation
+fracture
+France
+fraying
+freeze
+fuel
+fumes
+Functional Test
+fungi
+fuselage
+galley
+galling
+gate
+gauge \(gage\)
+genetics
+geology
+geophysics
+glideslope
+gradient
+graduated beaker
+graph
+gravity
+gray
+grease
+green
+grind
+ground zero
+gun
+hail
+hair
+half \(1/2\)
+hallucination
+hand
+handle
+handling
+hangar
+hardness
+hardware
+hatch
+hazard lights
+hazardous substances
+hazardous waste
+head
+headache
+heading
+heart rate
+heat treatment
+heat-treat
+helicopter
+high-heeled shoes
+highlight
+horse
+hour \(h\)
+hover
+HTML
+humidity
+ice
+Ice and Rain Protection
+icon
+idle speed
+ignition
+impeachment
+indicator
+inflate
+inform
+inhibit
+inhibiting signal
+inhibition
+inject
+injection
+inlet
+INOP system
+input frequency
+insect
+Inspection
+install
+Installation
+instrumentation
+insulate
+Integrated Product Support \(IPS\)
+intercept
+interface
+interference
+internet
+intubate
+invalidate
+irritation
+issue
+jack
+jewelry
+John Kirkman
+judgement
+jurisdiction
+jury
+kilogram \(kg\)
+kink
+knot
+know-how
+label
+land
+landing
+language policy
+laptop
+large language model
+lase
+latch
+law
+leeway
+leopard
+letter
+lifeboat
+lifecycle
+light
+light green
+lightning
+Lima
+line replaceable unit
+lipstick
+liter \(L or I\)
+load
+local operation
+lock on
+logo
+loss
+lung
+machine gun
+machine learning
+magenta
+magnetize
+maintain
+maintenance concept
+maintenance planning
+maintenance practice
+maintenance records
+male
+manage
+manufacturer
+matches
+maximize
+measurement
+medication
+meet \(a requirement\)
+memory
+menu
+metadata
+metal
+metallic coating
+meter \(m\)
+mile
+milk
+mill
+mineral water
+minimize
+minute \('\)
+mission
+modification
+modify
+modulate
+moisture
+momentum
+monkey
+month
+moss
+motoring
+mouse
+mouth
+nail scissors
+nausea
+navigate
+network
+NEXT button
+nick
+night
+NO STEP marking
+Normal Braking
+normalize
+north
+note
+notice
+notify
+obsolescence
+oil
+oil seal
+omit
+ON position
+one
+one-quarter \(1/4\)
+open
+operate
+operating system
+operator
+orange
+Original Equipment Manufacturer \(OEM\)
+overhaul
+overhead panel
+oversized hole
+oxygen
+OXYGEN pushbutton switch
+packaging
+packing
+page
+paint
+parachute
+paragraph
+parentheses
+park
+passivate
+paste
+patrol
+pedal
+penetrant spray
+performance
+perfume
+phase
+phone
+pipe
+pitch
+pizza
+plastic
+plate
+plug-in
+pneumonia
+pocket gopher
+polarity
+polish
+port
+post-flight report
+post-mod
+power
+power unit
+pre-loaded software
+pre-mod
+pregnancy
+prelubricated seal
+prerequisite
+prescribe
+preservation
+preset value
+press
+pressure
+primer
+print
+process
+prompt engineering
+propeller
+pulse
+pump
+purpose
+qualify
+radiate
+radius
+rain
+rating
+ratio
+ream
+reboot
+recommendation
+red
+reduction
+reference
+regulate
+relative angular position
+relative humidity
+remetal
+remote operation
+Removal
+Repair Scheme
+Required Conditions
+resistance
+respiratory tract
+respond
+retractor link
+retread
+retrim
+reverse mode
+reverse position
+revision
+rigging pin
+roll
+roller
+rope
+rose
+rung
+sand
+sanitize
+save
+scan
+scope
+score
+scratch
+screen
+screw
+scroll
+sealant
+sealing
+search engine
+second \(''\)
+second \(2nd\)
+second \(s\)
+section
+serious incident
+serious offense
+service bay
+Service Bulletin
+shaft
+shampoo
+ship
+shipping
+shop
+shutdown
+sign
+signal
+signature
+sink
+skid
+skin
+skin irritation
+smartphone
+snow
+soap
+solder
+sort
+south
+specific gravity
+spin
+spring
+spurious fault message
+square inch \(sq\.in\.\)
+stain
+stainless steel
+stall
+stamp
+stand
+standard
+Standard Practices Manual
+standby mode
+status bar
+statute
+steam
+steer
+sterilize
+stiffness
+stomach
+storage
+store
+storm
+strength
+Structural Repair Manual
+submarine
+suction
+supersede
+swipe
+switch
+table
+tablet
+tag
+take off
+tank
+tap
+tape
+taxi
+temperature
+tension
+term
+termite
+test procedure
+test rig
+third \(3rd\)
+thread
+three
+tightness
+token
+toolbar
+torque
+torque wrench
+touchscreen
+toxic property
+trade
+train
+training material
+transceiver
+transform
+transport
+Transport Canada Civil Aviation \(TCCA\)
+Transportation
+trestle
+trim
+truck
+tuning
+turbulence
+tweet
+type
+understand
+United States of America \(USA\)
+unlatch
+unload
+unsolder
+update
+upgrade
+upload
+upright position
+valid welding certificate
+validate
+vapor
+vaporize
+vent
+virus
+voice mail
+volcanic ash
+voltage
+waive \(for inspection and requirements\)
+waiver
+warning
+waste
+water
+water vapor
+WEAR PROTECTIVE CLOTHING sign
+weld
+west
+wet-motor
+white
+wind
+wine
+wing
+wing root
+winter
+wire
+wombat
+wording
+XML
+year
+yellow
+zero
+zoom in
+zoom out

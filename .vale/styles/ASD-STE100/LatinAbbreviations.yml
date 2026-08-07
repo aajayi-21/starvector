@@ -1,0 +1,14 @@
+extends: substitution
+message: "Use '%s' instead of the Latin abbreviation '%s' (ASD-STE100 Issue 9, GR-6)."
+link: https://asd-ste100.org
+level: warning
+ignorecase: true
+nonword: true
+swap:
+  '\be\.g\.': for example
+  '\bi\.e\.': that is
+  '\betc\.': and so on
+  '\bet al\.': and others
+  '\bviz\.': that is
+  '\bcf\.': compare with
+  '\bN\.B\.': note

@@ -1,0 +1,7 @@
+extends: occurrence
+message: "Paragraph has more than 6 sentences. Divide it (ASD-STE100 Issue 9, R6.6)."
+link: https://asd-ste100.org
+level: suggestion
+scope: paragraph
+max: 6
+token: '[.!?](?:\s|$)'

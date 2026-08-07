@@ -1,0 +1,7 @@
+extends: occurrence
+message: "Sentence is longer than 25 words. Use no more than 25 words in descriptive text and 20 in procedures (ASD-STE100 Issue 9, R5.1 / R6.3)."
+link: https://asd-ste100.org
+level: warning
+scope: sentence
+max: 25
+token: '[^\s]+'

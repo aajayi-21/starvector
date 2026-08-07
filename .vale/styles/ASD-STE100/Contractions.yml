@@ -1,0 +1,9 @@
+extends: existence
+message: "'%s' is a contraction. Write the words in full (ASD-STE100 Issue 9, R4.2)."
+link: https://asd-ste100.org
+level: error
+ignorecase: true
+tokens:
+  - "\\w+n['\u2019]t"
+  - "\\w+['\u2019](?:ll|re|ve|d)"
+  - "(?:it|that|there|what|let|he|she|who)['\u2019]s"
