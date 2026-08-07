@@ -2,6 +2,7 @@ abort
 abort button
 accelerate
 acceleration
+[Aa]cceptance
 Acceptance Test
 access ladder
 acid
@@ -76,6 +77,7 @@ bomb
 bookmark
 boot
 brake
+[Bb]ranch
 braze
 bread
 breathing
@@ -83,6 +85,7 @@ British Broadcasting Corporation \(BBC\)
 brush
 buckle
 buff
+[Bb]uild
 building
 bullet
 burnish
@@ -91,6 +94,7 @@ cabin
 cable
 camp
 cap
+[Cc]apability
 capacitance
 captain
 car
@@ -116,6 +120,7 @@ circle
 circulation
 clamp
 Class
+[Cc]lassification
 Cleaning
 clear
 clearance
@@ -251,6 +256,7 @@ echelon
 ejection seat
 elapsed time
 electricity
+element list
 embedding
 emit
 emu
@@ -373,6 +379,8 @@ icon
 idle speed
 ignition
 impeachment
+[Ii]mplement
+[Ii]mplementation
 indicator
 inflate
 inform
@@ -405,6 +413,7 @@ John Kirkman
 judgement
 jurisdiction
 jury
+[Kk]ey
 kilogram \(kg\)
 kink
 knot
@@ -504,6 +513,7 @@ operating system
 operator
 orange
 Original Equipment Manufacturer \(OEM\)
+[Oo]utline
 overhaul
 overhead panel
 oversized hole
@@ -545,6 +555,7 @@ pre-loaded software
 pre-mod
 pregnancy
 prelubricated seal
+[Pp]reparation
 prerequisite
 prescribe
 preservation
@@ -553,7 +564,9 @@ press
 pressure
 primer
 print
+[Pp]robability
 process
+[Pp]rompt
 prompt engineering
 propeller
 pulse
@@ -572,6 +585,7 @@ red
 reduction
 reference
 regulate
+[Rr]ejection
 relative angular position
 relative humidity
 remetal
@@ -582,17 +596,20 @@ Required Conditions
 resistance
 respiratory tract
 respond
+[Rr]esume
 retractor link
 retread
 retrim
 reverse mode
 reverse position
+[Rr]eview
 revision
 rigging pin
 roll
 roller
 rope
 rose
+[Rr]un
 rung
 sand
 sanitize
@@ -636,9 +653,12 @@ sort
 south
 specific gravity
 spin
+[Ss]plit
+spot[-\s]check
 spring
 spurious fault message
 square inch \(sq\.in\.\)
+[Ss]tage
 stain
 stainless steel
 stall

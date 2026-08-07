@@ -1,0 +1,111 @@
+{
+  "config_version": 1,
+  "corpus": {
+    "provider": "huggingface",
+    "repo_id": "wikimedia/wit_base",
+    "revision": "main",
+    "config_name": null,
+    "split": "train",
+    "columns": {
+      "source_key": "image_url",
+      "claimed_width": "original_width",
+      "claimed_height": "original_height",
+      "captions": ["caption_attribution_description"],
+      "attribution": ["image_url", "metadata_url", "mime_type", "caption_attribution_description"]
+    },
+    "license_note": "CC BY-SA 4.0",
+    "max_scan_shards": 4,
+    "materialization": {
+      "mode": "wikimedia-thumbnail",
+      "thumbnail_width": 1280,
+      "user_agent": "starvector-pool-curation/0.1 (harm0nybunny@proton.me)",
+      "max_concurrency": 4,
+      "timeout_seconds": 30.0,
+      "retry_limit": 3,
+      "fetch_batch_size": 64,
+      "max_fetch_bytes": 20000000
+    }
+  },
+  "sampling": {
+    "sample_salt": "dev-wit-001",
+    "sample_rate": 0.03
+  },
+  "extraction": {
+    "budget_bytes": 500000000,
+    "materialize_cap": null
+  },
+  "screen": {
+    "min_short_side": 512,
+    "min_aspect": 0.5,
+    "max_aspect": 2.0
+  },
+  "text": {
+    "max_text_coverage": 0.05
+  },
+  "classify": {
+    "labels": ["photograph", "diagram", "chart", "logo", "map", "screenshot", "coat of arms", "line drawing"],
+    "keep_label": "photograph",
+    "label_template": "a {label}"
+  },
+  "objectsize": {
+    "min_object_fraction": 0.15
+  },
+  "neardup": {
+    "similarity_threshold": 0.95
+  },
+  "diversity": {
+    "cluster_size_divisor": 50,
+    "cluster_cap": 15,
+    "kmeans_max_iterations": 100
+  },
+  "review": {
+    "sample_size": 200,
+    "thumbnail_max_side": 384
+  },
+  "providers": {
+    "openrouter": {
+      "default_model": "openai/gpt-5.6-luna",
+      "max_concurrency": 4,
+      "requests_per_second": 2.0,
+      "timeout_seconds": 120.0,
+      "retry_limit": 3,
+      "response_format_mode": "json_schema"
+    },
+    "text_coverage": {
+      "provider": "openrouter",
+      "model": null,
+      "instruction_template": "Estimate the fraction of the image area that is covered by rendered or overlaid text of any kind, including captions, labels, watermarks, and signs. Return a JSON object: {\"text_area_fraction\": <number between 0 and 1>}. Return JSON only.",
+      "dimension": null,
+      "probability_sum_tolerance": null
+    },
+    "classifier": {
+      "provider": "openrouter",
+      "model": null,
+      "instruction_template": "Classify the image into exactly one of these categories: {label_phrases}. Return a JSON object: {\"label\": <the one category that fits best>, \"confidence\": <number between 0 and 1>}. Return JSON only.",
+      "dimension": null,
+      "probability_sum_tolerance": null
+    },
+    "object_size": {
+      "provider": "openrouter",
+      "model": null,
+      "instruction_template": "Identify the single largest distinct foreground object in the image. Estimate the fraction of the image area that this object covers. If there is no distinct object, use 0. Return a JSON object: {\"largest_object_fraction\": <number between 0 and 1>}. Return JSON only.",
+      "dimension": null,
+      "probability_sum_tolerance": null
+    },
+    "encoder": {
+      "provider": "fake",
+      "model": null,
+      "instruction_template": null,
+      "dimension": 64,
+      "probability_sum_tolerance": null
+    }
+  },
+  "seeds": {
+    "cluster_seed": 20260806,
+    "review_seed": 20260807
+  },
+  "release": {
+    "tag": "dev-wit-001",
+    "dev_only": true
+  }
+}

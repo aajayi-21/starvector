@@ -4,4 +4,19 @@ version = "0.1.0"
 description = "Scoring engine for a daily remote-viewing game"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+    "huggingface-hub>=1.26.1",
+    "numpy>=2.5.1",
+    "pillow>=12.3.0",
+    "pyarrow>=25.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

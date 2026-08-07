@@ -74,7 +74,8 @@ Quotes are from `docs/ARCHITECTURE.md`.
   aspect ratio, text detection, zero-shot classification, object detection,
   near-duplicate removal, diversity cap, human spot-check.
 - **R2** — Resolution: "short side ≥ 512 px" (§4, step 1).
-- **R3** — Aspect ratio "between 0.5 and 2.0" (§4, step 2).
+- **R3** — Aspect ratio "between 0.5 and 2.0" (§4, step 2). The limit
+  values 0.5 and 2.0 are kept.
 - **R4** — Text detection: "reject if text covers > 5% of image area"
   (§4, step 3).
 - **R5** — Zero-shot classification: keep `photograph`, reject `diagram`,
@@ -110,9 +111,9 @@ These come from the project owner, not from the architecture. They have
 the same weight.
 
 - **U1 — Extraction budget.** Corpus extraction has a byte budget. The
-  development default is 5 GB (`5_000_000_000` bytes) for all
-  data retrieved for the corpus: the metadata scan plus all materialized
-  image bytes. The budget is a config value (`budget_bytes`, §9), is part
+  shipped development value is 500 MB (`500_000_000` bytes, set
+  2026-08-07) for all data retrieved for the corpus: the metadata scan
+  plus all materialized image bytes. The budget is a config value (`budget_bytes`, §9), is part
   of `curation_config_hash`, and is tunable for each iteration. The
   pipeline must report bytes retrieved, and must stop fetching — with
   explicit accounting — when the budget is reached.
@@ -211,6 +212,11 @@ pool_version_id = sha256(corpus_id
                          + sha256(newline-joined sorted image_id values))
 ```
 
+Byte layout: each component is a lowercase hex string. The inner hash is
+SHA-256 of the sorted `image_id` values joined with `\n`, with no `\n`
+at the end. The outer input is the plain concatenation of `corpus_id`,
+`curation_config_hash`, and the inner hex digest, encoded as UTF-8.
+
 The release label is `<tag>-<pool_version_id[:8]>`. `tag` is a human-chosen
 name from config, for example `dev-wit-001`. A development pool must use a
 tag with the `dev-` prefix, and its release record sets `dev_only: true`
@@ -253,11 +259,15 @@ class SourceCorpus(Protocol):
     @property
     def config_hash(self) -> str: ...
 
+    @property
+    def bytes_retrieved(self) -> int: ...   # monotone transport-byte counter (U1)
+
     def iter_records(self) -> Iterator[SourceRecord]: ...
 
     def materialize_many(
-        self, source_keys: Sequence[str]
+        self, records: Sequence[SourceRecord]
     ) -> list[MaterializedImage | MaterializeFailure]: ...
+    # Result list is index-aligned with the input records.
 ```
 
 Rules, aligned with `CLAUDE.md` §6:
@@ -279,10 +289,26 @@ Built on the `datasets` library with `streaming=True`, plus
 `revision`, `config_name`, `split`, column mapping, and materialization
 parameters.
 
-The adapter must read only the configured columns during enumeration
-(parquet column pruning), thus shipped image bytes are not transferred
-during the scan. The adapter counts the bytes it retrieves at its
-transport layer and reports them (U1).
+The adapter must read only the configured columns during enumeration,
+through pyarrow ranged reads on the repo parquet shards, thus shipped
+image bytes are not transferred during the scan. The corpus stores
+columns as one chunk in each shard, thus one enumerated shard costs
+the full column chunks for that shard (measured 2026-08-07: ≈ 25 MB and
+≈ 19,600 rows for each `wit_base` shard, 330 shards, ≈ 6.5 million rows
+in total). A full-corpus scan thus costs multiple GB. The config
+field `max_scan_shards` limits the scan for U1: the adapter ranks the
+shard files by the SHA-256 of the shard name — deterministic and
+salt-free — and enumerates only the first `max_scan_shards` of that
+ranking. The subset is part of the corpus config hash, thus a different
+subset is a different pool lineage. The pool then samples a corpus
+slice, and the slice is recorded — Rule 3 holds because the target and
+the decoys come from the same released pool in all conditions.
+
+The adapter counts the bytes it retrieves at its transport layer and
+reports them through its `bytes_retrieved` property (U1).
+`materialize_many` takes full records, not bare keys — the adapter
+needs the claimed dimensions and the URL extension to select a safe
+fetch mode.
 
 ### `wikimedia/wit_base` mapping (development corpus)
 
@@ -402,8 +428,9 @@ Contract for all stages: a stage reads its parent manifest and writes one
 stage directory (§11) with `manifest.jsonl`, `rejections.jsonl` (can be
 empty), and `meta.json`. Counts must agree:
 `parent survivors = survivors + rejections`. From s02 on, all processing,
-output sequence, and equal-value decisions use ascending `image_id`. Thus
-no stage depends on the corpus enumeration sequence.
+output sequence, and equal-value decisions use ascending `image_id`.
+Before s02, manifest rows are sorted by ascending `source_key`. Thus no
+stage depends on the corpus enumeration sequence.
 
 ### s00 snapshot
 
@@ -442,11 +469,18 @@ Budget enforcement (U1): survivors of s01 are fetched in ascending
 sequence of their sampling hash
 (`uint64(sha256(sample_salt + source_key)[:8])`) — deterministic, and
 free of selection bias, because it is the same quantity s00 sampled
-with. The stage keeps a total of retrieved bytes, with the s00 scan
-bytes included. When the next fetch can make the byte total more than
-`budget_bytes`, or the fetched count more than `materialize_cap`, the
-stage stops fetching. Each candidate that was not fetched exits with rejection
-cause `extraction-budget`. The counts and byte totals go into
+with. Fetches go out in batches of `fetch_batch_size`. The decision
+total starts at the s00 scan bytes, as frozen in the s00 `meta.json`,
+and grows by the payload bytes of each fetched result. The byte count
+of a fetch is not knowable before the fetch, thus the check comes first: a
+batch is issued only while the decision total is less than
+`budget_bytes` and the fetched count is less than `materialize_cap`.
+Each fetched result goes on to the decode checks. When the decision
+total is `budget_bytes` or more, or the count is at `materialize_cap`,
+no more batches are issued, and each candidate that was not fetched
+exits with rejection cause `extraction-budget`. Retrieved bytes can be
+more than the budget by at most one batch of payloads, and `meta.json`
+reports the totals as measured. The counts and byte totals go into
 `meta.json`, and the funnel report shows them.
 
 The stage also writes `records.jsonl`: one row for each survivor with
@@ -465,7 +499,8 @@ image (§8). Reject when the fraction is more than `0.05`
 `ZeroShotImageClassifier` on the closed label set of R5, with the prompt
 template from config. Keep a candidate only when `photograph` is the
 argmax label. Rejection cause `class-<winning label>`, with the winning
-label's probability stored. The argmax rule and the template are open
+label's probability stored. Spaces in the label become hyphens, for
+example `class-coat-of-arms`. The argmax rule and the template are open
 decisions D1 and D2.
 
 ### s05 object — R6
@@ -572,8 +607,10 @@ File formats:
   `measured` is the numeric value the rule examined, when there is one.
 - `meta.json` — stage name, label (§6), parent stage, input, survivor, and
   rejection counts, the stage's config echo, provider config hashes, byte
-  totals (retrieved by this stage, and cumulative — U1), wall-clock
-  timings, and the pipeline code version.
+  totals (retrieved by this stage, and cumulative — U1), and the pipeline
+  code version. Fully deterministic: two equal runs give equal bytes.
+- `timings.json` — stage start and stage end times. This is the one
+  file that determinism comparisons do not read.
 
 ## 12. Runner
 
@@ -704,8 +741,8 @@ proposed default.
 | D5 | Near-duplicate keep rule | Greedy, best first: pixel area, largest first, then ascending `image_id` | The architecture gives only the 0.95 threshold. |
 | D6 | Clustering method and granularity for R8 | k-means, `k = ceil(n / 50)`, seeded, CPU | "Cluster" is unspecified. Granularity changes which images the cap removes. |
 | D7 | In-cluster keep rule | Farthest-point traversal from the medoid, keep the first 15 | Keeps in-cluster diversity, not in-cluster typicality. |
-| D8 | Development sampling target | `sample_rate` set for ≈ 25,000 candidates before the screen | With U1 at 5 GB and ≈ 300 KB for each fetch, s02 fetches ≈ 15,000 images at most — the budget, not the count, is the hard limit. Adjust after the first funnel report. |
-| D9 | `wit_base` materialization mode | Fetch a Wikimedia thumbnail rendition of the source file at a width that keeps the short side ≥ 512 px (1024 px is sufficient for each aspect ratio that R3 allows), with a descriptive User-Agent and bounded concurrency | Source files can be as large as 27,000 px — full downloads are wasteful. The fetched rendition becomes the permanent raw bytes, and `retrieval_note` records the URL used. Each fetch counts against U1. |
+| D8 | Development sampling target | `sample_rate` set for ≈ 10,000 candidates before the screen | Recorded decision, 2026-08-06. At ≈ 300 KB for each fetch, ≈ 10,000 fetches come to ≈ 3 GB — in the U1 limit with room for the scan. Adjust after the first funnel report. |
+| D9 | `wit_base` materialization mode | Fetch a Wikimedia thumbnail rendition of the source file at a width that keeps the short side ≥ 512 px. Wikimedia serves only standard thumbnail widths, and 1280 px is the smallest standard width that satisfies each aspect ratio that R3 allows. Descriptive User-Agent, bounded concurrency | Source files can be as large as 27,000 px — full downloads are wasteful. A 1024 px fetch gets HTTP 400 (checked live, 2026-08-06). The fetched rendition becomes the permanent raw bytes, and `retrieval_note` records the URL used. Each fetch counts against U1. |
 | D10 | Caption-based boilerplate filter | Not in this version — captions go through unchanged | R10 permits the signal and defines no rule. Examine again with measured funnel data. |
 
 ## 17. Acceptance criteria
