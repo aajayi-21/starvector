@@ -14,18 +14,7 @@ from numpy.typing import NDArray
 from core.canonical import canonical_json, sha256_hex
 from core.types import Vectors
 from providers.fake.chunks import read_fake_chunks
-
-
-def _seed_from(data: bytes | str) -> int:
-    """The output is an integer seed built from the first 8 SHA-256 digest bytes."""
-    return int(sha256_hex(data)[:16], 16)
-
-
-def _unit_gaussian(seed: int, dimension: int) -> NDArray[np.float64]:
-    """One seeded Gaussian vector with unit norm, float64, length dimension."""
-    rng = np.random.default_rng(seed)
-    vector = rng.standard_normal(dimension)
-    return vector / np.linalg.norm(vector)
+from providers.fake.vectors import _seed_from, _unit_gaussian
 
 
 class FakeImageEncoder:
