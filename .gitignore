@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Curation pipeline data root (rebuildable caches and artifacts)
+/data/
