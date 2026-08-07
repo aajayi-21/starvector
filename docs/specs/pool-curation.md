@@ -111,9 +111,9 @@ These come from the project owner, not from the architecture. They have
 the same weight.
 
 - **U1 — Extraction budget.** Corpus extraction has a byte budget. The
-  development default is 5 GB (`5_000_000_000` bytes) for all
-  data retrieved for the corpus: the metadata scan plus all materialized
-  image bytes. The budget is a config value (`budget_bytes`, §9), is part
+  shipped development value is 500 MB (`500_000_000` bytes, set
+  2026-08-07) for all data retrieved for the corpus: the metadata scan
+  plus all materialized image bytes. The budget is a config value (`budget_bytes`, §9), is part
   of `curation_config_hash`, and is tunable for each iteration. The
   pipeline must report bytes retrieved, and must stop fetching — with
   explicit accounting — when the budget is reached.
@@ -289,11 +289,24 @@ Built on the `datasets` library with `streaming=True`, plus
 `revision`, `config_name`, `split`, column mapping, and materialization
 parameters.
 
-The adapter must read only the configured columns during enumeration
-(parquet column pruning), thus shipped image bytes are not transferred
-during the scan. The adapter counts the bytes it retrieves at its
-transport layer and reports them through its `bytes_retrieved` property
-(U1). `materialize_many` takes full records, not bare keys — the adapter
+The adapter must read only the configured columns during enumeration,
+through pyarrow ranged reads on the repo parquet shards, thus shipped
+image bytes are not transferred during the scan. The corpus stores
+columns as one chunk in each shard, thus one enumerated shard costs
+the full column chunks for that shard (measured 2026-08-07: ≈ 25 MB and
+≈ 19,600 rows for each `wit_base` shard, 330 shards, ≈ 6.5 million rows
+in total). A full-corpus scan thus costs multiple GB. The config
+field `max_scan_shards` limits the scan for U1: the adapter ranks the
+shard files by the SHA-256 of the shard name — deterministic and
+salt-free — and enumerates only the first `max_scan_shards` of that
+ranking. The subset is part of the corpus config hash, thus a different
+subset is a different pool lineage. The pool then samples a corpus
+slice, and the slice is recorded — Rule 3 holds because the target and
+the decoys come from the same released pool in all conditions.
+
+The adapter counts the bytes it retrieves at its transport layer and
+reports them through its `bytes_retrieved` property (U1).
+`materialize_many` takes full records, not bare keys — the adapter
 needs the claimed dimensions and the URL extension to select a safe
 fetch mode.
 

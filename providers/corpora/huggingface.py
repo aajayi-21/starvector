@@ -1,11 +1,19 @@
 """Hugging Face source corpus adapter.
 
 Spec: docs/specs/pool-curation.md section 7. The adapter resolves the
-pinned revision, enumerates the configured metadata columns with a
-streaming read, maps each row to a SourceRecord, and delegates
-materialization to the Wikimedia fetcher. The datasets and
-huggingface_hub imports occur in method bodies, thus the offline test
-suite can import this module without them.
+pinned revision, enumerates the configured metadata columns with pyarrow
+ranged reads on the repo parquet shards, maps each row to a
+SourceRecord, and delegates materialization to the Wikimedia fetcher.
+
+Each shard stores its columns as one chunk, thus touching one row of
+a shard costs the full column chunks for that shard. max_scan_shards
+limits the scan for U1: the adapter ranks the shard files by content
+hash of the file name - deterministic and salt-free - and enumerates
+only the first max_scan_shards of that ranking. The subset is part of
+the corpus config hash, thus a different subset is a different lineage.
+
+The pyarrow and huggingface_hub imports occur in method bodies, thus
+the offline test suite can import this module without them.
 """
 
 from collections.abc import Iterator, Mapping, Sequence
@@ -42,6 +50,20 @@ class HuggingFaceCorpusConfig(NamedTuple):
     columns: HuggingFaceColumns
     license_note: str
     fetch: WikimediaFetchConfig
+    max_scan_shards: int | None = None  # None enumerates all shards
+
+
+def select_shards(shard_paths: Sequence[str], max_scan_shards: int | None) -> tuple[str, ...]:
+    """The deterministic shard subset for the scan.
+
+    Shards rank by the SHA-256 of their path, ties by the path itself.
+    The output keeps that ranking as the enumeration sequence. With
+    None, all shards are in, in hash ranking.
+    """
+    ranked = sorted(shard_paths, key=lambda p: (sha256_hex(p), p))
+    if max_scan_shards is None:
+        return tuple(ranked)
+    return tuple(ranked[:max_scan_shards])
 
 
 def _claimed_dimension(row: Mapping[str, Any], column: str | None) -> int | None:
@@ -148,6 +170,7 @@ class HuggingFaceCorpus:
                 "attribution": list(columns.attribution),
             },
             "license_note": self._config.license_note,
+            "max_scan_shards": self._config.max_scan_shards,
             "fetch": {
                 "thumbnail_width": fetch.thumbnail_width,
                 "user_agent": fetch.user_agent,
@@ -165,26 +188,37 @@ class HuggingFaceCorpus:
         return self._meter.total
 
     def iter_records(self) -> Iterator[SourceRecord]:
-        """Enumerate the corpus as SourceRecord values.
+        """Enumerate the selected shard subset as SourceRecord values.
 
-        The streaming read touches only the configured columns, thus
-        shipped image bytes do not move during the metadata scan (U1).
+        The read touches only the configured columns through pyarrow
+        ranged reads, thus shipped image bytes do not move during the
+        metadata scan, and max_scan_shards limits the scan cost (U1).
         """
-        import datasets
+        import pyarrow.parquet as pq
+        from huggingface_hub import HfFileSystem
 
         identity = self.identity
-        dataset = datasets.load_dataset(
-            identity.repo_id,
-            name=identity.config_name,
-            split=identity.split,
-            revision=identity.revision,
-            streaming=True,
-            columns=self._needed_columns(),
-        )
-        for row in dataset:
-            yield row_to_source_record(
-                row, self._config.columns, self._config.license_note
+        if identity.config_name is not None:
+            raise RuntimeError(
+                "shard enumeration supports datasets without a config name only"
             )
+        fs = HfFileSystem()
+        pattern = (
+            f"datasets/{identity.repo_id}@{identity.revision}"
+            f"/data/{identity.split}-*.parquet"
+        )
+        shard_paths = sorted(str(p) for p in fs.glob(pattern))
+        if not shard_paths:
+            raise RuntimeError(f"no parquet shards match {pattern!r}")
+        columns = self._needed_columns()
+        for path in select_shards(shard_paths, self._config.max_scan_shards):
+            with fs.open(path, "rb") as handle:
+                shard = pq.ParquetFile(handle)
+                for batch in shard.iter_batches(columns=columns, batch_size=2048):
+                    for row in batch.to_pylist():
+                        yield row_to_source_record(
+                            row, self._config.columns, self._config.license_note
+                        )
 
     def materialize_many(
         self, records: Sequence[SourceRecord]

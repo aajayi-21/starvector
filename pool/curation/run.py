@@ -146,6 +146,7 @@ def wire_corpus(config: CurationConfig) -> SourceCorpus:
                     attribution=corpus.columns.attribution,
                 ),
                 license_note=corpus.license_note,
+                max_scan_shards=corpus.max_scan_shards,
                 fetch=WikimediaFetchConfig(
                     thumbnail_width=m.thumbnail_width,
                     user_agent=m.user_agent,

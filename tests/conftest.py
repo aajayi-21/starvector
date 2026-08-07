@@ -60,6 +60,7 @@ def base_config_dict(**overrides) -> dict:
                 "attribution": ["source_key"],
             },
             "license_note": "test",
+            "max_scan_shards": None,
             "materialization": {
                 "mode": "fake",
                 "thumbnail_width": 1280,

@@ -58,6 +58,7 @@ class CorpusSection:
     split: str
     columns: ColumnsSection
     license_note: str
+    max_scan_shards: int | None
     materialization: MaterializationSection
 
 
@@ -303,6 +304,7 @@ def _parse_corpus(node: _Node) -> CorpusSection:
         split=node.str_("split"),
         columns=_parse_columns(node.child("columns")),
         license_note=node.str_("license_note"),
+        max_scan_shards=node.opt_int("max_scan_shards", minimum=1),
         materialization=_parse_materialization(node.child("materialization")),
     )
     node.finish()
@@ -503,6 +505,7 @@ def config_to_json_value(config: CurationConfig) -> dict[str, JsonValue]:
                 "attribution": list(corpus.columns.attribution),
             },
             "license_note": corpus.license_note,
+            "max_scan_shards": corpus.max_scan_shards,
             "materialization": {
                 "mode": corpus.materialization.mode,
                 "thumbnail_width": corpus.materialization.thumbnail_width,
