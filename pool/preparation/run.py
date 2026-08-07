@@ -614,7 +614,10 @@ def run_p05_linedraw(
             "antialias": config.linedraw.antialias,
         },
         provider_hashes={"line_drawer": drawer_hash},
-        counters={"drawn": len(missing), "cached": len(ids) - len(missing)},
+        # No drawn-against-cached split here: those counts change with
+        # local cache warmth, and meta.json must stay deterministic
+        # across a cold run and a resume (spec section 15, invariant 9).
+        counters={},
         array_shapes={},
         provider_posts=usage.posts,
         provider_cache_hits=usage.cache_hits,
@@ -691,7 +694,8 @@ def run_p06_outline(
             "crop_grid": config.outline.crop_grid,
         },
         provider_hashes={"image_encoder": encoder_hash, "line_drawer": drawer_hash},
-        counters={"encoded": len(missing), "cached": len(ids) - len(missing)},
+        # No encoded-against-cached split - see the p05 counter note.
+        counters={},
         array_shapes={"outline_vectors": stacked.shape, "outline_space_mean": mean.shape},
         provider_posts=usage.posts,
         provider_cache_hits=usage.cache_hits,
