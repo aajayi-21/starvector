@@ -41,6 +41,18 @@ def test_normalization_is_idempotent(raw: str, expected: str) -> None:
     assert normalize_element(normalize_element(raw)) == normalize_element(raw)
 
 
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("houses", "hous"), ("horses", "hors"), ("nurses", "nurs")],
+)
+def test_sibilant_stem_words_are_single_pass(raw: str, expected: str) -> None:
+    # The d7-v1 -es rule fires on these stems, and a second run
+    # decreases the output again. The pipeline and the atom path each
+    # normalize one time - the docstring pins that contract.
+    assert normalize_element(raw) == expected
+    assert normalize_element(expected) != expected
+
+
 def test_nfc_composition() -> None:
     decomposed = "café"  # 'e' plus a combining acute accent
     composed = unicodedata.normalize("NFC", decomposed)

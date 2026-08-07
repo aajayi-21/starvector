@@ -44,8 +44,12 @@ def normalize_element(text: str) -> str:
     whitespace run becomes one space and the ends are stripped, one
     leading "a", "an", or "the" is removed only when a word follows
     it, and the last word goes through the d7-v1 table. The output
-    can be empty when the input holds no word. The function is
-    idempotent: a normalized string normalizes to itself.
+    can be empty when the input holds no word. Normalization runs one
+    time on each side - the pipeline applies it one time in p02, and
+    the atom path must also apply it one time to raw text. A second
+    run can decrease some sibilant-stem words again ("houses" gives
+    "hous", and one more run gives "hou"), thus a stored normalized
+    string must not go through this function again.
     """
     collapsed = " ".join(unicodedata.normalize("NFC", text).lower().split())
     if not collapsed:
