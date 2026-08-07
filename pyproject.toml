@@ -1,0 +1,7 @@
+[project]
+name = "starvector"
+version = "0.1.0"
+description = "Scoring engine for a daily remote-viewing game"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []

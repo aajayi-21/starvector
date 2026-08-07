@@ -81,6 +81,8 @@ route, no response-size or timing correlation with the target.
 
 ## 3. Code style
 
+The source code should be centered around using Python
+
 ### Functional core, imperative shell
 
 The scoring logic is a pipeline of pure functions over immutable data. All I/O —
