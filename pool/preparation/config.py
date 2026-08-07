@@ -30,6 +30,7 @@ CONFIG_VERSION = 1
 NORMALIZE_RULES: tuple[str, ...] = ("d7-v1",)
 BACKGROUNDS: tuple[str, ...] = ("white",)
 CROP_GRIDS: tuple[str, ...] = ("center-corners",)
+DEVICES: tuple[str, ...] = ("auto", "cuda", "xpu", "cpu")
 
 
 class ConfigError(ValueError):
@@ -111,6 +112,19 @@ class ProvidersSection:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeSection:
+    """Machine-local execution values. Not part of the config hash.
+
+    The device selects where the local providers run. It changes no
+    artifact identity: the same config on a CUDA machine and an XPU
+    machine addresses the same tree, and the determinism scope stays
+    one machine and environment (spec section 14).
+    """
+
+    device: str
+
+
+@dataclass(frozen=True, slots=True)
 class ReleaseSection:
     tag: str
     dev_only: bool
@@ -125,6 +139,7 @@ class PreparationConfig:
     outline: OutlineSection
     neardup: NeardupSection
     providers: ProvidersSection
+    runtime: RuntimeSection
     release: ReleaseSection
 
 
@@ -340,6 +355,10 @@ def parse_preparation_config(raw: object, source: str = "config") -> Preparation
 
     providers = _parse_providers(root.child("providers"))
 
+    runtime_node = root.child("runtime")
+    runtime = RuntimeSection(device=runtime_node.choice("device", DEVICES))
+    runtime_node.finish()
+
     release_node = root.child("release")
     release = ReleaseSection(tag=release_node.str_("tag"), dev_only=release_node.bool_("dev_only"))
     release_node.finish()
@@ -354,6 +373,7 @@ def parse_preparation_config(raw: object, source: str = "config") -> Preparation
         outline=outline,
         neardup=neardup,
         providers=providers,
+        runtime=runtime,
         release=release,
     )
     root.finish()
@@ -426,6 +446,7 @@ def config_to_json_value(config: PreparationConfig) -> dict[str, JsonValue]:
             "line_drawer": _slot_to_json(providers.line_drawer),
             "element_boxes": _slot_to_json(providers.element_boxes),
         },
+        "runtime": {"device": config.runtime.device},
         "release": {"tag": config.release.tag, "dev_only": config.release.dev_only},
     }
 
@@ -436,12 +457,16 @@ def preparation_config_hash(
     """The hash that keys the pool artifact tree (spec section 6).
 
     The document contains the full config plus the config_hash of each
-    wired provider slot, so a provider code change moves the tree.
+    wired provider slot, so a provider code change moves the tree. The
+    runtime section is removed first: the device is machine-local and
+    must not fork the artifact lineage (spec section 9).
     """
     if set(provider_config_hashes) != set(SLOT_NAMES):
         raise ValueError(f"provider_config_hashes must have keys {list(SLOT_NAMES)}")
+    config_document = config_to_json_value(config)
+    del config_document["runtime"]
     document: dict[str, JsonValue] = {
-        "config": config_to_json_value(config),
+        "config": config_document,
         "provider_config_hashes": {k: provider_config_hashes[k] for k in SLOT_NAMES},
     }
     return sha256_hex(canonical_json(document))

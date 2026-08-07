@@ -267,19 +267,61 @@ def _wire_slot(slot_name: str, config: PreparationConfig, data_root: Path):
 
             return OpenRouterElementBoxDetector(_box_slot_config(slot, config), client, cache_root)
     if slot.provider == "local":
+        device = resolve_device(config.runtime.device)
         if slot_name == "line_drawer":
             from providers.local.lineart import LocalLineDrawer
 
-            return LocalLineDrawer(_lineart_config(config))
+            return LocalLineDrawer(_lineart_config(config), device=device)
         if slot_name == "text_encoder":
             from providers.local.siglip import SiglipTextEncoder
 
-            return SiglipTextEncoder(_siglip_config(slot_name, slot))
+            return SiglipTextEncoder(_siglip_config(slot_name, slot), device=device)
         if slot_name == "image_encoder":
             from providers.local.siglip import SiglipImageEncoder
 
-            return SiglipImageEncoder(_siglip_config(slot_name, slot))
+            return SiglipImageEncoder(_siglip_config(slot_name, slot), device=device)
     raise ValueError(f"unknown provider for slot {slot_name}: {slot.provider}")
+
+
+def resolve_device(requested: str) -> str:
+    """Turn the runtime.device config value into a torch device string.
+
+    "cuda" and "xpu" are checked against the torch build and the
+    machine, and an unavailable device raises - no silent fallback
+    (R14). "cpu" always works. "auto" selects the first available of
+    cuda, xpu, cpu - a documented selection rule applied at wiring
+    time, not a fallback. The device is machine-local: it is not part
+    of a config hash, and the determinism scope stays one machine
+    and environment (spec section 14). The torch import happens here,
+    thus config validation and fake runs stay torch-free.
+    """
+    import torch
+
+    if requested == "cpu":
+        return "cpu"
+    if requested == "cuda":
+        if not torch.cuda.is_available():
+            raise ValueError(
+                "runtime.device is cuda, but torch.cuda.is_available() is false "
+                "on this machine - install the local-cuda group on a CUDA machine, "
+                "or set runtime.device to xpu, cpu, or auto"
+            )
+        return "cuda"
+    if requested == "xpu":
+        if not torch.xpu.is_available():
+            raise ValueError(
+                "runtime.device is xpu, but torch.xpu.is_available() is false "
+                "on this machine - install the local-xpu group on an Intel GPU "
+                "machine, or set runtime.device to cuda, cpu, or auto"
+            )
+        return "xpu"
+    if requested == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.xpu.is_available():
+            return "xpu"
+        return "cpu"
+    raise ValueError(f"unknown runtime.device value: {requested!r}")
 
 
 def _meta(

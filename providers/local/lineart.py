@@ -75,11 +75,12 @@ class LocalLineDrawer:
         """The output rows are canonical rendered line-drawing PNG bytes.
 
         Image bytes decode through PIL to RGB. The detector output
-        becomes a grayscale float array in [0, 1]. Polarity: the
-        lineart detector gives dark lines on a white background, and
-        the binarize step uses that polarity through its
-        lines_are_dark argument. A committed fixture pins the polarity
-        at the first use of the released weights.
+        becomes a grayscale float array in [0, 1]. Polarity, measured
+        live 2026-08-07 with controlnet_aux 0.0.10: the lineart
+        preprocessor gives bright lines on a dark background (mean
+        grayscale 0.08 on a pool photograph), thus lines_are_dark is
+        off here. The canonical render flips to dark strokes on white
+        (D5).
         """
         from core.lineart import binarize_mask, prune_short_segments, render_canonical
 
@@ -92,7 +93,7 @@ class LocalLineDrawer:
                 detect_resolution=self._config.detect_resolution,
             )
             gray = np.asarray(detected.convert("L"), dtype=np.float32) / 255.0  # (H, W)
-            mask = binarize_mask(gray, self._config.binarize_threshold, lines_are_dark=True)
+            mask = binarize_mask(gray, self._config.binarize_threshold, lines_are_dark=False)
             mask = prune_short_segments(mask, self._config.min_segment_px)
             drawings.append(
                 render_canonical(mask, self._config.canvas_size, self._config.line_width)

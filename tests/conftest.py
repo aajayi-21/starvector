@@ -402,6 +402,7 @@ def prep_config_dict(record_path: Path | str, **overrides) -> dict:
                 "instruction_template": None, "dimension": None,
             },
         },
+        "runtime": {"device": "cpu"},
         "release": {"tag": "dev-test-prep", "dev_only": True},
     }
     for dotted, value in overrides.items():

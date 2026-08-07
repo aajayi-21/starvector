@@ -297,8 +297,10 @@ slots, and the line-drawing model behind `LineDrawer` — the one slot
 with no remote implementation (decisions D3, D4). Rules from
 `CLAUDE.md` §6 apply: device placement, dtype, and batching are
 provider-internal, with deterministic inference parameters. The torch
-stack lives in its own dependency group, thus the default environment
-and the test suite stay free of it. The implementation must make sure
+stack lives in its own dependency groups — `local-cuda` for NVIDIA
+machines, `local-xpu` for Intel GPUs through the PyTorch XPU wheels —
+thus the default environment and the test suite stay free of it. The
+`runtime.device` config value selects the device at wiring time. The implementation must make sure
 that wheels for the pinned Python version are available before install.
 The test suite must not import the local stack.
 
@@ -324,6 +326,11 @@ load (R14). Sections:
 - `providers`: the OpenRouter client section (P1a §9 shape), then one
   section for each of the five slots — provider selection, model, and
   instruction template where applicable.
+- `runtime`: machine-local execution values — `device`, one of `auto`,
+  `cuda`, `xpu`, `cpu`. This is the one section that is not part of
+  `preparation_config_hash`: the device is machine-local, and a device
+  change must not fork the artifact lineage. The determinism scope of
+  §14 stays one machine and environment.
 - `release`: `tag`, `dev_only`.
 
 The loaded object is passed as an argument. No code reads global config.

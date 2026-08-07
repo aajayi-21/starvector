@@ -46,8 +46,16 @@ does not touch a slot reuses that slot's responses at zero cost (U1).
   not 3072, correct this value — a one-line edit and a new lineage.
 - `providers.line_drawer` — `local` is the one implementation with a
   model behind it. No remote line-drawing capability exists. The torch
-  stack installs with `uv sync --group local`. The offline test suite
-  runs without it.
+  stack installs with `uv sync --group local-cuda` (NVIDIA) or
+  `uv sync --group local-xpu` (Intel GPUs, through the PyTorch XPU
+  wheels). The offline test suite runs without it.
+- `runtime.device` — where the local providers run: `auto`, `cuda`,
+  `xpu`, or `cpu`. `auto` selects the first available of cuda, xpu,
+  cpu at wiring time. An explicit device that is not available raises.
+  This is the one section that is not part of the preparation config
+  hash — the device is machine-local, and a device change must not
+  fork the artifact lineage. Numbers can be different across devices,
+  thus keep one lineage on one machine (spec section 14).
 - `release.tag` — must start with `dev-` when `dev_only` is `true`,
   and only then. A preparation of a development pool is
   development-only (R15).

@@ -1,11 +1,10 @@
 version = 1
 revision = 3
 requires-python = ">=3.14"
-resolution-markers = [
-    "sys_platform == 'win32'",
-    "sys_platform == 'emscripten'",
-    "sys_platform != 'emscripten' and sys_platform != 'win32'",
-]
+conflicts = [[
+    { package = "starvector", group = "local-cuda" },
+    { package = "starvector", group = "local-xpu" },
+]]
 
 [[package]]
 name = "annotated-doc"
@@ -42,7 +41,7 @@ name = "click"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/d4/81420972a676e8ffea40450d8c8c92943e7218a78fe9b64359836cc9876b/click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6", size = 338000, upload-time = "2026-06-24T17:45:15.148Z" }
 wheels = [
@@ -73,8 +72,10 @@ dependencies = [
     { name = "scikit-image" },
     { name = "scipy" },
     { name = "timm" },
-    { name = "torch" },
-    { name = "torchvision" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "torch", version = "2.13.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "torchvision", version = "0.28.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "torchvision", version = "0.28.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "extra == 'group-10-starvector-local-xpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/14/ad/2eb8cd9a8e17e35b9e5d39ad29afdde8fe810bda85e6e59117050519955d/controlnet_aux-0.0.10.tar.gz", hash = "sha256:31dc265a54448bdcee033a130b47423c80587fa35ccac752113af1b4d48f5183", size = 215016, upload-time = "2025-05-08T10:38:30.845Z" }
 wheels = [
@@ -86,13 +87,15 @@ name = "cuda-bindings"
 version = "13.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder" },
+    { name = "cuda-pathfinder", marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b1/81/bff68ce829999c1e4209c761bbf903b1c06ec570416ddb25020864ad5907/cuda_bindings-13.3.1-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1ab2f74ed65bfef4163ba07a8db16f1085e0729291db12a2423aff84ee8278b8", size = 6013639, upload-time = "2026-05-29T23:12:03.509Z" },
     { url = "https://files.pythonhosted.org/packages/d4/e0/c8a1f0c8f9ffdea4f5fe6dbab89b326cef4d85caf489dad39e209da89416/cuda_bindings-13.3.1-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:efd4c814d311ec08c981f6dded1dbe7d4b371067ee4f6c14cccec4bde9590f80", size = 6534419, upload-time = "2026-05-29T23:12:05.633Z" },
+    { url = "https://files.pythonhosted.org/packages/48/45/2734be44dbc80ac082ec23a86b41c8294992dcb90033645ed1bc50aafe4c/cuda_bindings-13.3.1-cp314-cp314-win_amd64.whl", hash = "sha256:8de12ef60bf40756852cb62bbb40460609269f6ece522903d1cc93d73a3ececb", size = 5961055, upload-time = "2026-05-29T23:12:07.971Z" },
     { url = "https://files.pythonhosted.org/packages/52/b8/83b1f563925b290f2d11a01a77a84013ba56052fe3653a5bef3ccfbb43d6/cuda_bindings-13.3.1-cp314-cp314t-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c3c772dfff49681541d59630c90f858e173ac926b9c593a2b7123f2a1043cc76", size = 5809771, upload-time = "2026-05-29T23:12:10.422Z" },
     { url = "https://files.pythonhosted.org/packages/12/20/e79b4bfe98f075195afb6343d41c498f9dbd2d161d7021d4d28bceb83581/cuda_bindings-13.3.1-cp314-cp314t-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:36febb7c1079d68a981dbbd8d5a67235b399802b82075c9388624719607e52b9", size = 6358584, upload-time = "2026-05-29T23:12:12.767Z" },
+    { url = "https://files.pythonhosted.org/packages/27/2a/b59bcac016ab9985d6b48a5d05b0d698461a159ca03ee11c4abd54da2ac4/cuda_bindings-13.3.1-cp314-cp314t-win_amd64.whl", hash = "sha256:61120b5e4f4a63f67efd7e7396914cb9ef871bb1f0021e990fb70277be240a4d", size = 6740329, upload-time = "2026-05-29T23:12:15.153Z" },
 ]
 
 [[package]]
@@ -113,43 +116,57 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
-    { name = "nvidia-cuda-nvrtc", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
-    { name = "nvidia-nvjitlink", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 cufile = [
-    { name = "nvidia-cufile", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cufile", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 curand = [
-    { name = "nvidia-curand", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-curand", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 cusolver = [
-    { name = "nvidia-cublas", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
-    { name = "nvidia-cusolver", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
-    { name = "nvidia-cusparse", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
-    { name = "nvidia-nvjitlink", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
-    { name = "nvidia-nvjitlink", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
+    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform == 'win32' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+]
+
+[[package]]
+name = "dpcpp-cpp-rt"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "intel-opencl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-openmp", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-sycl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/54/14b8975684f9a55dd8e21264e937a13da5ca79ddc3f7e891ce8d9b565b2b/dpcpp_cpp_rt-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:d9ac968b79d950fe2cfabc0bc80aff50bac77a4d5ce7b1b3be00aece89902f3b", size = 28713, upload-time = "2026-04-24T14:10:07.997Z" },
+    { url = "https://files.pythonhosted.org/packages/89/d6/e052d580921195fdaa58ffa6451e44d4593a8d99802f798d750db74d1194/dpcpp_cpp_rt-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:75ed2248763d19f3ffe6ea049247d49ba12f7687782af07ca8c9f21316e9d003", size = 58377, upload-time = "2026-04-24T14:11:59.128Z" },
 ]
 
 [[package]]
@@ -248,7 +265,7 @@ dependencies = [
     { name = "click" },
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
+    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
     { name = "httpx" },
     { name = "packaging" },
     { name = "pyyaml" },
@@ -283,6 +300,15 @@ wheels = [
 ]
 
 [[package]]
+name = "impi-rt"
+version = "2021.18.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9c/92/ccef0ec3b9bd9f3cf586abaf863bcc6b7b7c0dd4868fe5b41e6155f03608/impi_rt-2021.18.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:7bd0328b89872f9395523c3732eb97b403b2e04a4210c85016eac87301398fbc", size = 126579109, upload-time = "2026-04-24T14:15:23.209Z" },
+    { url = "https://files.pythonhosted.org/packages/39/06/6527fb776213f3fd1432b84f35421e3c848c1b4dc40ec9f38aafeabce7fd/impi_rt-2021.18.0-py2.py3-none-win_amd64.whl", hash = "sha256:344eb2c1ec364e6f060ca97481e51d913699e75934f52f0ceacfa87122047bb4", size = 21846717, upload-time = "2026-04-24T14:14:26.77Z" },
+]
+
+[[package]]
 name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -301,6 +327,84 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
+name = "intel-cmplr-lib-rt"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/61/50d3fb0deb97f5d57803c6bd9dcd1b6ac638e761ae16bea9d71c5187c3a3/intel_cmplr_lib_rt-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:a8ff1f8ec28a50dddd02e47c6d47eb6b758842103571956f419a53ebb6513d2d", size = 45377143, upload-time = "2026-04-24T14:10:21.194Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/06/7460efcbe6a660b50a5a73b75d93ec3b2338676dff54baa6cc8824437c86/intel_cmplr_lib_rt-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:1c04ca93e3d32bb08b01961abfaef9efd47fd7a2a5b4bce2e1654d79b612e61c", size = 12985799, upload-time = "2026-04-24T14:12:01.382Z" },
+]
+
+[[package]]
+name = "intel-cmplr-lib-ur"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "umf", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/6d/b981353d0ba8dc6d54510aba97f67ddce3872a693f41841bb77a120f512c/intel_cmplr_lib_ur-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:5fb75293e7f1f8377cda3aac44f4e7c0c1dd38e281fecefa76ca1459382763a4", size = 31565700, upload-time = "2026-04-24T14:10:16.369Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/0f/427cee2d63934966338cc58b3782819c196b90407d60c58ea708be78eb50/intel_cmplr_lib_ur-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:db2639ff3b1467edd5f5872a6005564ff4d9685b4fa68f5a4b42230a0d8a1562", size = 1305315, upload-time = "2026-04-24T14:12:08.402Z" },
+]
+
+[[package]]
+name = "intel-cmplr-lic-rt"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/92/e31cb0a755f498517eba8adf623304737356c16f868fe7866c3d14ca0cbe/intel_cmplr_lic_rt-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:999c2e3497d08987d3e9cc406deb207ac650a4432c88736a89495b732f6e9e0c", size = 18911, upload-time = "2026-04-24T14:10:06.146Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/3a/f3801a538bde3687c361bd8e742b7553d87e807e0bfc3154205bbed41492/intel_cmplr_lic_rt-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:f6d87da6eec866afe3849a5d3315e18fafe13a091742b191434c7de59f442952", size = 49549, upload-time = "2026-04-24T14:12:06.445Z" },
+]
+
+[[package]]
+name = "intel-opencl-rt"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "intel-cmplr-lic-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "tbb", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/74/abd666b4794af5852ca9b6467a34d013d570f6956bb9f723e245f7de20f8/intel_opencl_rt-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:cd7afb2940c24ede9dadd1dfd772352cf47cbb4852a7d586aee73e19f8d70184", size = 209194229, upload-time = "2026-04-24T14:10:41.255Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/c8/eeb09f6f59aad3d71250b18ca3737ffca302f1223e13fc90757382c0e650/intel_opencl_rt-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:f9506b6454a49fd197605de8835a1878035ba002fa80a3d932b752722f1d97e3", size = 114357352, upload-time = "2026-04-24T14:11:54.744Z" },
+]
+
+[[package]]
+name = "intel-openmp"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "intel-cmplr-lib-ur", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/52/ad8da758c96299c27ac1f0345979f9202a517c4f18ef6a1e9b7a781d6948/intel_openmp-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:c4605c63840d6dc0188610f9d0dcc5ae6c73c988f98c36c4bd807bcbd0de73bb", size = 57250534, upload-time = "2026-04-24T14:10:11.769Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/48/32b1c24d3f1e4f47495d29bda38002384ae03a9ab709b575dda31842c0a4/intel_openmp-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:d1f18c4e1be8426da117252a4fb8e5d72be44807b0251fcea23e2fa7b7d85981", size = 30721954, upload-time = "2026-04-24T14:11:48.06Z" },
+]
+
+[[package]]
+name = "intel-pti"
+version = "0.17.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/02/798ea3cb0189b66cef0fc95d9b36f43df740714997f5e0976e074274a270/intel_pti-0.17.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:1a3327b8683af72e60e1ea8f754160fb12ffb8a15e57941f7e3672bcc540e2fc", size = 1238406, upload-time = "2026-04-24T14:13:29.076Z" },
+    { url = "https://files.pythonhosted.org/packages/94/e5/9bac12a3c994d7117790fbe0c4899c3b4efaeaceacc480354c4694cb3ce4/intel_pti-0.17.0-py2.py3-none-win_amd64.whl", hash = "sha256:c4e9bc4612cf6cf49ee1ffc717af3cfdefab5587dab2b6b218d345f83a0fe56f", size = 668983, upload-time = "2026-04-24T14:09:44.047Z" },
+]
+
+[[package]]
+name = "intel-sycl-rt"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "intel-cmplr-lib-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-cmplr-lib-ur", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-cmplr-lic-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/7b/b70751dd0105741fdd23d064243291badf91cad9fd7375d1640893672524/intel_sycl_rt-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:5ae2bf7ec928fe127ad693dd84d8fed27209be0790e36eabffb93a371ba174aa", size = 155981266, upload-time = "2026-04-24T14:10:28.877Z" },
+    { url = "https://files.pythonhosted.org/packages/42/3b/514e3e5ca5272349951c85cb3f651be662d578af211631ac48a9645fc136/intel_sycl_rt-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:c3543518d71958d7ca6f8c3af62a2083d0ab4e0447f748f985eae6e64a3779f5", size = 68455143, upload-time = "2026-04-24T14:11:43.837Z" },
 ]
 
 [[package]]
@@ -379,6 +483,20 @@ wheels = [
 ]
 
 [[package]]
+name = "mkl"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "intel-openmp", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-license", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "tbb", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/97/06ad1072db8a3c4d1e6237badf660c4c754d2b513264996121c2b666d65d/mkl-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:4a9525ddd671b422fedfc690dd9270beb65c8cbd47044b52d2a4e3f6162c9de6", size = 224036598, upload-time = "2026-04-24T14:12:43.717Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/2f/8a77106ef648cc1f04aa27e8b6c50cd82de38d1767801ef29cd75b8026e8/mkl-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:801c9cc748be81d8269bfec2495d02be38560fc7386439c18499ab3f32b06b3e", size = 180805356, upload-time = "2026-04-24T14:08:52.681Z" },
+]
+
+[[package]]
 name = "mpmath"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -430,11 +548,12 @@ name = "nvidia-cublas"
 version = "13.1.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cuda-nvrtc" },
+    { name = "nvidia-cuda-nvrtc", marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/a1/0bd24ee8c8d03adac032fd2909426a00c88f8c57961b1277ded97f91119f/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:b7a210458267ac818974c53038fbec2e969d5c99f305ab15c72522fa9f001dd5", size = 542848918, upload-time = "2026-04-08T18:46:22.985Z" },
     { url = "https://files.pythonhosted.org/packages/3b/cd/154ca20c38269e05eff77c1464e6c1da89f50a6390b565e9d82e06bc11e1/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:37936a16db8fe4ac1f065c2139360608a543a09275cb1a1af612e08cfa065436", size = 423138758, upload-time = "2026-04-08T18:46:58.655Z" },
+    { url = "https://files.pythonhosted.org/packages/45/9e/2f562daf80eb8f7a685fb7bea4fda71f6048e4f359d6fdd1b6e70206cb2f/nvidia_cublas-13.1.1.3-py3-none-win_amd64.whl", hash = "sha256:b6cdce694e47ff6aadf0a69df1cab6628d696f5ff56e8d16af50309d855fa20f", size = 404358158, upload-time = "2026-04-08T18:47:26.987Z" },
 ]
 
 [[package]]
@@ -444,6 +563,7 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/2a/80353b103fc20ce05ef51e928daed4b6015db4aaa9162ed0997090fe2250/nvidia_cuda_cupti-13.0.85-py3-none-manylinux_2_25_aarch64.whl", hash = "sha256:796bd679890ee55fb14a94629b698b6db54bcfd833d391d5e94017dd9d7d3151", size = 10310827, upload-time = "2025-09-04T08:26:42.012Z" },
     { url = "https://files.pythonhosted.org/packages/33/6d/737d164b4837a9bbd202f5ae3078975f0525a55730fe871d8ed4e3b952b0/nvidia_cuda_cupti-13.0.85-py3-none-manylinux_2_25_x86_64.whl", hash = "sha256:4eb01c08e859bf924d222250d2e8f8b8ff6d3db4721288cf35d14252a4d933c8", size = 10715597, upload-time = "2025-09-04T08:26:51.312Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/df/b74b10025c1205695c5676373f2edd3e87a7202cc62ead0dfbc373b0f6ea/nvidia_cuda_cupti-13.0.85-py3-none-win_amd64.whl", hash = "sha256:683f58d301548deeefcb8f6fac1b8d907691b9d8b18eccab417f51e362102f00", size = 7736776, upload-time = "2025-09-04T08:38:08.38Z" },
 ]
 
 [[package]]
@@ -453,6 +573,7 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c3/68/483a78f5e8f31b08fb1bb671559968c0ca3a065ac7acabfc7cee55214fd6/nvidia_cuda_nvrtc-13.0.88-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:ad9b6d2ead2435f11cbb6868809d2adeeee302e9bb94bcf0539c7a40d80e8575", size = 90215200, upload-time = "2025-09-04T08:28:44.204Z" },
     { url = "https://files.pythonhosted.org/packages/b7/dc/6bb80850e0b7edd6588d560758f17e0550893a1feaf436807d64d2da040f/nvidia_cuda_nvrtc-13.0.88-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d27f20a0ca67a4bb34268a5e951033496c5b74870b868bacd046b1b8e0c3267b", size = 43015449, upload-time = "2025-09-04T08:28:20.239Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/af/345fedb9f4c76c84ab4fa445b36bd4048a4d9db60e6bc76b4f913ff4b852/nvidia_cuda_nvrtc-13.0.88-py3-none-win_amd64.whl", hash = "sha256:6bcd4e7f8e205cbe644f5a98f2f799bef9556fefc89dd786e79a16312ce49872", size = 76807835, upload-time = "2025-09-04T08:39:15.274Z" },
 ]
 
 [[package]]
@@ -462,6 +583,7 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/4f/17d7b9b8e285199c58ce28e31b5c5bbaa4d8271af06a89b6405258245de2/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ef9bcbe90493a2b9d810e43d249adb3d02e98dd30200d86607d8d02687c43f55", size = 2261060, upload-time = "2025-10-09T08:55:15.78Z" },
     { url = "https://files.pythonhosted.org/packages/2e/24/d1558f3b68b1d26e706813b1d10aa1d785e4698c425af8db8edc3dced472/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:7f82250d7782aa23b6cfe765ecc7db554bd3c2870c43f3d1821f1d18aebf0548", size = 2243632, upload-time = "2025-10-09T08:55:36.117Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/94/6b867483bec07da24ffa32736c79fabb94ef3a7af4d787a9d4a974868576/nvidia_cuda_runtime-13.0.96-py3-none-win_amd64.whl", hash = "sha256:f79298c8a098cec150a597c8eba58ecdab96e3bdc4b9bc4f9983635031740492", size = 2927037, upload-time = "2025-10-09T09:04:23.782Z" },
 ]
 
 [[package]]
@@ -469,11 +591,12 @@ name = "nvidia-cudnn-cu13"
 version = "9.20.0.48"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas" },
+    { name = "nvidia-cublas", marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/c5/83384d846b2fd17c44bd499b36c75a45ed4f095fbbb2252294e89cea5c5c/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:e31454ae00094b0c55319d9d15b6fa2fc50a9e1c0f5c8c80fb75258234e731e1", size = 444574296, upload-time = "2026-03-09T19:28:27.751Z" },
     { url = "https://files.pythonhosted.org/packages/6e/5e/edb9c0ae051602c3ccaffe424256463636d639e27d7f302dde9975ef9e7a/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:0c45dd8eeb50b603f07995b1b300c62ffe6a1980482b82b3bcf94a4ca9d49304", size = 366173588, upload-time = "2026-03-09T19:29:34.474Z" },
+    { url = "https://files.pythonhosted.org/packages/78/39/21507455b1bca8b5702a9e9fc6ce73735f216f558dac2c9ede58e4d456b8/nvidia_cudnn_cu13-9.20.0.48-py3-none-win_amd64.whl", hash = "sha256:af8139732b99c0118be65ea5aac97f0d46018f8c552889e49d2fb0c6261a4a24", size = 350712614, upload-time = "2026-03-09T19:31:11.398Z" },
 ]
 
 [[package]]
@@ -481,11 +604,12 @@ name = "nvidia-cufft"
 version = "12.0.0.61"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-nvjitlink", marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/ae/f417a75c0259e85c1d2f83ca4e960289a5f814ed0cea74d18c353d3e989d/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2708c852ef8cd89d1d2068bdbece0aa188813a0c934db3779b9b1faa8442e5f5", size = 214053554, upload-time = "2025-09-04T08:31:38.196Z" },
     { url = "https://files.pythonhosted.org/packages/a8/2f/7b57e29836ea8714f81e9898409196f47d772d5ddedddf1592eadb8ab743/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:6c44f692dce8fd5ffd3e3df134b6cdb9c2f72d99cf40b62c32dde45eea9ddad3", size = 214085489, upload-time = "2025-09-04T08:31:56.044Z" },
+    { url = "https://files.pythonhosted.org/packages/85/b2/f8af21a2ed1beed337a6a02c5a28aeb85441f4d578ec3d529543c775ea4b/nvidia_cufft-12.0.0.61-py3-none-win_amd64.whl", hash = "sha256:2abce5b39d2f5ae12730fb7e5db6696533e36c26e2d3e8fd1750bdd2853364eb", size = 213342123, upload-time = "2025-09-04T08:40:51.145Z" },
 ]
 
 [[package]]
@@ -504,6 +628,7 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/72/7c2ae24fb6b63a32e6ae5d241cc65263ea18d08802aaae087d9f013335a2/nvidia_curand-10.4.0.35-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:133df5a7509c3e292aaa2b477afd0194f06ce4ea24d714d616ff36439cee349a", size = 61962106, upload-time = "2025-08-04T10:21:41.128Z" },
     { url = "https://files.pythonhosted.org/packages/a5/9f/be0a41ca4a4917abf5cb9ae0daff1a6060cc5de950aec0396de9f3b52bc5/nvidia_curand-10.4.0.35-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:1aee33a5da6e1db083fe2b90082def8915f30f3248d5896bcec36a579d941bfc", size = 59544258, upload-time = "2025-08-04T10:22:03.992Z" },
+    { url = "https://files.pythonhosted.org/packages/99/27/72103153b1ffc00e09fdc40ac970235343dcd1ea8bd762e84d2d73219ffa/nvidia_curand-10.4.0.35-py3-none-win_amd64.whl", hash = "sha256:65b1710aa6961d326b411e314b374290904c5ddf41dc3f766ebc3f1d7d4ca69f", size = 55242481, upload-time = "2025-08-04T10:30:41.831Z" },
 ]
 
 [[package]]
@@ -511,13 +636,14 @@ name = "nvidia-cusolver"
 version = "12.0.4.66"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas" },
-    { name = "nvidia-cusparse" },
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-cublas", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "nvidia-cusparse", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "nvidia-nvjitlink", marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/c3/b30c9e935fc01e3da443ec0116ed1b2a009bb867f5324d3f2d7e533e776b/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:02c2457eaa9e39de20f880f4bd8820e6a1cfb9f9a34f820eb12a155aa5bc92d2", size = 223467760, upload-time = "2025-09-04T08:33:04.222Z" },
     { url = "https://files.pythonhosted.org/packages/5f/67/cba3777620cdacb99102da4042883709c41c709f4b6323c10781a9c3aa34/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:0a759da5dea5c0ea10fd307de75cdeb59e7ea4fcb8add0924859b944babf1112", size = 200941980, upload-time = "2025-09-04T08:33:22.767Z" },
+    { url = "https://files.pythonhosted.org/packages/99/ef/332a0101260ca78a1daef046bf0b06199e8ed4dac1d2aa698289c358169c/nvidia_cusolver-12.0.4.66-py3-none-win_amd64.whl", hash = "sha256:16515bd33a8e76bb54d024cfa068fa68d30e80fc34b9e1090813ea9362e0cb65", size = 193551444, upload-time = "2025-09-04T08:41:46.813Z" },
 ]
 
 [[package]]
@@ -525,11 +651,12 @@ name = "nvidia-cusparse"
 version = "12.6.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-nvjitlink", marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f8/94/5c26f33738ae35276672f12615a64bd008ed5be6d1ebcb23579285d960a9/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:80bcc4662f23f1054ee334a15c72b8940402975e0eab63178fc7e670aa59472c", size = 162155568, upload-time = "2025-09-04T08:33:42.864Z" },
     { url = "https://files.pythonhosted.org/packages/fa/18/623c77619c31d62efd55302939756966f3ecc8d724a14dab2b75f1508850/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:2b3c89c88d01ee0e477cb7f82ef60a11a4bcd57b6b87c33f789350b59759360b", size = 145942937, upload-time = "2025-09-04T08:33:58.029Z" },
+    { url = "https://files.pythonhosted.org/packages/02/b0/b043d6f3480f102f885cf87fc3ffd3edcb5e23b855025a50e2ef4d059185/nvidia_cusparse-12.6.3.3-py3-none-win_amd64.whl", hash = "sha256:cbcf42feb737bd7ec15b4c0a63e62351886bd3f975027b8815d7f720a2b5ea79", size = 143783033, upload-time = "2025-09-04T08:42:12.391Z" },
 ]
 
 [[package]]
@@ -539,6 +666,7 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/46/e1/cdc1797eadf82d3a9a575a19b33fdc871a97edbec42c00b5b5e914f4aff4/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_aarch64.whl", hash = "sha256:4dca476c50bf4780d46cd0bfbd82e2bc10a08e4fef7950917ce8d7578d22a23f", size = 221051344, upload-time = "2025-09-05T18:49:51.289Z" },
     { url = "https://files.pythonhosted.org/packages/34/7d/2661f2fb3ac4302f3a246f5fc030213ac60c1fe0bce84f9783dbd831dbb7/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl", hash = "sha256:786ce87568c303fadb5afcc7102d454cd3040d75f6f8626f5db460d1871f4dd0", size = 170148586, upload-time = "2025-09-05T18:50:50.248Z" },
+    { url = "https://files.pythonhosted.org/packages/31/83/f3647ce26916c94a6ca4ff1810623e2c405cff2dea6e78d29516b2514df9/nvidia_cusparselt_cu13-0.8.1-py3-none-win_amd64.whl", hash = "sha256:dccbd362f91a7b9024d1f55ee9f548ac065027ff15d8c8b0db889ab3a8f31215", size = 156885108, upload-time = "2025-09-05T18:51:35.958Z" },
 ]
 
 [[package]]
@@ -557,6 +685,7 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/ee/580ca6f29dcab0221db8706badca1bbbb084f1975c4d4e83329c3a7e31f0/nvidia_nvjitlink-13.3.33-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:26a6de7fb4c8fdaa7703d3dad720d6d427ddfea5c48a528fd97c11733ad830e5", size = 40742423, upload-time = "2026-05-26T16:54:51.613Z" },
     { url = "https://files.pythonhosted.org/packages/69/30/45414e35ff2eee7db3da037e5707037ccf9d2b5218ffbdb055ea4d5aa98a/nvidia_nvjitlink-13.3.33-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ce48b37dfeb3cb1eae4cf85adacb47d7a6539ea2272870c9a3628ce275c2037e", size = 39168635, upload-time = "2026-05-26T16:54:13.906Z" },
+    { url = "https://files.pythonhosted.org/packages/67/f2/ec9c05a108095828dfc58840978c627b3c313fdf2a567c6de9ffbbb46901/nvidia_nvjitlink-13.3.33-py3-none-win_amd64.whl", hash = "sha256:4297ee49639b4f2e07255a1d69b3acc7ab2d011bb892b403e91ac98368962e3b", size = 37766359, upload-time = "2026-05-26T17:11:28.96Z" },
 ]
 
 [[package]]
@@ -575,6 +704,111 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c2/f3/d86c845465a2723ad7e1e5c36dcd75ddb82898b3f53be47ebd429fb2fa5d/nvidia_nvtx-13.0.85-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:4936d1d6780fbe68db454f5e72a42ff64d1fd6397df9f363ae786930fd5c1cd4", size = 148047, upload-time = "2025-09-04T08:29:01.761Z" },
     { url = "https://files.pythonhosted.org/packages/a8/64/3708a90d1ebe202ffdeb7185f878a3c84d15c2b2c31858da2ce0583e2def/nvidia_nvtx-13.0.85-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cb7780edb6b14107373c835bf8b72e7a178bac7367e23da7acb108f973f157a6", size = 148878, upload-time = "2025-09-04T08:28:53.627Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/50/0e2220f8620a177de994211186ffc5bfa9f2ce1e1282797f8f90096f9f88/nvidia_nvtx-13.0.85-py3-none-win_amd64.whl", hash = "sha256:d66ea44254dd3c6eacc300047af6e1288d2269dd072b417e0adffbf479e18519", size = 137066, upload-time = "2025-09-04T08:39:25.649Z" },
+]
+
+[[package]]
+name = "oneccl"
+version = "2022.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "impi-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-sycl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/cb/c8918376dfba8392db992ac9cfac7f201b4ebb09178de3b7f33d98e3d745/oneccl-2022.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:31a122f0b46da841bf73ab6ccac1bd11e7d2b9d9ec7b84c8cf645d48c2095e8d", size = 80221679, upload-time = "2026-04-24T14:13:59.688Z" },
+]
+
+[[package]]
+name = "oneccl-devel"
+version = "2022.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "oneccl", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/39/152a30df6945ac4e37f72e5f7d45f03aafcbf481857796aaa38645292333/oneccl_devel-2022.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:b5117136771cda275ddc4124ec3cf7eb6fdb96dea3792d3e83b161b771ea601f", size = 25053735, upload-time = "2026-04-24T14:14:05.721Z" },
+]
+
+[[package]]
+name = "onemkl-license"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/fa/7c9af1e1fcea378257958355f7f2b80d6cc50a36ceebec0ad2fa9bd6b538/onemkl_license-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:939058a4f34859863eaa3734b678e880cd1ce5f589458feea118bf2212514341", size = 58936, upload-time = "2026-04-24T14:13:19.607Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/8e/fc57a715c626333e2ac8d2444d97ae2b1421fe33628261645668e6b9624b/onemkl_license-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:8106d1177cc473b615e88d2051b4943aeb4c1408d79c8df22ab13ed8660760bb", size = 58961, upload-time = "2026-04-24T14:09:34.005Z" },
+]
+
+[[package]]
+name = "onemkl-sycl-blas"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dpcpp-cpp-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-opencl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "mkl", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/41/d22e73b1258611e174ef8dfdb21dd34645d97f06b7483df89f824a6b661c/onemkl_sycl_blas-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:f3c369f69f3a17ac4b01c6dc31159505c8fac46a2e2f681221462578ea036109", size = 20658228, upload-time = "2026-04-24T14:13:05.577Z" },
+    { url = "https://files.pythonhosted.org/packages/26/c6/2fb229c0eae2bc0944ab0768fb8639bf3ce744ad138e825ba28b7e08e21a/onemkl_sycl_blas-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:10bac6be0841cc720fff9ffccb36117d0cc71527332cf8103809828608fb1bf0", size = 15924232, upload-time = "2026-04-24T14:09:19.798Z" },
+]
+
+[[package]]
+name = "onemkl-sycl-dft"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dpcpp-cpp-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-opencl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "mkl", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/c1/06fc9c690ed9122e9e616d3088f06bf33367ed1a45a9485a30a4682b5004/onemkl_sycl_dft-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:e6eabc72f8311d8faad9c841cd6e966680134dd94308d58f33e9cc06900d733d", size = 6691190, upload-time = "2026-04-24T14:13:26.074Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/77/08fabdccb115fd6e64fc286821c81f2906e2b4ac597db8b5b88907294f18/onemkl_sycl_dft-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:ac3b6d5f077c0eba47a63b84ed9cd8568e53f73f6db81d265f0c149a48dcfd43", size = 5966866, upload-time = "2026-04-24T14:08:40.195Z" },
+]
+
+[[package]]
+name = "onemkl-sycl-lapack"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dpcpp-cpp-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-opencl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "mkl", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-sycl-blas", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/41/5f471e4c2333dfa4641aa94bc432a369268b6223c333b5a38d1f97505ce6/onemkl_sycl_lapack-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:f128bc8142082a9de735a6d0b8e2de3d8ca145db57616e2dd8d2a26f5df1714b", size = 8396267, upload-time = "2026-04-24T14:13:01.389Z" },
+    { url = "https://files.pythonhosted.org/packages/10/0f/836ef626b6f36466d0b02a14e9711187408aafe9daed6503800c1c7f4a18/onemkl_sycl_lapack-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:823cbe6c27ffc9a17838a57249e5df4f7c009d94b9bd286e6af1df7ca7b82721", size = 6436766, upload-time = "2026-04-24T14:08:57.792Z" },
+]
+
+[[package]]
+name = "onemkl-sycl-rng"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dpcpp-cpp-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-opencl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "mkl", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/8b/3dece5b2f41b9e30b0ec77f336099493eefc43bd0c811ac9f6550a86c369/onemkl_sycl_rng-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:b9fbd260ac3dcf52d50ab5abb89760d871ba1fab7f613caf68e265d7e3221841", size = 23552806, upload-time = "2026-04-24T14:12:53.548Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/60/c9bb94ffe9db8ef7af734202fe201c4b7122fdc0dbd79a2cd322585dde24/onemkl_sycl_rng-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:dda3ebc00953ad79f3b8e5921fca9d2473385d6cc027bf3f29084ee24bdb4c7f", size = 15554497, upload-time = "2026-04-24T14:09:23.49Z" },
+]
+
+[[package]]
+name = "onemkl-sycl-sparse"
+version = "2026.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dpcpp-cpp-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-opencl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "mkl", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-sycl-blas", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/aa/bf9bf4b05ee52ecbda5d8260ac3e579b61a360a81750d2c5aba57a8996e5/onemkl_sycl_sparse-2026.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:ee1e38be9c872d75bb61181b7791e67dd29b010dc20a2cd59716e1e0b4d45328", size = 21623255, upload-time = "2026-04-24T14:13:22.823Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/3b/bb3f020f7107cfeb7c7a1d3ec20aaa63c0ccb0eddcec1e36e04650d4bcb8/onemkl_sycl_sparse-2026.0.0-py2.py3-none-win_amd64.whl", hash = "sha256:e8f427ab056b98bcde4247ab545e6a75ef4db3b3081923dd2a1e4767cb4b17a3", size = 16429548, upload-time = "2026-04-24T14:08:34.816Z" },
 ]
 
 [[package]]
@@ -687,6 +921,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyelftools"
+version = "0.33"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/11/767522582afab1b884d277de0e6e011640cb9d7292a38694b4b1a1df1ae8/pyelftools-0.33.tar.gz", hash = "sha256:660d82dcbeb8e83d1702bd97f223f761625da06111c0cc988eac6b8ab0c1b61f", size = 15068655, upload-time = "2026-05-29T12:56:22.553Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/2a/f9697576603dae937727827505a6126a066affb227034e77e6f9068910da/pyelftools-0.33-py3-none-any.whl", hash = "sha256:f215ad5f47d3f1373a21496a6c9e0707c622840d0622f23ff7ce08678b020036", size = 201178, upload-time = "2026-05-29T12:56:20.587Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -700,7 +943,7 @@ name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -735,6 +978,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
+]
+
+[[package]]
+name = "pyzes"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0a/cb/6e68d41be3feea760b0a4d0c6e83492ac9088f1ea59050cdfc0a9803d4b3/pyzes-0.1.1.tar.gz", hash = "sha256:de8453ba0e6f8e4ac166d166cd1014393e44c42c8818d8542c68ae7978150436", size = 26263, upload-time = "2026-05-08T03:33:06.81Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/18/2ad3193ae512d91541f8cf7c0eec076904e54a18ac0db141d5a243078602/pyzes-0.1.1-py3-none-any.whl", hash = "sha256:4aa9067d7f211b39e55b4f36be2cbb0ed17645caafa8529629f865455fe3b8b3", size = 25292, upload-time = "2026-05-08T03:33:05.826Z" },
 ]
 
 [[package]]
@@ -913,10 +1165,18 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
-local = [
+local-cuda = [
     { name = "controlnet-aux" },
-    { name = "torch" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "torchvision", version = "0.28.0", source = { registry = "https://pypi.org/simple" } },
     { name = "transformers" },
+]
+local-xpu = [
+    { name = "controlnet-aux" },
+    { name = "torch", version = "2.13.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" } },
+    { name = "torchvision", version = "0.28.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" } },
+    { name = "transformers" },
+    { name = "triton-xpu" },
 ]
 
 [package.metadata]
@@ -930,10 +1190,18 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]
-local = [
+local-cuda = [
     { name = "controlnet-aux", specifier = "==0.0.10" },
     { name = "torch", specifier = ">=2.13" },
+    { name = "torchvision", specifier = ">=0.28" },
     { name = "transformers", specifier = ">=5" },
+]
+local-xpu = [
+    { name = "controlnet-aux", specifier = "==0.0.10" },
+    { name = "torch", specifier = ">=2.13", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "starvector", group = "local-xpu" } },
+    { name = "torchvision", specifier = ">=0.28", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "starvector", group = "local-xpu" } },
+    { name = "transformers", specifier = ">=5" },
+    { name = "triton-xpu", specifier = ">=3.7", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "starvector", group = "local-xpu" } },
 ]
 
 [[package]]
@@ -946,6 +1214,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", hash = "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5", size = 6299353, upload-time = "2025-04-27T18:04:59.103Z" },
+]
+
+[[package]]
+name = "tbb"
+version = "2023.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tcmlib", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/d2/9a994ce9b18182b04783282eba77e236d23919acf42a886d72fe14fc78a4/tbb-2023.0.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:482f57656386ea14b96e8da36b3fcc4cd880834ef0f328ba09e8e2e3c639285e", size = 6785156, upload-time = "2026-04-24T14:10:01.59Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/f8/dd5e1d9955c91ebd301d855232163750489b20ea5a8c4e40954269493dcc/tbb-2023.0.0-py3-none-win_amd64.whl", hash = "sha256:82d1c2b4b6881d5b4f2e67288ca1c864f54e3cd82c7e428aaf912aa30ab21d01", size = 427718, upload-time = "2026-04-24T14:10:47.885Z" },
+]
+
+[[package]]
+name = "tcmlib"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/24/aa409bb20703acc70cf4d3bc620a55c789639c2995b2667fb44ae7236ec9/tcmlib-1.5.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:9d7c01cff35aae9bf5390b620680ebdf10a7d211c22d6488a27a029502e7d0aa", size = 2812669, upload-time = "2026-04-24T14:14:18.557Z" },
+    { url = "https://files.pythonhosted.org/packages/67/6d/9095c93326d0f8a5469ab22480d02795f24c08f1e7f383c73316ff106347/tcmlib-1.5.0-py2.py3-none-win_amd64.whl", hash = "sha256:f7b62787214083d490b39d7650f1e477eeacc875e7f86799feb9aa1fd34460d4", size = 366719, upload-time = "2026-04-24T14:09:45.977Z" },
 ]
 
 [[package]]
@@ -968,8 +1257,10 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "pyyaml" },
     { name = "safetensors" },
-    { name = "torch" },
-    { name = "torchvision" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "torch", version = "2.13.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "torchvision", version = "0.28.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "torchvision", version = "0.28.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "extra == 'group-10-starvector-local-xpu'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/35/03/e41389ac641747bfec48d016fde8be1eade1901e6f2c1aedcb0c8cb4b5d9/timm-1.0.28.tar.gz", hash = "sha256:3789d313fdd5541a327b60180d70dbb4bdec73db8ff0655e413db3c3d134a9a4", size = 2451413, upload-time = "2026-07-11T17:24:32.615Z" }
 wheels = [
@@ -1007,20 +1298,20 @@ name = "torch"
 version = "2.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-bindings", marker = "python_full_version < '3.15' and sys_platform == 'linux'" },
-    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "sys_platform == 'linux'" },
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx" },
-    { name = "nvidia-cudnn-cu13", marker = "sys_platform == 'linux'" },
-    { name = "nvidia-cusparselt-cu13", marker = "sys_platform == 'linux'" },
-    { name = "nvidia-nccl-cu13", marker = "sys_platform == 'linux'" },
-    { name = "nvidia-nvshmem-cu13", marker = "sys_platform == 'linux'" },
-    { name = "setuptools" },
-    { name = "sympy" },
-    { name = "triton", marker = "python_full_version < '3.15' and sys_platform == 'linux'" },
-    { name = "typing-extensions" },
+    { name = "cuda-bindings", marker = "(python_full_version < '3.15' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (python_full_version >= '3.15' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform != 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "filelock", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "fsspec", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "jinja2", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "networkx", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "nvidia-cudnn-cu13", marker = "(sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-cusparselt-cu13", marker = "(sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-nccl-cu13", marker = "(sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "nvidia-nvshmem-cu13", marker = "(sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "setuptools", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "sympy", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "triton", marker = "(python_full_version < '3.15' and sys_platform == 'linux' and extra == 'group-10-starvector-local-cuda') or (python_full_version >= '3.15' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform != 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "typing-extensions", marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/36/76/6dcc7f0c07052102dd36f83cbc5800842a909c8c3fbf1a7f8a5844954de9/torch-2.13.0-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:d849b390e07d8d333ce8ecaf91b273c656c598379a19c9acf1318a883f6b391c", size = 111227066, upload-time = "2026-07-08T16:03:33.6Z" },
@@ -1034,13 +1325,58 @@ wheels = [
 ]
 
 [[package]]
+name = "torch"
+version = "2.13.0+xpu"
+source = { registry = "https://download.pytorch.org/whl/xpu" }
+dependencies = [
+    { name = "dpcpp-cpp-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "filelock", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "fsspec", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "impi-rt", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-xpu') or (platform_machine != 'x86_64' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform != 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "intel-cmplr-lib-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-cmplr-lib-ur", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-cmplr-lic-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-opencl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-openmp", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-pti", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "intel-sycl-rt", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "jinja2", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "mkl", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "networkx", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "oneccl", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-xpu') or (platform_machine != 'x86_64' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform != 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "oneccl-devel", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-xpu') or (platform_machine != 'x86_64' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform != 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "onemkl-license", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-sycl-blas", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-sycl-dft", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-sycl-lapack", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-sycl-rng", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "onemkl-sycl-sparse", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "pyzes", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'group-10-starvector-local-xpu') or (platform_machine != 'x86_64' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu') or (sys_platform != 'linux' and extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
+    { name = "setuptools", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "sympy", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "tbb", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "tcmlib", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "triton-xpu", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "typing-extensions", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "umf", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp314-cp314-manylinux_2_28_x86_64.whl", upload-time = "2026-07-08T11:29:12Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp314-cp314-win_amd64.whl", upload-time = "2026-07-08T11:29:16Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp314-cp314t-manylinux_2_28_x86_64.whl", upload-time = "2026-07-08T11:29:21Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp314-cp314t-win_amd64.whl", upload-time = "2026-07-08T11:29:23Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp315-cp315-manylinux_2_28_x86_64.whl", upload-time = "2026-07-08T11:29:30Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp315-cp315t-manylinux_2_28_x86_64.whl", upload-time = "2026-07-08T11:29:33Z" },
+]
+
+[[package]]
 name = "torchvision"
 version = "0.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "torch" },
+    { name = "numpy", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "pillow", marker = "extra == 'group-10-starvector-local-cuda'" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-10-starvector-local-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/b9/da40eca5bbe9596c12ae9899ab7abaf887f5e20f29d08b924b4633714821/torchvision-0.28.0-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:3bd9dba55224a9db4a2d77f6feaa5651770d8c8e86d3d0ddb0fa6bec54c8712b", size = 1856014, upload-time = "2026-07-08T16:07:44.282Z" },
@@ -1054,11 +1390,27 @@ wheels = [
 ]
 
 [[package]]
+name = "torchvision"
+version = "0.28.0+xpu"
+source = { registry = "https://download.pytorch.org/whl/xpu" }
+dependencies = [
+    { name = "numpy", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "pillow", marker = "extra == 'group-10-starvector-local-xpu'" },
+    { name = "torch", version = "2.13.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.28.0%2Bxpu-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:4c93761f46c502977b369bcbad3988bfe7a4f26bb5356a2cf0db4b0bcbf873c1", upload-time = "2026-07-08T12:27:05Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.28.0%2Bxpu-cp314-cp314-win_amd64.whl", hash = "sha256:b7e4b381198a809b399d9ffadf816a887251a6a0c7c43f4f4466eefd204ab075", upload-time = "2026-07-08T12:27:05Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.28.0%2Bxpu-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:ff5f095c3fae1e26cf53d7eb26f84aa029de6a9e6f4dccfb833e8a85b7df0c0f", upload-time = "2026-07-08T12:27:05Z" },
+    { url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.28.0%2Bxpu-cp314-cp314t-win_amd64.whl", hash = "sha256:cdac46c7aff5b3c29d1b4d384e24f70dcfd7c705b6fa5399d069f8d3034a06a4", upload-time = "2026-07-08T12:27:05Z" },
+]
+
+[[package]]
 name = "tqdm"
 version = "4.70.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'group-10-starvector-local-cuda' and extra == 'group-10-starvector-local-xpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/21/3b/6c24bec5be5e743ffd99576daa5cc077722fc7d5bbc00bd133fa0c698dc6/tqdm-4.70.0.tar.gz", hash = "sha256:55b0b0dbd97462d06ebee91e4dac24ed4d4702be82b24f07e6c1d27e08cea220", size = 795438, upload-time = "2026-07-27T11:33:15.271Z" }
 wheels = [
@@ -1097,6 +1449,22 @@ wheels = [
 ]
 
 [[package]]
+name = "triton-xpu"
+version = "3.7.2"
+source = { registry = "https://download.pytorch.org/whl/xpu" }
+dependencies = [
+    { name = "pyelftools", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.2-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:560b64f0a19408dee39b1e3d08df614fc9bb294a930a43ff1361d1be12f0c980", upload-time = "2026-07-08T14:03:34Z" },
+    { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.2-cp314-cp314-win_amd64.whl", hash = "sha256:351e97cd3fadc0ff9e2de42d41840703003ba62d0fd1ca9b55924f93cda92c92", upload-time = "2026-07-08T14:04:03Z" },
+    { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.2-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d1d2d5b343a843c94efa6a8822008de46276a057188dcffa511858e1248295f4", upload-time = "2026-07-08T14:04:36Z" },
+    { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.2-cp314-cp314t-win_amd64.whl", hash = "sha256:777b84eae7648e168f8dee098abb2f04edcba67765fe4e511e1effa36ac7553a", upload-time = "2026-07-08T14:05:08Z" },
+    { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.2-cp315-cp315-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d772a30a2061ea14524a96fca845c6579e91279d914f9ac9a390bb711fd4903c", upload-time = "2026-07-08T14:05:47Z" },
+    { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.2-cp315-cp315t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9ec173178387b771656aca3eebba15ceaea8d083291317a64d82e7703a023fd3", upload-time = "2026-07-08T14:06:28Z" },
+]
+
+[[package]]
 name = "typer"
 version = "0.27.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1118,6 +1486,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f6/cc/6253133b5bb138fc3306cebfbda2c520f545d36b5be2c7255cc528bb45d6/typing_extensions-4.16.0.tar.gz", hash = "sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5", size = 113555, upload-time = "2026-07-02T08:40:05.92Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl", hash = "sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8", size = 45571, upload-time = "2026-07-02T08:40:04.659Z" },
+]
+
+[[package]]
+name = "umf"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tcmlib", marker = "extra == 'group-10-starvector-local-xpu'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/72/2e0182f4e6a727a15d0a8a99a82182a4f5bdec1a4f5767acfd2abdc72070/umf-1.1.0-py2.py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:567152c5ee6b8e16cc56b29a8a9a6b918de1febf89877f71ea2e8247ef39fc32", size = 424455, upload-time = "2026-04-24T14:13:51.436Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/43/d89fee46bed22a461714a8786b833a89bff2f0a5e058b02eed3be842752e/umf-1.1.0-py2.py3-none-win_amd64.whl", hash = "sha256:a8c5ff84901fe6348715b6c1c85de4d195a6c69185d99ce4ebf7449b5d04011c", size = 289901, upload-time = "2026-04-24T14:08:31.647Z" },
 ]
 
 [[package]]

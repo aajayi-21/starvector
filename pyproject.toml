@@ -16,11 +16,32 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
 ]
-local = [
+local-cuda = [
     "torch>=2.13",
+    "torchvision>=0.28",
     "transformers>=5",
     "controlnet-aux==0.0.10",
 ]
+local-xpu = [
+    "torch>=2.13",
+    "torchvision>=0.28",
+    "triton-xpu>=3.7",
+    "transformers>=5",
+    "controlnet-aux==0.0.10",
+]
+
+[tool.uv]
+conflicts = [[{ group = "local-cuda" }, { group = "local-xpu" }]]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-xpu", group = "local-xpu" }]
+torchvision = [{ index = "pytorch-xpu", group = "local-xpu" }]
+triton-xpu = [{ index = "pytorch-xpu", group = "local-xpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

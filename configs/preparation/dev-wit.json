@@ -71,6 +71,9 @@
       "dimension": null
     }
   },
+  "runtime": {
+    "device": "auto"
+  },
   "release": {
     "tag": "dev-wit-prep-001",
     "dev_only": true

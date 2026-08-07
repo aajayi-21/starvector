@@ -82,6 +82,7 @@ def _base_raw() -> dict:
                 "dimension": None,
             },
         },
+        "runtime": {"device": "auto"},
         "release": {"tag": "dev-prep-001", "dev_only": True},
     }
 
@@ -288,3 +289,28 @@ def test_load_bad_json_is_a_config_error(tmp_path) -> None:
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(ConfigError, match="cannot read config"):
         load_preparation_config(path)
+
+
+def test_runtime_device_choice_is_validated() -> None:
+    raw = _base_raw()
+    raw["runtime"]["device"] = "tpu"
+    with pytest.raises(ConfigError, match="runtime.device"):
+        parse_preparation_config(raw)
+
+
+def test_runtime_device_does_not_move_the_hash() -> None:
+    # The device is machine-local. The same pipeline config on a CUDA
+    # machine and an XPU machine must address the same artifact tree.
+    hashes = {}
+    for device in ("auto", "cuda", "xpu", "cpu"):
+        raw = _base_raw()
+        raw["runtime"]["device"] = device
+        hashes[device] = preparation_config_hash(parse_preparation_config(raw), _hashes())
+    assert len(set(hashes.values())) == 1
+
+
+def test_runtime_section_is_required() -> None:
+    raw = _base_raw()
+    del raw["runtime"]
+    with pytest.raises(ConfigError, match="runtime"):
+        parse_preparation_config(raw)

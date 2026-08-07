@@ -115,7 +115,9 @@ class SiglipTextEncoder:
             )
             moved = {name: tensor.to(self._device) for name, tensor in encoded.items()}
             with self._torch.inference_mode():
-                features = self._model.get_text_features(**moved)  # (b, d)
+                # transformers 5 returns a pooling output object, not
+                # a bare tensor (measured live, transformers 5.14).
+                features = self._model.get_text_features(**moved).pooler_output  # (b, d)
             batches.append(features.float().cpu().numpy().astype(np.float64))
         stacked = np.concatenate(batches, axis=0)  # (B, d)
         _checked_dimension(stacked, self._config.dimension)
@@ -168,7 +170,10 @@ class SiglipImageEncoder:
             encoded = self._processor(images=decoded, return_tensors="pt")
             pixel_values = encoded["pixel_values"].to(device=self._device, dtype=self._dtype)
             with self._torch.inference_mode():
-                features = self._model.get_image_features(pixel_values=pixel_values)  # (b, d)
+                # Same pooling output object as the text tower.
+                features = self._model.get_image_features(
+                    pixel_values=pixel_values
+                ).pooler_output  # (b, d)
             batches.append(features.float().cpu().numpy().astype(np.float64))
         stacked = np.concatenate(batches, axis=0)  # (B, d)
         _checked_dimension(stacked, self._config.dimension)
