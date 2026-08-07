@@ -87,12 +87,11 @@ def text_estimator(tmp_path: Path, content: str) -> OpenRouterTextCoverageEstima
 
 
 def make_classifier(
-    tmp_path: Path, content: str, tolerance: float = 0.01
+    tmp_path: Path, content: str
 ) -> OpenRouterZeroShotImageClassifier:
     client = make_client(content_handler(content))
     config = make_slot_config(
         "classifier",
-        tolerance=tolerance,
         template="Classify the image with the phrases {label_phrases}.",
     )
     return OpenRouterZeroShotImageClassifier(
@@ -100,8 +99,8 @@ def make_classifier(
     )
 
 
-def probabilities_content(values: dict[str, float]) -> str:
-    return json.dumps({"probabilities": values})
+def choice_content(label: str, confidence: float) -> str:
+    return json.dumps({"label": label, "confidence": confidence})
 
 
 def test_fraction_parses_to_array(tmp_path: Path) -> None:
@@ -178,11 +177,9 @@ def test_post_body_carries_pinned_parameters(tmp_path: Path) -> None:
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
-def test_classifier_replaces_label_placeholder(tmp_path: Path) -> None:
+def test_classifier_replaces_label_placeholder_and_sends_enum(tmp_path: Path) -> None:
     captured: list[dict[str, object]] = []
-    content = probabilities_content(
-        {"a photograph": 0.8, "a diagram": 0.1, "a map": 0.1}
-    )
+    content = choice_content("a photograph", 0.8)
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(json.loads(request.read().decode("utf-8")))
@@ -191,7 +188,6 @@ def test_classifier_replaces_label_placeholder(tmp_path: Path) -> None:
     client = make_client(handler)
     config = make_slot_config(
         "classifier",
-        tolerance=0.01,
         template="Classify the image with the phrases {label_phrases}.",
     )
     provider = OpenRouterZeroShotImageClassifier(
@@ -201,48 +197,49 @@ def test_classifier_replaces_label_placeholder(tmp_path: Path) -> None:
     instruction = captured[0]["messages"][0]["content"][0]["text"]
     expected = 'Classify the image with the phrases "a photograph", "a diagram", "a map".'
     assert instruction == expected
+    schema = captured[0]["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["label"]["enum"] == list(PHRASES)
 
 
-def test_classifier_renormalizes_in_tolerance(tmp_path: Path) -> None:
-    content = probabilities_content(
-        {"a photograph": 0.9, "a diagram": 0.1, "a map": 0.004}
-    )
-    provider = make_classifier(tmp_path, content, tolerance=0.01)
+def test_classifier_choice_becomes_probability_row(tmp_path: Path) -> None:
+    provider = make_classifier(tmp_path, choice_content("a photograph", 0.8))
     result = provider.classify([PNG_BYTES], PHRASES)
     assert result.dtype == np.float32
     assert result.shape == (1, 3)
     assert result[0].sum() == pytest.approx(1.0, abs=1e-6)
-    assert result[0, 0] > result[0, 1] > result[0, 2]
+    assert result[0, 0] == pytest.approx(0.8)
+    assert result[0, 1] == pytest.approx(0.1)
+    assert int(result[0].argmax()) == 0
 
 
-def test_classifier_sum_out_of_tolerance_raises(tmp_path: Path) -> None:
-    content = probabilities_content(
-        {"a photograph": 1.0, "a diagram": 0.3, "a map": 0.2}
-    )
-    provider = make_classifier(tmp_path, content, tolerance=0.01)
+def test_classifier_label_out_of_set_raises(tmp_path: Path) -> None:
+    provider = make_classifier(tmp_path, choice_content("a sculpture", 0.9))
     with pytest.raises(OpenRouterResponseError):
         provider.classify([PNG_BYTES], PHRASES)
 
 
-def test_classifier_missing_phrase_raises(tmp_path: Path) -> None:
-    content = probabilities_content({"a photograph": 0.9, "a diagram": 0.1})
-    provider = make_classifier(tmp_path, content)
+def test_classifier_confidence_out_of_range_raises(tmp_path: Path) -> None:
+    provider = make_classifier(tmp_path, choice_content("a photograph", 1.5))
     with pytest.raises(OpenRouterResponseError):
         provider.classify([PNG_BYTES], PHRASES)
 
 
-def test_classifier_extra_phrase_raises(tmp_path: Path) -> None:
-    content = probabilities_content(
-        {"a photograph": 0.7, "a diagram": 0.1, "a map": 0.1, "a logo": 0.1}
-    )
-    provider = make_classifier(tmp_path, content)
+def test_classifier_confidence_at_or_below_uniform_raises(tmp_path: Path) -> None:
+    # With three labels a confidence of 1/3 cannot win its own row.
+    provider = make_classifier(tmp_path, choice_content("a photograph", 1.0 / 3.0))
+    with pytest.raises(OpenRouterResponseError):
+        provider.classify([PNG_BYTES], PHRASES)
+
+
+def test_classifier_missing_confidence_raises(tmp_path: Path) -> None:
+    provider = make_classifier(tmp_path, '{"label": "a photograph"}')
     with pytest.raises(OpenRouterResponseError):
         provider.classify([PNG_BYTES], PHRASES)
 
 
 def test_classifier_template_without_placeholder_raises(tmp_path: Path) -> None:
     client = make_client(content_handler("{}"))
-    config = make_slot_config("classifier", tolerance=0.01, template="No placeholder.")
+    config = make_slot_config("classifier", template="No placeholder.")
     with pytest.raises(ValueError):
         OpenRouterZeroShotImageClassifier(
             config, client, tmp_path / "cache", clock=fixed_clock

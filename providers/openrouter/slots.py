@@ -137,21 +137,22 @@ def _fraction_schema(json_key: str) -> dict[str, JsonValue]:
     }
 
 
-def _probabilities_schema(phrases: tuple[str, ...]) -> dict[str, JsonValue]:
+def _choice_schema(phrases: tuple[str, ...]) -> dict[str, JsonValue]:
+    """One selected category plus a confidence.
+
+    The enum constrains the label to the requested set at the model
+    side, thus an out-of-set answer cannot occur in strict schema
+    mode. An eight-number contract was here before, and it broke in
+    live runs: a fast model does not reliably emit numbers that sum
+    to 1.
+    """
     return {
         "type": "object",
         "properties": {
-            "probabilities": {
-                "type": "object",
-                "properties": {
-                    phrase: {"type": "number", "minimum": 0, "maximum": 1}
-                    for phrase in phrases
-                },
-                "required": [phrase for phrase in phrases],
-                "additionalProperties": False,
-            }
+            "label": {"type": "string", "enum": list(phrases)},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         },
-        "required": ["probabilities"],
+        "required": ["label", "confidence"],
         "additionalProperties": False,
     }
 
@@ -201,49 +202,38 @@ def _fraction_value(payload: Mapping[str, object], json_key: str) -> float:
     return number
 
 
-def _probability_row(
-    payload: Mapping[str, object], phrases: tuple[str, ...], tolerance: float
+def _choice_row(
+    payload: Mapping[str, object], phrases: tuple[str, ...]
 ) -> tuple[float, ...]:
-    """The renormalized probability values, in phrase sequence.
+    """The probability row for one selected label, in phrase sequence.
 
-    The response phrase set must equal the phrase set from the
-    instruction. Each value must be in [0, 1]. The sum must sit in
-    the tolerance band around 1.0, and the row is then renormalized
-    to sum 1 - the output
-    normalization at the provider boundary. A violation raises.
+    The winner cell holds the confidence. The remaining mass spreads
+    equally on the other labels, thus the row sums to 1 and the
+    protocol contract holds. The confidence must be more than 1/L, or
+    the stated label could not be the argmax of its own row - that
+    answer is contradictory and raises (R14).
     """
-    if "probabilities" not in payload:
-        raise OpenRouterResponseError('response JSON has no "probabilities" field')
-    table = payload["probabilities"]
-    if not isinstance(table, dict):
-        raise OpenRouterResponseError('"probabilities" is not a JSON object')
-    wanted = set(phrases)
-    received = set(table)
-    if received != wanted:
-        missing = sorted(wanted - received)
-        extra = sorted(received - wanted)
+    if "label" not in payload or "confidence" not in payload:
+        raise OpenRouterResponseError('response JSON needs "label" and "confidence"')
+    label = payload["label"]
+    if not isinstance(label, str) or label not in phrases:
+        raise OpenRouterResponseError(f"label {label!r} is not in the requested set")
+    raw = payload["confidence"]
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise OpenRouterResponseError(f"confidence is not a number: {raw!r}")
+    confidence = float(raw)
+    if not 0.0 <= confidence <= 1.0:
+        raise OpenRouterResponseError(f"confidence is out of [0, 1]: {confidence}")
+    count = len(phrases)
+    if count > 1 and confidence * count <= 1.0:
         raise OpenRouterResponseError(
-            f"phrase set mismatch: missing {missing}, extra {extra}"
+            f"confidence {confidence} for {label!r} is at or below 1/{count} - "
+            "the stated label would not win its own row"
         )
-    values: list[float] = []
-    for phrase in phrases:
-        raw = table[phrase]
-        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise OpenRouterResponseError(
-                f"probability for {phrase!r} is not a number: {raw!r}"
-            )
-        number = float(raw)
-        if not 0.0 <= number <= 1.0:
-            raise OpenRouterResponseError(
-                f"probability for {phrase!r} is out of [0, 1]: {number}"
-            )
-        values.append(number)
-    total = sum(values)
-    if abs(total - 1.0) > tolerance:
-        raise OpenRouterResponseError(
-            f"probability sum {total} is not in tolerance {tolerance} of 1.0"
-        )
-    return tuple(value / total for value in values)
+    if count == 1:
+        return (1.0,)
+    rest = (1.0 - confidence) / (count - 1)
+    return tuple(confidence if phrase == label else rest for phrase in phrases)
 
 
 def _resolved_values[T](
@@ -278,12 +268,20 @@ def _resolved_values[T](
             continue
         if "response_body" not in entry:
             raise OpenRouterResponseError(f"{path}: cache entry has no response_body")
-        values[index] = parse(entry["response_body"])
+        try:
+            values[index] = parse(entry["response_body"])
+        except OpenRouterResponseError as error:
+            raise OpenRouterResponseError(f"cached image {keys[index]}: {error}") from error
         cache_hits += 1
     if miss_indexes:
         responses = client.map_requests(miss_bodies)
         for index, response_body in zip(miss_indexes, responses, strict=True):
-            value = parse(response_body)
+            try:
+                value = parse(response_body)
+            except OpenRouterResponseError as error:
+                raise OpenRouterResponseError(
+                    f"image {keys[index]} (model {model}): {error}"
+                ) from error
             entry = {
                 "key": keys[index],
                 "config_hash": config_hash,
@@ -429,10 +427,7 @@ class OpenRouterZeroShotImageClassifier:
             raise ValueError(
                 f"classifier instruction template must contain {_LABEL_PLACEHOLDER!r}"
             )
-        if checked.probability_sum_tolerance is None:
-            raise ValueError("classifier slot config must set probability_sum_tolerance")
         self._slot_config = checked
-        self._tolerance = checked.probability_sum_tolerance
         self._client = client
         self._cache_root = Path(cache_root)
         self._clock = clock if clock is not None else _default_clock
@@ -456,14 +451,13 @@ class OpenRouterZeroShotImageClassifier:
         phrases = tuple(labels)
         quoted = '"' + '", "'.join(phrases) + '"'
         instruction = self._slot_config.template.replace(_LABEL_PLACEHOLDER, quoted)
-        schema = _probabilities_schema(phrases)
-        tolerance = self._tolerance
+        schema = _choice_schema(phrases)
 
         def body_for_image(image_bytes: bytes) -> dict[str, JsonValue]:
             return _request_body(self._slot_config, instruction, image_bytes, schema)
 
         def parse(response_body: object) -> tuple[float, ...]:
-            return _probability_row(_json_payload(response_body), phrases, tolerance)
+            return _choice_row(_json_payload(response_body), phrases)
 
         values, hits = _resolved_values(
             images,

@@ -340,9 +340,6 @@ def _parse_slot(node: _Node, slot: str) -> SlotSection:
     path = f"providers.{slot}"
     if section.provider == "openrouter" and section.instruction_template is None:
         raise ConfigError(f"{path}.instruction_template: required for the openrouter provider")
-    if slot == "classifier" and section.provider == "openrouter" \
-            and section.probability_sum_tolerance is None:
-        raise ConfigError(f"{path}.probability_sum_tolerance: required for the openrouter classifier")
     if slot == "encoder" and section.provider == "fake" and section.dimension is None:
         raise ConfigError(f"{path}.dimension: required for the fake encoder")
     return section

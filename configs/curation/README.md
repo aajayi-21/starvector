@@ -46,8 +46,10 @@ pool lineage. That is correct behavior, not an accident — see
 - `providers.<slot>.instruction_template` — the fixed instruction the
   OpenRouter provider sends. The classifier template must contain the
   placeholder `{label_phrases}`, which the provider replaces verbatim
-  with the rendered label phrases. `classify.label_template` must
-  contain `{label}` one time.
+  with the rendered label phrases. The classifier answer shape is one
+  label plus one confidence — the response schema pins the label to the
+  requested set, thus an out-of-set answer cannot occur.
+  `classify.label_template` must contain `{label}` one time.
 - `providers.encoder` — `"fake"` in this build. A local SigLIP encoder
   comes on a branch that follows. Switching the encoder changes the config
   hash and thus starts a new pool lineage.
