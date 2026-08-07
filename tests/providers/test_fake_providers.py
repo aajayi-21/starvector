@@ -97,6 +97,31 @@ def test_encoder_chunk_free_fallback(images):
     assert np.isclose(float(np.linalg.norm(vectors[0])), 1.0, atol=1e-5)
 
 
+def _jpeg_bytes() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (16, 16), color=(120, 60, 30)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def test_encoder_accepts_jpeg_bytes():
+    # JPEG has no text-chunk attribute in Pillow. The encoder must use
+    # the bytes-seeded rule for JPEG bytes, because the live corpus
+    # supplies JPEG images.
+    jpeg = _jpeg_bytes()
+    vectors_a = FakeImageEncoder(DIMENSION).encode_images([jpeg])
+    vectors_b = FakeImageEncoder(DIMENSION).encode_images([jpeg])
+    assert vectors_a.shape == (1, DIMENSION)
+    assert np.isclose(float(np.linalg.norm(vectors_a[0])), 1.0, atol=1e-5)
+    assert np.array_equal(vectors_a, vectors_b)
+
+
+def test_classifier_jpeg_bytes_raise():
+    # The scripted classifier keeps its missing-chunk error for
+    # unscripted images.
+    with pytest.raises(ValueError, match="fake_label chunk is missing"):
+        FakeZeroShotImageClassifier().classify([_jpeg_bytes()], LABELS)
+
+
 def test_encoder_unrelated_images_are_not_near_duplicates(images):
     vectors = FakeImageEncoder(DIMENSION).encode_images(images["photo"])
     assert float(vectors[0] @ vectors[1]) < 0.95
