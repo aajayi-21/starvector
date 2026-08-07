@@ -79,7 +79,15 @@ def _boxes_schema(elements: Sequence[str]) -> dict[str, JsonValue]:
 
 
 def _checked_box(element: str, value: Mapping[str, object]) -> Box:
-    """One validated Box. A range or shape violation raises."""
+    """One validated Box. A range or shape violation raises.
+
+    The min and max values of each axis are sorted before the check:
+    models sometimes interchange them (seen live with gpt-5.6-luna,
+    2026-08-08), and the two numbers name the same limits in each
+    sequence - boundary output normalization, like the P1a
+    probability rows. A pair that is equal after the sort names no
+    area and raises.
+    """
     if set(value) != set(_BOX_FIELDS):
         raise OpenRouterResponseError(
             f"element {element!r}: box key set is wrong: {sorted(value)}"
@@ -97,11 +105,13 @@ def _checked_box(element: str, value: Mapping[str, object]) -> Box:
                 f"element {element!r}: {field} is out of [0, 1]: {number}"
             )
         numbers[field] = number
-    if not numbers["x_min"] < numbers["x_max"] or not numbers["y_min"] < numbers["y_max"]:
+    x_min, x_max = sorted((numbers["x_min"], numbers["x_max"]))
+    y_min, y_max = sorted((numbers["y_min"], numbers["y_max"]))
+    if x_min == x_max or y_min == y_max:
         raise OpenRouterResponseError(
-            f"element {element!r}: box is empty or inverted: {numbers}"
+            f"element {element!r}: box is empty: {numbers}"
         )
-    return Box(numbers["x_min"], numbers["y_min"], numbers["x_max"], numbers["y_max"])
+    return Box(x_min, y_min, x_max, y_max)
 
 
 def _parsed_boxes(

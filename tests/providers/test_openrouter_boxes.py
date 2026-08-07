@@ -158,11 +158,23 @@ def test_null_becomes_none_and_box_becomes_box(tmp_path: Path) -> None:
     ]
 
 
-def test_inverted_box_raises(tmp_path: Path) -> None:
+def test_swapped_pair_is_sorted_at_the_boundary(tmp_path: Path) -> None:
+    # Models sometimes interchange min and max (seen live with
+    # gpt-5.6-luna, 2026-08-08). The two numbers name the same limits
+    # in each sequence, thus the provider sorts them - boundary
+    # output normalization.
     payload = valid_payload()
-    payload["a tree"] = {"x_min": 0.7, "y_min": 0.2, "x_max": 0.5, "y_max": 0.9}
+    payload["a tree"] = {"x_min": 0.7, "y_min": 0.9, "x_max": 0.5, "y_max": 0.2}
     detector = make_detector(tmp_path, boxes_content(payload))
-    with pytest.raises(OpenRouterResponseError, match="a tree"):
+    result = detector.detect_boxes([PNG_BYTES], [ELEMENTS])
+    assert result[0]["a tree"] == Box(x_min=0.5, y_min=0.2, x_max=0.7, y_max=0.9)
+
+
+def test_empty_box_raises(tmp_path: Path) -> None:
+    payload = valid_payload()
+    payload["a tree"] = {"x_min": 0.5, "y_min": 0.2, "x_max": 0.5, "y_max": 0.9}
+    detector = make_detector(tmp_path, boxes_content(payload))
+    with pytest.raises(OpenRouterResponseError, match="a tree.*empty"):
         detector.detect_boxes([PNG_BYTES], [ELEMENTS])
 
 

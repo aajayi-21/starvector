@@ -429,7 +429,11 @@ query set. The response cache key contains `image_id`, the slot
 `config_hash`, and the hash of the queried element list (§6). Writes one
 row for each image: for each element, one box or `null`. Box coordinates
 must be in [0, 1] with `x_min < x_max` and `y_min < y_max` — the
-provider validates at the boundary (R14).
+provider validates at the boundary (R14). The provider sorts the min
+and max values of each axis before the check: models sometimes
+interchange the two (seen live with `gpt-5.6-luna`, 2026-08-08), and
+the sorted pair keeps the same limits. A pair that is equal after the
+sort is a violation.
 
 ### p08 neardup — R10
 
