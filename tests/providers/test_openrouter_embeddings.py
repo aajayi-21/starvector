@@ -59,7 +59,9 @@ def embedding_for(item: object) -> list[float]:
     if isinstance(item, str):
         text = item
     else:
-        text = item["image_url"]["url"]  # type: ignore[index]
+        # The multimodal item shape, checked live 2026-08-08: a
+        # content wrapper around one image_url entry.
+        text = item["content"][0]["image_url"]["url"]  # type: ignore[index]
     digest = hashlib.sha256(text.encode("utf-8")).digest()
     return [1.0 + digest[position] for position in range(DIMENSION)]
 
@@ -124,7 +126,9 @@ def test_image_post_body_uses_content_blocks(tmp_path: Path) -> None:
     )
     encoder.encode_images([PNG_BYTES])
     uri = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode("ascii")
-    assert captured[0]["input"] == [{"type": "image_url", "image_url": {"url": uri}}]
+    assert captured[0]["input"] == [
+        {"content": [{"type": "image_url", "image_url": {"url": uri}}]}
+    ]
 
 
 def test_130_misses_batch_into_three_posts(tmp_path: Path) -> None:

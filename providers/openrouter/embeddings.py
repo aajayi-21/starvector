@@ -336,9 +336,14 @@ class OpenRouterImageEncoder:
         keys = [sha256_hex(image) for image in images]
 
         def item_at(index: int) -> JsonValue:
+            # One input item is a content wrapper around the image
+            # entry, not the bare entry - checked live 2026-08-08: the
+            # bare shape fails the endpoint's input union, the wrapped
+            # shape returns rows at dimension 3072.
             return {
-                "type": "image_url",
-                "image_url": {"url": data_uri(images[index])},
+                "content": [
+                    {"type": "image_url", "image_url": {"url": data_uri(images[index])}}
+                ]
             }
 
         rows, hits = _resolved_rows(
