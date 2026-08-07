@@ -35,6 +35,8 @@ one adapter behind a protocol (§7 of this spec).
 - The staged curation filter: architecture §4, steps 1 through 8.
 - Manifest, rejection, and metrics artifacts for each stage.
 - Content-addressed storage of the selected image files.
+- The extraction budget: byte accounting and enforcement (U1).
+- OpenRouter-backed providers for the image-understanding slots (U2).
 - Pool version identity, the release record, and the human review gate.
 - A resumable command-line runner.
 
@@ -101,6 +103,23 @@ Quotes are from `docs/ARCHITECTURE.md`.
   raises. A record-level failure that must not stop
   a bulk task becomes an explicit, labeled rejection — not a silent skip
   (`CLAUDE.md` §3).
+
+### User constraints
+
+These come from the project owner, not from the architecture. They have
+the same weight.
+
+- **U1 — Extraction budget.** Corpus extraction has a byte budget. The
+  development default is 5 GB (`5_000_000_000` bytes) for all
+  data retrieved for the corpus: the metadata scan plus all materialized
+  image bytes. The budget is a config value (`budget_bytes`, §9), is part
+  of `curation_config_hash`, and is tunable for each iteration. The
+  pipeline must report bytes retrieved, and must stop fetching — with
+  explicit accounting — when the budget is reached.
+- **U2 — OpenRouter for the image model.** The image-understanding model
+  runs through OpenRouter (§8a). OpenRouter serves chat and vision-language
+  models, not image-embedding encoders, thus the `ImageEncoder` slot for
+  s06 and s07 always runs locally.
 
 ## 5. Pipeline overview
 
@@ -260,6 +279,11 @@ Built on the `datasets` library with `streaming=True`, plus
 `revision`, `config_name`, `split`, column mapping, and materialization
 parameters.
 
+The adapter must read only the configured columns during enumeration
+(parquet column pruning), thus shipped image bytes are not transferred
+during the scan. The adapter counts the bytes it retrieves at its
+transport layer and reports them (U1).
+
 ### `wikimedia/wit_base` mapping (development corpus)
 
 Check these against the dataset card at implementation time.
@@ -268,7 +292,7 @@ Check these against the dataset card at implementation time.
 |---|---|
 | `source_key` | `image_url` |
 | `claimed_width` / `claimed_height` | `original_width` / `original_height` |
-| `captions` | `caption_attribution_description` plus the English `caption_reference_description` entries in `wit_features` |
+| `captions` | `caption_attribution_description` only, in the development configuration. `wit_features` is not read — it is large in each row, and R10 needs only a caption signal (U1). |
 | `attribution` | `image_url`, `metadata_url`, `caption_attribution_description`, license note (CC BY-SA 4.0) |
 
 **Warning: the shipped `image` column is a thumbnail with a width of
@@ -278,7 +302,8 @@ describe the full-resolution source file, and `image_url` points at it.
 Materialization must fetch from `image_url` and must not read the shipped
 column. See open decision D9 for the fetch mode. The adapter records the
 URL and parameters used in `retrieval_note`. That note is part of the
-stored provenance.
+stored provenance. For `wit_base`, corpus extraction spans the Hugging
+Face metadata scan plus the Wikimedia fetches — the two count against U1.
 
 The dataset also ships a precomputed `embedding` column. Do not use it.
 Curation vectors must come from a provider with a tracked `config_hash` —
@@ -297,15 +322,24 @@ fixtures it can accept. No network, no GPU, no files in other directories.
 
 Curation needs four capability protocols in `providers/protocols.py`. Each
 follows `CLAUDE.md` §6: batched, config-hashed, output-normalized at the
-boundary. Concrete model choices are open decisions (§16). The fake
+boundary. The contract of each slot is the quantity the stage rule needs —
+not a model type — thus one slot can hold a local model or an OpenRouter
+model (§8a). Concrete model choices are open decisions (§16). The fake
 implementations are required for the test suite.
 
-| Protocol | Signature (shape) | Used by |
-|---|---|---|
-| `ImageEncoder` | `Sequence[bytes] -> Vectors` — unit-norm, `(B, d)` | s06, s07 |
-| `ZeroShotImageClassifier` | `(Sequence[bytes], labels) -> FloatArray (B, L)` — probability values on the closed label set | s04 |
-| `TextRegionDetector` | `Sequence[bytes] -> list[Boxes]` — pixel boxes `(x0, y0, x1, y1, confidence)` | s03 |
-| `ObjectDetector` | `Sequence[bytes] -> list[Boxes]` | s05 |
+| Protocol | Contract (shape) | Used by | OpenRouter? |
+|---|---|---|---|
+| `ImageEncoder` | `Sequence[bytes] -> Vectors` — unit-norm, `(B, d)` | s06, s07 | No — local only (U2) |
+| `ZeroShotImageClassifier` | `(Sequence[bytes], labels) -> FloatArray (B, L)` — probability values on the closed label set | s04 | Yes |
+| `TextCoverageEstimator` | `Sequence[bytes] -> FloatArray (B,)` — fraction of image area that text covers, in [0, 1] | s03 | Yes |
+| `SalientObjectEstimator` | `Sequence[bytes] -> FloatArray (B,)` — fraction of image area that the largest object covers, in [0, 1] | s05 | Yes |
+
+A box-based local implementation of the two estimator slots calculates the
+fraction from detected boxes. For text this is the area of the union of
+the boxes, thus boxes that overlap are not counted two times. That
+geometry is a shared pure helper that the provider uses — the protocol
+contract is the fraction. A VLM-based implementation asks the model for
+the fraction (§8a).
 
 The `ImageEncoder` slot here is the curation encoder. It can load the same
 weights as the Layer 2 image encoder, but it is its own configuration slot
@@ -313,9 +347,33 @@ with its own hash. A change to it changes the pool membership — a new pool
 version, not only a cache (compare `CLAUDE.md` §6 on the sketch and image
 encoder slots).
 
-Geometry from detector output (coverage fraction, largest-box fraction) is
-calculated by pure functions in `pool/curation/stages/`, not by the
-provider.
+### 8a. OpenRouter providers
+
+`providers/openrouter/` holds the implementations, in the layout that
+`CLAUDE.md` §6 and §8 give. Rules:
+
+- One HTTP client. Concurrency, rate limits, retries, and backoff are
+  provider-internal. Callers see the same batched protocols as for local
+  models.
+- The provider sends one `POST` for each image, with temperature 0, a
+  fixed instruction template from provider config, and a fixed JSON
+  output format. The provider parses and validates each response at the
+  boundary. A response that does not
+  parse, or a fraction out of [0, 1], raises (R14) — no silent defaults.
+- `config_hash` covers the OpenRouter model identifier, the instruction
+  template, and all API parameters. The API key is not part of the
+  hash. It lives in the environment, not in config files.
+- Each response is cached in the data root, with `image_id` and the
+  provider `config_hash` in the key (R12). Re-runs and resume read the
+  cache, thus the determinism contract of §14 holds through the cache. A
+  cold recomputation with a remote model can give different bytes — the
+  same trade-off
+  the architecture accepts for the Layer 7 judge, which is also logged,
+  not re-derived (architecture §15).
+- Cost: with one `POST` for each image and each slot, a 20,000-image run
+  at middle-tier VLM prices lands in the $10–$30 range — the same scale
+  the architecture gives for element lists through OpenRouter (§24). The
+  funnel report includes the `POST` count.
 
 ## 9. Configuration
 
@@ -324,6 +382,9 @@ One frozen `CurationConfig` dataclass, loaded from a committed JSON file
 
 - the corpus section: identity fields plus adapter parameters,
 - the sampling section: `sample_salt`, `sample_rate` (s00),
+- the extraction section: `budget_bytes` (development default
+  `5_000_000_000` — U1) and an optional `materialize_cap` (a limit on the
+  fetched image count),
 - one section for each stage with that stage's thresholds — the R2–R8
   constants are written in the file, not in code,
 - provider selection and provider config for the four slots of §8,
@@ -352,8 +413,9 @@ the development sampling rule: keep a record when
 This rule is deterministic and streaming-safe, and the enumeration
 sequence has no effect on it. Excluded records are counted in `meta.json`, not
 written out row by row. Output rows contain `source_key`, claimed
-dimensions, captions, and attribution. A production run sets
-`sample_rate = 1.0`.
+dimensions, captions, and attribution. The scan reads only the configured
+metadata columns (§7), and `meta.json` reports the bytes retrieved (U1).
+A production run sets `sample_rate = 1.0`.
 
 ### s01 screen — R2, R3 on claimed metadata
 
@@ -376,6 +438,17 @@ Use `materialize_many` on the survivors. For each result:
   raster image is rejected (`decode-error`). This is how SVG and other
   vector files exit.
 
+Budget enforcement (U1): survivors of s01 are fetched in ascending
+sequence of their sampling hash
+(`uint64(sha256(sample_salt + source_key)[:8])`) — deterministic, and
+free of selection bias, because it is the same quantity s00 sampled
+with. The stage keeps a total of retrieved bytes, with the s00 scan
+bytes included. When the next fetch can make the byte total more than
+`budget_bytes`, or the fetched count more than `materialize_cap`, the
+stage stops fetching. Each candidate that was not fetched exits with rejection
+cause `extraction-budget`. The counts and byte totals go into
+`meta.json`, and the funnel report shows them.
+
 The stage also writes `records.jsonl`: one row for each survivor with
 `image_id`, `source_key`, `width`, `height`, `format`, captions, and
 attribution. The stages after s02 read image metadata from this file and do
@@ -383,10 +456,9 @@ not decode the image files again.
 
 ### s03 text — R4
 
-`TextRegionDetector` on the survivor images. Coverage is the area of the
-union of detected boxes, divided by image area — the union, thus boxes
-that overlap are not counted two times. Reject when coverage is more than
-`0.05` (`text-coverage`, measured value stored).
+`TextCoverageEstimator` on the survivor images: one fraction for each
+image (§8). Reject when the fraction is more than `0.05`
+(`text-coverage`, measured value stored).
 
 ### s04 class — R5
 
@@ -398,11 +470,11 @@ decisions D1 and D2.
 
 ### s05 object — R6
 
-`ObjectDetector` on the survivor images. Keep detections with confidence
-at or above the config threshold. Calculate the largest detection's area
-divided by image area. Reject when the fraction is at or below `0.15`
-(`object-size`, fraction stored). No detections means a fraction of zero,
-and rejection — that is the R6 rule applied literally, not a fallback.
+`SalientObjectEstimator` on the survivor images: the fraction of image
+area that the largest object covers (§8). Reject when the fraction is at
+or below `0.15` (`object-size`, fraction stored). A fraction of zero (no
+detected object) means rejection — that is the R6 rule applied
+literally, not a fallback.
 
 ### s06 neardup — R7
 
@@ -431,7 +503,10 @@ time. Rejection `diversity-cap`, with the cluster identifier stored.
 
 Select a seeded random sample of `min(200, survivors)` with `review_seed`
 on the sorted `image_id` values. Write `sample.jsonl` and a self-contained
-`contact_sheet.html` with embedded thumbnails for human inspection.
+`contact_sheet.html` with embedded thumbnails for human inspection. The
+sheet shows each image with its caption and its `image_id` — a caption
+of `Coat of arms of Bergheim`, for example, shows a curation miss
+immediately.
 
 The stage then requires `review.json` in the same directory:
 
@@ -482,6 +557,7 @@ data/
     s09-release/    manifest.jsonl  meta.json
   images/raw/<image_id[:2]>/<image_id>          # original bytes, shared across configs
   cache/vectors/<encoder_config_hash[:8]>/      # curation vectors, npy
+  cache/openrouter/<provider_config_hash[:8]>/  # remote responses, JSON (§8a)
 
 pool/releases/<label>.json                      # committed
 configs/curation/dev-wit.json                   # committed
@@ -495,8 +571,9 @@ File formats:
 - `rejections.jsonl` — `{key, stage, reason, measured, detail}`.
   `measured` is the numeric value the rule examined, when there is one.
 - `meta.json` — stage name, label (§6), parent stage, input, survivor, and
-  rejection counts, the stage's config echo, provider config hashes,
-  wall-clock timings, and the pipeline code version.
+  rejection counts, the stage's config echo, provider config hashes, byte
+  totals (retrieved by this stage, and cumulative — U1), wall-clock
+  timings, and the pipeline code version.
 
 ## 12. Runner
 
@@ -539,19 +616,21 @@ pool/
       release.py       # s09 pool_version_id, release record content
 providers/
   protocols.py         # + SourceCorpus, ZeroShotImageClassifier,
-                       #   TextRegionDetector, ObjectDetector
+                       #   TextCoverageEstimator, SalientObjectEstimator
   corpora/
     huggingface.py
     fake.py
-  local/               # concrete model providers, from the open decisions
-  fake/                # stub classifier, detectors, encoder
+  local/               # encoder, and optional local estimators
+  openrouter/          # VLM-backed classifier and estimators (§8a)
+  fake/                # stub classifier, estimators, encoder
 ```
 
 The import direction rules of `CLAUDE.md` §8 apply: `pool/curation/stages/`
 is pure and imports protocols only for type annotations.
 
 Dependencies to add at implementation time (with `uv add`): `datasets`,
-`huggingface_hub`, `pillow`, `numpy`, plus the model stack from the open
+`huggingface_hub`, `pillow`, `numpy`, `httpx` (for
+`providers/openrouter/`), plus the local model stack from the open
 decisions. The test suite must not import the model stack.
 
 ## 14. Determinism
@@ -568,9 +647,12 @@ manifests that are byte-for-byte the same. Concretely:
 - The review sample is seeded from config.
 - JSON is written canonically: sorted keys, fixed float format, `\n` line
   endings.
+- Remote responses are cached with `image_id` and the provider
+  `config_hash` in the key. Re-runs and resume read the cache and get the
+  same bytes (§8a).
 - Provider nondeterminism is contained by the provider `config_hash`. The
-  curation providers here (encoder, classifier, detectors) must run in
-  deterministic inference modes.
+  local curation providers (encoder, optional local estimators) must run
+  in deterministic inference modes.
 
 ## 15. Testing
 
@@ -579,7 +661,8 @@ GPU, no network (`CLAUDE.md` §7, §9).
 
 **Unit tests** — each pure stage function against fixed fixtures: boundary
 values at 512 px, aspect 0.5 and 2.0, coverage equal to 5%, object
-fraction equal to 15%, similarity equal to 0.95, a cluster at the cap.
+fraction equal to 15%, similarity equal to 0.95, a cluster at the cap,
+and a budget boundary at the last fetch that fits.
 
 **Invariant tests** — gate merges:
 
@@ -598,6 +681,9 @@ fraction equal to 15%, similarity equal to 0.95, a cluster at the cap.
 6. Resume: delete the stage directories from s04 on, run again, and the
    result is byte-for-byte the same.
 7. The runner refuses to run s09 without a `pass` review verdict.
+8. Budget: with a small `budget_bytes` against the fake corpus, s02 stops
+   at the budget, each candidate that was not fetched has an
+   `extraction-budget` rejection, and invariant 2 holds.
 
 Not in CI: runs against `wit_base` itself. The first `wit_base` run is a
 deliberate, recorded operation. Its funnel numbers go into the release
@@ -613,13 +699,13 @@ proposed default.
 |---|---|---|---|
 | D1 | Zero-shot decision rule for R5 | Keep only when `photograph` is the argmax on the closed label set | The architecture gives the labels, not the rule. Argmax is what the words of R5 say. |
 | D2 | Zero-shot prompt template | `"a {label}"` | Template text changes results and is part of the config hash. |
-| D3 | Zero-shot model and curation encoder | One SigLIP checkpoint for the two slots `ImageEncoder` and `ZeroShotImageClassifier` | Matches the L2 suggestion in §10 of the architecture. Runs locally on the 5090. |
-| D4 | Text and object detector models, confidence thresholds | Text: a DBNet-family detector. Objects: a general-purpose detector, confidence 0.5 | The architecture names no models. The confidence threshold has a material effect on R6. |
+| D3 | Curation encoder (local) | A SigLIP checkpoint | Matches the L2 suggestion in §10 of the architecture. OpenRouter has no image-embedding encoders (U2), thus this slot is local in each configuration. |
+| D4 | VLM for the OpenRouter slots, and its instruction templates | One vision model for `ZeroShotImageClassifier`, `TextCoverageEstimator`, and `SalientObjectEstimator` — proposed `google/gemini-2.5-flash`, temperature 0, fixed JSON output | U2. A VLM-estimated fraction replaces a box-based local detector for s03 and s05 — a change of measurement method for §4 steps 3 and 5. Box-based local implementations of the estimator slots stay applicable. Check the fraction quality at the s08 spot-check. |
 | D5 | Near-duplicate keep rule | Greedy, best first: pixel area, largest first, then ascending `image_id` | The architecture gives only the 0.95 threshold. |
 | D6 | Clustering method and granularity for R8 | k-means, `k = ceil(n / 50)`, seeded, CPU | "Cluster" is unspecified. Granularity changes which images the cap removes. |
 | D7 | In-cluster keep rule | Farthest-point traversal from the medoid, keep the first 15 | Keeps in-cluster diversity, not in-cluster typicality. |
-| D8 | Development sampling target | `sample_rate` set for ≈ 50,000 candidates before filtering | Set to land the released development pool in the R13 range after funnel losses. Adjust after the first funnel report. |
-| D9 | `wit_base` materialization mode | Fetch a Wikimedia thumbnail rendition of the source file at a width that keeps the short side ≥ 512 px (1024 px is sufficient for each aspect ratio that R3 allows), with a descriptive User-Agent and bounded concurrency | Source files can be as large as 27,000 px — full downloads are wasteful. The fetched rendition becomes the permanent raw bytes, and `retrieval_note` records the URL used. |
+| D8 | Development sampling target | `sample_rate` set for ≈ 25,000 candidates before the screen | With U1 at 5 GB and ≈ 300 KB for each fetch, s02 fetches ≈ 15,000 images at most — the budget, not the count, is the hard limit. Adjust after the first funnel report. |
+| D9 | `wit_base` materialization mode | Fetch a Wikimedia thumbnail rendition of the source file at a width that keeps the short side ≥ 512 px (1024 px is sufficient for each aspect ratio that R3 allows), with a descriptive User-Agent and bounded concurrency | Source files can be as large as 27,000 px — full downloads are wasteful. The fetched rendition becomes the permanent raw bytes, and `retrieval_note` records the URL used. Each fetch counts against U1. |
 | D10 | Caption-based boilerplate filter | Not in this version — captions go through unchanged | R10 permits the signal and defines no rule. Examine again with measured funnel data. |
 
 ## 17. Acceptance criteria
@@ -639,3 +725,6 @@ proposed default.
 6. No open decision from §16 is implemented without recorded agreement.
 7. Documentation (this file, docstrings, comments) is Vale-clean at error
    level, with warning decisions noted.
+8. The development run retrieves at most `budget_bytes` (U1, default
+   5 GB) for the corpus, and the funnel report shows byte totals for
+   each stage.
