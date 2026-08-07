@@ -1,0 +1,49 @@
+# Curation configuration files
+
+Each file here is the full parameter surface of one curation pipeline
+run. The loader (`pool/curation/config.py`) validates in full: an
+unknown or missing field stops the run with an error that names the
+JSON path. JSON has no comments, thus this file documents the fields.
+
+**Each edit changes the curation config hash.** The hash keys the
+artifact tree and the pool version, thus an edited config starts a new
+pool lineage. That is correct behavior, not an accident — see
+`docs/specs/pool-curation.md` section 6.
+
+## The two headline knobs
+
+- **OpenRouter model** — `providers.openrouter.default_model`. One
+  string, for example `"google/gemini-3.1-flash-lite"`. A slot can
+  override it: set `providers.<slot>.model` to a model identifier, and
+  that slot uses it, not the default. `openai/gpt-5.6-luna` is a
+  good lower-cost alternative.
+- **Hugging Face dataset** — `corpus.repo_id`, plus the `corpus.columns`
+  mapping that names the dataset columns for each protocol field. Set a
+  column name to `null` when the dataset has no such column.
+
+## Field notes
+
+- `corpus.revision` — a branch name is permitted and is resolved to a
+  commit hash at snapshot time. Pin a commit hash before the first run
+  that matters, and the lineage stays fixed.
+- `corpus.materialization.thumbnail_width` — Wikimedia serves only
+  standard thumbnail widths (250, 330, 500, 960, 1280, 1920, 3840).
+  1280 is the smallest that keeps the short side at or above 512 px for
+  each aspect ratio the screen permits.
+- `sampling.sample_rate` — the fraction of corpus records that enter
+  the funnel. The rule is hash-based and deterministic. Set it to get
+  approximately 10,000 candidates (decision D8) and adjust after the
+  first funnel report shows the measured corpus row count.
+- `extraction.budget_bytes` — the U1 extraction budget. The default is
+  5 GB. The scan plus all image fetches count against it. Tunable for
+  each iteration.
+- `providers.<slot>.instruction_template` — the fixed instruction the
+  OpenRouter provider sends. The classifier template must contain the
+  placeholder `{label_phrases}`, which the provider replaces verbatim
+  with the rendered label phrases. `classify.label_template` must
+  contain `{label}` one time.
+- `providers.encoder` — `"fake"` in this build. A local SigLIP encoder
+  comes on a branch that follows. Switching the encoder changes the config
+  hash and thus starts a new pool lineage.
+- `release.tag` — must start with `dev-` when `dev_only` is `true`,
+  and only then. Development pools are not published (R13).
