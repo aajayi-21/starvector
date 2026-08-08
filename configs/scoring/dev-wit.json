@@ -25,7 +25,7 @@
       "url": "https://cvssp.org/data/fscoco/fscoco.tar.gz",
       "archive_sha256": null,
       "coordinate_extent": null,
-      "budget_bytes": 30000000000,
+      "budget_bytes": 2500000000,
       "fake_pair_count": null,
       "fake_neardup_families": null
     },

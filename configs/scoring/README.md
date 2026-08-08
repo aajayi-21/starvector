@@ -40,7 +40,10 @@ A render field here is an unknown-field error.
   - `coordinate_extent` — the first parse raises with the observed
     value ranges, and the operator writes the dataset's canvas
     dimensions here.
-  The `url` value is unconfirmed until the first download — the
+  A headers-only check (2026-08-08) confirmed the `url` value live:
+  the archive measures 2,378,884,718 bytes, and `budget_bytes` sits
+  immediately above it as a hard ceiling (owner ruling, 2026-08-08).
+  The tree layout stays unconfirmed until the first extraction — the
   adapter raises rather than guesses on a layout it does not know.
 - **Splits** — `split_salt` plus `split_fractions` divide the pairs
   into background, V1, and V2 sets (D8): hash-based, disjoint,
