@@ -15,6 +15,7 @@ from providers.fake.describer import FakeVlmDescriber
 from providers.fake.encoder import FakeImageEncoder
 from providers.fake.estimators import FakeSalientObjectEstimator, FakeTextCoverageEstimator
 from providers.fake.linedrawer import FakeLineDrawer
+from providers.fake.sketch_encoder import FakeSketchEncoder
 from providers.fake.text_encoder import FakeTextEncoder
 from providers.protocols import Box, ElementResponse
 
@@ -215,8 +216,10 @@ def test_config_hashes_are_different_across_all_fakes():
         FakeZeroShotImageClassifier().config_hash,
         FakeTextCoverageEstimator().config_hash,
         FakeSalientObjectEstimator().config_hash,
+        FakeSketchEncoder(DIMENSION).config_hash,
     }
-    assert len(hashes) == 8
+    assert len(hashes) == 9
     assert all(len(value) == 64 for value in hashes)
     assert FakeTextEncoder(128).config_hash != FakeTextEncoder(256).config_hash
+    assert FakeSketchEncoder(128).config_hash != FakeSketchEncoder(256).config_hash
     assert FakeLineDrawer(32).config_hash != FakeLineDrawer(64).config_hash

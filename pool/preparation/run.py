@@ -226,6 +226,17 @@ def _siglip_config(slot_name: str, slot: SlotSection):
     )
 
 
+def wire_slot(slot_name: str, config: PreparationConfig, data_root: Path):
+    """Build one provider instance for a named slot of this config.
+
+    Public seam for the validation harnesses (spec P2 section 12): the
+    V1 union index must run photographs through the same line-drawer
+    and image-encoder providers as p05 and p06, wired from the same
+    preparation config.
+    """
+    return _wire_slot(slot_name, config, data_root)
+
+
 def _wire_slot(slot_name: str, config: PreparationConfig, data_root: Path):
     """Build one model provider instance right before its stage runs."""
     slot = getattr(config.providers, slot_name)

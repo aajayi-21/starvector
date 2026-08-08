@@ -67,6 +67,7 @@ __all__ = [
     "drawing_row",
     "box_row",
     "group_to_row",
+    "row_to_group",
     "meta_to_json",
     "json_to_meta",
     "write_meta",
@@ -194,6 +195,15 @@ def group_to_row(group: GroupRow) -> dict[str, JsonValue]:
         "group_id": group.group_id,
         "member_count": group.member_count,
     }
+
+
+def row_to_group(row: dict[str, JsonValue]) -> GroupRow:
+    """The inverse of group_to_row, for the scoring context loader."""
+    return GroupRow(
+        image_id=str(row["image_id"]),
+        group_id=str(row["group_id"]),
+        member_count=int(row["member_count"]),
+    )
 
 
 def meta_to_json(meta: StageMeta) -> dict[str, JsonValue]:

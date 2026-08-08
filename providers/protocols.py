@@ -9,7 +9,7 @@ selects the implementation at wiring time.
 from collections.abc import Iterator, Mapping, Sequence
 from typing import NamedTuple, Protocol
 
-from core.types import FloatArray, Vectors
+from core.types import FloatArray, StrokePath, Vectors
 
 
 class CorpusIdentity(NamedTuple):
@@ -208,3 +208,68 @@ class ElementBoxDetector(Protocol):
     def detect_boxes(
         self, images: Sequence[bytes], element_lists: Sequence[Sequence[str]]
     ) -> Sequence[Mapping[str, Box | None]]: ...
+
+
+class SketchEncoder(Protocol):
+    """Sketch encoder slot: the Layer 2 encode step (spec P2 section 8).
+
+    Input rows are canonical rendered sketch PNG bytes. This slot is
+    not the pool ImageEncoder: the two slots have their own config
+    hashes, and configuration cannot wire them from one entry
+    (CLAUDE.md section 6, R7). The two must output into one shared
+    vector space, because the outline channel compares them.
+    """
+
+    @property
+    def config_hash(self) -> str: ...
+
+    def encode_images(self, images: Sequence[bytes]) -> Vectors:
+        """The output is float32 (B, d), each row unit-norm."""
+        ...
+
+
+class SketchsetIdentity(NamedTuple):
+    """The tuple that pins one sketch-pair dataset revision."""
+
+    provider: str    # "fscoco" | "fake"
+    name: str        # dataset name
+    revision: str    # archive SHA-256 digest, or the fake config digest
+
+
+class SketchPair(NamedTuple):
+    """One record from a sketch dataset (spec P2 section 8).
+
+    pair_key is stable in a pinned dataset revision. One of
+    sketch_strokes and sketch_bytes is filled — not the two at one
+    time. Stroke points are floats in the unit square, (0, 0) top
+    left, y down (spec P2 decision D2). category is recorded, not
+    acted on.
+    """
+
+    pair_key: str
+    photo_bytes: bytes
+    sketch_strokes: tuple[StrokePath, ...] | None
+    sketch_bytes: bytes | None
+    category: str | None
+
+
+class SketchPairSource(Protocol):
+    """Sketch-pair dataset access (spec P2 section 8).
+
+    The adapter owns download, digest checks, extraction, and parse.
+    iter_pairs yields records in ascending pair_key sequence and
+    applies the SketchPair rules at its boundary.
+    """
+
+    @property
+    def identity(self) -> SketchsetIdentity: ...
+
+    @property
+    def config_hash(self) -> str: ...
+
+    @property
+    def bytes_retrieved(self) -> int:
+        """Monotone count of transport bytes this adapter retrieved (U1)."""
+        ...
+
+    def iter_pairs(self) -> Iterator[SketchPair]: ...

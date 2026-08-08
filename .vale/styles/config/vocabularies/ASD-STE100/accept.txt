@@ -680,6 +680,7 @@ storage
 store
 storm
 strength
+[Ss]troke
 Structural Repair Manual
 submarine
 suction
