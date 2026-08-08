@@ -69,10 +69,13 @@ def test_an_unpinned_extent_raises_with_the_observed_ranges() -> None:
         strokes_from_array(array, None, "u/1")
 
 
-def test_a_point_off_the_pinned_extent_raises() -> None:
-    array = np.asarray([[11.0, 0.0, 1.0]])
-    with pytest.raises(ValueError, match="does not agree with the file"):
-        strokes_from_array(array, EXTENT, "u/1")
+def test_a_point_off_the_pinned_extent_clamps_to_the_edge() -> None:
+    # Parse rule v2: the source data crosses the canvas edge on a
+    # small fraction of points, and they clamp — the drawing-canvas
+    # rule. A negative value clamps to zero.
+    array = np.asarray([[11.0, -2.0, 0.0], [5.0, 5.0, 1.0]])
+    strokes = strokes_from_array(array, EXTENT, "u/1")
+    assert strokes == (((1.0, 0.0), (0.5, 0.5)),)
 
 
 def test_unsafe_archive_members_raise() -> None:

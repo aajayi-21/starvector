@@ -42,7 +42,12 @@ _IMAGE_DIR = "images"
 _IMAGE_SUFFIX = ".jpg"
 
 _PAIR_KEY_RULE = "user-slash-cocoid-v1"
-_PARSE_RULE = "npy-columns-v1"
+
+# v2 (measured 2026-08-08 on the pinned archive): the official raster
+# renders are 256 x 256, and 0.34% of vector points land off that
+# canvas — digitizer overshoot. Out-of-range points clamp to the edge,
+# the rule a drawing canvas applies to a pen that leaves it.
+_PARSE_RULE = "npy-columns-v2"
 
 _DOWNLOAD_CHUNK = 1 << 20
 
@@ -80,10 +85,12 @@ def strokes_from_array(array: np.ndarray,
                        where: str) -> tuple[StrokePath, ...]:
     """Parse one vector sketch array into unit-square strokes (D2).
 
-    The array must be 2-D with the pinned column count, pen states in
-    the pinned value set, and each normalized point in [0, 1]. When
-    the second argument is None, raises with the observed ranges in
-    the message so the operator can pin coordinate_extent.
+    The array must be 2-D with the pinned column count and pen states
+    in the pinned value set. Each point normalizes by the pinned
+    canvas dimensions and clamps into [0, 1] — 0.34% of source
+    points land off the canvas (parse rule v2). When the second
+    argument is None, raises with the observed ranges in the message
+    so the operator can pin coordinate_extent.
     """
     if array.ndim != 2 or array.shape[1] != _COLUMN_COUNT:
         raise ValueError(
@@ -108,13 +115,8 @@ def strokes_from_array(array: np.ndarray,
     strokes: list[StrokePath] = []
     current: list[tuple[float, float]] = []
     for row in array:
-        x = float(row[0]) / extent_x
-        y = float(row[1]) / extent_y
-        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
-            raise ValueError(
-                f"{where}: normalized point ({x}, {y}) is not in the "
-                "unit square — the pinned coordinate_extent does not "
-                "agree with the file")
+        x = min(max(float(row[0]) / extent_x, 0.0), 1.0)
+        y = min(max(float(row[1]) / extent_y, 0.0), 1.0)
         current.append((x, y))
         if float(row[-1]) == 1.0:
             strokes.append(tuple(current))
