@@ -670,9 +670,13 @@ data/
     outline.npy  meta.json
   validation/<harness>/<index_id[:8]>/<harness_config_hash[:8]>/
     trials.jsonl  report.json  meta.json
-  sketchsets/<dataset_config_hash[:8]>/
-    pairs/<pair_key hash prefix>/...      # materialized dataset records
-    meta.json                             # bytes retrieved, counts
+  sketchsets/
+    archives/<archive_sha256>.tar.gz      # the downloaded archive, by digest
+    trees/<archive_sha256[:16]>/          # the extracted tree plus meta.json —
+                                          # keyed by the archive digest: the tree
+                                          # depends on the archive alone, thus a
+                                          # later coordinate_extent pin does not
+                                          # extract again (recorded 2026-08-08)
   cache/
     openrouter/<provider_config_hash[:8]>/   # sketch encode responses, shared layout
     vectors/<combined_hash[:8]>/             # photograph outline vectors — the p06
@@ -750,10 +754,14 @@ pull a statistics dependency for one formula unless agreement says so.
 
 Two runs with the same config against the same preparation must give
 byte-for-byte the same artifacts and records. Excluded: `timings.json`,
-the verdict fields, and the commonness `meta.json` — it carries the U1
-`POST` totals, which are different between a cold run and a warm-cache
-run. p09 keeps meta files out of its artifact inventory for the same
-cause, and this file follows that rule. Concretely:
+the verdict fields, the commonness and validation `meta.json` files,
+and the accounting fields of a harness record (`created_at`,
+`provider_usage`, `dataset_bytes_retrieved`) — the U1 totals are
+different between a cold run and a warm-cache run, and the clock
+moves. p09 keeps meta files out of its artifact inventory for the
+same cause, and these files follow that rule. The scores, counts, and
+identity hashes in `trials.jsonl`, `report.json`, and the record are
+in the byte-for-byte scope. Concretely:
 
 - The canonical render of `strokes` payloads is integer pixel work with a written
   rule (Bresenham segments, shared dilation) — no anti-aliasing, no

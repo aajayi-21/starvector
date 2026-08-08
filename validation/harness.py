@@ -259,7 +259,10 @@ def write_harness_record(records_root: Path, harness: str, tag: str,
     """Write one harness record, pretty canonical JSON plus newline.
 
     A record with human-filled verdict fields is kept as-is — a
-    re-run must not move a recorded decision back to pending.
+    re-run must not move a recorded decision back to pending. The kept
+    record must name the same run identity: a stale record for a
+    different preparation at the same path raises, it does not
+    masquerade as this run's result.
     """
     import json
 
@@ -267,6 +270,13 @@ def write_harness_record(records_root: Path, harness: str, tag: str,
     if path.is_file():
         existing = json.loads(path.read_text(encoding="utf-8"))
         if existing.get("verdict") != VERDICT_TEMPLATE["verdict"]:
+            for name in ("index_id", "preparation_version_id",
+                         "scoring_config_hash"):
+                if existing.get(name) != content.get(name):
+                    raise ValueError(
+                        f"{path}: a record with a filled verdict names a "
+                        f"different {name} — move the old record aside "
+                        "before this run writes its own")
             return path
     write_json_pretty(path, content)
     return path

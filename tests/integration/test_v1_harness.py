@@ -201,3 +201,19 @@ def test_a_tampered_commonness_meta_raises_on_read_back(
     meta_path.write_text(json.dumps(meta), encoding="utf-8")
     with pytest.raises(Exception, match="truncated-key collision"):
         _run(clone)
+
+
+def test_a_stale_record_for_a_different_preparation_raises(
+        scoring_preparation, tmp_path) -> None:  # noqa: F811
+    import json
+
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    report, _ = _run(clone)
+    path = report.record_path
+    record = json.loads(open(path, encoding="utf-8").read())
+    record["verdict"] = "pass"
+    record["preparation_version_id"] = "0" * 64
+    with open(path, "w", encoding="utf-8") as sink:
+        json.dump(record, sink)
+    with pytest.raises(ValueError, match="different preparation_version_id"):
+        _run(clone)
