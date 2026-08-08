@@ -2,7 +2,7 @@
 
 Invariant 10 (union grouping), the offline positive signal through the
 full production path, the section 14 artifact shapes, the harness
-record, the Rule 3 provider guard, and byte-identical re-runs.
+record, the Rule 3 provider guard, and byte-equal re-runs.
 """
 
 import shutil
@@ -16,7 +16,7 @@ from conftest import (FIXED_CLOCK, assert_trees_identical,
 from core.canonical import sha256_hex
 from validation.v1 import run_v1
 
-# Pair index 1 sits in the v1 split under test-salt, and its photo is
+# Pair index 1 sits in the v1 split with test-salt, and its photo is
 # scripted as a near-duplicate of the pool fam-a pair. The nine v1
 # members cover indices 1, 6, 7, 13, 14, 15, 16, 18, 20.
 NEARDUP_FAMILIES = ("solo-filler", "fam-a")
@@ -53,7 +53,7 @@ def v1_run(scoring_preparation, tmp_path_factory):  # noqa: F811
 def test_the_marker_pairs_rank_their_photographs_first(v1_run) -> None:
     report = v1_run["report"]
     assert report.pair_count == V1_COUNT
-    # Eight of nine pairs share a family with their photograph; the
+    # Eight of nine pairs share a family with their photograph. The
     # scripted near-duplicate pair does not.
     assert report.first_rank_fraction >= 0.8
     assert report.top_ten_fraction >= report.first_rank_fraction
@@ -64,7 +64,7 @@ def test_the_marker_pairs_rank_their_photographs_first(v1_run) -> None:
 def test_the_neardup_photograph_exits_with_the_pool_group(v1_run) -> None:
     # The union holds 8 pool images plus 9 photographs. The scripted
     # photograph joins the two-member pool fam-a group, thus its trial
-    # ranks against 17 - 3 = 14 decoys; the rest against 16.
+    # ranks against 17 - 3 = 14 decoys. The other trials rank against 16.
     by_key = {row.pair_key: row for row in v1_run["report"].trials}
     neardup_row = by_key["fake://pair/0001"]
     assert neardup_row.decoy_count == 14
@@ -139,3 +139,65 @@ def test_a_pair_count_above_the_split_membership_raises(
         run_v1(config, data_root=clone["data"],
                records_root=tmp_path / "records",
                providers=scoring_fakes(), clock=lambda: FIXED_CLOCK)
+
+
+def test_a_sketch_encoder_that_does_not_fill_the_p06_space_raises(
+        scoring_preparation, tmp_path) -> None:  # noqa: F811
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    config = make_scoring_config(
+        clone["prep_record_path"],
+        **{"providers.sketch_encoder.dimension": 64,
+           "validation.v1_pair_count": V1_COUNT,
+           "commonness.background_count": 6})
+    with pytest.raises(ValueError, match="R7"):
+        run_v1(config, data_root=clone["data"],
+               records_root=tmp_path / "records",
+               providers=scoring_fakes(dimension=64),
+               clock=lambda: FIXED_CLOCK)
+
+
+def test_a_filled_verdict_survives_a_re_run(scoring_preparation,
+                                            tmp_path) -> None:  # noqa: F811
+    import json
+
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    report, _ = _run(clone)
+    path = report.record_path
+    record = json.loads(open(path, encoding="utf-8").read())
+    record["verdict"] = "pass"
+    record["reviewer"] = "ade"
+    with open(path, "w", encoding="utf-8") as sink:
+        json.dump(record, sink)
+    second, _ = _run(clone)
+    kept = json.loads(open(second.record_path, encoding="utf-8").read())
+    assert kept["verdict"] == "pass"
+    assert kept["reviewer"] == "ade"
+
+
+def test_a_gated_sketch_stops_the_run_before_any_spend(
+        scoring_preparation, tmp_path) -> None:  # noqa: F811
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    config = make_scoring_config(
+        clone["prep_record_path"],
+        **{"intake.min_strokes_whole_drawing": 50,
+           "validation.v1_pair_count": V1_COUNT,
+           "commonness.background_count": 6})
+    with pytest.raises(ValueError, match="do not clear the Layer 0 gates"):
+        run_v1(config, data_root=clone["data"],
+               records_root=tmp_path / "records",
+               providers=scoring_fakes(), clock=lambda: FIXED_CLOCK)
+    assert not (clone["data"] / "commonness").exists()
+
+
+def test_a_tampered_commonness_meta_raises_on_read_back(
+        scoring_preparation, tmp_path) -> None:  # noqa: F811
+    import json
+
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    _run(clone)
+    meta_path = next((clone["data"] / "commonness").glob("*/*/meta.json"))
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["index_id"] = "0" * 64
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    with pytest.raises(Exception, match="truncated-key collision"):
+        _run(clone)

@@ -1,4 +1,4 @@
-"""Round-trip tests for the marker geometry and the fake sketch encoder.
+"""Marker geometry through the production render and back.
 
 The style bridge instrument: strokes from the fake pair source go
 through the production render, and the fake encoder must read the

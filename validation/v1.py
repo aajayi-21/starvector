@@ -45,6 +45,31 @@ from validation.splits import select_keys
 _PHOTO_ENCODE_CHUNK = 10
 
 
+def _check_shared_space(config: ScoringConfig,
+                        prep_config: PreparationConfig) -> None:
+    """R7: the sketch encoder must fill the p06 vector space.
+
+    The outline channel compares the two, thus a dimension or model
+    that does not agree makes each cosine meaningless.
+    """
+    sketch = config.providers.sketch_encoder
+    image = prep_config.providers.image_encoder
+    if (sketch.dimension is not None and image.dimension is not None
+            and sketch.dimension != image.dimension):
+        raise ValueError(
+            f"R7: sketch_encoder dimension {sketch.dimension} does not "
+            f"agree with the p06 image_encoder dimension {image.dimension}")
+    if sketch.provider == "openrouter" and image.provider == "openrouter":
+        sketch_model = sketch.model \
+            or config.providers.openrouter.default_model
+        image_model = image.model \
+            or prep_config.providers.openrouter.default_model
+        if sketch_model != image_model:
+            raise ValueError(
+                f"R7: sketch_encoder model {sketch_model!r} does not "
+                f"agree with the p06 image_encoder model {image_model!r}")
+
+
 @dataclass(frozen=True, slots=True)
 class V1TrialRow:
     pair_key: str
@@ -113,6 +138,11 @@ def build_union_index(
                 drawing_path.read_bytes(),
                 prep_config.outline.crop_fraction))
         encoded = image_encoder.encode_images(crops)   # (6 * B, d)
+        if encoded.shape[0] != len(crops):
+            raise ValueError(
+                f"image encoder returned {encoded.shape[0]} rows for "
+                f"{len(crops)} crops — a miscounted batch must not enter "
+                "the shared p06 vector cache")
         for position, image_id in enumerate(chunk):
             rows = np.ascontiguousarray(
                 encoded[position * 6:(position + 1) * 6]).astype(np.float32)
@@ -166,6 +196,7 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
     loaded = load_pool_index(Path(config.input.preparation_record),
                              data_root, dev_only=config.report.dev_only)
     prep_config = load_preparation_config(Path(loaded.record.config_path))
+    _check_shared_space(config, prep_config)
 
     source = providers.get("sketch_pairs") or harness.wire_sketch_pairs(
         config, data_root)
@@ -177,11 +208,11 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
     background_keys = select_keys(keys, salt, fractions, "background",
                                   config.commonness.background_count)
     pairs = harness.pairs_by_key(source, set(v1_keys) | set(background_keys))
-    for key in v1_keys:
-        if pairs[key].sketch_strokes is None:
-            raise ValueError(
-                f"{key}: no vector strokes — D10 is not built. Stop and "
-                "put the raster adapter on the table.")
+    # Pre-flight before the encoder spend: each selected sketch (trial
+    # and background) must clear the Layer 0 gates.
+    harness.check_selected_pairs(pairs, v1_keys + background_keys,
+                                 intake_gates(config),
+                                 loaded.render.canvas_px)
 
     line_drawer = providers.get("line_drawer") or wire_slot(
         "line_drawer", prep_config, data_root)
@@ -241,6 +272,9 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
         record = harness.submission_record_from_strokes(pair.sketch_strokes)
         trial = score_trial(record, sha256_hex(pair.photo_bytes), context,
                             sketch_encoder)
+        # Strict rank: the decoys above the target, plus one. A tied
+        # decoy does not push the rank down — p carries the half-credit
+        # rule (rare at float32, spec section 12).
         target_rank = trial.decoy_count - trial.beaten - trial.tied + 1
         trials.append(V1TrialRow(
             pair_key=key, p=trial.p, decoy_count=trial.decoy_count,

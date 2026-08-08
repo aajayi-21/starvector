@@ -17,21 +17,24 @@ from core.types import Atom, StrokePath, Submission
 # artifact.
 _NEWLINES = ("\r\n", "\r")
 
+# The pinned fragment-strip set: ASCII whitespace only (R6).
+_ASCII_WHITESPACE = " \t\n\r\v\f"
+
 
 def split_pasted_text(text: str) -> tuple[str, ...]:
     """Split one pasted free-text value into atom fragments.
 
-    Splits on newlines and commas, removes whitespace at each end of
-    a fragment, and drops empty fragments (agreed 2026-08-08).
-    Deterministic and frozen — a change here moves stored atom
-    boundaries, which R6 forbids.
+    Splits on newlines and commas, removes ASCII whitespace at each
+    end of a fragment, and drops empty fragments (agreed 2026-08-08).
+    The whitespace set is pinned — the interpreter's Unicode tables
+    can move between versions, and a frozen rule cannot (R6).
     """
     for marker in _NEWLINES:
         text = text.replace(marker, "\n")
     fragments = []
     for line in text.split("\n"):
         for piece in line.split(","):
-            stripped = piece.strip()
+            stripped = piece.strip(_ASCII_WHITESPACE)
             if stripped:
                 fragments.append(stripped)
     return tuple(fragments)

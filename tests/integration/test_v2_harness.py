@@ -1,6 +1,6 @@
 """Integration: the V2 harness — invariant 6, the baseline shape.
 
-Runs on a direct 200-image prepared pool so the trial-score lattice
+Runs on a hand-built 200-image prepared pool so the trial-score lattice
 (D + 1 values) stays far below the KS acceptance line.
 """
 

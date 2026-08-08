@@ -17,7 +17,7 @@ def test_the_statistic_ignores_input_sequence() -> None:
 
 
 def test_the_five_percent_line_at_500_trials() -> None:
-    # The asymptotic 5% critical value is 1.3581 / sqrt(n).
+    # The asymptotic 5% acceptance line is 1.3581 / sqrt(n).
     statistic = 1.3581 / math.sqrt(500)
     assert ks_significance(statistic, 500) == pytest.approx(0.05, abs=1e-3)
 

@@ -159,8 +159,11 @@ class FSCocoSketchPairSource:
     def bytes_retrieved(self) -> int:
         return self._meter.total
 
-    def _set_root(self) -> Path:
-        return self._data_root / "sketchsets" / self.config_hash[:8]
+    def _tree_root(self, digest: str) -> Path:
+        # Keyed by the archive digest: the tree content depends on the
+        # archive alone, thus pinning coordinate_extent afterward does
+        # not extract again and leaves no orphan tree.
+        return self._data_root / "sketchsets" / "trees" / digest[:16]
 
     def _archive_path(self, digest: str) -> Path:
         return (self._data_root / "sketchsets" / "archives"
@@ -168,9 +171,10 @@ class FSCocoSketchPairSource:
 
     def iter_pairs(self) -> Iterator[SketchPair]:
         """Yield each pair from the extracted tree, ascending pair_key."""
-        self._ensure_materialized()
-        vector_root = self._vector_root()
+        digest = self._ensure_materialized()
+        vector_root = self._vector_root(digest)
         image_root = vector_root.parent / _IMAGE_DIR
+        entries: list[tuple[str, Path, Path]] = []
         for user_dir in sorted(vector_root.iterdir()):
             if not user_dir.is_dir():
                 raise ValueError(
@@ -182,20 +186,25 @@ class FSCocoSketchPairSource:
                 if not photo_path.is_file():
                     raise ValueError(
                         f"{pair_key}: photograph missing at {photo_path}")
-                array = np.load(sketch_path, allow_pickle=False)
-                strokes = strokes_from_array(
-                    array, self._config.coordinate_extent, pair_key)
-                pair = SketchPair(
-                    pair_key=pair_key,
-                    photo_bytes=photo_path.read_bytes(),
-                    sketch_strokes=strokes,
-                    sketch_bytes=None,
-                    category=None)
-                check_sketch_pair(pair)
-                yield pair
+                entries.append((pair_key, sketch_path, photo_path))
+        # The walk sequence approximates pair_key sequence but a stem
+        # with a dot can reorder — sort by pair_key, the contract.
+        entries.sort(key=lambda entry: entry[0])
+        for pair_key, sketch_path, photo_path in entries:
+            array = np.load(sketch_path, allow_pickle=False)
+            strokes = strokes_from_array(
+                array, self._config.coordinate_extent, pair_key)
+            pair = SketchPair(
+                pair_key=pair_key,
+                photo_bytes=photo_path.read_bytes(),
+                sketch_strokes=strokes,
+                sketch_bytes=None,
+                category=None)
+            check_sketch_pair(pair)
+            yield pair
 
-    def _vector_root(self) -> Path:
-        tree = self._set_root() / "tree"
+    def _vector_root(self, digest: str) -> Path:
+        tree = self._tree_root(digest) / "tree"
         candidates = sorted(p for p in tree.rglob(_VECTOR_DIR) if p.is_dir())
         if len(candidates) != 1:
             raise ValueError(
@@ -203,12 +212,15 @@ class FSCocoSketchPairSource:
                 f"tree, found {len(candidates)}")
         return candidates[0]
 
-    def _ensure_materialized(self) -> None:
-        """Download, check, and extract one time. Offline afterward."""
-        meta_path = self._set_root() / "meta.json"
-        if meta_path.is_file():
-            return
+    def _ensure_materialized(self) -> str:
+        """Download, check, and extract one time. Offline afterward.
+
+        Returns the archive digest that keys the tree.
+        """
         digest = self._config.archive_sha256
+        if digest is not None \
+                and (self._tree_root(digest) / "meta.json").is_file():
+            return digest
         if digest is None or not self._archive_path(digest).is_file():
             observed = self._download_archive()
             if digest is None:
@@ -220,7 +232,7 @@ class FSCocoSketchPairSource:
                 raise ValueError(
                     f"archive digest mismatch: pinned {digest}, "
                     f"observed {observed}")
-        self._extract_archive(self._archive_path(digest))
+        self._extract_archive(self._archive_path(digest), digest)
         meta = {
             "url": self._config.url,
             "archive_sha256": digest,
@@ -229,36 +241,45 @@ class FSCocoSketchPairSource:
             "parse_rule": _PARSE_RULE,
         }
         _write_bytes_atomic(
-            meta_path, (canonical_json_pretty(meta) + "\n").encode("utf-8"))
+            self._tree_root(digest) / "meta.json",
+            (canonical_json_pretty(meta) + "\n").encode("utf-8"))
+        return digest
 
     def _download_archive(self) -> str:
-        """Fetch the archive with byte accounting (U1). Returns its digest."""
+        """Fetch the archive with byte accounting (U1). Returns its digest.
+
+        Streams to a scratch file — the archive is multi-GB and must
+        not sit in memory.
+        """
         import hashlib
 
         import httpx
 
         budget = self._config.budget_bytes
         hasher = hashlib.sha256()
-        chunks: list[bytes] = []
+        scratch = (self._data_root / "sketchsets" / "archives"
+                   / "download.tmp")
+        scratch.parent.mkdir(parents=True, exist_ok=True)
         transport = MeteredTransport(httpx.HTTPTransport(), self._meter)
         with httpx.Client(transport=transport, follow_redirects=True,
                           timeout=300.0) as client:
             with client.stream("GET", self._config.url) as response:
                 response.raise_for_status()
-                for chunk in response.iter_bytes(_DOWNLOAD_CHUNK):
-                    if self._meter.total > budget:
-                        raise ValueError(
-                            f"budget_bytes {budget} passed during the "
-                            "archive download — raise the budget or use a "
-                            "smaller source")
-                    hasher.update(chunk)
-                    chunks.append(chunk)
+                with open(scratch, "wb") as sink:
+                    for chunk in response.iter_bytes(_DOWNLOAD_CHUNK):
+                        if self._meter.total > budget:
+                            raise ValueError(
+                                f"budget_bytes {budget} passed during the "
+                                "archive download — raise the budget or "
+                                "use a smaller source")
+                        hasher.update(chunk)
+                        sink.write(chunk)
         digest = hasher.hexdigest()
-        _write_bytes_atomic(self._archive_path(digest), b"".join(chunks))
+        os.replace(scratch, self._archive_path(digest))
         return digest
 
-    def _extract_archive(self, archive_path: Path) -> None:
-        tree = self._set_root() / "tree"
+    def _extract_archive(self, archive_path: Path, digest: str) -> None:
+        tree = self._tree_root(digest) / "tree"
         tree.mkdir(parents=True, exist_ok=True)
         with tarfile.open(archive_path, "r:gz") as archive:
             for member in archive.getmembers():

@@ -126,16 +126,27 @@ def ensure_commonness_table(
     if meta_path.is_file():
         try:
             import json
-            json.loads(meta_path.read_text(encoding="utf-8"))
+            meta_read = json.loads(meta_path.read_text(encoding="utf-8"))
         except ValueError as error:
             raise ManifestError(
                 f"{meta_path}: complete marker does not parse: {error}. "
                 "Delete the directory to compute it again.") from error
+        # The directory key truncates the two identities — the meta
+        # carries them in full, and a read-back must agree.
+        for name, expected in (("index_id", index.index_id),
+                               ("commonness_config_hash", commonness_hash)):
+            if meta_read.get(name) != expected:
+                raise ManifestError(
+                    f"{meta_path}: {name} does not agree with the "
+                    "requested table — a truncated-key collision")
         table = np.load(table_path)
         if table.shape != (count,) or table.dtype != np.float32:
             raise ManifestError(
                 f"{table_path}: expected float32 ({count},), got "
                 f"{table.dtype} {table.shape}")
+        if not np.isfinite(table).all():
+            raise ManifestError(
+                f"{table_path}: the stored table holds a non-finite value")
         return CommonnessResult(table=table, posts=0, cache_hits=0,
                                 reused=True)
 
@@ -143,6 +154,9 @@ def ensure_commonness_table(
     hits_before = int(getattr(encoder, "cache_hit_count", 0))
     pairs = background()
     table = build_commonness_table(index, pairs, render, outline, encoder)
+    if not np.isfinite(table).all():
+        raise ValueError("the built commonness table holds a non-finite "
+                         "value — the encoder gave a bad vector")
     posts = int(getattr(encoder, "post_count", 0)) - posts_before
     cache_hits = int(getattr(encoder, "cache_hit_count", 0)) - hits_before
 

@@ -36,6 +36,8 @@ def outline_scores(sketch_vector: FloatArray, index: PoolIndex,
         raise ValueError(
             f"sketch_vector must have shape ({dimension},), got "
             f"{sketch_vector.shape}")
+    if not np.isfinite(sketch_vector).all():
+        raise ValueError("sketch_vector holds a non-finite value")
 
     centered_sketch = sketch_vector - index.outline_space_mean   # (d,)
     centered_pool = vectors - index.outline_space_mean           # (N, 6, d)

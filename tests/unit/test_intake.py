@@ -33,7 +33,7 @@ def _long_stroke(y: float = 0.5) -> dict:
 
 
 def _dot_strokes(count: int) -> list[dict]:
-    # Distinct pixels: one dot per column position.
+    # One dot for each column position — no shared pixels.
     return [{"points": [[(i + 0.5) / CANVAS, 0.5]], "group_id": None}
             for i in range(count)]
 
@@ -150,3 +150,33 @@ def test_the_edge_point_one_maps_onto_the_last_pixel() -> None:
 def test_single_point_stroke_is_one_pixel_before_dilation() -> None:
     mask = strokes_line_mask([((0.5, 0.5),)], CANVAS)
     assert int(mask.sum()) == 1
+
+
+def test_a_lone_surrogate_is_bad_shape() -> None:
+    import json
+
+    record = json.loads(
+        '{"impressions": ["\\ud800 tower"], "canvas_strokes": [],'
+        ' "groups": [], "relations": [], "pasted_text": null}')
+    with pytest.raises(IntakeError, match="encodable UTF-8"):
+        validate_submission(record, LOOSE, CANVAS)
+
+
+def test_a_non_finite_optional_point_entry_is_bad_shape() -> None:
+    record = _record(canvas_strokes=[
+        {"points": [[0.1, 0.1, float("inf")], [0.9, 0.9]],
+         "group_id": None}])
+    with pytest.raises(IntakeError, match="finite numbers"):
+        validate_submission(record, LOOSE, CANVAS)
+
+
+def test_the_text_gate_covers_relation_names_and_group_ids() -> None:
+    tight = IntakeGates(min_ink_pixels=0, min_strokes_whole_drawing=1,
+                        max_text_length=8, max_atoms=64)
+    record = _record(groups=[{"id": "g1", "label": ""}],
+                     relations=[{"relation": "x" * 9, "of": ["g1", "g1"]}])
+    with pytest.raises(IntakeError, match="text-length"):
+        validate_submission(record, tight, CANVAS)
+    record = _record(groups=[{"id": "g" * 9, "label": ""}])
+    with pytest.raises(IntakeError, match="text-length"):
+        validate_submission(record, tight, CANVAS)

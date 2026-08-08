@@ -65,3 +65,13 @@ def test_length_mismatch_raises() -> None:
 def test_wrong_dtype_raises() -> None:
     with pytest.raises(ValueError, match="float32"):
         standardize(np.zeros(3, dtype=np.float64))
+
+
+def test_a_non_finite_value_raises() -> None:
+    poisoned = np.asarray([1.0, float("nan"), 2.0], dtype=np.float32)
+    with pytest.raises(ValueError, match="non-finite"):
+        standardize(poisoned)
+    with pytest.raises(ValueError, match="non-finite"):
+        commonness_correct(poisoned, np.zeros(3, dtype=np.float32))
+    with pytest.raises(ValueError, match="non-finite"):
+        commonness_correct(np.zeros(3, dtype=np.float32), poisoned)

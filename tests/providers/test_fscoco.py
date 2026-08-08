@@ -1,8 +1,8 @@
 """Offline tests for the FS-COCO adapter: parse, digests, tree walk.
 
-No network: the tests exercise the pure parse functions, the archive
-digest check against a scratch tar.gz, and iter_pairs over a
-hand-built extracted tree with its meta marker in place.
+No network: the tests cover the pure parse functions, the archive
+digest check against a scratch tar.gz, and iter_pairs on a
+hand-built extracted tree with its meta marker written.
 """
 
 import hashlib
@@ -96,8 +96,8 @@ def test_the_hash_covers_content_determinants_and_no_budget() -> None:
 
 def _write_tree(data_root: Path, config: FSCocoConfig) -> None:
     """A materialized tree with its meta marker: no download runs."""
-    source = FSCocoSketchPairSource(config, data_root)
-    root = data_root / "sketchsets" / source.config_hash[:8]
+    root = (data_root / "sketchsets" / "trees"
+            / (config.archive_sha256 or "")[:16])
     for user, name, rows in (
         ("u1", "0001", [[0.0, 0.0, 0.0], [5.0, 5.0, 1.0]]),
         ("u1", "0002", [[1.0, 1.0, 1.0], [2.0, 2.0, 1.0]]),
@@ -133,7 +133,7 @@ def test_a_missing_photograph_raises(tmp_path: Path) -> None:
     config = _config()
     _write_tree(tmp_path, config)
     source = FSCocoSketchPairSource(config, tmp_path)
-    root = tmp_path / "sketchsets" / source.config_hash[:8]
+    root = tmp_path / "sketchsets" / "trees" / config.archive_sha256[:16]
     (root / "tree" / "fscoco" / "images" / "u1" / "0002.jpg").unlink()
     with pytest.raises(ValueError, match="photograph missing"):
         list(source.iter_pairs())

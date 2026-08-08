@@ -53,6 +53,12 @@ def _bad_shape(detail: str) -> IntakeError:
 def _checked_string(value: object, where: str) -> str:
     if not isinstance(value, str):
         raise _bad_shape(f"{where} must be a string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        # A lone surrogate clears json.loads but no UTF-8 encoder — an
+        # accepted record must stay storable and hashable forever (I4).
+        raise _bad_shape(f"{where} is not encodable UTF-8 text") from None
     return value
 
 
@@ -89,8 +95,11 @@ def _checked_stroke_path(raw_points: object, where: str) -> StrokePath:
                 f"{point_where} must be an array of {_POINT_MIN_ENTRIES} to "
                 f"{_POINT_MAX_ENTRIES} numbers")
         for extra in entry[_POINT_MIN_ENTRIES:]:
-            if isinstance(extra, bool) or not isinstance(extra, (int, float)):
-                raise _bad_shape(f"{point_where} optional entries must be numbers")
+            if (isinstance(extra, bool)
+                    or not isinstance(extra, (int, float))
+                    or not math.isfinite(float(extra))):
+                raise _bad_shape(
+                    f"{point_where} optional entries must be finite numbers")
         points.append((_checked_coordinate(entry[0], f"{point_where}.x"),
                        _checked_coordinate(entry[1], f"{point_where}.y")))
     return tuple(points)
@@ -169,8 +178,8 @@ def _checked_record(record: JsonValue) -> dict:
                                  f"{reference!r}")
 
     pasted = top["pasted_text"]
-    if pasted is not None and not isinstance(pasted, str):
-        raise _bad_shape("record.pasted_text must be a string or null")
+    if pasted is not None:
+        _checked_string(pasted, "record.pasted_text")
 
     return top
 
@@ -241,7 +250,9 @@ def render_strokes(strokes: tuple[StrokePath, ...] | list[StrokePath],
     Rasterizes on the canvas grid, then applies the shared canonical
     render of core/lineart.py: the same dilation rule, white
     background, black lines, no anti-aliasing, 0 and 255 as the only
-    pixel values. Equal strokes give byte-for-byte equal output.
+    pixel values. Equal strokes give byte-for-byte equal output — with
+    the P1b scope, one machine and environment: the PNG encode stage
+    depends on the Pillow and zlib builds.
     """
     mask = strokes_line_mask(strokes, canvas_px)
     return lineart.render_canonical(mask, canvas_px, line_width_px)
@@ -273,7 +284,12 @@ def validate_submission(record: JsonValue, gates: IntakeGates,
         raise IntakeError("atom-count",
                           f"{atom_count} atoms, limit {gates.max_atoms}")
 
-    for text in (*impressions, *fragments, *(g["label"] for g in groups)):
+    # The gate covers each client text field: impressions, pasted
+    # fragments, group labels and identifiers, and relation names.
+    texts = (*impressions, *fragments,
+             *(g["label"] for g in groups), *(g["id"] for g in groups),
+             *(r["relation"] for r in relations))
+    for text in texts:
         if len(text) > gates.max_text_length:
             raise IntakeError(
                 "text-length",

@@ -97,3 +97,10 @@ def test_channel_needs_exactly_one_encoded_drawing_atom() -> None:
         vectors={"a1": vector, "a2": vector})
     with pytest.raises(ValueError, match="one encoded WHOLE-DRAWING"):
         outline_channel(two, index, CONFIG)
+
+
+def test_a_non_finite_sketch_vector_raises() -> None:
+    index = _index([[[1.0, 0.0, 0.0, 0.0]] * 6])
+    poisoned = np.asarray([1.0, float("nan"), 0.0, 0.0], dtype=np.float32)
+    with pytest.raises(ValueError, match="non-finite"):
+        outline_scores(poisoned, index, CONFIG)

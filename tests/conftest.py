@@ -477,7 +477,7 @@ def completed_preparation(tmp_path_factory: pytest.TempPathFactory):
 
 
 def build_prepared_pool_for_scoring(root: Path) -> dict:
-    """One full fake preparation with a real, readable config file.
+    """One full fake preparation with a config file on disk.
 
     The scoring context loader re-reads the preparation config from
     the path in the committed record (R2), thus the config document
@@ -516,7 +516,7 @@ def scoring_preparation(tmp_path_factory: pytest.TempPathFactory):
     """Module-scoped prepared pool for read-only scoring tests.
 
     Harness runs write into the data root — mutating tests must use
-    clone_preparation instead of this fixture directly.
+    clone_preparation, not this fixture directly.
     """
     root = tmp_path_factory.mktemp("scoring-prep")
     return build_prepared_pool_for_scoring(root)
@@ -542,8 +542,8 @@ def build_direct_prepared_pool(root: Path, count: int,
     """Hand-build one prepared pool: artifacts, record, config file.
 
     The fast fixture for statistical tests — no pipeline run. Seeded
-    unit vectors, singleton near-duplicate groups, and a record whose
-    artifact inventory holds the true digest of each written file.
+    unit vectors, singleton near-duplicate groups, and a record with
+    the measured digest of each written file in its inventory.
     """
     import numpy as np
 

@@ -10,6 +10,7 @@ unknown-field error by construction.
 """
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -219,6 +220,8 @@ class _Node:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ConfigError(f"{self._path}.{key}: expected a number")
         value = float(value)
+        if not math.isfinite(value):
+            raise ConfigError(f"{self._path}.{key}: expected a finite number")
         if low is not None and (value < low or (low_open and value == low)):
             raise ConfigError(f"{self._path}.{key}: out of range")
         if high is not None and value > high:
@@ -248,7 +251,8 @@ class _Node:
             return None
         if (not isinstance(value, list) or len(value) != 2
                 or any(isinstance(v, bool) or not isinstance(v, (int, float))
-                       or float(v) <= 0.0 for v in value)):
+                       or not math.isfinite(float(v)) or float(v) <= 0.0
+                       for v in value)):
             raise ConfigError(
                 f"{self._path}.{key}: expected two positive numbers or null")
         return (float(value[0]), float(value[1]))
@@ -262,6 +266,9 @@ class _Node:
             weight = value[name]
             if isinstance(weight, bool) or not isinstance(weight, (int, float)):
                 raise ConfigError(f"{self._path}.{key}.{name}: expected a number")
+            if not math.isfinite(float(weight)):
+                raise ConfigError(
+                    f"{self._path}.{key}.{name}: expected a finite number")
             if float(weight) <= 0.0:
                 raise ConfigError(
                     f"{self._path}.{key}.{name}: must be positive — a zero "

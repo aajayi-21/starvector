@@ -76,3 +76,9 @@ def test_optional_point_entries_are_not_read() -> None:
     }
     submission = assemble_atoms(record)
     assert submission.atoms[0].strokes == (((0.1, 0.2), (0.3, 0.4)),)
+
+
+def test_the_fragment_strip_set_is_ascii_only() -> None:
+    # A no-break space (\xa0) is not in the pinned strip set and stays.
+    assert split_pasted_text("\xa0kite\xa0, boat") == ("\xa0kite\xa0",
+                                                       "boat")

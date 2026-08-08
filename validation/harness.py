@@ -217,6 +217,38 @@ def submission_record_from_strokes(
     }
 
 
+def check_selected_pairs(pairs: Mapping[str, SketchPair],
+                         keys: list[str], gates,
+                         canvas_px: int) -> None:
+    """Pre-flight: each selected sketch must clear the Layer 0 gates.
+
+    Runs before the encoder spend, and covers the background split
+    too — a sketch that Layer 0 rejects cannot be a live submission,
+    thus it must not shape the commonness table. Raises one aggregate
+    error naming each failing pair, so the operator adjusts the
+    config before the run costs anything.
+    """
+    from core.intake import IntakeError, validate_submission
+
+    failures = []
+    for key in keys:
+        pair = pairs[key]
+        if pair.sketch_strokes is None:
+            failures.append(f"{key}: no vector strokes (D10 is not built)")
+            continue
+        try:
+            validate_submission(
+                submission_record_from_strokes(pair.sketch_strokes),
+                gates, canvas_px)
+        except IntakeError as error:
+            failures.append(f"{key}: {error}")
+    if failures:
+        raise ValueError(
+            f"{len(failures)} selected pair(s) do not clear the Layer 0 "
+            "gates — adjust the gates or the dataset before the run: "
+            + "; ".join(failures))
+
+
 def record_label(harness: str, tag: str, harness_hash: str) -> str:
     return f"{harness}-{tag}-{harness_hash[:8]}"
 
@@ -224,8 +256,18 @@ def record_label(harness: str, tag: str, harness_hash: str) -> str:
 def write_harness_record(records_root: Path, harness: str, tag: str,
                          harness_hash: str,
                          content: dict[str, JsonValue]) -> Path:
-    """Write one harness record, pretty canonical JSON plus newline."""
+    """Write one harness record, pretty canonical JSON plus newline.
+
+    A record with human-filled verdict fields is kept as-is — a
+    re-run must not move a recorded decision back to pending.
+    """
+    import json
+
     path = records_root / f"{record_label(harness, tag, harness_hash)}.json"
+    if path.is_file():
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        if existing.get("verdict") != VERDICT_TEMPLATE["verdict"]:
+            return path
     write_json_pretty(path, content)
     return path
 

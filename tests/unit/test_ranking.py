@@ -10,7 +10,7 @@ _IDS = ("a" * 64, "b" * 64, "c" * 64, "d" * 64)
 
 
 def _index() -> PoolIndex:
-    # a and b share one near-duplicate group; c and d are singletons.
+    # a and b share one near-duplicate group. c and d are singletons.
     return PoolIndex(
         index_id="f" * 64,
         image_ids=_IDS,

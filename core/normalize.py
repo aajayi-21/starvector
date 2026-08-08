@@ -16,6 +16,10 @@ def _checked_scores(scores: PoolScores, name: str) -> None:
         raise ValueError(f"{name} must be 1-D, got shape {scores.shape}")
     if scores.dtype != np.float32:
         raise ValueError(f"{name} must be float32, got {scores.dtype}")
+    if not np.isfinite(scores).all():
+        # NaN clears == and < comparisons without a signal, and a
+        # NaN-fed rank is a plausible number that is incorrect (R14).
+        raise ValueError(f"{name} holds a non-finite value")
 
 
 def commonness_correct(raw: PoolScores, commonness: PoolScores) -> PoolScores:

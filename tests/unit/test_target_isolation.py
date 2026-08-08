@@ -1,10 +1,10 @@
 """Invariant 1: no module upstream of Layer 8 references the target.
 
-Rule A scans every scoring module except the sanctioned ones for NAME
+Rule A scans each scoring module out of the sanctioned set for NAME
 tokens that hold "target" — tokens, not raw text, thus prose in
 comments and docstrings stays free. Rule B parses pipeline/score.py
-and requires each load of the target name to be a direct argument of
-a Layer 8 function. The module tables are pinned: a new file is
+and requires each load of the target name to be an argument given
+to a Layer 8 function. The module tables are pinned: a new file is
 scanned by default, and an exclusion is a reviewed diff.
 """
 
@@ -15,8 +15,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-# Rule A scope. core/ranking.py is Layer 8; core/types.py holds the
-# TargetId and DecoySet aliases and no behavior; pipeline/score.py has
+# Rule A scope. core/ranking.py is Layer 8. core/types.py holds the
+# TargetId and DecoySet aliases and no behavior. pipeline/score.py has
 # its own AST rule (Rule B).
 SCANNED_CORE = (
     "core/atoms.py",

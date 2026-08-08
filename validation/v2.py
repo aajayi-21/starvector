@@ -123,11 +123,11 @@ def run_v2(config: ScoringConfig, *, data_root: Path, records_root: Path,
     background_keys = select_keys(keys, salt, fractions, "background",
                                   config.commonness.background_count)
     pairs = harness.pairs_by_key(source, set(v2_keys) | set(background_keys))
-    for key in v2_keys:
-        if pairs[key].sketch_strokes is None:
-            raise ValueError(
-                f"{key}: no vector strokes — D10 is not built. Stop and "
-                "put the raster adapter on the table.")
+    # Pre-flight before the encoder spend: each selected sketch (trial
+    # and background) must clear the Layer 0 gates.
+    harness.check_selected_pairs(pairs, v2_keys + background_keys,
+                                 intake_gates(config),
+                                 loaded.render.canvas_px)
 
     sketch_encoder = providers.get("sketch_encoder") \
         or harness.wire_sketch_encoder(config, data_root)
