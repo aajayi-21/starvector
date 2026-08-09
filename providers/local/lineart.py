@@ -71,28 +71,40 @@ class LocalLineDrawer:
     def config_hash(self) -> str:
         return lineart_config_hash(self._config)
 
+    def detect_gray(self, image_bytes: bytes,
+                    detect_resolution: int | None = None) -> np.ndarray:
+        """The raw detector output for one image, before post-processing.
+
+        Image bytes decode through PIL to RGB. The output is a 2-D
+        grayscale float array in [0, 1]. Polarity, measured live
+        2026-08-07 with controlnet_aux 0.0.10: the lineart
+        preprocessor gives bright lines on a dark background (mean
+        grayscale 0.08 on a pool photograph). The optional resolution
+        argument serves the P2b parameter scan — draw_lines and the
+        scan share this one detector path (P2b R1).
+        """
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        detected = self._detector(
+            image,
+            coarse=self._config.coarse,
+            detect_resolution=detect_resolution
+            or self._config.detect_resolution,
+        )
+        return np.asarray(detected.convert("L"), dtype=np.float32) / 255.0
+
     def draw_lines(self, images: Sequence[bytes]) -> list[bytes]:
         """The output rows are canonical rendered line-drawing PNG bytes.
 
-        Image bytes decode through PIL to RGB. The detector output
-        becomes a grayscale float array in [0, 1]. Polarity, measured
-        live 2026-08-07 with controlnet_aux 0.0.10: the lineart
-        preprocessor gives bright lines on a dark background (mean
-        grayscale 0.08 on a pool photograph), thus lines_are_dark is
-        off here. The canonical render flips to dark strokes on white
-        (D5).
+        The full R7 sequence: detect_gray, then binarize with
+        lines_are_dark off (the detector polarity), remove short
+        segments, and re-render on the canonical canvas — dark strokes
+        on white (D5).
         """
         from core.lineart import binarize_mask, prune_short_segments, render_canonical
 
         drawings: list[bytes] = []
         for image_bytes in images:
-            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            detected = self._detector(
-                image,
-                coarse=self._config.coarse,
-                detect_resolution=self._config.detect_resolution,
-            )
-            gray = np.asarray(detected.convert("L"), dtype=np.float32) / 255.0  # (H, W)
+            gray = self.detect_gray(image_bytes)                      # (H, W)
             mask = binarize_mask(gray, self._config.binarize_threshold, lines_are_dark=False)
             mask = prune_short_segments(mask, self._config.min_segment_px)
             drawings.append(

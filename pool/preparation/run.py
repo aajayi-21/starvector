@@ -200,7 +200,7 @@ def _lineart_config(config: PreparationConfig):
     return LineartConfig(
         weights_id="lllyasviel/Annotators",
         coarse=False,
-        detect_resolution=section.canvas_px,
+        detect_resolution=section.detect_resolution_px or section.canvas_px,
         binarize_threshold=section.binarize_threshold,
         min_segment_px=section.min_segment_px,
         canvas_size=section.canvas_px,

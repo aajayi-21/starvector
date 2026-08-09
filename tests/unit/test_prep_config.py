@@ -314,3 +314,41 @@ def test_runtime_section_is_required() -> None:
     del raw["runtime"]
     with pytest.raises(ConfigError, match="runtime"):
         parse_preparation_config(raw)
+
+
+def test_detect_resolution_absent_and_null_agree() -> None:
+    hashes = {name: "a" * 64 for name in SLOT_NAMES}
+    absent = parse_preparation_config(_base_raw())
+    raw = _base_raw()
+    raw["linedraw"]["detect_resolution_px"] = None
+    explicit_null = parse_preparation_config(raw)
+    assert absent.linedraw.detect_resolution_px is None
+    assert explicit_null.linedraw.detect_resolution_px is None
+    assert preparation_config_hash(absent, hashes) \
+        == preparation_config_hash(explicit_null, hashes)
+
+
+def test_detect_resolution_stays_out_of_the_document_at_none() -> None:
+    # The P2b R5 rule: a config released before the field keeps its
+    # document byte-for-byte, thus its hash and its record.
+    config = parse_preparation_config(_base_raw())
+    assert "detect_resolution_px" not in config_to_json_value(config)["linedraw"]
+
+
+def test_detect_resolution_value_moves_the_hash() -> None:
+    hashes = {name: "a" * 64 for name in SLOT_NAMES}
+    base = parse_preparation_config(_base_raw())
+    raw = _base_raw()
+    raw["linedraw"]["detect_resolution_px"] = 768
+    moved = parse_preparation_config(raw)
+    assert moved.linedraw.detect_resolution_px == 768
+    assert preparation_config_hash(moved, hashes) \
+        != preparation_config_hash(base, hashes)
+    assert config_to_json_value(moved)["linedraw"]["detect_resolution_px"] == 768
+
+
+def test_detect_resolution_below_the_minimum_raises() -> None:
+    raw = _base_raw()
+    raw["linedraw"]["detect_resolution_px"] = 32
+    with pytest.raises(ConfigError, match=r"detect_resolution_px"):
+        parse_preparation_config(raw)
