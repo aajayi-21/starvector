@@ -1,0 +1,39 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "e619c4b1d94340fcb559c374ca067a4ccbdd9cadbc7f0f25fd1f1bd4b39924ec",
+  "created_at": "2026-08-08T23:28:46.029095+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "98edabaf0d710750f8bb94ed080384392783fee874352c8c7c67777de1cf3ea4",
+  "date": "2026-08-08",
+  "dev_only": true,
+  "first_rank_fraction": 0.25,
+  "harness": "v1",
+  "harness_config_hash": "9d4634585d84f9384d204205d16b4948d28c6c0591065944c4865c87f1baabbd",
+  "index_id": "c8d4b7bc1ee9bca67574b0eb5884db616a5ae71f235c6f941480b0f129108b87",
+  "mean_trial_score": 0.781237,
+  "median_rank": 25.0,
+  "notes": "Passes with a wide margin: 25.0% first rank against a 0.28% no-information reference, 42.5% top ten against 2.8%. The weak tail and the 43-member near-duplicate group point at line-drawer sensitivity on low-contrast photos — visual review 2026-08-08 found sketches and photos good while the target line drawings were not recognizable. Iteration plan: docs/specs/linedraw-iteration.md.",
+  "pair_count": 200,
+  "preparation_version_id": "efacf7ff230fb09a3ee86d497a374d8f24246ed9d1a4127ce52e6a99d4d1eb52",
+  "provider_usage": {
+    "image_encoder": {
+      "cache_hits": 4,
+      "posts": 20
+    },
+    "line_drawer": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 0,
+      "posts": 216
+    }
+  },
+  "reference_first": 0.00277,
+  "reference_top_ten": 0.027704,
+  "reviewer": "ade",
+  "scoring_config_hash": "53316d522e36a06840faab70e880bda9e5cfbca631503dc8d6c452d66c1743e2",
+  "tag": "dev-wit",
+  "top_ten_fraction": 0.425,
+  "verdict": "pass"
+}
