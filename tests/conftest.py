@@ -471,3 +471,249 @@ def completed_preparation(tmp_path_factory: pytest.TempPathFactory):
         "report": report,
         "pool": pool,
     }
+
+
+# --- scoring (P2) fixtures --------------------------------------------------
+
+
+def build_prepared_pool_for_scoring(root: Path) -> dict:
+    """One full fake preparation with a config file on disk.
+
+    The scoring context loader re-reads the preparation config from
+    the path in the committed record (R2), thus the config document
+    must live on disk. Output keys: data, releases, prep_record_path,
+    pool, report, config_path.
+    """
+    data = root / "data"
+    releases = root / "releases"
+    pool = build_released_pool(data, root / "pool-releases", PREP_DEFAULT_SPECS)
+    document = prep_config_dict(pool["record_path"])
+    config_path = root / "prep-config.json"
+    config_path.write_text(canonical_json_pretty(document) + "\n",
+                           encoding="utf-8")
+    config = parse_preparation_config(document, str(config_path))
+    report = run_preparation(
+        config,
+        config_path=config_path,
+        data_root=data,
+        releases_root=releases,
+        code_version="test",
+        clock=lambda: FIXED_CLOCK,
+    )
+    assert report.release_label is not None
+    return {
+        "data": data,
+        "releases": releases,
+        "prep_record_path": releases / f"{report.release_label}.json",
+        "pool": pool,
+        "report": report,
+        "config_path": config_path,
+    }
+
+
+@pytest.fixture(scope="module")
+def scoring_preparation(tmp_path_factory: pytest.TempPathFactory):
+    """Module-scoped prepared pool for read-only scoring tests.
+
+    Harness runs write into the data root — mutating tests must use
+    clone_preparation, not this fixture directly.
+    """
+    root = tmp_path_factory.mktemp("scoring-prep")
+    return build_prepared_pool_for_scoring(root)
+
+
+def clone_preparation(prepared: dict, destination: Path) -> dict:
+    """Copy a prepared-pool fixture so a harness run can write into it."""
+    import shutil
+
+    destination.mkdir(parents=True, exist_ok=True)
+    clone = dict(prepared)
+    for key in ("data", "releases"):
+        target = destination / prepared[key].name
+        shutil.copytree(prepared[key], target)
+        clone[key] = target
+    clone["prep_record_path"] = (
+        clone["releases"] / prepared["prep_record_path"].name)
+    return clone
+
+
+def build_direct_prepared_pool(root: Path, count: int,
+                               dimension: int = 32, seed: int = 11) -> dict:
+    """Hand-build one prepared pool: artifacts, record, config file.
+
+    The fast fixture for statistical tests — no pipeline run. Seeded
+    unit vectors, singleton near-duplicate groups, and a record with
+    the measured digest of each written file in its inventory.
+    """
+    import numpy as np
+
+    from pool.preparation.config import preparation_config_hash
+    from pool.preparation.stages.release import (
+        release_preparation_version_id)
+
+    root.mkdir(parents=True, exist_ok=True)
+    data = root / "data"
+    document = prep_config_dict(root / "unused-release-record.json")
+    config_path = root / "prep-config.json"
+    config_path.write_text(canonical_json_pretty(document) + "\n",
+                           encoding="utf-8")
+    config = parse_preparation_config(document, str(config_path))
+    provider_hashes = {
+        name: sha256_hex(f"direct-slot-{name}")
+        for name in ("describer", "text_encoder", "image_encoder",
+                     "line_drawer", "element_boxes")
+    }
+    prep_hash = preparation_config_hash(config, provider_hashes)
+    pool_version = sha256_hex(f"direct-pool-{seed}")
+    prep_version = release_preparation_version_id(pool_version, prep_hash)
+
+    rng = np.random.default_rng(seed)
+    image_ids = sorted(sha256_hex(f"direct-image-{seed}-{i}")
+                       for i in range(count))
+    vectors = rng.standard_normal((count, 6, dimension))
+    vectors /= np.linalg.norm(vectors, axis=2, keepdims=True)
+    vectors = vectors.astype(np.float32)
+    mean = vectors.reshape(-1, dimension).mean(axis=0).astype(np.float32)
+
+    tree = data / "preparation" / pool_version[:8] / prep_hash[:8]
+    artifacts_index: dict[str, str] = {}
+
+    def put(rel: str, payload: bytes) -> None:
+        path = tree / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        artifacts_index[rel] = sha256_hex(payload)
+
+    records = "".join(
+        canonical_json({"image_id": image_id, "width": 64, "height": 64,
+                        "format": "PNG"}) + "\n"
+        for image_id in image_ids)
+    put("p00-intake/records.jsonl", records.encode("utf-8"))
+
+    buffer = BytesIO()
+    np.save(buffer, vectors)
+    put("p06-outline/outline_vectors.npy", buffer.getvalue())
+    buffer = BytesIO()
+    np.save(buffer, mean)
+    put("p06-outline/outline_space_mean.npy", buffer.getvalue())
+
+    groups = "".join(
+        canonical_json({"image_id": image_id, "group_id": image_id,
+                        "member_count": 1}) + "\n"
+        for image_id in image_ids)
+    put("p08-neardup/groups.jsonl", groups.encode("utf-8"))
+
+    record = {
+        "label": f"dev-direct-{prep_version[:8]}",
+        "preparation_version_id": prep_version,
+        "preparation_config_hash": prep_hash,
+        "config_path": str(config_path),
+        "image_count": count,
+        "artifacts": artifacts_index,
+        "pool": {
+            "label": "dev-direct-pool",
+            "pool_version_id": pool_version,
+            "release_record_path": "unused.json",
+        },
+        "provider_config_hashes": provider_hashes,
+        "dev_only": True,
+        "code_version": "test",
+        "created_at": FIXED_CLOCK,
+        "provider_usage": {},
+    }
+    record_path = root / f"dev-direct-{prep_version[:8]}.json"
+    record_path.write_text(canonical_json_pretty(record) + "\n",
+                           encoding="utf-8")
+    return {
+        "data": data,
+        "prep_record_path": record_path,
+        "image_ids": tuple(image_ids),
+        "config_path": config_path,
+    }
+
+
+def scoring_config_dict(preparation_record: Path | str, **overrides) -> dict:
+    """The raw JSON document for a fake-provider scoring config."""
+    document = {
+        "config_version": 1,
+        "input": {"preparation_record": str(preparation_record)},
+        "intake": {
+            "min_ink_pixels": 100,
+            "min_strokes_whole_drawing": 2,
+            "max_text_length": 200,
+            "max_atoms": 64,
+        },
+        "channels": {"outline": {"comparison_rule": "center-cosine-v1"}},
+        "fusion": {"weights": {"outline": 1.0}},
+        "commonness": {
+            "dataset": {
+                "provider": "fake",
+                "url": None,
+                "archive_sha256": None,
+                "coordinate_extent": None,
+                "budget_bytes": None,
+                "fake_pair_count": 24,
+                "fake_neardup_families": None,
+            },
+            "split_salt": "test-salt",
+            "background_count": 6,
+            "split_fractions": {"background": 0.5, "v1": 0.25, "v2": 0.25},
+        },
+        "validation": {
+            "v1_pair_count": 4,
+            "v2_trial_count": 4,
+            "v2_target_seed": 7,
+            "tag": "dev-test",
+        },
+        "providers": {
+            "openrouter": {
+                "default_model": "test/fake-model",
+                "max_concurrency": 1,
+                "requests_per_second": 100.0,
+                "timeout_seconds": 5.0,
+                "retry_limit": 0,
+                "response_format_mode": "json_schema",
+            },
+            "sketch_encoder": {
+                "provider": "fake",
+                "model": None,
+                "instruction_template": None,
+                "dimension": 32,
+            },
+        },
+        "runtime": {"device": "cpu"},
+        "report": {"dev_only": True},
+    }
+    for dotted, value in overrides.items():
+        node = document
+        parts = dotted.split(".")
+        for part in parts[:-1]:
+            node = node[part]
+        node[parts[-1]] = value
+    return document
+
+
+def make_scoring_config(preparation_record: Path | str, **overrides):
+    from pipeline.config import parse_scoring_config
+
+    return parse_scoring_config(
+        scoring_config_dict(preparation_record, **overrides),
+        "test-scoring-config")
+
+
+def scoring_fakes(dimension: int = 32, pair_count: int = 24,
+                  neardup_families: tuple[str, ...] = ()) -> dict:
+    """The injected fake providers for one harness run."""
+    from providers.fake.encoder import FakeImageEncoder
+    from providers.fake.linedrawer import FakeLineDrawer
+    from providers.fake.sketch_encoder import FakeSketchEncoder
+    from providers.sketchsets.fake import (FakeSketchPairSource,
+                                           FakeSketchsetConfig)
+
+    return {
+        "sketch_encoder": FakeSketchEncoder(dimension=dimension),
+        "sketch_pairs": FakeSketchPairSource(FakeSketchsetConfig(
+            pair_count=pair_count, neardup_families=neardup_families)),
+        "line_drawer": FakeLineDrawer(),
+        "image_encoder": FakeImageEncoder(dimension=dimension),
+    }

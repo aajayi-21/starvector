@@ -1,0 +1,29 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "e619c4b1d94340fcb559c374ca067a4ccbdd9cadbc7f0f25fd1f1bd4b39924ec",
+  "created_at": "2026-08-08T23:36:43.337677+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "98edabaf0d710750f8bb94ed080384392783fee874352c8c7c67777de1cf3ea4",
+  "date": "2026-08-08",
+  "decoy_count_max": 224,
+  "decoy_count_min": 182,
+  "dev_only": true,
+  "harness": "v2",
+  "harness_config_hash": "28a7484d6fce5bcd03b4295e88156bddd74e08fed4d8f950327fc4a4a4777afa",
+  "index_id": "efacf7ff230fb09a3ee86d497a374d8f24246ed9d1a4127ce52e6a99d4d1eb52",
+  "ks_significance": 0.17122,
+  "ks_statistic": 0.049571,
+  "notes": "KS 0.0496 passes at the 5% line (0.0607) with significance 0.171. Finding: conditional on the 43-member near-duplicate group, mean p is 0.25 in-group against 0.56 outside — a pool-quality effect (sparse line drawings collapse in encoder space), not a scoring-code defect. Tracked for the line-drawer iteration and the next pool release: docs/specs/linedraw-iteration.md.",
+  "preparation_version_id": "efacf7ff230fb09a3ee86d497a374d8f24246ed9d1a4127ce52e6a99d4d1eb52",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 1000,
+      "posts": 500
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "53316d522e36a06840faab70e880bda9e5cfbca631503dc8d6c452d66c1743e2",
+  "tag": "dev-wit",
+  "trial_count": 500,
+  "verdict": "pass"
+}
