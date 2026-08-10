@@ -25,12 +25,18 @@ FIT_CONFIG_VERSION = 1
 
 @dataclass(frozen=True, slots=True)
 class LevelRow:
-    """One degradation level (P4 decision D1)."""
+    """One degradation level (P4 decision D1).
+
+    corrupt_relation states in config if the level's last
+    relation names a noise group (D3, amended 2026-08-10) — the
+    review found the noise-count inference corrupted level 1 too.
+    """
 
     n_atoms: int
     generalize_p: float
     n_noise: int
     relations: int
+    corrupt_relation: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,11 +110,16 @@ def _parse_levels(raw: object) -> tuple[LevelRow, ...]:
             generalize_p=node.float_("generalize_p", low=0.0, high=1.0),
             n_noise=node.int_("n_noise", minimum=0),
             relations=node.int_("relations", minimum=0),
+            corrupt_relation=node.bool_("corrupt_relation"),
         )
         node.finish()
         if row.n_atoms + row.n_noise < 1:
             raise ConfigError(
                 f"generator.levels[{position}]: a level must hold one atom")
+        if row.corrupt_relation and row.relations < 1:
+            raise ConfigError(
+                f"generator.levels[{position}]: corrupt_relation needs a "
+                "relation to corrupt")
         rows.append(row)
     top = rows[-1]
     if top.n_atoms != 0 or top.relations != 0:
@@ -229,7 +240,8 @@ def fit_config_to_json_value(config: FitConfig) -> dict[str, JsonValue]:
         "generator": {
             "levels": [
                 {"n_atoms": row.n_atoms, "generalize_p": row.generalize_p,
-                 "n_noise": row.n_noise, "relations": row.relations}
+                 "n_noise": row.n_noise, "relations": row.relations,
+                 "corrupt_relation": row.corrupt_relation}
                 for row in config.generator.levels
             ],
         },

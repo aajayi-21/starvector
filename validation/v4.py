@@ -17,7 +17,7 @@ from pipeline.config import ConfigError, ScoringConfig, load_scoring_config
 from pool.artifacts import write_json_pretty
 from validation import harness
 from validation.fit import (FitData, collect_fit_data, fit_objective,
-                            grid_line, grid_simplex)
+                            grid_line, grid_simplex, readable_counts)
 from validation.fitconfig import FitConfig, load_fit_config
 from validation.v3 import fit_harness_hash
 
@@ -62,8 +62,13 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
     clock = clock or harness.default_clock
     data = collect_fit_data(config, fit_config, data_root=data_root,
                             providers=providers, clock=clock)
-    objective = fit_objective(data, "fit")
-    holdout = fit_objective(data, "holdout")
+    # One basis across the full table (ruling 2026-08-10): each
+    # ablation cost subtracts two objectives measured across the same
+    # trials, thus the cost reads the channel and not a data switch.
+    basis = "mixed" if data.placement_alive else "source1"
+    objective = fit_objective(data, "fit", basis)
+    holdout = fit_objective(data, "holdout", basis)
+    counts = readable_counts(data, "holdout", basis)
 
     full_set = ("outline", "element", "placement") if data.placement_alive \
         else ("outline", "element")
@@ -80,6 +85,7 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
             "refit_weights": weights,
             "holdout_objective": harness.quantized(value),
             "cost": harness.quantized(full_holdout - value),
+            "readable_trials": counts(weights),
         })
 
     placement_cost = next(
@@ -91,6 +97,7 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
     harness_hash = fit_harness_hash("v4", data.scoring_hash, data.fit_hash)
     aggregates: dict[str, JsonValue] = {
         "channel_set": list(full_set),
+        "objective_basis": basis,
         "full_weights": full_weights,
         "full_holdout_objective": harness.quantized(full_holdout),
         "ablations": ablations,

@@ -1,5 +1,7 @@
 """Unit tests for the Layer 4 placement channel (spec P4 section 9)."""
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -136,14 +138,24 @@ def test_a_near_full_frame_box_does_not_locate() -> None:
     assert atom_boxes(_submission(sky), index, 0, CONFIG) == {}
 
 
-def test_a_stroke_atom_falls_back_to_its_canvas_box() -> None:
+def test_a_strokes_only_atom_locates_by_its_canvas_box() -> None:
     index = _index()
-    # The label matches the capped "sky" box, which the cap keeps out,
-    # thus the atom falls back to its stroke bounding box.
+    # No text, thus no Layer 2 vector: the canvas box is the one
+    # rule, and it gives the same box in each image (Rule 2).
+    group = _atom("a1", strokes=(((0.2, 0.2), (0.4, 0.4)),))
+    for position in (0, 1):
+        boxes = atom_boxes(_submission(group), index, position, CONFIG)
+        assert boxes["a1"] == pytest.approx((0.2, 0.2, 0.4, 0.4))
+
+
+def test_a_text_atom_with_no_usable_box_does_not_locate() -> None:
+    index = _index()
+    # The capped "sky" slot gives the atom no box, and its strokes
+    # must not step in: an image with no detector data must not score
+    # as agreement (review ruling 2026-08-10).
     group = _atom("a1", text="sky",
                   strokes=(((0.2, 0.2), (0.4, 0.4)),))
-    boxes = atom_boxes(_submission(group), index, 0, CONFIG)
-    assert boxes["a1"] == pytest.approx((0.2, 0.2, 0.4, 0.4))
+    assert atom_boxes(_submission(group), index, 0, CONFIG) == {}
 
 
 # --- the channel ----------------------------------------------------------
@@ -180,7 +192,7 @@ def test_a_relation_outside_the_vocabulary_contributes_nothing() -> None:
     assert scores[0] == 0.0 and scores[1] == 0.0
 
 
-def test_the_denominator_is_the_stated_count() -> None:
+def test_a_relation_that_does_not_fire_adds_zero() -> None:
     index = _index()
     tower = _atom("a1", text="tower")
     boat = _atom("a2", text="boat")
@@ -191,8 +203,24 @@ def test_the_denominator_is_the_stated_count() -> None:
                       relation="left-of")
     scores = placement_channel(_submission(tower, boat, sky, good,
                                            unlocated), index, CONFIG)
-    # One of two stated relations fires at 1.0 in image a.
-    assert scores[0] == pytest.approx(0.5)
+    # The firing relation scores 1.0 and the unlocated one adds
+    # zero — the score is the sum, with no stated-count denominator
+    # (ruling 2026-08-10).
+    assert scores[0] == pytest.approx(1.0)
+
+
+def test_an_image_with_a_masked_box_scores_zero() -> None:
+    index = _index()
+    masked = index.box_mask.copy()
+    masked[1, :] = False
+    no_boxes = dataclasses.replace(index, box_mask=masked)
+    scores = placement_channel(_relation_submission("left-of"), no_boxes,
+                               CONFIG)
+    # Image a fires at 1.0 as before. Image b holds no usable box,
+    # thus nothing locates there and nothing fires — missing
+    # detector data must not score as agreement.
+    assert scores[0] == pytest.approx(1.0)
+    assert scores[1] == pytest.approx(0.0)
 
 
 def test_a_submission_with_no_relation_raises() -> None:

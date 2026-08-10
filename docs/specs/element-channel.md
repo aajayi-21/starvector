@@ -468,7 +468,7 @@ at its proposed default. The table below is the record.
 | D8 | Union element side | Describe the V1 photographs through the p01 slot and cache, apply the p02/p03 pure rules as-is, give unknown-to-the-pool elements document frequency 1, and build the photographs their own element banks | Rule 3: the photograph element path is the pool element path. Rarity stays pool-defined for each atom. ~200 cold describer `POST` operations, one time. |
 | D9 | Caption to atoms | Through `pasted_text` and the frozen Layer 1 paste rule | R10 — no new parsing, no Layer 1 change. A one-sentence caption becomes one atom unless it holds commas. |
 | D10 | The α knob | `channels.element.alpha` exists at 1.0, and the sketch-vector path behind values below 1.0 is not built | §6 of the architecture: start text-only, and increase α only when the V-harness says the sketch path helps. A DESCRIPTION atom with strokes and no text contributes nothing at 1.0. |
-| D11 | Commonness generalization | One `<channel>.npy` for each weighted channel at the existing key, and the commonness hash covers the full channels config | The P2 layout wrote `outline.npy` alone. The meta gains counts for each channel. |
+| D11 | Commonness generalization | One `<channel>.npy` for each weighted channel at the existing key, and the commonness hash covers the full channels config | The P2 layout wrote `outline.npy` alone. The meta gains counts for each channel. Amended 2026-08-10: each *built* channel the background activates — see §10 item 2. |
 | D12 | Match report scope | The pure `match_report` function plus V1 trial recording, and no player-facing surface | The §27 feedback seed and a review instrument. The full report on the results screen comes with a phase after this one. |
 
 ## 16a. What the build settled that the spec left open
@@ -483,14 +483,17 @@ one is a point a reader will come back to, so each is written down.
    and keeps `pool_image_count` as it is. Pool images and photographs
    then share one incidence table and one channel code path, and
    rarity is pool-defined by construction (R1, I3).
-2. **A commonness table exists for each weighted channel the
-   background activates**, which is a subset when the submission mode
-   leaves a channel silent. Section 10 asked for one table for each
-   weighted channel, and a sketch-mode background cannot build an
-   element table. A trial that activates a channel with no table
-   raises in `score_trial`. The pre-flight makes the background set
-   the same in this respect, so a table is built from the full
-   background or not at all.
+2. **A commonness table exists for each built channel the
+   background activates** (amended by the P4 review ruling
+   2026-08-10 — the first wording said "each weighted channel", and the
+   caller's weight table then shaped the stored bytes at a
+   weight-free key). The set is a subset of the built channels when
+   the submission mode leaves a channel silent: a sketch-mode
+   background cannot build an element table. The scoring context
+   selects the weighted subset, and a trial that activates a channel
+   with no table raises in `score_trial`. The pre-flight makes the
+   background set the same in this respect, so a table is built from
+   the full background or not at all.
 3. **The p03 cap is factored, not copied.** `cap_decisions` measures
    document frequency across the sequences it caps.
    `cap_with_frequencies` takes the frequencies as an argument, and

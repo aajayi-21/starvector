@@ -121,7 +121,7 @@ def build_commonness_tables(
     index: PoolIndex, background: Sequence[tuple[str, JsonValue]], *,
     gates: IntakeGates, render: RenderParams, outline: OutlineConfig,
     element: ElementConfig, placement: PlacementConfig,
-    channels: Sequence[ChannelName], encoders: Encoders,
+    encoders: Encoders,
 ) -> BuiltTables:
     """The mean raw channel score across the activating background.
 
@@ -143,13 +143,18 @@ def build_commonness_tables(
     sequence, thus the sum is made in a fixed sequence and two runs
     give equal bytes. The records are built before this task starts,
     so it knows nothing about modes, datasets, or generators.
+
+    The content is a pure function of the background and the index —
+    the caller's weight table cannot shape it (D12, ruling
+    2026-08-10). Two runners with different weight tables then read
+    equal bytes at one key, and the context selects the weighted
+    subset.
     """
     if not background:
         raise ValueError("the background set is empty")
     keys = [key for key, _ in background]
     if any(keys[i] >= keys[i + 1] for i in range(len(keys) - 1)):
         raise ValueError("background records must be ascending by pair_key")
-    wanted = set(channels)
     count = len(index.image_ids)
     totals: dict[ChannelName, np.ndarray] = {}
     contributors: dict[ChannelName, int] = {}
@@ -160,7 +165,7 @@ def build_commonness_tables(
                        for _, record in chunk]
         encoded = encode_submissions(submissions, render, encoders)
         for row in encoded:
-            for name in sorted(active_channels(row, ROUTING_TABLE) & wanted):
+            for name in sorted(active_channels(row, ROUTING_TABLE)):
                 scores = channel_scores(name, row, index, outline, element,
                                         placement)
                 if name not in totals:
@@ -202,7 +207,7 @@ def ensure_commonness_tables(
     background: Callable[[], Sequence[tuple[str, JsonValue]]],
     gates: IntakeGates, render: RenderParams, outline: OutlineConfig,
     element: ElementConfig, placement: PlacementConfig,
-    channels: Sequence[ChannelName], encoders: Encoders,
+    encoders: Encoders,
     submission_mode: str, clock: Callable[[], str],
     required_channels: Sequence[ChannelName] = (),
 ) -> CommonnessResult:
@@ -269,12 +274,11 @@ def ensure_commonness_tables(
     records = background()
     built = build_commonness_tables(
         index, records, gates=gates, render=render, outline=outline,
-        element=element, placement=placement, channels=channels,
-        encoders=encoders)
+        element=element, placement=placement, encoders=encoders)
     tables = built.tables
     if not tables:
         raise ValueError(
-            "the background set activates no weighted channel — nothing to "
+            "the background set activates no built channel — nothing to "
             "correct with")
     checked_required(tables)
     for name, table in tables.items():

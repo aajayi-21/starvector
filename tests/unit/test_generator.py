@@ -1,5 +1,7 @@
 """Unit tests for the synthetic submission generator (spec P4 §8)."""
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -24,9 +26,12 @@ GATES = IntakeGates(min_ink_pixels=100, min_strokes_whole_drawing=2,
 _FIT_DOCUMENT = {
     "config_version": 1,
     "generator": {"levels": [
-        {"n_atoms": 3, "generalize_p": 0.0, "n_noise": 0, "relations": 2},
-        {"n_atoms": 2, "generalize_p": 1.0, "n_noise": 1, "relations": 1},
-        {"n_atoms": 0, "generalize_p": 0.0, "n_noise": 4, "relations": 0},
+        {"n_atoms": 3, "generalize_p": 0.0, "n_noise": 0, "relations": 2,
+         "corrupt_relation": False},
+        {"n_atoms": 2, "generalize_p": 1.0, "n_noise": 1, "relations": 1,
+         "corrupt_relation": True},
+        {"n_atoms": 0, "generalize_p": 0.0, "n_noise": 4, "relations": 0,
+         "corrupt_relation": False},
     ]},
     "generalize": {"provider": "fake", "model": None,
                    "instruction_template": None},
@@ -187,12 +192,31 @@ def test_the_generator_hash_moves_with_its_determinants() -> None:
     moved = {**_FIT_DOCUMENT,
              "generator": {"levels": [
                  {"n_atoms": 4, "generalize_p": 0.0, "n_noise": 0,
-                  "relations": 2},
+                  "relations": 2, "corrupt_relation": False},
                  *[dict(row) for row
                    in _FIT_DOCUMENT["generator"]["levels"][1:]],
              ]}}
     other = parse_fit_config(moved, "test-fit")
     assert generator_config_hash(other, "a" * 64, "b" * 64, 0.9) != base
+
+
+def test_an_uncorrupted_relation_level_names_the_source_image() -> None:
+    """corrupt_relation not set, with noise atoms in the level: the
+    review found the noise-count inference corrupted level 1 (ruling
+    2026-08-10). Each named group must hold a source-image element.
+    """
+    index = _index()
+    config = _fit_config()
+    honest = dataclasses.replace(config.generator.levels[1],
+                                 corrupt_relation=False)
+    for seed in range(4):
+        rng = np.random.default_rng(seed)
+        record = synthetic_submission(index, 2, honest, TABLE, PLACEMENT,
+                                      rng)
+        own = {index.vocabulary[entry] for entry in index.incidence[2]}
+        assert record["relations"], "the level states one relation"
+        for group in record["groups"]:
+            assert group["label"] in own
 
 
 def test_an_impossible_noise_draw_raises() -> None:

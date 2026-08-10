@@ -127,7 +127,7 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         commonness_hash=commonness_hash, background=background,
         gates=gates, render=loaded.render,
         outline=outline_config(config), element=element_config(config),
-        placement=placement, channels=tuple(sorted(weights)),
+        placement=placement,
         encoders=encoders, submission_mode=config.validation.submission_mode,
         clock=clock,
         required_channels=tuple(name for name in required

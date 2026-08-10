@@ -619,18 +619,19 @@ def build_scoring_context(index: PoolIndex, gates: IntakeGates,
                           commonness_config_hash: str) -> ScoringContext:
     """Assemble one frozen context, with table checks.
 
-    Each table must name a weighted channel and have length N. The
-    table set can be a subset of the weighted channels: a submission
-    mode that leaves a channel silent builds no table for it (spec P3
-    section 10), and a trial that activates a channel with no table
-    raises in score_trial rather than scoring around it.
+    The stored artifact holds a table for each built channel the
+    background activates (ruling 2026-08-10) — the context selects
+    the weighted subset here, because a table for a channel with no
+    weight is inert. The kept set can also be smaller than the
+    weighted set: a submission mode that leaves a channel silent
+    builds no table for it (spec P3 section 10), and a trial that
+    activates a channel with no table raises in score_trial rather
+    than scoring around it. Each kept table must have length N.
     """
     count = len(index.image_ids)
-    for name in commonness:
-        if name not in weights:
-            raise ContextError(
-                f"commonness table {name!r} names a channel with no weight")
-    for name, table in commonness.items():
+    kept = {name: table for name, table in commonness.items()
+            if name in weights}
+    for name, table in kept.items():
         if table.shape != (count,) or table.dtype != np.float32:
             raise ContextError(
                 f"commonness table {name!r} must be float32 ({count},), got "
@@ -638,7 +639,7 @@ def build_scoring_context(index: PoolIndex, gates: IntakeGates,
     return ScoringContext(
         index=index, gates=gates, render=render, outline=outline,
         element=element, placement=placement, weights=weights,
-        commonness=commonness,
+        commonness=kept,
         scoring_config_hash=scoring_config_hash,
         commonness_config_hash=commonness_config_hash,
     )

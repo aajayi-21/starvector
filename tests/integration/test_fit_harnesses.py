@@ -25,10 +25,14 @@ POOL_SIZE = 40
 FIT_DOCUMENT = {
     "config_version": 1,
     "generator": {"levels": [
-        {"n_atoms": 3, "generalize_p": 0.0, "n_noise": 0, "relations": 1},
-        {"n_atoms": 2, "generalize_p": 0.5, "n_noise": 1, "relations": 1},
-        {"n_atoms": 1, "generalize_p": 0.8, "n_noise": 2, "relations": 0},
-        {"n_atoms": 0, "generalize_p": 0.0, "n_noise": 3, "relations": 0},
+        {"n_atoms": 3, "generalize_p": 0.0, "n_noise": 0, "relations": 1,
+         "corrupt_relation": False},
+        {"n_atoms": 2, "generalize_p": 0.5, "n_noise": 1, "relations": 1,
+         "corrupt_relation": True},
+        {"n_atoms": 1, "generalize_p": 0.8, "n_noise": 2, "relations": 0,
+         "corrupt_relation": False},
+        {"n_atoms": 0, "generalize_p": 0.0, "n_noise": 3, "relations": 0,
+         "corrupt_relation": False},
     ]},
     "generalize": {"provider": "fake", "model": None,
                    "instruction_template": None},
@@ -104,13 +108,34 @@ def test_the_fit_writes_a_record_with_the_full_curve(fit_setup) -> None:
     assert len(content["curve"]["line"]) == 5
     assert content["placement_signal"] is not None
     # The scripted relations come from the box geometry, thus the
-    # placement-only mean on strong holdout synthetics beats 0.5.
-    assert content["placement_signal"] > 0.5
+    # placement-only mean on strong holdout synthetics beats the
+    # signal line and the simplex path runs.
+    assert content["placement_signal"] > 0.65
+    assert content["placement_alive"] is True
+    assert content["objective_basis"] == "mixed"
     assert 0.0 <= content["holdout_objective"] <= 1.0
     record = json.loads(
         open(content["record_path"], encoding="utf-8").read())
     assert record["harness"] == "fit"
     assert record["freeze_blocked"] == record["endpoint"]
+
+
+def test_the_simplex_evaluates_each_point(fit_setup) -> None:
+    # The review found the pure-placement vertex crashed the fit:
+    # source 1 pairs hold no relation, thus the vertex reads no
+    # source 1 trial and its mean counts 0.5 for each one (ruling
+    # 2026-08-10). The full 0.25-step simplex must complete.
+    content = _run_fit(fit_setup)
+    simplex = content["curve"]["simplex"]
+    assert len(simplex) == 15
+    vertex = next(row for row in simplex
+                  if row["weights"] == {"element": 0.0, "outline": 0.0,
+                                        "placement": 1.0})
+    assert 0.0 <= vertex["objective"] <= 1.0
+    assert vertex["readable_trials"]["source1"] == 0
+    assert vertex["readable_trials"]["source2"] > 0
+    for row in simplex:
+        assert row["objective"] is not None
 
 
 def test_the_fit_reproduces_byte_for_byte(fit_setup) -> None:
@@ -146,6 +171,12 @@ def test_v4_reports_a_cost_for_each_channel(fit_setup) -> None:
     removed = {row["removed"] for row in content["ablations"]}
     assert removed == set(content["channel_set"])
     assert "element" in removed
+    # Placement is alive on the fixture, thus its ablation row — the
+    # D8 contribution half — must be in the table, measured on the
+    # same mixed basis as the full set (ruling 2026-08-10).
+    assert "placement" in removed
+    assert content["objective_basis"] == "mixed"
+    assert isinstance(content["placement_earns_its_place"], bool)
     element_cost = next(row["cost"] for row in content["ablations"]
                         if row["removed"] == "element")
     # The element channel carries the offline signal: removal cannot

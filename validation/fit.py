@@ -102,12 +102,30 @@ def trial_with_weights(trial: LabeledTrial, weights: Mapping[str, float],
     return rank(fused, trial.label, decoys, index)
 
 
+def readable_trial(trial: LabeledTrial,
+                   weights: Mapping[str, float]) -> bool:
+    """The check that a positive-weight channel is active in this trial."""
+    return any(weight > 0.0 and name in trial.standardized
+               for name, weight in weights.items())
+
+
 def mean_trial_score(trials: Sequence[LabeledTrial],
                      weights: Mapping[str, float],
                      index: PoolIndex) -> float:
-    """The fitting objective of §19: the mean across labeled pairs."""
+    """The fitting objective of §19: the mean across labeled pairs.
+
+    A trial with no channel the candidate reads counts 0.5 — with
+    no information the trial score falls at each point of [0, 1]
+    with equal probability, thus 0.5 is the one honest mean — and a
+    fixed trial set keeps grid points comparable (ruling
+    2026-08-10). The curve rows hold the readable counts, thus a
+    point that gets 0.5 for part of its data shows in the record.
+    """
     total = 0.0
     for trial in trials:
+        if not readable_trial(trial, weights):
+            total += 0.5
+            continue
         total += trial_with_weights(trial, weights, index).p
     return total / len(trials)
 
@@ -173,11 +191,13 @@ def _labeled_trials(records: Sequence[tuple[str, JsonValue, str]],
 
 def _curve_rows(grid: Sequence[Mapping[str, float]],
                 objective: Callable[[Mapping[str, float]], float],
+                counts: Callable[[Mapping[str, float]], dict[str, int]],
                 ) -> list[dict[str, JsonValue]]:
     rows = []
     for weights in grid:
         rows.append({"weights": dict(weights),
-                     "objective": harness.quantized(objective(weights))})
+                     "objective": harness.quantized(objective(weights)),
+                     "readable_trials": counts(weights)})
     return rows
 
 
@@ -324,14 +344,14 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         data_root=data_root, index=union_index,
         commonness_hash=commonness_hash, background=background,
         gates=gates, render=loaded.render, outline=outline, element=element,
-        placement=placement, channels=channel_names, encoders=encoders,
+        placement=placement, encoders=encoders,
         submission_mode=scoring.validation.submission_mode, clock=clock,
         required_channels=("outline", "element"))
     pool_tables = ensure_commonness_tables(
         data_root=data_root, index=loaded.index,
         commonness_hash=commonness_hash, background=background,
         gates=gates, render=loaded.render, outline=outline, element=element,
-        placement=placement, channels=channel_names, encoders=encoders,
+        placement=placement, encoders=encoders,
         submission_mode=scoring.validation.submission_mode, clock=clock,
         required_channels=pool_required)
 
@@ -398,26 +418,56 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
     )
 
 
-def fit_objective(data: FitData,
-                  trials: str) -> Callable[[Mapping[str, float]], float]:
+OBJECTIVE_BASES: tuple[str, ...] = ("source1", "mixed")
+
+
+def _split_sources(data: FitData, trials: str,
+                   ) -> tuple[tuple[LabeledTrial, ...],
+                              tuple[LabeledTrial, ...]]:
+    if trials == "fit":
+        return data.source1_fit, data.source2_fit
+    return data.source1_holdout, data.source2_holdout
+
+
+def fit_objective(data: FitData, trials: str,
+                  basis: str) -> Callable[[Mapping[str, float]], float]:
     """The §19 objective across one split ("fit" or "holdout").
 
-    D6: a candidate with no placement weight reads source 1 alone —
-    the only labeled source where the outline channel holds signal. A
-    candidate with a placement weight mixes the two sources equally,
-    because placement's labels are synthetic.
+    The basis is a property of the grid, and not of the candidate
+    (ruling 2026-08-10): the two-channel line reads source 1 alone —
+    the only labeled source where the outline channel holds signal —
+    and the simplex mixes the two sources equally, because
+    placement's labels are synthetic (D6). One basis across a grid
+    keeps each cost and each point like-for-like.
     """
-    source1 = data.source1_fit if trials == "fit" else data.source1_holdout
-    source2 = data.source2_fit if trials == "fit" else data.source2_holdout
+    if basis not in OBJECTIVE_BASES:
+        raise ValueError(f"unknown objective basis: {basis!r}")
+    source1, source2 = _split_sources(data, trials)
 
     def value(candidate: Mapping[str, float]) -> float:
         first = mean_trial_score(source1, candidate, data.union_index)
-        if "placement" not in candidate:
+        if basis == "source1":
             return first
         second = mean_trial_score(source2, candidate, data.pool_index)
         return (first + second) / 2.0
 
     return value
+
+
+def readable_counts(data: FitData, trials: str, basis: str,
+                    ) -> Callable[[Mapping[str, float]], dict[str, int]]:
+    """The count of trials each candidate reads, for the curve rows."""
+    source1, source2 = _split_sources(data, trials)
+
+    def counts(candidate: Mapping[str, float]) -> dict[str, int]:
+        result = {"source1": sum(1 for trial in source1
+                                 if readable_trial(trial, candidate))}
+        if basis == "mixed":
+            result["source2"] = sum(1 for trial in source2
+                                    if readable_trial(trial, candidate))
+        return result
+
+    return counts
 
 
 def run_fit(scoring: ScoringConfig, fit_config: FitConfig, *,
@@ -429,17 +479,21 @@ def run_fit(scoring: ScoringConfig, fit_config: FitConfig, *,
     clock = clock or harness.default_clock
     data = collect_fit_data(scoring, fit_config, data_root=data_root,
                             providers=providers, clock=clock)
-    objective = fit_objective(data, "fit")
-    holdout = fit_objective(data, "holdout")
 
-    line = _curve_rows(grid_line(fit_config.fit.line_points), objective)
+    line = _curve_rows(grid_line(fit_config.fit.line_points),
+                       fit_objective(data, "fit", "source1"),
+                       readable_counts(data, "fit", "source1"))
     curve: dict[str, JsonValue] = {"line": line}
     winner = _winner(line)
+    basis = "source1"
     if data.placement_alive:
+        basis = "mixed"
         simplex = _curve_rows(grid_simplex(fit_config.fit.simplex_step),
-                              objective)
+                              fit_objective(data, "fit", "mixed"),
+                              readable_counts(data, "fit", "mixed"))
         curve["simplex"] = simplex
         winner = _winner(simplex)
+    holdout = fit_objective(data, "holdout", basis)
 
     winner_weights = {str(k): float(v) for k, v in winner["weights"].items()}
     endpoint = _is_endpoint(winner_weights)
@@ -459,6 +513,7 @@ def run_fit(scoring: ScoringConfig, fit_config: FitConfig, *,
         "synthetic_count": fit_config.fit.synthetic_count,
         "curve": curve,
         "winner": winner,
+        "objective_basis": basis,
         "holdout_objective": harness.quantized(holdout(winner_weights)),
         "placement_signal": (None if data.placement_signal is None
                              else harness.quantized(data.placement_signal)),

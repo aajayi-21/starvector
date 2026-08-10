@@ -161,9 +161,11 @@ def synthetic_submission(index: PoolIndex, position: int, level: LevelRow,
     Sample without replacement, generalize each sample with the
     level's probability through the table, add noise atoms from other
     images, and at levels with relations add labeled rectangle groups
-    — the box geometry implies their relation. When the level's noise
-    count is positive, the last relation names a noise group at a
-    seeded box — a stated relation about something not there (D3).
+    — the box geometry implies their relation. At a level with
+    corrupt_relation set, the last relation names a noise group at a
+    seeded box — a stated relation about something not there (D3,
+    amended 2026-08-10: the flag is config, not a noise-count
+    inference).
     """
     own = _image_elements(index, position)
     n_atoms = min(level.n_atoms, len(own))
@@ -185,7 +187,7 @@ def synthetic_submission(index: PoolIndex, position: int, level: LevelRow,
     if level.relations > 0:
         located = _located_slots(index, position, placement)
         rng.shuffle(located)
-        corrupt_last = level.n_noise > 0
+        corrupt_last = level.corrupt_relation
 
         def add_group(label: str, box: Sequence[float]) -> str:
             group_id = f"g{len(groups) + 1}"

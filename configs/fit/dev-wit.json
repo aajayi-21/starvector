@@ -2,11 +2,16 @@
   "config_version": 1,
   "generator": {
     "levels": [
-      {"n_atoms": 7, "generalize_p": 0.0, "n_noise": 0, "relations": 2},
-      {"n_atoms": 5, "generalize_p": 0.3, "n_noise": 1, "relations": 1},
-      {"n_atoms": 4, "generalize_p": 0.6, "n_noise": 2, "relations": 1},
-      {"n_atoms": 2, "generalize_p": 0.8, "n_noise": 3, "relations": 0},
-      {"n_atoms": 0, "generalize_p": 0.0, "n_noise": 5, "relations": 0}
+      {"n_atoms": 7, "generalize_p": 0.0, "n_noise": 0, "relations": 2,
+       "corrupt_relation": false},
+      {"n_atoms": 5, "generalize_p": 0.3, "n_noise": 1, "relations": 1,
+       "corrupt_relation": false},
+      {"n_atoms": 4, "generalize_p": 0.6, "n_noise": 2, "relations": 1,
+       "corrupt_relation": true},
+      {"n_atoms": 2, "generalize_p": 0.8, "n_noise": 3, "relations": 0,
+       "corrupt_relation": false},
+      {"n_atoms": 0, "generalize_p": 0.0, "n_noise": 5, "relations": 0,
+       "corrupt_relation": false}
     ]
   },
   "generalize": {

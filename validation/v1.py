@@ -430,8 +430,7 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
         commonness_hash=commonness_hash, background=background_records,
         gates=intake_gates(config), render=loaded.render,
         outline=outline_config(config), element=element,
-        placement=placement,
-        channels=tuple(sorted(weights)), encoders=encoders,
+        placement=placement, encoders=encoders,
         submission_mode=mode, clock=clock)
 
     context = build_scoring_context(

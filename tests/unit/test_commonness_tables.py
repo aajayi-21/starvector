@@ -94,11 +94,11 @@ def _background(mode: str, count: int = 4):
     return rows
 
 
-def _build(rows, channels=("outline", "element", "placement")):
+def _build(rows):
     return build_commonness_tables(
         _index(), rows, gates=GATES, render=RENDER,
         outline=OUTLINE, element=ELEMENT, placement=PLACEMENT,
-        channels=channels, encoders=_encoders())
+        encoders=_encoders())
 
 
 def test_the_sketch_mode_builds_the_outline_table_alone() -> None:
@@ -120,9 +120,12 @@ def test_the_mixed_mode_builds_the_two_tables() -> None:
     assert sorted(built.tables) == ["element", "outline"]
 
 
-def test_a_channel_with_no_weight_gets_no_table() -> None:
-    built = _build(_background("mixed"), channels=("outline",))
-    assert sorted(built.tables) == ["outline"]
+def test_the_build_ranges_across_each_activated_channel() -> None:
+    # The content is a pure function of the background and the index
+    # (ruling 2026-08-10): no caller argument can narrow the build.
+    # The weighted-subset selection lives in build_scoring_context.
+    built = _build(_background("mixed"))
+    assert sorted(built.tables) == ["element", "outline"]
 
 
 def test_a_mixed_background_means_across_activating_subsets() -> None:

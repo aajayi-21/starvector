@@ -44,10 +44,11 @@ def relation_atoms(submission: EncodedSubmission,
                    config: PlacementConfig) -> tuple[Atom, ...]:
     """The RELATION atoms this channel reads.
 
-    An atom with a relation string that is not in the vocabulary is
-    stated and counted, and it does not fire — scoring has no rule
-    for it (spec P4 section 9.1). The stated count is the
-    denominator, thus the selection here keeps each RELATION atom.
+    An atom with a relation string that is not in the vocabulary
+    does not fire — scoring has no rule for it, and with the sum it
+    adds zero (spec P4 section 9.1). The selection here
+    keeps each RELATION atom because dropping one adds a branch that
+    changes no score.
     """
     return tuple(atom for atom in submission.atoms
                  if atom.type == "RELATION")
@@ -103,20 +104,25 @@ def atom_boxes(submission: EncodedSubmission, index: PoolIndex,
                ) -> dict[str, tuple[float, float, float, float]]:
     """The located atoms of one submission in the image at position.
 
-    A text-bearing DESCRIPTION atom locates through the image: the box
-    of its best-matching element in this image, when that slot holds a
-    box with an area below area_cap — a near-full-frame box says
-    nothing about placement (D4). This is what makes the check
-    image-dependent: the claim "A left of B" scores against where this
-    image puts A and B. When the matched slot has no usable box, or
-    the atom has no text vector, a stroke-bearing atom falls back to
-    its stroke bounding box on the canvas — the outline channel's
-    premise, that the canvas is the image frame, applied here. An atom
-    that locates by no rule above has no entry.
+    A text-bearing DESCRIPTION atom — one with a Layer 2 vector —
+    locates through the image: the box of its best-matching element
+    in this image, when that slot holds a box with an area below
+    area_cap — a near-full-frame box says nothing about placement
+    (D4). This is what makes the check image-dependent: the claim
+    "A left of B" scores against where this image puts A and B. When
+    the matched slot has no usable box, the atom has no location in
+    this image, and its relations add zero there (architecture
+    section 12.3) — a fallback on that condition made missing
+    detector data score as agreement, which the review caught.
 
-    A relation between two canvas-located atoms scores the same value
-    in each image, thus it moves no ranking (Rule 2) — it is kept
-    because dropping it adds a branch that changes no score.
+    A strokes-only DESCRIPTION atom — one with no vector — locates
+    by its stroke bounding box on the canvas: the outline channel's
+    premise, that the canvas is the image frame, applied here. The
+    path selection reads the submission alone, thus a relation
+    between two canvas-located atoms scores the same value in each
+    image and moves no ranking (Rule 2) — it is kept because
+    dropping it adds a branch that changes no score. An atom that
+    locates by no rule above has no entry.
     """
     text_atoms = tuple(atom for atom in submission.atoms
                        if atom.type == "DESCRIPTION"
@@ -146,7 +152,7 @@ def atom_boxes(submission: EncodedSubmission, index: PoolIndex,
 
     for atom in submission.atoms:
         if (atom.type == "DESCRIPTION" and atom.strokes is not None
-                and atom.id not in boxes):
+                and atom.id not in submission.vectors):
             boxes[atom.id] = stroke_bounding_box(atom.strokes)
     return boxes
 
@@ -156,11 +162,15 @@ def placement_scores(submission: EncodedSubmission, index: PoolIndex,
                      relations: tuple[Atom, ...]) -> float:
     """The channel score of one image (spec P4 section 9.1).
 
-    The sum of soft_check across relations that fire, divided by the
-    stated relation count. The denominator is a function of the
-    submission alone, thus it is cosmetic (Rule 2) and is kept only so
-    the score reads as a fraction. A relation that does not fire adds
-    zero — it does not abstain (architecture section 12.3).
+    The sum of soft_check across relations that fire. A relation
+    with no rule for its string, or with a referent that has no
+    location in this image, adds zero — it does not abstain, and it
+    cannot move the score (architecture section 12.3). A
+    stated-count denominator looked cosmetic and was not: a
+    submission-only multiplicative term is not neutral through the
+    commonness correction, and the review measured it moving trial
+    scores (ruling 2026-08-10). A fraction for display is a report
+    task after fusion.
     """
     located = atom_boxes(submission, index, position, config)
     total = 0.0
@@ -175,7 +185,7 @@ def placement_scores(submission: EncodedSubmission, index: PoolIndex,
             continue
         total += soft_check(atom.relation, located[first], located[second],
                             config.margin)
-    return total / len(relations)
+    return total
 
 
 def placement_channel(submission: EncodedSubmission, index: PoolIndex,

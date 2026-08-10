@@ -111,7 +111,7 @@ def run_v5(config: ScoringConfig, fit_config: FitConfig, *,
         background=lambda: background_rows,
         gates=gates, render=loaded.render,
         outline=outline_config(config), element=element_config(config),
-        placement=placement, channels=tuple(sorted(weights)),
+        placement=placement,
         encoders=encoders, submission_mode=config.validation.submission_mode,
         clock=clock)
 
@@ -134,8 +134,13 @@ def run_v5(config: ScoringConfig, fit_config: FitConfig, *,
         encoded = encode_submission(submission, loaded.render, encoders)
         standardized: dict[ChannelName, PoolScores] = {}
         for name in sorted(active_channels(encoded, ROUTING_TABLE)):
-            if name not in tables.tables:
+            if name not in weights:
+                # A channel with no weight cannot enter the fused top
+                # ten — the weight table names the set, as in fusion.
                 continue
+            if name not in tables.tables:
+                raise ValueError(
+                    f"channel {name!r} has no commonness table")
             raw = channel_scores(name, encoded, loaded.index,
                                  outline_config(config),
                                  element_config(config), placement)
@@ -186,6 +191,10 @@ def run_v5(config: ScoringConfig, fit_config: FitConfig, *,
 
     slopes: dict[str, JsonValue] = {}
     for name, table in sorted(tables.tables.items()):
+        # The D11 criterion reads the weighted channels — a stored
+        # table for an unweighted channel is not part of the method.
+        if name not in weights:
+            continue
         values = [float(table[position]) for position in targets]
         slopes[name] = harness.quantized(spearman(values, scores))
 
