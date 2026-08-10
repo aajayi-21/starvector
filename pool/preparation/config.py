@@ -64,12 +64,22 @@ class ElementsSection:
 
 @dataclass(frozen=True, slots=True)
 class LinedrawSection:
+    """The D5 render values plus the P2b detector-resolution field.
+
+    detect_resolution_px is None when the detector follows canvas_px —
+    the rule before spec P2b. The field can also be missing from the
+    config document, and the document shape omits it at None, thus
+    the hash of a config released before the field stays unchanged
+    (P2b R5).
+    """
+
     binarize_threshold: float
     min_segment_px: int
     canvas_px: int
     line_width_px: int
     background: str
     antialias: bool
+    detect_resolution_px: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +201,16 @@ class _Node:
             self._raw.pop(key)
             return None
         return self.int_(key, minimum)
+
+    def absent_or_int(self, key: str, minimum: int | None = None) -> int | None:
+        """One field added after a release: missing and null give None alike.
+
+        A config written before the field existed parses unchanged
+        (P2b R5). A value goes through the int_ rules.
+        """
+        if key not in self._raw:
+            return None
+        return self.opt_int(key, minimum)
 
     def float_(self, key: str, low: float | None = None, high: float | None = None,
                low_open: bool = False) -> float:
@@ -336,6 +356,8 @@ def parse_preparation_config(raw: object, source: str = "config") -> Preparation
         line_width_px=linedraw_node.int_("line_width_px", minimum=1),
         background=linedraw_node.choice("background", BACKGROUNDS),
         antialias=linedraw_node.bool_("antialias"),
+        detect_resolution_px=linedraw_node.absent_or_int(
+            "detect_resolution_px", minimum=64),
     )
     linedraw_node.finish()
 
@@ -425,6 +447,10 @@ def config_to_json_value(config: PreparationConfig) -> dict[str, JsonValue]:
             "line_width_px": config.linedraw.line_width_px,
             "background": config.linedraw.background,
             "antialias": config.linedraw.antialias,
+            # Omitted at None: a config released before the field
+            # keeps its document and thus its hash (P2b R5).
+            **({"detect_resolution_px": config.linedraw.detect_resolution_px}
+               if config.linedraw.detect_resolution_px is not None else {}),
         },
         "outline": {
             "crop_fraction": config.outline.crop_fraction,

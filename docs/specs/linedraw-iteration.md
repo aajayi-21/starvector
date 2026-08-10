@@ -108,7 +108,8 @@ before one knob moves.
 
 ```
 uv run python -m validation.linedraw_scan \
-    --prep-config configs/preparation/dev-wit.json \
+    [--prep-config configs/preparation/dev-wit.json] \
+    [--scoring-config configs/scoring/dev-wit.json] \
     [--data-root data] [--out data/validation/linedraw-scan.html]
 ```
 
@@ -149,9 +150,11 @@ each drawing-side change must (R3).
 
 One iteration, end to end:
 
-1. Rule the new values (from the scan sheet) into
-   `configs/preparation/dev-wit.json`: `binarize_threshold`,
-   `min_segment_px`, `detect_resolution_px`.
+1. Rule the new values (from the scan sheet) into a **new** config
+   file (`configs/preparation/dev-wit-2.json`): `binarize_threshold`,
+   `min_segment_px`, `detect_resolution_px`. A released config file
+   is not edited, ever — the committed record's hash check reads it,
+   thus each release owns its file (recorded 2026-08-08).
 2. Run the preparation pipeline on the machine with the local stack.
    Element-side stages read their image-level caches again. p05,
    p06, and p08 recompute. Commit the new preparation record.
@@ -160,8 +163,10 @@ One iteration, end to end:
    harness artifacts get new keys.
 4. Re-run V1 and V2. The photograph drawings and vectors recompute
    through the image-level caches (new drawer hash, new entries).
-   Expected cost: minutes of local GPU work plus roughly one
-   thousand embedding `POST` operations.
+   The render values do not move, thus each sketch embedding stays
+   response-cached. Expected cost: minutes of local GPU work plus
+   about one hundred embedding `POST` operations for the new pool
+   and photograph crops (measured reasoning recorded 2026-08-08).
 5. Record the compared numbers in the new harness records' notes:
    the four R4 measures, earlier against new. The verdicts stay
    human.
@@ -190,6 +195,12 @@ curation-spec change and is out of scope here — recorded so it does
 not get dropped.
 
 ## 9. Open decisions — agreement required before implementation
+
+All five decisions were agreed individually with the project owner on
+2026-08-08, each at its proposed default. The owner also
+pre-approved the §6 iteration: the D3 selection applies the stated
+criteria to the scan sheet, the reasoning goes into the records, and
+the V1/V2 verdicts stay the owner's.
 
 | # | Decision | Proposed default | Notes |
 |---|---|---|---|

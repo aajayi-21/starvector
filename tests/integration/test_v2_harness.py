@@ -67,3 +67,15 @@ def test_the_seeded_targets_are_pinned_by_the_seed(tmp_path) -> None:
     assert first.trials == again.trials
     _, different = _run(tmp_path / "c", seed=8)
     assert different.trials != first.trials
+
+
+def test_the_conditional_row_lands_in_report_and_record(tmp_path) -> None:
+    _, report = _run(tmp_path)
+    # The hand-built fixture pool has singleton groups only, thus
+    # one decoy count and two equal means.
+    assert report.mean_p_at_min_decoy_count == \
+        report.mean_p_at_max_decoy_count
+    record = json.loads(open(report.record_path, encoding="utf-8").read())
+    assert record["mean_p_at_min_decoy_count"] == \
+        record["mean_p_at_max_decoy_count"]
+    assert 0.0 <= record["mean_p_at_min_decoy_count"] <= 1.0

@@ -52,6 +52,8 @@ class V2Report:
     significance: float
     decoy_count_min: int
     decoy_count_max: int
+    mean_p_at_min_decoy_count: float
+    mean_p_at_max_decoy_count: float
     usage: tuple[tuple[str, tuple[int, int]], ...]
     dataset_bytes_retrieved: int
     record_path: str | None
@@ -173,6 +175,15 @@ def run_v2(config: ScoringConfig, *, data_root: Path, records_root: Path,
     statistic = ks_statistic([row.p for row in trials])
     significance = ks_significance(statistic, count)
     decoy_counts = [row.decoy_count for row in trials]
+    # The P2b section 7 conditional row: on a pool with no giant
+    # near-duplicate component the two means agree near 0.5, and a
+    # distance between them is the standing measurement of that
+    # component's bias.
+    low, high = min(decoy_counts), max(decoy_counts)
+    mean_p_low = float(np.mean([row.p for row in trials
+                                if row.decoy_count == low]))
+    mean_p_high = float(np.mean([row.p for row in trials
+                                 if row.decoy_count == high]))
     usage = (
         ("sketch_encoder", (sketch_delta.posts, sketch_delta.cache_hits)),
     )
@@ -188,8 +199,10 @@ def run_v2(config: ScoringConfig, *, data_root: Path, records_root: Path,
         "trial_count": count,
         "ks_statistic": harness.quantized(statistic),
         "ks_significance": harness.quantized(significance),
-        "decoy_count_min": min(decoy_counts),
-        "decoy_count_max": max(decoy_counts),
+        "decoy_count_min": low,
+        "decoy_count_max": high,
+        "mean_p_at_min_decoy_count": harness.quantized(mean_p_low),
+        "mean_p_at_max_decoy_count": harness.quantized(mean_p_high),
     }
     write_json_pretty(directory / "report.json", aggregates)
     meta: dict[str, JsonValue] = {
@@ -234,8 +247,9 @@ def run_v2(config: ScoringConfig, *, data_root: Path, records_root: Path,
     return V2Report(
         index_id=loaded.index.index_id, harness_config_hash=harness_hash,
         trial_count=count, statistic=statistic, significance=significance,
-        decoy_count_min=min(decoy_counts),
-        decoy_count_max=max(decoy_counts), usage=usage,
+        decoy_count_min=low, decoy_count_max=high,
+        mean_p_at_min_decoy_count=mean_p_low,
+        mean_p_at_max_decoy_count=mean_p_high, usage=usage,
         dataset_bytes_retrieved=int(source.bytes_retrieved),
         record_path=record_path, trials=tuple(trials))
 
@@ -248,6 +262,9 @@ def format_report(report: V2Report) -> str:
         f"ks_statistic={report.statistic:.4f}",
         f"ks_significance={report.significance:.4f}",
         f"decoy_count=[{report.decoy_count_min}, {report.decoy_count_max}]",
+        f"mean_p at min/max decoy_count: "
+        f"{report.mean_p_at_min_decoy_count:.4f} / "
+        f"{report.mean_p_at_max_decoy_count:.4f}",
     ]
     for slot, (posts, hits) in report.usage:
         lines.append(f"{slot}: posts={posts} cache_hits={hits}")

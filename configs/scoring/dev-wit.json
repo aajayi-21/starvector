@@ -1,7 +1,7 @@
 {
   "config_version": 1,
   "input": {
-    "preparation_record": "pool/preparations/dev-wit-prep-001-efacf7ff.json"
+    "preparation_record": "pool/preparations/dev-wit-prep-002-f24e0b9e.json"
   },
   "intake": {
     "min_ink_pixels": 100,
