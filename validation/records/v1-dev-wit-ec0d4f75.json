@@ -1,0 +1,56 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "24b9d2f0cee0238f825a2acaa9e9e4652829c268f730aff9a1976c3b31ed3168",
+  "created_at": "2026-08-10T04:39:02.775784+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-10",
+  "dev_only": true,
+  "first_rank_fraction": 0.465,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "ec0d4f75282937ec65c6315fa7d42ee740c5834ba6c3657438d3eaa9fe5d2f31",
+  "index_id": "54f6053708bab304d06856dbfb1384c3939eaec0a94acffde62d9db860a4a9ae",
+  "mean_trial_score": 0.991321,
+  "median_rank": 2.0,
+  "notes": "Phase 3 gate: V1 mixed mode, both channels active with equal unfitted weights (I6). First-rank 46.5% against the 0.236% chance reference, top-ten 88.0% against 2.36%, median rank 2, mean trial score 0.9913 - the best of the three modes on every measure. Against the single channels: first-rank 46.5% against 40.5% (sketch, v1-dev-wit-99c8b508) and 26.5% (text, v1-dev-wit-2cf31d13); top-ten 88.0% against 73.5% and 80.0%. The gain is the fusion property the architecture predicts: Spearman between the sketch rank and the text rank across the 200 shared pairs is 0.1835, so the two channels fail on nearly disjoint pairs. Rank composition shows it directly - sketch places 81 targets first but 19 past rank 50, text places 53 first but only 4 past rank 50, and mixed places 93 first with 1 past rank 50. Of the 15 pairs that fail both single channels at rank above 10, mixed rescues 2. The weights are equal and were not fitted; these numbers are diagnostic and are not a calibrated configuration until Phase 4 fits weights on data where correspondence is known by construction and freezes them. The V1 text caveats carry over unchanged (corpus heterogeneity, one atom per submission). The stored match report is byte-identical to the text run because the element channel reads only the text atom, so it says nothing about the sketch half of the submission. Warm run: zero provider requests across all six slots, which is acceptance criterion 6. Reproduced exactly in 200 of 200 trials.",
+  "pair_count": 200,
+  "preparation_version_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "line_drawer": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 1400,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 1393,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 747,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002362,
+  "reference_top_ten": 0.023624,
+  "reviewer": "ade",
+  "scoring_config_hash": "f37830ae2420da4faebeff4e59a9c80db6adb40acfc276c36dff95a75415b908",
+  "tag": "dev-wit",
+  "top_ten_fraction": 0.88,
+  "verdict": "pass"
+}
