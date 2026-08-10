@@ -21,7 +21,8 @@ from pipeline.commonness import (commonness_config_hash,
                                  ensure_commonness_tables)
 from pipeline.config import (ConfigError, ScoringConfig, element_config,
                              fusion_weights, intake_gates, load_scoring_config,
-                             outline_config, scoring_config_hash)
+                             outline_config, placement_config,
+                             scoring_config_hash)
 from pipeline.context import build_scoring_context, load_pool_index
 from pipeline.score import score_trial
 from pool.artifacts import write_json_pretty, write_jsonl
@@ -121,10 +122,13 @@ def run_v2(config: ScoringConfig, *, data_root: Path, records_root: Path,
     keys = harness.pair_keys_of(source)
     fractions = config.commonness.split_fractions
     salt = config.commonness.split_salt
+    synthetic = config.commonness.synthetic
+    dataset_count = config.commonness.background_count \
+        - (synthetic.count if synthetic else 0)
     v2_keys = select_keys(keys, salt, fractions, "v2",
                           config.validation.v2_trial_count)
     background_keys = select_keys(keys, salt, fractions, "background",
-                                  config.commonness.background_count)
+                                  dataset_count)
     pairs = harness.pairs_by_key(source, set(v2_keys) | set(background_keys))
     # Pre-flight before the encoder spend: each selected pair (trial
     # and background) must build in this mode and clear the gates.
@@ -141,35 +145,45 @@ def run_v2(config: ScoringConfig, *, data_root: Path, records_root: Path,
     dataset_hash = slot_hashes["sketch_pairs"]
     scoring_hash = scoring_config_hash(config, slot_hashes)
     harness_hash = harness.harness_config_hash("v2", scoring_hash)
+    generator_hash = harness.resolved_generator_hash(
+        config, loaded.index, data_root, providers.get("generalizer"))
     commonness_hash = commonness_config_hash(
         config, loaded.render, slot_hashes["sketch_encoder"],
-        slot_hashes["text_encoder"], dataset_hash)
+        slot_hashes["text_encoder"], dataset_hash, generator_hash)
     weights = fusion_weights(config)
 
     def background_records() -> list[tuple[str, JsonValue]]:
-        rows = sorted(background_keys)
-        return [(key, harness.submission_record(pairs[key], mode))
-                for key in rows]
+        rows = [(key, harness.submission_record(pairs[key], mode))
+                for key in background_keys]
+        rows.extend(harness.synthetic_background(
+            config, loaded.index, placement_config(config), data_root,
+            providers.get("generalizer")))
+        rows.sort(key=lambda entry: entry[0])
+        return rows
 
     tables = ensure_commonness_tables(
         data_root=data_root, index=loaded.index,
         commonness_hash=commonness_hash, background=background_records,
         gates=intake_gates(config), render=loaded.render,
         outline=outline_config(config), element=element_config(config),
-        channels=tuple(sorted(weights)), encoders=encoders,
+        placement=placement_config(config), encoders=encoders,
         submission_mode=mode, clock=clock)
 
     context = build_scoring_context(
         index=loaded.index, gates=intake_gates(config), render=loaded.render,
         outline=outline_config(config), element=element_config(config),
+        placement=placement_config(config),
         weights=weights, commonness=tables.tables,
         scoring_config_hash=scoring_hash,
         commonness_config_hash=commonness_hash)
 
+    trial_records = {key: harness.submission_record(pairs[key], mode)
+                     for key in v2_keys}
+    harness.prewarm_records(list(trial_records.values()),
+                            intake_gates(config), loaded.render, encoders)
     trials: list[V2TrialRow] = []
     for trial_index, key in enumerate(v2_keys):
-        pair = pairs[key]
-        record = harness.submission_record(pair, mode)
+        record = trial_records[key]
         target = target_for_trial(loaded.index.image_ids,
                                   config.validation.v2_target_seed,
                                   trial_index)
@@ -247,7 +261,8 @@ def run_v2(config: ScoringConfig, *, data_root: Path, records_root: Path,
                                for slot, (posts, hits) in usage},
             "dataset_bytes_retrieved": int(source.bytes_retrieved),
             "fusion_weights": dict(config.fusion.weights),
-            "fusion_weights_fitted": False,
+            "fusion_weights_fitted": config.fusion.fit_record is not None,
+            "fit_record": config.fusion.fit_record,
             "created_at": clock(),
             "code_version": code_version,
             **harness.VERDICT_TEMPLATE,

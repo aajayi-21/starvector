@@ -73,7 +73,7 @@ def test_a_zero_weight_is_rejected_as_deactivation() -> None:
 
 def test_an_unbuilt_channel_in_the_weights_is_rejected() -> None:
     document = _base()
-    document["fusion"]["weights"]["placement"] = 1.0
+    document["fusion"]["weights"]["texture"] = 1.0
     with pytest.raises(ConfigError, match="not a built channel"):
         parse_scoring_config(document, "test")
 

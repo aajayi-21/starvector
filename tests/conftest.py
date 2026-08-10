@@ -551,6 +551,10 @@ def build_direct_prepared_pool(root: Path, count: int,
     from pool.preparation.stages.release import (
         release_preparation_version_id)
 
+    from providers.fake.boxes import FakeElementBoxDetector
+    from providers.fake.describer import FakeVlmDescriber
+    from providers.fake.encoder import FakeImageEncoder
+    from providers.fake.linedrawer import FakeLineDrawer
     from providers.fake.text_encoder import FakeTextEncoder
 
     root.mkdir(parents=True, exist_ok=True)
@@ -567,16 +571,16 @@ def build_direct_prepared_pool(root: Path, count: int,
     config_path.write_text(canonical_json_pretty(document) + "\n",
                            encoding="utf-8")
     config = parse_preparation_config(document, str(config_path))
+    # The record names the fake providers' own hashes: the harnesses'
+    # Rule 3 guards compare wired providers against these, and the R7
+    # check ties the scoring text_encoder to the p04 one.
     provider_hashes = {
-        name: sha256_hex(f"direct-slot-{name}")
-        for name in ("describer", "image_encoder", "line_drawer",
-                     "element_boxes")
+        "describer": FakeVlmDescriber().config_hash,
+        "image_encoder": FakeImageEncoder(dimension=dimension).config_hash,
+        "line_drawer": FakeLineDrawer().config_hash,
+        "element_boxes": FakeElementBoxDetector().config_hash,
+        "text_encoder": FakeTextEncoder(dimension=dimension).config_hash,
     }
-    # The scoring side compares its text_encoder slot with this one
-    # (R7): the vocabulary vectors and the atom vectors must come from
-    # one encoder, thus the fixture names the fake hash itself.
-    provider_hashes["text_encoder"] = FakeTextEncoder(
-        dimension=dimension).config_hash
     prep_hash = preparation_config_hash(config, provider_hashes)
     pool_version = sha256_hex(f"direct-pool-{seed}")
     prep_version = release_preparation_version_id(pool_version, prep_hash)
@@ -634,9 +638,12 @@ def build_direct_prepared_pool(root: Path, count: int,
         for element in vocabulary)
     put("p04-vocabulary/vocabulary.jsonl", vocabulary_rows.encode("utf-8"))
 
-    element_vectors = rng.standard_normal((len(vocabulary), dimension))
-    element_vectors /= np.linalg.norm(element_vectors, axis=1, keepdims=True)
-    element_vectors = element_vectors.astype(np.float32)
+    # The stored vocabulary vectors come from the same fake text
+    # encoder the scoring side wires (R7): a synthetic atom that names
+    # a vocabulary entry then matches it, which is the offline signal
+    # the generator-driven harness tests read.
+    element_vectors = FakeTextEncoder(dimension=dimension).encode_texts(
+        vocabulary).astype(np.float32)
     buffer = BytesIO()
     np.save(buffer, element_vectors)
     put("p04-vocabulary/vocabulary_vectors.npy", buffer.getvalue())
@@ -651,6 +658,34 @@ def build_direct_prepared_pool(root: Path, count: int,
     buffer = BytesIO()
     np.save(buffer, incidence)
     put("p04-vocabulary/incidence.npy", buffer.getvalue())
+
+    # The p07 box side, seeded for each image so the geometry
+    # discriminates between images: the two element strings that change
+    # with the image get clear small boxes, and "shared element"
+    # alternates between a near-full-frame box — above the placement
+    # area cap — and a declined null.
+    box_lines = []
+    for position, image_id in enumerate(image_ids):
+        box_rng = np.random.default_rng(
+            int(sha256_hex(f"direct-box-{seed}-{image_id}")[:16], 16))
+
+        def small_box():
+            x_min = float(box_rng.uniform(0.0, 0.6))
+            y_min = float(box_rng.uniform(0.0, 0.6))
+            return [round(x_min, 6), round(y_min, 6),
+                    round(x_min + float(box_rng.uniform(0.1, 0.35)), 6),
+                    round(y_min + float(box_rng.uniform(0.1, 0.35)), 6)]
+
+        thing, place, shared = elements_of[image_id]
+        boxes = {
+            thing: small_box(),
+            place: small_box(),
+            shared: ([0.01, 0.01, 0.99, 0.99] if position % 2 else None),
+        }
+        box_lines.append(canonical_json(
+            {"image_id": image_id, "boxes": boxes}))
+    put("p07-boxes/boxes.jsonl",
+        ("".join(line + "\n" for line in box_lines)).encode("utf-8"))
 
     record = {
         "label": f"dev-direct-{prep_version[:8]}",
@@ -705,6 +740,10 @@ def make_pool_index(index_id: str, image_ids: tuple[str, ...],
         "element_space_mean": np.zeros(dimension, dtype=np.float32),
     }
     defaults.update(element_side)
+    width = defaults["incidence"].shape[1]
+    defaults.setdefault(
+        "box_table", np.zeros((count, width, 4), dtype=np.float32))
+    defaults.setdefault("box_mask", np.zeros((count, width), dtype=np.bool_))
     return PoolIndex(
         index_id=index_id, image_ids=image_ids,
         outline_vectors=outline_vectors,
@@ -733,8 +772,16 @@ def scoring_config_dict(preparation_record: Path | str, **overrides) -> dict:
                 "tier2_count": 500,
                 "alpha": 1.0,
             },
+            "placement": {
+                "check_rule": "axis-ramp-v1",
+                "relation_vocabulary": ["left-of", "right-of", "above",
+                                        "below"],
+                "area_cap": 0.9,
+                "margin": 0.15,
+            },
         },
-        "fusion": {"weights": {"outline": 1.0, "element": 1.0}},
+        "fusion": {"weights": {"outline": 1.0, "element": 1.0},
+                   "fit_record": None},
         "commonness": {
             "dataset": {
                 "provider": "fake",
@@ -748,6 +795,7 @@ def scoring_config_dict(preparation_record: Path | str, **overrides) -> dict:
             "split_salt": "test-salt",
             "background_count": 6,
             "split_fractions": {"background": 0.5, "v1": 0.25, "v2": 0.25},
+            "synthetic": None,
         },
         "validation": {
             "v1_pair_count": 4,
@@ -809,6 +857,8 @@ def scoring_fakes(dimension: int = 32, pair_count: int = 24,
     from providers.sketchsets.fake import (FakeSketchPairSource,
                                            FakeSketchsetConfig)
 
+    from providers.fake.boxes import FakeElementBoxDetector
+
     return {
         "sketch_encoder": FakeSketchEncoder(dimension=dimension),
         "text_encoder": FakeTextEncoder(dimension=dimension),
@@ -817,4 +867,5 @@ def scoring_fakes(dimension: int = 32, pair_count: int = 24,
         "line_drawer": FakeLineDrawer(),
         "image_encoder": FakeImageEncoder(dimension=dimension),
         "describer": FakeVlmDescriber(),
+        "element_boxes": FakeElementBoxDetector(),
     }

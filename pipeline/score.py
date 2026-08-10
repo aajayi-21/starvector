@@ -14,14 +14,15 @@ from typing import NamedTuple
 from core.canonical import JsonValue
 from core.channels.element import element_channel
 from core.channels.outline import outline_channel
+from core.channels.placement import placement_channel
 from core.fusion import active_channels, fuse
 from core.intake import render_strokes, validate_submission
 from core.normalize import commonness_correct, standardize
 from core.ranking import decoy_set, rank
 from core.types import (ROUTING_TABLE, Atom, ChannelName, ElementConfig,
-                        EncodedSubmission, OutlineConfig, PoolIndex,
-                        PoolScores, RenderParams, ScoringContext, Submission,
-                        TargetId, TrialScore)
+                        EncodedSubmission, OutlineConfig, PlacementConfig,
+                        PoolIndex, PoolScores, RenderParams, ScoringContext,
+                        Submission, TargetId, TrialScore)
 from providers.protocols import SketchEncoder, TextEncoder
 
 # How many payloads go to a provider in one batch. Providers chunk
@@ -73,6 +74,10 @@ def _routed_payloads(submissions: Sequence[Submission],
                 case "DESCRIPTION":
                     if atom.text is not None:
                         payloads.text.append((number, atom, atom.text))
+                case "RELATION":
+                    # Read directly by the placement channel, not
+                    # encoded (architecture section 6).
+                    pass
                 case _:
                     raise ValueError(
                         f"atom type {atom.type} routes to a channel and has "
@@ -131,7 +136,8 @@ def encode_submission(submission: Submission, render: RenderParams,
 
 def channel_scores(name: ChannelName, submission: EncodedSubmission,
                    index: PoolIndex, outline: OutlineConfig,
-                   element: ElementConfig) -> PoolScores:
+                   element: ElementConfig,
+                   placement: PlacementConfig) -> PoolScores:
     """Run one built channel and give its raw scores, shape (N,).
 
     The configuration arrives as arguments rather than as a scoring
@@ -143,6 +149,8 @@ def channel_scores(name: ChannelName, submission: EncodedSubmission,
             return outline_channel(submission, index, outline)
         case "element":
             return element_channel(submission, index, element)
+        case "placement":
+            return placement_channel(submission, index, placement)
         case _:
             raise ValueError(f"unknown channel: {name!r}")
 
@@ -164,7 +172,7 @@ def score_trial(record: JsonValue, target: TargetId,
     standardized: dict[ChannelName, PoolScores] = {}
     for name in sorted(active):
         raw = channel_scores(name, encoded, context.index, context.outline,
-                             context.element)
+                             context.element, context.placement)
         if name not in context.commonness:
             raise ValueError(f"channel {name!r} has no commonness table")
         corrected = commonness_correct(raw, context.commonness[name])

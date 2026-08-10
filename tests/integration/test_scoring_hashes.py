@@ -18,7 +18,7 @@ def _hashes(**overrides):
     scoring = scoring_config_hash(config, slots)
     commonness = commonness_config_hash(
         config, RENDER, slots["sketch_encoder"], slots["text_encoder"],
-        slots["sketch_pairs"])
+        slots["sketch_pairs"], None)
     return scoring, commonness
 
 
@@ -29,9 +29,19 @@ def test_the_split_salt_moves_the_two_hashes() -> None:
     assert commonness != base_commonness
 
 
-def test_a_gate_moves_the_scoring_hash_and_not_the_table_key() -> None:
+def test_a_gate_moves_the_two_hashes() -> None:
+    # Phase 3 kept the gates out of the table key. The pre-flight
+    # rejects gated background pairs, thus the gates shape the
+    # background set and belong in it (P4 decision D12).
     base_scoring, base_commonness = _hashes()
     scoring, commonness = _hashes(**{"intake.min_ink_pixels": 50})
+    assert scoring != base_scoring
+    assert commonness != base_commonness
+
+
+def test_the_v1_pair_count_moves_scoring_and_not_the_table_key() -> None:
+    base_scoring, base_commonness = _hashes()
+    scoring, commonness = _hashes(**{"validation.v1_pair_count": 5})
     assert scoring != base_scoring
     assert commonness == base_commonness
 

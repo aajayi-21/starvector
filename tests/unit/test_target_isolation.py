@@ -24,6 +24,7 @@ SCANNED_CORE = (
     "core/channels/__init__.py",
     "core/channels/element.py",
     "core/channels/outline.py",
+    "core/channels/placement.py",
     "core/fusion.py",
     "core/intake.py",
     "core/lineart.py",

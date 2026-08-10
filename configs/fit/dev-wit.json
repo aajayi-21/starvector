@@ -1,0 +1,50 @@
+{
+  "config_version": 1,
+  "generator": {
+    "levels": [
+      {"n_atoms": 7, "generalize_p": 0.0, "n_noise": 0, "relations": 2,
+       "corrupt_relation": false},
+      {"n_atoms": 5, "generalize_p": 0.3, "n_noise": 1, "relations": 1,
+       "corrupt_relation": false},
+      {"n_atoms": 4, "generalize_p": 0.6, "n_noise": 2, "relations": 1,
+       "corrupt_relation": true},
+      {"n_atoms": 2, "generalize_p": 0.8, "n_noise": 3, "relations": 0,
+       "corrupt_relation": false},
+      {"n_atoms": 0, "generalize_p": 0.0, "n_noise": 5, "relations": 0,
+       "corrupt_relation": false}
+    ]
+  },
+  "generalize": {
+    "provider": "openrouter",
+    "model": "openai/gpt-5.6-luna",
+    "instruction_template": "Give one broader, less specific phrase for this element of a photograph: {element}. Answer with the phrase alone, two to four words."
+  },
+  "openrouter": {
+    "default_model": "openai/gpt-5.6-luna",
+    "max_concurrency": 4,
+    "requests_per_second": 2.0,
+    "timeout_seconds": 120.0,
+    "retry_limit": 3,
+    "response_format_mode": "json_schema"
+  },
+  "fit": {
+    "split_salt": "dev-wit-fit-001",
+    "fit_count": 300,
+    "holdout_count": 150,
+    "synthetic_count": 300,
+    "synthetic_seed": 20260810,
+    "line_points": 21,
+    "simplex_step": 0.05,
+    "signal_line": 0.65,
+    "ablation_line": 0.01
+  },
+  "harness": {
+    "v3_trials_for_each_level": 200,
+    "v3_seed": 20260811,
+    "v6_trial_count": 200,
+    "v6_seed": 20260812,
+    "v6_tier1_widths": [10, 25, 50],
+    "v6_tier2_widths": [5, 10]
+  },
+  "tag": "dev-wit"
+}

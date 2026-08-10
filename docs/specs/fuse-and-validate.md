@@ -270,9 +270,13 @@ D2 decides.
 At levels with relations, sample two located elements of the source
 image (boxes there, area below the cap of D4), get their correct
 relation from the box geometry with the written rule of §9, and emit
-a RELATION row naming the two atoms. At level 2, one of the two named
-atoms can be a noise atom — a stated relation about something not
-there, which is what a weak player produces.
+a RELATION row naming the two atoms. At a level with
+`corrupt_relation` in its row — level 2 in the committed table — one of the two
+named atoms is a noise atom: a stated relation about something not
+there, which is what a weak player produces. The flag is config
+(amended 2026-08-10): the first build inferred corruption from the
+noise count, which corrupted level 1 too and halved the honest
+levels behind the D8 signal.
 
 This gives the placement channel labeled data with a known answer,
 and it is the only labeled source that produces RELATION atoms at
@@ -292,23 +296,33 @@ prescribes the exit: "If it proves fiddly, cut it and keep the
   unchanged. Scoring reads only these four, and a RELATION atom with
   a different string contributes nothing in this phase. The
   vocabulary is config, not code.
-- **Locating an atom in image x** (R8): a DESCRIPTION atom with
-  strokes takes its stroke bounding box on the canvas. A text atom
-  takes the box of its best-matching element in image x — the same
-  argmax the element channel makes — when that box is there and its
-  area is below `area_cap` (proposed 0.9). Near-full-frame boxes say
-  nothing about placement, and 18.2% of dev boxes are of that type.
+- **Locating an atom in image x** (R8, amended 2026-08-10): a
+  DESCRIPTION atom with a Layer 2 vector takes the box of its
+  best-matching element in image x — the same argmax the element
+  channel makes — when that box is there and its area is below
+  `area_cap` (0.9). Near-full-frame boxes say nothing about
+  placement, and 18.2% of dev boxes are of that type. When image x
+  gives the matched slot no usable box, the atom has no location
+  there and its relations add zero. A strokes-only atom — one with
+  no vector — takes its stroke bounding box on the canvas, the same
+  box in each image. The review refuted the former rule, which fell
+  back to the canvas box on an image-dependent condition: an image
+  with missing detector data then got the maximum for the stated
+  relation, and the D8 signal read 0.63, not 0.75.
 - **`soft_check`** (R9), rule `axis-ramp-v1`: for `left-of`, the
   signed center distance `cx_B − cx_A` maps through a linear ramp
   that is 0 at −`margin`, 0.5 at 0, and 1 at +`margin` (proposed
   margin 0.15), clamped to [0, 1]. The other three relations are the
   same rule on the mirrored or vertical axis.
-- **The channel score**: the sum of `soft_check` across relations that
-  fire in image x, divided by the count of stated relations. The
-  denominator is a function of the submission alone, thus it is
-  cosmetic (Rule 2) and is kept only so the score reads as a
-  fraction. A relation that does not fire adds zero — it does not
-  abstain (§12.3).
+- **The channel score** (amended 2026-08-10): the sum of `soft_check`
+  across relations that fire in image x. A relation that does not
+  fire adds zero — it does not abstain (§12.3). The first ruling
+  divided by the count of stated relations and called the denominator
+  cosmetic (Rule 2). The review refuted that: a submission-only
+  multiplicative term is not neutral through `2·raw − commonness`,
+  and stated relations with no rule moved 61 of 80 dev trial scores.
+  With the sum they move nothing. A fraction for display is a report
+  task after fusion.
 - **Activation**: RELATION atoms are not encoded, thus the P3
   vector-driven activation rule extends: an atom activates its
   routed channels when it holds a Layer 2 vector, or when its type
@@ -354,10 +368,21 @@ a code deletion — the module stays behind its contract.
 Two channels: `alpha` across `linspace(0, 1, 21)`, weights
 `{element: alpha, outline: 1 − alpha}`, objective = mean trial score
 across the source 1 fit split (§19). Three channels, if placement
-survives §9.2: the 0.05-step simplex, 231 points, objective = mean
-across a stated mix of source 1 and source 2 fit pairs (D6 fixes the
-mix). The full curve or surface is stored with the fit record. Flat
-regions and sharp peaks are results, not noise (R2).
+survives §9.2: the 0.05-step simplex, 231 points, objective = the
+equal mix of the source 1 and source 2 fit means. The full curve or
+surface is stored with the fit record. Flat regions and sharp peaks
+are results, not noise (R2).
+
+Two rules the review settled (2026-08-10): the objective basis is a
+property of the grid, and not of the candidate — one basis across a
+grid keeps each point and each V4 cost like-for-like. And a trial
+with no channel the candidate reads counts 0.5 — with no information
+the trial score falls at each point of [0, 1] with equal
+probability, thus 0.5 is the one honest mean — and each curve row
+records how many trials of each source the candidate read. The
+former key-driven rules crashed the simplex on its pure-placement
+vertex and subtracted two V4 objectives measured across different
+trials.
 
 ### 10.3 Freeze (D7)
 
@@ -491,22 +516,117 @@ recorded with verdicts (R4, §11).
   release (curation on the production encoder, the percolation risk)
   and the Phase 6 judge.
 
-## 17. Open decisions — agreement required before implementation
+## 17. Decisions — ruled 2026-08-10
 
 | # | Decision | Proposed default | Notes |
 |---|---|---|---|
 | D1 | Generator level table | The §8.1 table: five levels, level 4 pure noise | The counts are unspecified by the architecture. The shape (sample, generalize, noise) is §13.2 verbatim. V3 reads the levels, thus the table is config, hashed. |
 | D2 | Generalization rule | Model-built table through the chat slot, p02-normalized, stored as a keyed artifact | ~1,527 one-time posts. Alternative: a pure head-noun rule, free but narrower degradation. §13.2 permits the two. |
-| D3 | Synthetic relations | From the p07 box geometry with the §9.1 axis rule. Corrupt at level 2 by naming one noise atom | The only labeled RELATION source. Build sequence: generator first, relations behind a flag, so a D8 cut wastes nothing. |
-| D4 | Placement construction | Relation vocabulary of four. Located = stroke box, or best-match element box with area below 0.9. `soft_check` = `axis-ramp-v1`, margin 0.15. Score = firing sum across the stated count | §12.3 names the shape, not the numbers. The area cap answers the 18.2% near-full-frame boxes. All values config, hashed. |
+| D3 | Synthetic relations | From the p07 box geometry with the §9.1 axis rule. Corrupt at level 2 by naming one noise atom | The only labeled RELATION source. Build sequence: generator first, relations behind a flag, so a D8 cut wastes nothing. Amended 2026-08-10: corruption is the level-row flag `corrupt_relation` (§8.3, §17a). |
+| D4 | Placement construction | Relation vocabulary of four. Located = stroke box, or best-match element box with area below 0.9. `soft_check` = `axis-ramp-v1`, margin 0.15. Score = firing sum across the stated count | §12.3 names the shape, not the numbers. The area cap answers the 18.2% near-full-frame boxes. All values config, hashed. Amended 2026-08-10: the score is the firing sum alone, and locating is vector-driven (§9.1, §17a). |
 | D5 | Fit data | Source 1: fit 300 / holdout 150 mixed pairs from the v1-split tail, new salt, disjoint from the 200 gate pairs. Source 2: synthetic at all levels, disjoint seeds | ~500 one-time posts. A 200/100 split saves ~170 posts at wider intervals. |
-| D6 | Grid | 21 points on the two-channel line. 231 on the 0.05 simplex if placement survives. The three-channel objective mixes source 1 and source 2 equally | §19 fixes the method. The mix weight for the three-channel objective is the open part. |
+| D6 | Grid | 21 points on the two-channel line. 231 on the 0.05 simplex if placement survives. The three-channel objective mixes source 1 and source 2 equally | §19 fixes the method. The mix weight for the three-channel objective is the open part. Amended 2026-08-10: the basis is a property of the grid, and an unreadable trial counts 0.5 (§10.2, §17a). |
 | D7 | Freeze mechanics | Committed fit record with verdict fields. Configs updated on a `pass` verdict. Records after that hold `fusion_weights_fitted: true` plus the fit label | R3. The fit record is reviewed like a harness record. |
 | D8 | Placement cut criterion | Signal at or above 0.65 mean trial score on level 0–1 placement-only holdout, and V4 ablation cost at or above 0.01 | The two numbers are proposals with no architecture source — they make the "fiddly" test of §12.3 concrete. |
 | D9 | V5 statistic | Histogram, count of images above 3× the equal-share expectation, and the image-level slope before and after the source B build | The architecture gives no line. The record is descriptive plus the D11 criterion. |
 | D10 | V6 dev widths | Tier-1 {10, 25, 50}, tier-2 head {5, 10} | 225 images make the production 500/25 trivial. These widths run the stitching boundary the P3 tests pinned. |
 | D11 | Source B mix | Background 500 source A + 500 source B. Acceptance = the two slopes shrink below the recorded values with the marginal in agreement with `Uniform(0, 1)` | §13.2 ("B is the more important one") plus the Phase 3 standing measurement. Full replacement of source A is the alternative. |
 | D12 | Hygiene details | The hash gains the full intake section only, not the weight table — commonness is raw and weight-free. Pre-warm through one batched `encode_submissions` step | Weights in the key fork tables spuriously on each fit. Intake out of the key keeps the known hole. |
+
+## 17a. What the build settled that the spec left open
+
+The owner ruled D1 through D12 one by one on 2026-08-10, each at its
+proposed default, plus one decision planning surfaced:
+
+- **D13 — commonness on a heterogeneous background.** The Phase 3
+  rule made a background that activates only some channels an error,
+  which was correct for backgrounds with one mode only. The D11
+  background is heterogeneous by construction — only the synthetic
+  half holds RELATION atoms. Ruling: each channel's table is the
+  **mean across the submissions that activate it**, the contributor
+  counts go into the meta file, and a run stops before it spends
+  anything if its trials read a channel with zero contributors. The
+  P3 strict rule and its tests are amended.
+
+The build settled these points the spec did not cover:
+
+1. **Locating is image-first.** A text-bearing atom — one with a
+   Layer 2 vector — locates through the box of its best-matching
+   element in each image, and an image that gives that slot no
+   usable box gives the atom no location. The stroke bounding box is
+   the rule for atoms with no vector, not a fallback on an
+   image-dependent condition (review ruling 2026-08-10). A relation
+   between two canvas-located atoms scores the same value in each
+   image, thus it moves no ranking (Rule 2), and a strokes-first
+   rule made the full channel that: constant, and cut on an
+   incorrect basis.
+2. **Synthetic relations ride the frozen wire shape.** A relation
+   emits two labeled rectangle groups drawn along the element boxes,
+   plus the relations row naming them. The rectangle ink clears the
+   Layer 0 gates, the element channel reads the groups' labels, the
+   rectangle strokes make the WHOLE-DRAWING atom, and nothing in
+   Layer 0 or Layer 1 changes (I5).
+3. **The weight table carries its provenance.** `fusion.fit_record`
+   names the committed fit record with these weights as its winner,
+   null when unfitted. Harness records read `fusion_weights_fitted`
+   from it — no more hardcoded `false`.
+4. **A harness config carries the candidate weight set.** While the
+   placement build is alive, the fit and the V3 through V6 runs must
+   have a placement weight — relation-bearing synthetics activate the
+   channel, and an active channel must have a weight and a table.
+   After the fit, the frozen configs hold the winner.
+5. **A grid endpoint cannot freeze.** The config rejects a zero
+   weight and fusion rejects an active channel without one, thus an
+   endpoint winner writes `freeze_blocked: true` into the fit record
+   — the honest interpretation of a flat curve is a channel cut (§19), which
+   is a ruling, not a weight.
+6. **Union photographs hold no boxes.** The photographs' box masks
+   stay `false` and no detector post is spent. The union commonness
+   build does score placement across the synthetic background half,
+   and with the amended locating rule a photograph with no boxes
+   scores zero there — missing detector data reads as no agreement,
+   not as the maximum. A placement-active union *trial* run in a
+   phase after this one must first build photograph boxes through
+   the p07 slot (Rule 3).
+7. **The generator identity resolves through stored artifacts.** The
+   commonness key covers `generator_config_hash` — the level table,
+   the rule version, the vocabulary digest, and the stored table
+   content — thus the table build is a deliberate step, and a
+   background assembly refuses to build it as a side effect.
+8. **The R1 scan pins imports, not names.** `validation/fit.py` and
+   its dependencies must import only from an allowlist (datasets,
+   generator, pipeline, standard library). No module that stores live
+   player submissions exists in this build. The scan makes importing
+   a future one a test failure and a review conversation. Amended
+   2026-08-10: the scanned set is the import closure of the fit and
+   V3 through V6 runners across `validation/`, pinned by a test —
+   the first scan read six files and missed the runners' shared
+   dependencies.
+
+### Review rulings (2026-08-10)
+
+An adversarial review of the committed build confirmed 13 findings.
+Six were mechanical and the fixes follow written rules (the
+generalizer parse defect, the R1 closure above, the fit-record
+identity fields, a noise-sample stop, a referent check, the area cap
+in the generator identity). Four amended ruled surfaces, each ruled
+by the owner on 2026-08-10:
+
+1. **The fit objective at an unreadable trial is 0.5.** A grid
+   point that reads none of a trial's channels through its positive
+   weights counts 0.5 for it, the basis (source 1 alone, or the
+   equal mix) is a property of the grid and not of the candidate,
+   and each curve row records its readable-trial counts (§10.2).
+2. **The placement score is the sum of firing checks.** The
+   stated-count denominator was not cosmetic (§9.1).
+3. **Relation corruption is a level-row flag.** `corrupt_relation`
+   in the D1 table, `false` at levels 0 and 1, `true` at level 2
+   (§8.3).
+4. **The commonness artifact covers each built channel the
+   background activates.** The content is a pure function of the
+   key (D12), and the scoring context selects the weighted subset —
+   the caller's weight table cannot shape the stored bytes. This
+   amends the "each weighted channel" wording of P3 D11.
 
 ## 18. Code layout
 
