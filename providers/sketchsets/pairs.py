@@ -14,7 +14,8 @@ def check_sketch_pair(pair: SketchPair) -> None:
     Rules: a non-empty pair_key and photo_bytes, one filled sketch
     field of the two, a minimum of one stroke with one point each —
     a dot is a permitted stroke, as in Layer 0 — and each point
-    component in the closed interval [0, 1] (D2).
+    component in the closed interval [0, 1] (D2). text is optional,
+    and an empty string is not a description (spec P3 decision D6).
     """
     if not pair.pair_key:
         raise ValueError("pair_key must not be empty")
@@ -42,3 +43,5 @@ def check_sketch_pair(pair: SketchPair) -> None:
     if pair.sketch_bytes is not None and not pair.sketch_bytes:
         raise ValueError(
             f"{pair.pair_key}: sketch_bytes must not be empty")
+    if pair.text is not None and not pair.text.strip():
+        raise ValueError(f"{pair.pair_key}: text must not be empty")

@@ -5,13 +5,14 @@ import pytest
 
 from core.ranking import decoy_set, rank
 from core.types import PoolIndex, TrialScore
+from tests.conftest import make_pool_index
 
 _IDS = ("a" * 64, "b" * 64, "c" * 64, "d" * 64)
 
 
 def _index() -> PoolIndex:
     # a and b share one near-duplicate group. c and d are singletons.
-    return PoolIndex(
+    return make_pool_index(
         index_id="f" * 64,
         image_ids=_IDS,
         outline_vectors=np.zeros((4, 6, 2), dtype=np.float32),

@@ -1,0 +1,40 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "1af9917f50361b1cd07812859f8ef399a1e496676249ab99a8f39f1478f73f77",
+  "created_at": "2026-08-10T04:37:14.154881+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-10",
+  "decoy_count_max": 224,
+  "decoy_count_min": 219,
+  "dev_only": true,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2",
+  "harness_config_hash": "c46466de8445f3c3fe04834cd40bd7145416c1ed807c4a72f279d4c84e403c86",
+  "index_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
+  "ks_significance": 0.621991,
+  "ks_statistic": 0.033679,
+  "mean_p_at_max_decoy_count": 0.505051,
+  "mean_p_at_min_decoy_count": 0.494762,
+  "notes": "Phase 3 gate: V2 text mode, the baseline of the element channel alone. KS statistic 0.033679 at significance 0.621991 over 500 trials, against the P2b sketch reference v2-dev-wit-ab193017 at 0.0405 / 0.385035. Mean p 0.5063, variance 0.0901. Anderson-Darling p 0.589 and Cramer-von Mises p 0.361 show no shape departure. The discretization lattice contributes only 0.00094 of the statistic (2.8%) and inflates rather than deflates the null, so the statistic measures the distribution. The conditional row is clean - 0.4948 at decoy_count 219 against 0.5051 at 224, every group inside 0.8 standard errors of 0.5 - where the sketch reference recorded 0.2477 against 0.5163. FINDING, recorded as standing: the clean conditional row is a coincidence of which images sit in the near-duplicate group, not the P2b defect disappearing. The per-image commonness leak is present in this channel too. Sorting the 500 trials by their target's element commonness gives quintile mean p 0.4252 / 0.4658 / 0.5259 / 0.5097 / 0.6052, trial-level Spearman +0.2053 (t 4.68, n 500, p 3.7e-06); the sketch reference measures +0.4722 against its outline table, so the element channel carries about 43% of the outline channel's leak. The mechanism is structural, not a bug: the architecture section 13.1 correction 2*raw - commonness removes about half of a baseline offset by construction, and the commonness table is built from source A alone (1,000 dataset captions) where architecture section 13.2 names source B the more important one. Source B arrives with the Phase 4 synthetic submission generator; reducing this per-image slope should be one of its acceptance criteria. The marginal distribution is uniform, so this does not fail V2. A raised caveat on the trial-score variance sitting 1.8 standard errors high was withdrawn under verification: exact two-sided p 0.068, one of about eight statistics computed on this run, and indistinguishable from the passed sketch reference over the identical 500 pairs.",
+  "preparation_version_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 1035,
+      "posts": 460
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "d833e7111027fade9e7c201f086c2872485f29a820bf75ba591520a42c01815f",
+  "tag": "dev-wit",
+  "trial_count": 500,
+  "verdict": "pass"
+}

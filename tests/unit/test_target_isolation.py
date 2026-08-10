@@ -22,6 +22,7 @@ SCANNED_CORE = (
     "core/atoms.py",
     "core/canonical.py",
     "core/channels/__init__.py",
+    "core/channels/element.py",
     "core/channels/outline.py",
     "core/fusion.py",
     "core/intake.py",

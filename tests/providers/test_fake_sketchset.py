@@ -64,6 +64,40 @@ def test_the_default_salt_populates_the_three_splits() -> None:
     assert names == {"background", "v1", "v2"}
 
 
+def test_each_photograph_carries_its_scripted_element_list() -> None:
+    import json
+
+    from providers.fake.describer import FakeVlmDescriber
+
+    _, pairs = _pairs(count=3)
+    for position, pair in enumerate(pairs):
+        scripted = json.loads(read_fake_chunks(pair.photo_bytes)
+                              ["fake_elements"])
+        assert scripted["objects"][0] == f"tower {position:04d}"
+    responses = FakeVlmDescriber().describe_images(
+        [pair.photo_bytes for pair in pairs])
+    assert responses[1].setting == "harbor 0001"
+
+
+def test_the_description_names_the_photograph_elements_and_one_more() -> None:
+    from core.atoms import split_pasted_text
+    from pool.preparation.stages.normalize import normalize_elements
+
+    from providers.fake.describer import FakeVlmDescriber
+
+    _, pairs = _pairs(count=2)
+    pair = pairs[1]
+    fragments = split_pasted_text(pair.text)
+    elements = normalize_elements(
+        FakeVlmDescriber().describe_images([pair.photo_bytes])[0])
+    # The frozen paste rule gives one atom for each named word group,
+    # and the element strings are p02 fixed points, thus three of the
+    # four atoms are accurately an element of this photograph.
+    assert len(fragments) == 4
+    assert sum(1 for text in fragments if text in elements) == 3
+    assert "drift 0001" in fragments
+
+
 def test_the_config_hash_covers_the_scripted_structure() -> None:
     plain = FakeSketchPairSource(FakeSketchsetConfig(pair_count=8))
     scripted = FakeSketchPairSource(FakeSketchsetConfig(

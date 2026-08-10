@@ -551,18 +551,32 @@ def build_direct_prepared_pool(root: Path, count: int,
     from pool.preparation.stages.release import (
         release_preparation_version_id)
 
+    from providers.fake.text_encoder import FakeTextEncoder
+
     root.mkdir(parents=True, exist_ok=True)
     data = root / "data"
-    document = prep_config_dict(root / "unused-release-record.json")
+    document = prep_config_dict(
+        root / "unused-release-record.json",
+        **{"providers.text_encoder": {
+            "provider": "fake", "model": None,
+            "instruction_template": None, "dimension": dimension},
+           "providers.image_encoder": {
+            "provider": "fake", "model": None,
+            "instruction_template": None, "dimension": dimension}})
     config_path = root / "prep-config.json"
     config_path.write_text(canonical_json_pretty(document) + "\n",
                            encoding="utf-8")
     config = parse_preparation_config(document, str(config_path))
     provider_hashes = {
         name: sha256_hex(f"direct-slot-{name}")
-        for name in ("describer", "text_encoder", "image_encoder",
-                     "line_drawer", "element_boxes")
+        for name in ("describer", "image_encoder", "line_drawer",
+                     "element_boxes")
     }
+    # The scoring side compares its text_encoder slot with this one
+    # (R7): the vocabulary vectors and the atom vectors must come from
+    # one encoder, thus the fixture names the fake hash itself.
+    provider_hashes["text_encoder"] = FakeTextEncoder(
+        dimension=dimension).config_hash
     prep_hash = preparation_config_hash(config, provider_hashes)
     pool_version = sha256_hex(f"direct-pool-{seed}")
     prep_version = release_preparation_version_id(pool_version, prep_hash)
@@ -603,6 +617,41 @@ def build_direct_prepared_pool(root: Path, count: int,
         for image_id in image_ids)
     put("p08-neardup/groups.jsonl", groups.encode("utf-8"))
 
+    # The p04 element side: three elements for each image, one of them
+    # shared across the pool so the frequencies are not all 1.
+    elements_of = {
+        image_id: (f"thing {position}", f"place {position}", "shared element")
+        for position, image_id in enumerate(image_ids)}
+    vocabulary = sorted({element for row in elements_of.values()
+                         for element in row})
+    frequency = {element: sum(1 for row in elements_of.values()
+                              if element in row)
+                 for element in vocabulary}
+    entry_of = {element: index for index, element in enumerate(vocabulary)}
+    vocabulary_rows = "".join(
+        canonical_json({"element": element, "index": entry_of[element],
+                        "pool_frequency": frequency[element]}) + "\n"
+        for element in vocabulary)
+    put("p04-vocabulary/vocabulary.jsonl", vocabulary_rows.encode("utf-8"))
+
+    element_vectors = rng.standard_normal((len(vocabulary), dimension))
+    element_vectors /= np.linalg.norm(element_vectors, axis=1, keepdims=True)
+    element_vectors = element_vectors.astype(np.float32)
+    buffer = BytesIO()
+    np.save(buffer, element_vectors)
+    put("p04-vocabulary/vocabulary_vectors.npy", buffer.getvalue())
+    buffer = BytesIO()
+    np.save(buffer, element_vectors.mean(axis=0).astype(np.float32))
+    put("p04-vocabulary/element_space_mean.npy", buffer.getvalue())
+
+    incidence = np.full((count, 20), -1, dtype=np.int32)
+    for position, image_id in enumerate(image_ids):
+        for column, element in enumerate(elements_of[image_id]):
+            incidence[position, column] = entry_of[element]
+    buffer = BytesIO()
+    np.save(buffer, incidence)
+    put("p04-vocabulary/incidence.npy", buffer.getvalue())
+
     record = {
         "label": f"dev-direct-{prep_version[:8]}",
         "preparation_version_id": prep_version,
@@ -632,6 +681,37 @@ def build_direct_prepared_pool(root: Path, count: int,
     }
 
 
+def make_pool_index(index_id: str, image_ids: tuple[str, ...],
+                    outline_vectors, outline_space_mean,
+                    group_ids: tuple[str, ...], **element_side):
+    """One PoolIndex with a plain element side, for channel unit tests.
+
+    The outline channel and ranking tests do not read the element side,
+    thus this helper fills it with one element for each image. Element
+    channel tests give their own tables through element_side.
+    """
+    import numpy as np
+
+    from core.types import PoolIndex
+
+    count = len(image_ids)
+    dimension = outline_vectors.shape[2]
+    defaults = {
+        "pool_image_count": count,
+        "vocabulary": tuple(f"element {position}" for position in range(count)),
+        "pool_frequency": (1,) * count,
+        "vocabulary_vectors": np.eye(count, dimension, dtype=np.float32),
+        "incidence": np.arange(count, dtype=np.int32).reshape(count, 1),
+        "element_space_mean": np.zeros(dimension, dtype=np.float32),
+    }
+    defaults.update(element_side)
+    return PoolIndex(
+        index_id=index_id, image_ids=image_ids,
+        outline_vectors=outline_vectors,
+        outline_space_mean=outline_space_mean, group_ids=group_ids,
+        **defaults)
+
+
 def scoring_config_dict(preparation_record: Path | str, **overrides) -> dict:
     """The raw JSON document for a fake-provider scoring config."""
     document = {
@@ -643,8 +723,18 @@ def scoring_config_dict(preparation_record: Path | str, **overrides) -> dict:
             "max_text_length": 200,
             "max_atoms": 64,
         },
-        "channels": {"outline": {"comparison_rule": "center-cosine-v1"}},
-        "fusion": {"weights": {"outline": 1.0}},
+        "channels": {
+            "outline": {"comparison_rule": "center-cosine-v1"},
+            "element": {
+                "comparison_rule": "element-center-cosine-v1",
+                "matching_rule": "sinkhorn-slack-v1",
+                "epsilon": 0.1,
+                "sinkhorn_iterations": 20,
+                "tier2_count": 500,
+                "alpha": 1.0,
+            },
+        },
+        "fusion": {"weights": {"outline": 1.0, "element": 1.0}},
         "commonness": {
             "dataset": {
                 "provider": "fake",
@@ -663,6 +753,7 @@ def scoring_config_dict(preparation_record: Path | str, **overrides) -> dict:
             "v1_pair_count": 4,
             "v2_trial_count": 4,
             "v2_target_seed": 7,
+            "submission_mode": "sketch",
             "tag": "dev-test",
         },
         "providers": {
@@ -675,6 +766,12 @@ def scoring_config_dict(preparation_record: Path | str, **overrides) -> dict:
                 "response_format_mode": "json_schema",
             },
             "sketch_encoder": {
+                "provider": "fake",
+                "model": None,
+                "instruction_template": None,
+                "dimension": 32,
+            },
+            "text_encoder": {
                 "provider": "fake",
                 "model": None,
                 "instruction_template": None,
@@ -704,16 +801,20 @@ def make_scoring_config(preparation_record: Path | str, **overrides):
 def scoring_fakes(dimension: int = 32, pair_count: int = 24,
                   neardup_families: tuple[str, ...] = ()) -> dict:
     """The injected fake providers for one harness run."""
+    from providers.fake.describer import FakeVlmDescriber
     from providers.fake.encoder import FakeImageEncoder
     from providers.fake.linedrawer import FakeLineDrawer
     from providers.fake.sketch_encoder import FakeSketchEncoder
+    from providers.fake.text_encoder import FakeTextEncoder
     from providers.sketchsets.fake import (FakeSketchPairSource,
                                            FakeSketchsetConfig)
 
     return {
         "sketch_encoder": FakeSketchEncoder(dimension=dimension),
+        "text_encoder": FakeTextEncoder(dimension=dimension),
         "sketch_pairs": FakeSketchPairSource(FakeSketchsetConfig(
             pair_count=pair_count, neardup_families=neardup_families)),
         "line_drawer": FakeLineDrawer(),
         "image_encoder": FakeImageEncoder(dimension=dimension),
+        "describer": FakeVlmDescriber(),
     }

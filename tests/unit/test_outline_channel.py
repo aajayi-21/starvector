@@ -5,6 +5,7 @@ import pytest
 
 from core.channels.outline import outline_channel, outline_scores
 from core.types import Atom, EncodedSubmission, OutlineConfig, PoolIndex
+from tests.conftest import make_pool_index
 
 CONFIG = OutlineConfig(comparison_rule="center-cosine-v1")
 DIMENSION = 4
@@ -20,7 +21,7 @@ def _index(rows_by_image: list[list[list[float]]],
     count = len(rows_by_image)
     stacked = np.asarray(rows_by_image, dtype=np.float32)   # (N, 6, d)
     image_ids = tuple(f"{chr(97 + i)}" * 64 for i in range(count))
-    return PoolIndex(
+    return make_pool_index(
         index_id="f" * 64,
         image_ids=image_ids,
         outline_vectors=stacked,

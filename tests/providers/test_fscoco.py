@@ -114,6 +114,9 @@ def _write_tree(data_root: Path, config: FSCocoConfig) -> None:
             / f"{name}.jpg"
         photo_path.parent.mkdir(parents=True, exist_ok=True)
         photo_path.write_bytes(b"jpeg-bytes-" + name.encode())
+        text_path = root / "tree" / "fscoco" / "text" / user / f"{name}.txt"
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        text_path.write_text(f"A drawing of {name}.\n", encoding="utf-8")
     (root / "meta.json").write_text("{}\n", encoding="utf-8")
 
 
@@ -129,6 +132,8 @@ def test_iter_pairs_walks_the_tree_in_ascending_sequence(
     # Two pen-up rows give two one-point strokes — dots are permitted.
     assert pairs[1].sketch_strokes == (((0.1, 0.1),), ((0.2, 0.2),))
     assert pairs[0].photo_bytes == b"jpeg-bytes-0001"
+    # Rule utf8-strip-v1: the outer white space goes, nothing else.
+    assert pairs[0].text == "A drawing of 0001."
     assert source.bytes_retrieved == 0
 
 
@@ -139,6 +144,27 @@ def test_a_missing_photograph_raises(tmp_path: Path) -> None:
     root = tmp_path / "sketchsets" / "trees" / config.archive_sha256[:16]
     (root / "tree" / "fscoco" / "images" / "u1" / "0002.jpg").unlink()
     with pytest.raises(ValueError, match="photograph missing"):
+        list(source.iter_pairs())
+
+
+def test_a_missing_description_raises(tmp_path: Path) -> None:
+    config = _config()
+    _write_tree(tmp_path, config)
+    source = FSCocoSketchPairSource(config, tmp_path)
+    root = tmp_path / "sketchsets" / "trees" / config.archive_sha256[:16]
+    (root / "tree" / "fscoco" / "text" / "u1" / "0002.txt").unlink()
+    with pytest.raises(ValueError, match="description missing"):
+        list(source.iter_pairs())
+
+
+def test_an_empty_description_raises(tmp_path: Path) -> None:
+    config = _config()
+    _write_tree(tmp_path, config)
+    source = FSCocoSketchPairSource(config, tmp_path)
+    root = tmp_path / "sketchsets" / "trees" / config.archive_sha256[:16]
+    (root / "tree" / "fscoco" / "text" / "u1" / "0002.txt").write_text(
+        "   \n", encoding="utf-8")
+    with pytest.raises(ValueError, match="is empty"):
         list(source.iter_pairs())
 
 
@@ -158,6 +184,10 @@ def test_a_pinned_archive_extracts_without_a_download(
             info = tarfile.TarInfo(f"fscoco/images/{user}/{name}.jpg")
             info.size = len(photo)
             archive.addfile(info, BytesIO(photo))
+            caption = b"A drawing.\n"
+            info = tarfile.TarInfo(f"fscoco/text/{user}/{name}.txt")
+            info.size = len(caption)
+            archive.addfile(info, BytesIO(caption))
     archive_bytes = payload.getvalue()
     digest = hashlib.sha256(archive_bytes).hexdigest()
 

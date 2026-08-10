@@ -1,0 +1,56 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "1af9917f50361b1cd07812859f8ef399a1e496676249ab99a8f39f1478f73f77",
+  "created_at": "2026-08-10T04:29:30.529770+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-10",
+  "dev_only": true,
+  "first_rank_fraction": 0.265,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "2cf31d13672397d6c8da42588342b8066435dcd636d004d4c85f4300c6d5bb2f",
+  "index_id": "54f6053708bab304d06856dbfb1384c3939eaec0a94acffde62d9db860a4a9ae",
+  "mean_trial_score": 0.979722,
+  "median_rank": 4.0,
+  "notes": "Phase 3 gate: V1 text mode, the element channel alone (spec docs/specs/element-channel.md section 11, decision D7). First-rank 26.5% against the 0.236% chance reference, top-ten 80.0% against 2.36%, median rank 4 of 419-424 decoys, mean trial score 0.9797. Against the P2b sketch reference v1-dev-wit-99c8b508 (40.5% / 73.5% / median 2): text ranks fewer targets first but buries far fewer - 4 targets past rank 50 against 19 in sketch mode. Correspondence is established by level, not by correlation: the target's best-element similarity has median 0.4076 against 0.0802 across all 85,000 (submission, image) pairs, and 0 of 2,000 pairing permutations reach 0.4076. The named element comes from the target's own objects field in 84.1% of trials against a permutation baseline of 35.5%. Two caveats recorded, neither verdict-changing. (1) Corpus heterogeneity: the union index mixes 225 pool photographs with 200 inserted FS-COCO photographs and the highest-scoring decoy is an inserted photograph in 160 of 200 trials against a corpus-neutral 46.9%; 747 of the union's 2,274 element-bank entries occur only in the inserted photographs. Two attempts to restate the chance reference from a permutation null were refuted - the estimator is a function of the result it would divide, and stratifying by content similarity shows the same elevation for pool targets - so the recorded references stand and the P2b sketch record needs no revision. (2) Coverage: all 200 submissions produced exactly one atom, because the selected FS-COCO captions are single sentences with no commas, so this gate did not exercise inter-atom Sinkhorn competition, the reserve bin, or rarity discrimination between atoms. The reserve is structurally unreachable for a one-atom submission: the naming test reduces to a strictly positive centered cosine, and the report named an element in 200 of 200 rows. Fusion weights equal and unfitted (I6). Reproduced exactly: an independent rebuild matched decoy_count, beaten, tied, target_rank and p in 200 of 200 trials with zero provider requests.",
+  "pair_count": 200,
+  "preparation_version_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 0,
+      "posts": 200
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "line_drawer": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 244,
+      "posts": 199
+    },
+    "union_text_encoder": {
+      "cache_hits": 0,
+      "posts": 12
+    }
+  },
+  "reference_first": 0.002362,
+  "reference_top_ten": 0.023624,
+  "reviewer": "ade",
+  "scoring_config_hash": "d833e7111027fade9e7c201f086c2872485f29a820bf75ba591520a42c01815f",
+  "tag": "dev-wit",
+  "top_ten_fraction": 0.8,
+  "verdict": "pass"
+}

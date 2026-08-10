@@ -33,7 +33,10 @@
       "provider": "fscoco",
       "url": "https://cvssp.org/data/fscoco/fscoco.tar.gz",
       "archive_sha256": "4c71f8976bd9085baa1e530c45d38ce715ea3fb06bb1a9a3f1b8a7c789912f13",
-      "coordinate_extent": [256.0, 256.0],
+      "coordinate_extent": [
+        256.0,
+        256.0
+      ],
       "budget_bytes": 2500000000,
       "fake_pair_count": null,
       "fake_neardup_families": null
@@ -50,7 +53,7 @@
     "v1_pair_count": 200,
     "v2_trial_count": 500,
     "v2_target_seed": 20260808,
-    "submission_mode": "sketch",
+    "submission_mode": "text",
     "tag": "dev-wit"
   },
   "providers": {

@@ -33,6 +33,27 @@ _PHOTO_SIDE = 64
 _CONTENT_POINTS = 5
 _CONTENT_STROKES = 2
 
+# The scripted element and description rule (spec P3 decision D6).
+# Each word is a p02 fixed point: lowercase, one space between words,
+# no leading "a", "an", or "the", and a last word the d7-v1 table keeps
+# unchanged. The pair number keeps one pair's elements apart from the
+# elements of each other pair, thus a description matches its own
+# photograph and nothing else.
+_ELEMENT_RULE = "tagged-words-v1"
+_OBJECT_WORDS = ("tower", "boat", "lantern")
+_MATERIAL_WORD = "stone"
+_COLOR_WORD = "amber"
+_SHAPE_WORD = "arch"
+_SCALE_WORD = "wide"
+_SETTING_WORD = "harbor"
+_AMBIENCE_WORD = "quiet"
+
+# The description names three of the photograph's elements and one
+# word that is in no element list. A player submission holds some
+# words that name nothing too.
+_DESCRIBED_WORDS = (_OBJECT_WORDS[0], _OBJECT_WORDS[1], _SETTING_WORD)
+_NOISE_WORD = "drift"
+
 
 class FakeSketchsetConfig:
     """Frozen parameters for one fake sketch set."""
@@ -53,7 +74,42 @@ class FakeSketchsetConfig:
             "pair_count": self.pair_count,
             "neardup_families": list(self.neardup_families),
             "marker_rule": markers.MARKER_RULE,
+            "element_rule": _ELEMENT_RULE,
         }
+
+
+def _tagged(word: str, position: int) -> str:
+    """One scripted element string for the pair at position."""
+    return f"{word} {position:04d}"
+
+
+def scripted_elements(position: int) -> dict[str, object]:
+    """The seven R2 fields the photograph chunk scripts (D6).
+
+    The FakeVlmDescriber reads this back through the p01 slot, thus
+    the union element side of V1 runs the production path offline.
+    """
+    return {
+        "objects": [_tagged(word, position) for word in _OBJECT_WORDS],
+        "materials": [_tagged(_MATERIAL_WORD, position)],
+        "colors": [_tagged(_COLOR_WORD, position)],
+        "shapes": [_tagged(_SHAPE_WORD, position)],
+        "scale": _tagged(_SCALE_WORD, position),
+        "setting": _tagged(_SETTING_WORD, position),
+        "ambience": [_tagged(_AMBIENCE_WORD, position)],
+    }
+
+
+def scripted_description(position: int) -> str:
+    """The pair's written description, in the frozen paste shape.
+
+    Comma-separated, thus the frozen Layer 1 paste rule makes one atom
+    for each word group (D9). Three of the atoms name elements of this
+    pair's photograph and one names nothing.
+    """
+    words = [_tagged(word, position) for word in _DESCRIBED_WORDS]
+    words.append(_tagged(_NOISE_WORD, position))
+    return ", ".join(words)
 
 
 def _photo_png(pixel_key: str, chunks: dict[str, str]) -> bytes:
@@ -89,6 +145,12 @@ class FakeSketchPairSource:
     chunk is neardup_families[i] — that photograph becomes a scripted
     near-duplicate of pool images of that family, the instrument for
     the union-grouping invariant.
+
+    The photograph also carries the fake_elements chunk and the pair
+    carries a written description built from those same elements
+    (D6). FakeTextEncoder seeds by string, thus a description word and
+    the element it names share one vector, and the V1 text mode gets a
+    positive signal offline through the production path.
     """
 
     def __init__(self, config: FakeSketchsetConfig) -> None:
@@ -119,12 +181,14 @@ class FakeSketchPairSource:
             photo = _photo_png(pair_key, {
                 "embed_family": family,
                 "embed_jitter": "dup",
+                "fake_elements": canonical_json(scripted_elements(position)),
             })
             strokes = (markers.encode_family_strokes(position)
                        + _content_strokes(pair_key))
             pair = SketchPair(pair_key=pair_key, photo_bytes=photo,
                               sketch_strokes=strokes, sketch_bytes=None,
-                              category=None)
+                              category=None,
+                              text=scripted_description(position))
             check_sketch_pair(pair)
             self._bytes_retrieved += len(photo)
             yield pair

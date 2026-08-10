@@ -1,66 +1,81 @@
-"""The commonness table: a keyed artifact built from the background set.
+"""The commonness tables: keyed artifacts built from the background set.
 
-Spec: docs/specs/scoring-path.md sections 11 and 14. The table answers,
-for each pool image, how high it scores against a typical submission
-(architecture section 13.2) — in this phase from source A only: human
-sketches from the dataset's background split (D6). The artifact is
-written one time at its key. The index and the encoder come as
+Spec: docs/specs/scoring-path.md sections 11 and 14, extended by
+docs/specs/element-channel.md section 10 (decision D11). A table
+answers, for each pool image, how high it scores against a typical
+submission (architecture section 13.2) — in this phase from source A
+only: the dataset's background split (D6). One table is written for
+each built channel the background activates, at one shared key. The
+artifacts are written one time. The index and the encoders come as
 arguments, thus the V1 harness reuses the task with its union index
-(D7). The background comes as a thunk: a warm run reads the artifact
+(D7). The background comes as a thunk: a warm run reads the artifacts
 and does not touch the dataset or the network (U1).
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
 
 from core.canonical import JsonValue, canonical_json, sha256_hex
-from core.channels.outline import outline_scores
-from core.intake import render_strokes
-from core.types import OutlineConfig, PoolIndex, PoolScores, RenderParams
-from pipeline.config import ScoringConfig
+from core.fusion import active_channels
+from core.intake import validate_submission
+from core.types import (ROUTING_TABLE, ChannelName, ElementConfig, IntakeGates,
+                        OutlineConfig, PoolIndex, PoolScores, RenderParams)
+from pipeline.config import ScoringConfig, config_to_json_value
+from pipeline.score import Encoders, channel_scores, encode_submissions
 from pool.artifacts import ManifestError, write_json_pretty
 from pool.preparation.manifest import save_npy_atomic
-from providers.protocols import SketchEncoder, SketchPair
 
-_ENCODE_BATCH = 64
+# How many background submissions are encoded together. This limits
+# the memory the vectors hold while keeping the provider batches full.
+_SUBMISSION_BATCH = 64
 
-_TABLE_FILE = "outline.npy"
 _META_FILE = "meta.json"
 
 
 class CommonnessResult(NamedTuple):
-    """One table plus the U1 accounting for the run that made it."""
+    """The tables plus the U1 accounting for the run that made them.
 
-    table: PoolScores
+    posts and cache_hits are the totals across the Layer 2 slots. The
+    harness reports the slots one by one from its own deltas.
+    """
+
+    tables: Mapping[ChannelName, PoolScores]
     posts: int
     cache_hits: int
     reused: bool
 
 
+def table_file(channel: ChannelName) -> str:
+    """The artifact file name of one channel's table (D11)."""
+    return f"{channel}.npy"
+
+
 def commonness_config_hash(config: ScoringConfig, render: RenderParams,
-                           sketch_encoder_hash: str,
+                           sketch_encoder_hash: str, text_encoder_hash: str,
                            dataset_config_hash: str) -> str:
-    """The artifact key half that names the table's determinants.
+    """The artifact key half that names the tables' determinants.
 
     Covers the dataset identity, the split salt and background range,
-    the background count, the encoder, the render values, and the
-    channel config (spec section 6). The v1 and v2 fractions are not
-    in the key: the background range is [0, background), and the
-    other fractions cannot move its membership (D8).
+    the background count, the submission mode, the two Layer 2 slots,
+    the render values, and the full channels config (spec P3 section
+    6). The v1 and v2 fractions are not in the key: the background
+    range is [0, background), and the other fractions cannot move its
+    membership (D8).
     """
     return sha256_hex(canonical_json({
         "dataset_config_hash": dataset_config_hash,
         "split_salt": config.commonness.split_salt,
         "background_fraction": config.commonness.split_fractions.background,
         "background_count": config.commonness.background_count,
+        "submission_mode": config.validation.submission_mode,
         "sketch_encoder_config_hash": sketch_encoder_hash,
+        "text_encoder_config_hash": text_encoder_hash,
         "render": {"canvas_px": render.canvas_px,
                    "line_width_px": render.line_width_px},
-        "channel": {"outline": {
-            "comparison_rule": config.channels.outline.comparison_rule}},
+        "channels": config_to_json_value(config)["channels"],
     }))
 
 
@@ -70,57 +85,103 @@ def commonness_dir(data_root: Path, index_id: str,
     return data_root / "commonness" / index_id[:8] / commonness_hash[:8]
 
 
-def build_commonness_table(index: PoolIndex,
-                           background: Sequence[SketchPair],
-                           render: RenderParams, outline: OutlineConfig,
-                           encoder: SketchEncoder) -> PoolScores:
-    """The mean raw outline score across the background set.
+def build_commonness_tables(
+    index: PoolIndex, background: Sequence[tuple[str, JsonValue]], *,
+    gates: IntakeGates, render: RenderParams, outline: OutlineConfig,
+    element: ElementConfig, channels: Sequence[ChannelName],
+    encoders: Encoders,
+) -> dict[ChannelName, PoolScores]:
+    """The mean raw channel score across the background set.
 
-    commonness[x] = mean across background sketches of the raw
-    channel score for image x (architecture section 13.2) — before
-    correction and before standardizing. Shape (N,), float32. The
-    background must come in ascending pair_key sequence with vector
-    strokes on each pair (D10) — a raster-only pair raises with the
-    pair named.
+    commonness[channel][x] = mean across the background submissions of
+    the raw channel score for image x (architecture section 13.2) —
+    before correction and before standardizing. Each table has shape
+    (N,), float32.
+
+    background holds (pair key, wire record) rows in ascending key
+    sequence, thus the sum is made in a fixed sequence and two runs
+    give equal bytes. The records are built for the run's submission mode
+    before this task starts, so it knows nothing about modes or
+    datasets.
+
+    A table is built for each named channel the background activates.
+    A channel that only some of the background activates raises: a mean
+    across part of the set is a plausible number that is incorrect.
     """
     if not background:
         raise ValueError("the background set is empty")
-    keys = [pair.pair_key for pair in background]
+    keys = [key for key, _ in background]
     if any(keys[i] >= keys[i + 1] for i in range(len(keys) - 1)):
-        raise ValueError("background pairs must be ascending by pair_key")
-    total = np.zeros(len(index.image_ids), dtype=np.float64)   # (N,)
-    for start in range(0, len(background), _ENCODE_BATCH):
-        chunk = background[start:start + _ENCODE_BATCH]
-        for pair in chunk:
-            if pair.sketch_strokes is None:
-                raise ValueError(
-                    f"{pair.pair_key}: no vector strokes — D10 is not built")
-        renders = [render_strokes(pair.sketch_strokes, render.canvas_px,
-                                  render.line_width_px)
-                   for pair in chunk]
-        vectors = encoder.encode_images(renders)               # (B, d)
-        for row in vectors:
-            total += outline_scores(row, index, outline).astype(np.float64)
-    return (total / len(background)).astype(np.float32)        # (N,)
+        raise ValueError("background records must be ascending by pair_key")
+    wanted = set(channels)
+    count = len(index.image_ids)
+    totals: dict[ChannelName, np.ndarray] = {}
+    contributors: dict[ChannelName, int] = {}
+
+    for start in range(0, len(background), _SUBMISSION_BATCH):
+        chunk = background[start:start + _SUBMISSION_BATCH]
+        submissions = [validate_submission(record, gates, render.canvas_px)
+                       for _, record in chunk]
+        encoded = encode_submissions(submissions, render, encoders)
+        for row in encoded:
+            for name in sorted(active_channels(row, ROUTING_TABLE) & wanted):
+                scores = channel_scores(name, row, index, outline, element)
+                if name not in totals:
+                    totals[name] = np.zeros(count, dtype=np.float64)
+                    contributors[name] = 0
+                totals[name] += scores.astype(np.float64)
+                contributors[name] += 1
+
+    for name, built in contributors.items():
+        if built != len(background):
+            raise ValueError(
+                f"channel {name!r} was activated by {built} of "
+                f"{len(background)} background submissions — a table built "
+                "from part of the background is not a commonness table")
+    return {name: (total / len(background)).astype(np.float32)
+            for name, total in totals.items()}
 
 
-def ensure_commonness_table(
+def _provider_counter(encoders: Encoders, name: str) -> int:
+    """The summed U1 counter across the Layer 2 slots."""
+    return sum(int(getattr(slot, name, 0)) for slot in encoders)
+
+
+def _read_tables(directory: Path, channels: Sequence[ChannelName],
+                 count: int) -> dict[ChannelName, PoolScores]:
+    """Read back the stored tables named by the meta file."""
+    tables: dict[ChannelName, PoolScores] = {}
+    for name in channels:
+        path = directory / table_file(name)
+        table = np.load(path)
+        if table.shape != (count,) or table.dtype != np.float32:
+            raise ManifestError(
+                f"{path}: expected float32 ({count},), got "
+                f"{table.dtype} {table.shape}")
+        if not np.isfinite(table).all():
+            raise ManifestError(
+                f"{path}: the stored table holds a non-finite value")
+        tables[name] = table
+    return tables
+
+
+def ensure_commonness_tables(
     *, data_root: Path, index: PoolIndex, commonness_hash: str,
-    background: Callable[[], Sequence[SketchPair]],
-    render: RenderParams, outline: OutlineConfig, encoder: SketchEncoder,
-    clock: Callable[[], str],
+    background: Callable[[], Sequence[tuple[str, JsonValue]]],
+    gates: IntakeGates, render: RenderParams, outline: OutlineConfig,
+    element: ElementConfig, channels: Sequence[ChannelName],
+    encoders: Encoders, submission_mode: str, clock: Callable[[], str],
 ) -> CommonnessResult:
-    """Read the table at its key, or build and store it one time.
+    """Read the tables at their key, or build and store them one time.
 
     Written one time: a complete artifact (a parseable meta.json) is
-    read back with no dataset access and no encoder use. On a build, the
-    array is written first and meta.json last — meta is the
-    completeness marker, the P1b resume rule. The meta file carries
-    the U1 totals and is out of the byte-determinism scope (spec
-    section 17).
+    read back with no dataset access and no encoder use. On a build,
+    the arrays are written first and meta.json last — meta is the
+    completeness marker, the P1b resume rule. The meta file carries the
+    U1 totals and is out of the byte-determinism scope (spec section
+    17).
     """
     directory = commonness_dir(data_root, index.index_id, commonness_hash)
-    table_path = directory / _TABLE_FILE
     meta_path = directory / _META_FILE
     count = len(index.image_ids)
     if meta_path.is_file():
@@ -139,38 +200,47 @@ def ensure_commonness_table(
                 raise ManifestError(
                     f"{meta_path}: {name} does not agree with the "
                     "requested table — a truncated-key collision")
-        table = np.load(table_path)
-        if table.shape != (count,) or table.dtype != np.float32:
+        stored = meta_read.get("channels")
+        if not isinstance(stored, list) or not all(
+                isinstance(name, str) for name in stored):
             raise ManifestError(
-                f"{table_path}: expected float32 ({count},), got "
-                f"{table.dtype} {table.shape}")
+                f"{meta_path}: the channels field is not a list of names")
+        return CommonnessResult(tables=_read_tables(directory, stored, count),
+                                posts=0, cache_hits=0, reused=True)
+
+    posts_before = _provider_counter(encoders, "post_count")
+    hits_before = _provider_counter(encoders, "cache_hit_count")
+    records = background()
+    tables = build_commonness_tables(
+        index, records, gates=gates, render=render, outline=outline,
+        element=element, channels=channels, encoders=encoders)
+    if not tables:
+        raise ValueError(
+            "the background set activates no weighted channel — nothing to "
+            "correct with")
+    for name, table in tables.items():
         if not np.isfinite(table).all():
-            raise ManifestError(
-                f"{table_path}: the stored table holds a non-finite value")
-        return CommonnessResult(table=table, posts=0, cache_hits=0,
-                                reused=True)
+            raise ValueError(
+                f"the built {name} commonness table holds a non-finite "
+                "value — the encoder gave a bad vector")
+    posts = _provider_counter(encoders, "post_count") - posts_before
+    cache_hits = _provider_counter(encoders, "cache_hit_count") - hits_before
 
-    posts_before = int(getattr(encoder, "post_count", 0))
-    hits_before = int(getattr(encoder, "cache_hit_count", 0))
-    pairs = background()
-    table = build_commonness_table(index, pairs, render, outline, encoder)
-    if not np.isfinite(table).all():
-        raise ValueError("the built commonness table holds a non-finite "
-                         "value — the encoder gave a bad vector")
-    posts = int(getattr(encoder, "post_count", 0)) - posts_before
-    cache_hits = int(getattr(encoder, "cache_hit_count", 0)) - hits_before
-
-    save_npy_atomic(table_path, table)
+    names = sorted(tables)
+    for name in names:
+        save_npy_atomic(directory / table_file(name), tables[name])
     meta: dict[str, JsonValue] = {
         "index_id": index.index_id,
         "commonness_config_hash": commonness_hash,
-        "background_count": len(pairs),
+        "submission_mode": submission_mode,
+        "background_count": len(records),
         "pool_image_count": count,
-        "array_shapes": {"outline": [count]},
+        "channels": names,
+        "array_shapes": {name: [count] for name in names},
         "provider_posts": posts,
         "provider_cache_hits": cache_hits,
         "created_at": clock(),
     }
     write_json_pretty(meta_path, meta)
-    return CommonnessResult(table=table, posts=posts, cache_hits=cache_hits,
+    return CommonnessResult(tables=tables, posts=posts, cache_hits=cache_hits,
                             reused=False)
