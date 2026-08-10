@@ -16,14 +16,18 @@ from pathlib import Path
 from typing import Mapping
 
 from core.canonical import JsonValue, canonical_json, sha256_hex
-from core.types import ElementConfig, IntakeGates, OutlineConfig
+from core.types import (ElementConfig, IntakeGates, OutlineConfig,
+                        PlacementConfig)
 
 SCORING_SLOT_NAMES: tuple[str, ...] = ("sketch_encoder", "sketch_pairs",
                                        "text_encoder")
-BUILT_CHANNELS: tuple[str, ...] = ("outline", "element")
+BUILT_CHANNELS: tuple[str, ...] = ("outline", "element", "placement")
 COMPARISON_RULES: tuple[str, ...] = ("center-cosine-v1",)
 ELEMENT_COMPARISON_RULES: tuple[str, ...] = ("element-center-cosine-v1",)
 MATCHING_RULES: tuple[str, ...] = ("sinkhorn-slack-v1",)
+CHECK_RULES: tuple[str, ...] = ("axis-ramp-v1",)
+RELATION_VOCABULARY: tuple[str, ...] = ("left-of", "right-of", "above",
+                                        "below")
 SKETCH_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
 TEXT_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
 SKETCH_PAIR_PROVIDERS: tuple[str, ...] = ("fscoco", "fake")
@@ -73,16 +77,34 @@ class ElementChannelSection:
 
 
 @dataclass(frozen=True, slots=True)
+class PlacementChannelSection:
+    """The placement channel values (P4 decision D4)."""
+
+    check_rule: str
+    relation_vocabulary: tuple[str, ...]
+    area_cap: float
+    margin: float
+
+
+@dataclass(frozen=True, slots=True)
 class ChannelsSection:
     outline: OutlineChannelSection
     element: ElementChannelSection
+    placement: PlacementChannelSection
 
 
 @dataclass(frozen=True, slots=True)
 class FusionSection:
-    """The weight table (decision D12), as sorted pairs."""
+    """The weight table (P2 D12), as sorted pairs, with provenance.
+
+    fit_record names the committed fit record — these weights are its
+    winner (P4 decision D7). Null means unfitted — the weights
+    are provisional and each harness record says so. The freeze
+    updates the two fields together.
+    """
 
     weights: tuple[tuple[str, float], ...]
+    fit_record: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,11 +137,27 @@ class SplitFractionsSection:
 
 
 @dataclass(frozen=True, slots=True)
+class SyntheticSection:
+    """The source B half of the background (P4 decision D11).
+
+    fit_config names the file that holds the generator level table and
+    the generalization slot — the path resolution follows the
+    input.preparation_record pattern. count synthetic submissions go
+    into the background, built from the seed.
+    """
+
+    fit_config: str
+    count: int
+    seed: int
+
+
+@dataclass(frozen=True, slots=True)
 class CommonnessSection:
     dataset: DatasetSection
     split_salt: str
     background_count: int
     split_fractions: SplitFractionsSection
+    synthetic: SyntheticSection | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -415,11 +453,34 @@ def parse_scoring_config(raw: object, source: str = "config") -> ScoringConfig:
         raise ConfigError(
             f"channels.element.alpha: expected {BUILT_ALPHA} — the "
             "sketch-vector path behind lower values is not built (D10)")
-    channels = ChannelsSection(outline=outline, element=element)
+    placement_node = channels_node.child("placement")
+    vocabulary = placement_node.opt_str_list("relation_vocabulary")
+    if not vocabulary:
+        raise ConfigError(
+            "channels.placement.relation_vocabulary: expected a non-empty "
+            "list")
+    placement = PlacementChannelSection(
+        check_rule=placement_node.choice("check_rule", CHECK_RULES),
+        relation_vocabulary=vocabulary,
+        area_cap=placement_node.float_("area_cap", low=0.0, high=1.0,
+                                       low_open=True),
+        margin=placement_node.float_("margin", low=0.0, high=1.0,
+                                     low_open=True),
+    )
+    placement_node.finish()
+    unknown_relations = sorted(set(placement.relation_vocabulary)
+                               - set(RELATION_VOCABULARY))
+    if unknown_relations:
+        raise ConfigError(
+            "channels.placement.relation_vocabulary: no check rule for "
+            f"{unknown_relations}")
+    channels = ChannelsSection(outline=outline, element=element,
+                               placement=placement)
     channels_node.finish()
 
     fusion_node = root.child("fusion")
-    fusion = FusionSection(weights=fusion_node.weight_table("weights"))
+    fusion = FusionSection(weights=fusion_node.weight_table("weights"),
+                           fit_record=fusion_node.opt_str("fit_record"))
     fusion_node.finish()
     for name, _ in fusion.weights:
         if name not in BUILT_CHANNELS:
@@ -440,13 +501,28 @@ def parse_scoring_config(raw: object, source: str = "config") -> ScoringConfig:
     if fractions.background + fractions.v1 + fractions.v2 > 1.0:
         raise ConfigError(
             "commonness.split_fractions: the three fractions sum above 1.0")
+    synthetic_raw = commonness_node._take("synthetic")
+    synthetic: SyntheticSection | None = None
+    if synthetic_raw is not None:
+        synthetic_node = _Node(synthetic_raw, "commonness.synthetic")
+        synthetic = SyntheticSection(
+            fit_config=synthetic_node.str_("fit_config"),
+            count=synthetic_node.int_("count", minimum=1),
+            seed=synthetic_node.any_int("seed"),
+        )
+        synthetic_node.finish()
     commonness = CommonnessSection(
         dataset=dataset,
         split_salt=commonness_node.str_("split_salt"),
         background_count=commonness_node.int_("background_count", minimum=1),
         split_fractions=fractions,
+        synthetic=synthetic,
     )
     commonness_node.finish()
+    if synthetic is not None and synthetic.count >= commonness.background_count:
+        raise ConfigError(
+            "commonness.synthetic.count: must be below background_count — "
+            "source A stays in the background as the check (D11)")
 
     validation_node = root.child("validation")
     validation = ValidationSection(
@@ -525,9 +601,11 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
     """The JSON document for a config. The inverse of parsing."""
     dataset = config.commonness.dataset
     fractions = config.commonness.split_fractions
+    synthetic = config.commonness.synthetic
     encoder = config.providers.sketch_encoder
     text_encoder = config.providers.text_encoder
     element = config.channels.element
+    placement = config.channels.placement
     openrouter = config.providers.openrouter
     return {
         "config_version": config.config_version,
@@ -551,8 +629,15 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
                 "tier2_count": element.tier2_count,
                 "alpha": element.alpha,
             },
+            "placement": {
+                "check_rule": placement.check_rule,
+                "relation_vocabulary": list(placement.relation_vocabulary),
+                "area_cap": placement.area_cap,
+                "margin": placement.margin,
+            },
         },
-        "fusion": {"weights": dict(config.fusion.weights)},
+        "fusion": {"weights": dict(config.fusion.weights),
+                   "fit_record": config.fusion.fit_record},
         "commonness": {
             "dataset": {
                 "provider": dataset.provider,
@@ -573,6 +658,11 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
                 "v1": fractions.v1,
                 "v2": fractions.v2,
             },
+            "synthetic": (None if synthetic is None else {
+                "fit_config": synthetic.fit_config,
+                "count": synthetic.count,
+                "seed": synthetic.seed,
+            }),
         },
         "validation": {
             "v1_pair_count": config.validation.v1_pair_count,
@@ -656,6 +746,17 @@ def element_config(config: ScoringConfig) -> ElementConfig:
         sinkhorn_iterations=section.sinkhorn_iterations,
         tier2_count=section.tier2_count,
         alpha=section.alpha,
+    )
+
+
+def placement_config(config: ScoringConfig) -> PlacementConfig:
+    """The core placement channel record for this config."""
+    section = config.channels.placement
+    return PlacementConfig(
+        check_rule=section.check_rule,
+        relation_vocabulary=section.relation_vocabulary,
+        area_cap=section.area_cap,
+        margin=section.margin,
     )
 
 

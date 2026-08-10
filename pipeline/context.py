@@ -20,8 +20,8 @@ import numpy as np
 
 from core.canonical import sha256_hex
 from core.types import (ChannelName, ElementConfig, IntakeGates, OutlineConfig,
-                        PoolIndex, PoolScores, RenderParams, ScoringContext,
-                        Weights)
+                        PlacementConfig, PoolIndex, PoolScores, RenderParams,
+                        ScoringContext, Weights)
 from pool.artifacts import ManifestError
 from pool.preparation import manifest as mf
 from pool.preparation.config import ConfigError, load_preparation_config
@@ -38,8 +38,8 @@ _USED_FIELDS = ("label", "preparation_version_id", "preparation_config_hash",
 _DISCARDED_FIELDS = ("code_version", "created_at", "provider_usage")
 _POOL_FIELDS = ("label", "pool_version_id", "release_record_path")
 
-# The artifact keys the scoring path reads (spec P2 section 7 and spec
-# P3 section 7).
+# The artifact keys the scoring path reads (spec P2 section 7, spec
+# P3 section 7, and spec P4 section 7).
 _RECORDS_KEY = "p00-intake/records.jsonl"
 _VECTORS_KEY = "p06-outline/outline_vectors.npy"
 _MEAN_KEY = "p06-outline/outline_space_mean.npy"
@@ -48,6 +48,7 @@ _VOCABULARY_KEY = "p04-vocabulary/vocabulary.jsonl"
 _ELEMENT_VECTORS_KEY = "p04-vocabulary/vocabulary_vectors.npy"
 _INCIDENCE_KEY = "p04-vocabulary/incidence.npy"
 _ELEMENT_MEAN_KEY = "p04-vocabulary/element_space_mean.npy"
+_BOXES_KEY = "p07-boxes/boxes.jsonl"
 
 # Unit-norm tolerance for the stored element vectors. The p04 stage
 # applies the same value when it writes them.
@@ -84,12 +85,15 @@ class LoadedPreparation(NamedTuple):
 
 
 class ElementSide(NamedTuple):
-    """The p04 element artifacts as one bundle (spec P3 section 7).
+    """The p04 and p07 artifacts as one bundle (spec P3 section 7,
+    spec P4 section 7).
 
     vocabulary holds B entry strings and pool_frequency the document
     frequency of the first V of them, which are the pool vocabulary.
     The V1 union builder appends entries above V and keeps the first V
     and pool_image_count as they are, so rarity stays pool-defined.
+    box_table (N, k, 4) and box_mask (N, k) are slot-aligned with
+    incidence — a masked-out slot holds zeros and no box.
     """
 
     vocabulary: tuple[str, ...]
@@ -98,6 +102,8 @@ class ElementSide(NamedTuple):
     vocabulary_vectors: np.ndarray
     incidence: np.ndarray
     element_space_mean: np.ndarray
+    box_table: np.ndarray
+    box_mask: np.ndarray
 
 
 def _checked_hex64(value: object, where: str) -> str:
@@ -264,6 +270,46 @@ def _checked_element_side(elements: ElementSide, count: int) -> None:
         if len(set(kept.tolist())) != kept.shape[0]:
             raise ContextError(
                 f"incidence row {position} names an entry twice")
+    _checked_box_side(elements, count)
+
+
+def _checked_box_side(elements: ElementSide, count: int) -> None:
+    """Make sure the box side aligns with the incidence table (P4 R11).
+
+    Checks: box_table (N, k, 4) float32 and box_mask (N, k) bool with
+    the incidence width, no box on a padding slot, and the box of each
+    on slot finite, in the unit square, with a positive width and
+    height. An off slot must hold zeros — a stale value in an off slot
+    reads as data to a person inspecting the array.
+    """
+    width = elements.incidence.shape[1]
+    table = elements.box_table
+    mask = elements.box_mask
+    if table.shape != (count, width, 4):
+        raise ContextError(
+            f"box_table must have shape ({count}, {width}, 4), got "
+            f"{table.shape}")
+    if table.dtype != np.float32:
+        raise ContextError(f"box_table must be float32, got {table.dtype}")
+    if mask.shape != (count, width):
+        raise ContextError(
+            f"box_mask must have shape ({count}, {width}), got {mask.shape}")
+    if mask.dtype != np.bool_:
+        raise ContextError(f"box_mask must be bool, got {mask.dtype}")
+    if bool((mask & (elements.incidence < 0)).any()):
+        raise ContextError("box_mask marks a padding slot")
+    if bool((table[~mask] != 0.0).any()):
+        raise ContextError("box_table holds a value behind a false mask")
+    kept = table[mask]                                          # (rows, 4)
+    if kept.size == 0:
+        return
+    if not np.isfinite(kept).all():
+        raise ContextError("box_table holds a non-finite value")
+    if bool((kept < 0.0).any()) or bool((kept > 1.0).any()):
+        raise ContextError("box coordinates must be in [0, 1]")
+    if bool((kept[:, 2] <= kept[:, 0]).any()) \
+            or bool((kept[:, 3] <= kept[:, 1]).any()):
+        raise ContextError("a box has no extent on one axis")
 
 
 def build_pool_index(index_id: str, image_ids: tuple[str, ...],
@@ -327,6 +373,8 @@ def build_pool_index(index_id: str, image_ids: tuple[str, ...],
         vocabulary_vectors=elements.vocabulary_vectors,
         incidence=elements.incidence,
         element_space_mean=elements.element_space_mean,
+        box_table=elements.box_table,
+        box_mask=elements.box_mask,
     )
 
 
@@ -393,6 +441,71 @@ def _vocabulary_frequencies(rows: list[dict]) -> tuple[int, ...]:
                 f"{value!r} is not a positive integer")
         frequencies.append(value)
     return tuple(frequencies)
+
+
+def box_side(box_rows: list[dict], image_ids: tuple[str, ...],
+             vocabulary: tuple[str, ...],
+             incidence: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The p07 rows as slot-aligned arrays (spec P4 section 7).
+
+    The stored rows map element strings to boxes in lexicographic key
+    sequence — canonical JSON sorts the keys — thus the incidence
+    table aligns the slots and the stored sequence does not:
+    slot j of image i holds the box of vocabulary[incidence[i, j]].
+    Public: the fixture builders and the union path use it again.
+
+    Checks here mirror the p07 boundary rules (boxes_validate): the
+    row sequence equals image_ids, each row's key set equals the
+    image's element strings, and each box is four numbers in [0, 1]
+    with a positive width and height. A null box and a padding slot
+    keep the slot off and the table row zero.
+    """
+    if len(box_rows) != len(image_ids):
+        raise ContextError(
+            f"{_BOXES_KEY}: {len(box_rows)} rows do not agree with "
+            f"{len(image_ids)} images")
+    width = incidence.shape[1]
+    table = np.zeros((len(image_ids), width, 4), dtype=np.float32)
+    mask = np.zeros((len(image_ids), width), dtype=np.bool_)
+    for position, row in enumerate(box_rows):
+        where = f"{_BOXES_KEY}:{position + 1}"
+        if row.get("image_id") != image_ids[position]:
+            raise ContextError(
+                f"{where}: image_id {row.get('image_id')!r} is not "
+                f"{image_ids[position]!r} — rows must follow the p00 "
+                "sequence")
+        boxes = row.get("boxes")
+        if not isinstance(boxes, dict):
+            raise ContextError(f"{where}: boxes is not an object")
+        slots = incidence[position]
+        expected = {vocabulary[int(entry)] for entry in slots if entry >= 0}
+        if set(boxes) != expected:
+            missing = sorted(expected - set(boxes))
+            extra = sorted(set(boxes) - expected)
+            raise ContextError(
+                f"{where}: box keys do not equal the element list "
+                f"(missing {missing}, extra {extra})")
+        for slot, entry in enumerate(slots):
+            if entry < 0:
+                continue
+            value = boxes[vocabulary[int(entry)]]
+            if value is None:
+                continue
+            if (not isinstance(value, list) or len(value) != 4
+                    or any(isinstance(v, bool)
+                           or not isinstance(v, (int, float))
+                           for v in value)):
+                raise ContextError(
+                    f"{where}: a box must be four numbers or null")
+            x_min, y_min, x_max, y_max = (float(v) for v in value)
+            if not (0.0 <= x_min < x_max <= 1.0
+                    and 0.0 <= y_min < y_max <= 1.0):
+                raise ContextError(
+                    f"{where}: box {value} is not in the unit square with "
+                    "a positive extent")
+            table[position, slot] = (x_min, y_min, x_max, y_max)
+            mask[position, slot] = True
+    return table, mask
 
 
 def load_pool_index(record_path: Path, data_root: Path, *,
@@ -464,18 +577,26 @@ def load_pool_index(record_path: Path, data_root: Path, *,
     vocabulary_rows = _jsonl_rows(
         _verified_bytes(tree_root, inventory, _VOCABULARY_KEY),
         _VOCABULARY_KEY)
+    vocabulary = _vocabulary_strings(vocabulary_rows)
+    incidence = np.load(
+        BytesIO(_verified_bytes(tree_root, inventory, _INCIDENCE_KEY)))
+    box_rows = _jsonl_rows(
+        _verified_bytes(tree_root, inventory, _BOXES_KEY), _BOXES_KEY)
+    box_table, box_mask = box_side(box_rows, image_ids, vocabulary,
+                                   incidence)
     elements = ElementSide(
-        vocabulary=_vocabulary_strings(vocabulary_rows),
+        vocabulary=vocabulary,
         pool_frequency=_vocabulary_frequencies(vocabulary_rows),
         pool_image_count=len(image_ids),
         vocabulary_vectors=np.load(
             BytesIO(_verified_bytes(tree_root, inventory,
                                     _ELEMENT_VECTORS_KEY))),
-        incidence=np.load(
-            BytesIO(_verified_bytes(tree_root, inventory, _INCIDENCE_KEY))),
+        incidence=incidence,
         element_space_mean=np.load(
             BytesIO(_verified_bytes(tree_root, inventory,
                                     _ELEMENT_MEAN_KEY))),
+        box_table=box_table,
+        box_mask=box_mask,
     )
 
     index = build_pool_index(
@@ -491,7 +612,8 @@ def load_pool_index(record_path: Path, data_root: Path, *,
 
 def build_scoring_context(index: PoolIndex, gates: IntakeGates,
                           render: RenderParams, outline: OutlineConfig,
-                          element: ElementConfig, weights: Weights,
+                          element: ElementConfig,
+                          placement: PlacementConfig, weights: Weights,
                           commonness: Mapping[ChannelName, PoolScores],
                           scoring_config_hash: str,
                           commonness_config_hash: str) -> ScoringContext:
@@ -515,7 +637,8 @@ def build_scoring_context(index: PoolIndex, gates: IntakeGates,
                 f"{table.dtype} {table.shape}")
     return ScoringContext(
         index=index, gates=gates, render=render, outline=outline,
-        element=element, weights=weights, commonness=commonness,
+        element=element, placement=placement, weights=weights,
+        commonness=commonness,
         scoring_config_hash=scoring_config_hash,
         commonness_config_hash=commonness_config_hash,
     )

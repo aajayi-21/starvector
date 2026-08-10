@@ -26,7 +26,8 @@ from pipeline.commonness import (commonness_config_hash,
                                  ensure_commonness_tables)
 from pipeline.config import (ConfigError, ScoringConfig, element_config,
                              fusion_weights, intake_gates, load_scoring_config,
-                             outline_config, scoring_config_hash)
+                             outline_config, placement_config,
+                             scoring_config_hash)
 from pipeline.context import (ElementSide, LoadedPreparation, build_pool_index,
                               build_scoring_context, load_pool_index)
 from pipeline.score import encode_submission, score_trial
@@ -137,6 +138,8 @@ def build_union_elements(
 
     width = loaded.index.incidence.shape[1]
     incidence = np.full((len(union_ids), width), -1, dtype=np.int32)
+    box_table = np.zeros((len(union_ids), width, 4), dtype=np.float32)
+    box_mask = np.zeros((len(union_ids), width), dtype=np.bool_)
     pool_position = {image_id: position for position, image_id
                      in enumerate(loaded.index.image_ids)}
     photograph_elements = dict(zip(new_ids, capped))
@@ -144,7 +147,15 @@ def build_union_elements(
         if image_id in pool_position:
             incidence[position] = loaded.index.incidence[
                 pool_position[image_id]]
+            box_table[position] = loaded.index.box_table[
+                pool_position[image_id]]
+            box_mask[position] = loaded.index.box_mask[
+                pool_position[image_id]]
             continue
+        # Photographs hold no boxes: the p07 slot has not run on them,
+        # and a placement-active union run must build them first
+        # through the same detector path (spec P4 section 7). The
+        # slots stay off, thus a photograph does not fire placement.
         elements = photograph_elements[image_id]
         if not elements:
             raise ValueError(
@@ -164,6 +175,8 @@ def build_union_elements(
         vocabulary_vectors=np.concatenate(vectors, axis=0),
         incidence=incidence,
         element_space_mean=loaded.index.element_space_mean,
+        box_table=box_table,
+        box_mask=box_mask,
     )
 
 
@@ -338,8 +351,11 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
     salt = config.commonness.split_salt
     v1_keys = select_keys(keys, salt, fractions, "v1",
                           config.validation.v1_pair_count)
+    synthetic = config.commonness.synthetic
+    dataset_count = config.commonness.background_count \
+        - (synthetic.count if synthetic else 0)
     background_keys = select_keys(keys, salt, fractions, "background",
-                                  config.commonness.background_count)
+                                  dataset_count)
     pairs = harness.pairs_by_key(source, set(v1_keys) | set(background_keys))
     # Pre-flight before the encoder spend: each selected pair (trial
     # and background) must build in this mode and clear the gates.
@@ -388,38 +404,55 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
     encoders = harness.wire_encoders(config, data_root, providers)
     sketch_delta = harness.UsageDelta(encoders.sketch)
     text_delta = harness.UsageDelta(encoders.text)
+    generator_hash = harness.resolved_generator_hash(
+        config, loaded.index, data_root, providers.get("generalizer"))
     commonness_hash = commonness_config_hash(
         config, loaded.render, slot_hashes["sketch_encoder"],
-        slot_hashes["text_encoder"], dataset_hash)
+        slot_hashes["text_encoder"], dataset_hash, generator_hash)
     weights = fusion_weights(config)
     element = element_config(config)
+    placement = placement_config(config)
 
     def background_records() -> list[tuple[str, JsonValue]]:
-        return [(key, harness.submission_record(pairs[key], mode))
-                for key in sorted(background_keys)]
+        rows = [(key, harness.submission_record(pairs[key], mode))
+                for key in background_keys]
+        # The generator reads the plain pool index — elements, boxes,
+        # and the table are pool quantities. The records then score
+        # against this run's index like each background record.
+        rows.extend(harness.synthetic_background(
+            config, loaded.index, placement, data_root,
+            providers.get("generalizer")))
+        rows.sort(key=lambda entry: entry[0])
+        return rows
 
     tables = ensure_commonness_tables(
         data_root=data_root, index=union_index,
         commonness_hash=commonness_hash, background=background_records,
         gates=intake_gates(config), render=loaded.render,
         outline=outline_config(config), element=element,
+        placement=placement,
         channels=tuple(sorted(weights)), encoders=encoders,
         submission_mode=mode, clock=clock)
 
     context = build_scoring_context(
         index=union_index, gates=intake_gates(config), render=loaded.render,
-        outline=outline_config(config), element=element, weights=weights,
+        outline=outline_config(config), element=element,
+        placement=placement, weights=weights,
         commonness=tables.tables,
         scoring_config_hash=scoring_hash,
         commonness_config_hash=commonness_hash)
 
     union_position = {image_id: position for position, image_id
                       in enumerate(union_index.image_ids)}
+    trial_records = {key: harness.submission_record(pairs[key], mode)
+                     for key in v1_keys}
+    harness.prewarm_records(list(trial_records.values()),
+                            intake_gates(config), loaded.render, encoders)
     reports: list[dict[str, JsonValue]] = []
     trials: list[V1TrialRow] = []
     for key in v1_keys:
         pair = pairs[key]
-        record = harness.submission_record(pair, mode)
+        record = trial_records[key]
         image_id = sha256_hex(pair.photo_bytes)
         trial = score_trial(record, image_id, context, encoders)
         reports.append(_match_report_row(key, record, image_id, context,
@@ -505,7 +538,8 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
                                for slot, (posts, hits) in usage},
             "dataset_bytes_retrieved": int(source.bytes_retrieved),
             "fusion_weights": dict(config.fusion.weights),
-            "fusion_weights_fitted": False,
+            "fusion_weights_fitted": config.fusion.fit_record is not None,
+            "fit_record": config.fusion.fit_record,
             "created_at": clock(),
             "code_version": code_version,
             **harness.VERDICT_TEMPLATE,

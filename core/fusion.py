@@ -25,9 +25,10 @@ def active_channels(submission: EncodedSubmission,
     """The channels the submission activates, from its encoded atoms.
 
     The union of the routing entries across the atoms that hold a
-    Layer 2 vector. Pure data lookup — this is the full mechanism by
-    which text-only, sketch-only, and mixed submissions work without a
-    branch (Rule 5).
+    Layer 2 vector, plus the RELATION atoms — which are read directly
+    and are not encoded (architecture section 6). Pure data lookup —
+    this is the full mechanism by which text-only, sketch-only, and
+    mixed submissions work without a branch (Rule 5).
 
     The vector condition is what keeps a labeled stroke group out of
     the element channel at alpha 1.0: the group atom routes to that
@@ -36,7 +37,7 @@ def active_channels(submission: EncodedSubmission,
     """
     names: set[ChannelName] = set()
     for atom in submission.atoms:
-        if atom.id in submission.vectors:
+        if atom.id in submission.vectors or atom.type == "RELATION":
             names.update(routing[atom.type])
     return frozenset(names)
 

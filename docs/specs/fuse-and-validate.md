@@ -491,7 +491,7 @@ recorded with verdicts (R4, §11).
   release (curation on the production encoder, the percolation risk)
   and the Phase 6 judge.
 
-## 17. Open decisions — agreement required before implementation
+## 17. Decisions — ruled 2026-08-10
 
 | # | Decision | Proposed default | Notes |
 |---|---|---|---|
@@ -507,6 +507,66 @@ recorded with verdicts (R4, §11).
 | D10 | V6 dev widths | Tier-1 {10, 25, 50}, tier-2 head {5, 10} | 225 images make the production 500/25 trivial. These widths run the stitching boundary the P3 tests pinned. |
 | D11 | Source B mix | Background 500 source A + 500 source B. Acceptance = the two slopes shrink below the recorded values with the marginal in agreement with `Uniform(0, 1)` | §13.2 ("B is the more important one") plus the Phase 3 standing measurement. Full replacement of source A is the alternative. |
 | D12 | Hygiene details | The hash gains the full intake section only, not the weight table — commonness is raw and weight-free. Pre-warm through one batched `encode_submissions` step | Weights in the key fork tables spuriously on each fit. Intake out of the key keeps the known hole. |
+
+## 17a. What the build settled that the spec left open
+
+The owner ruled D1 through D12 one by one on 2026-08-10, each at its
+proposed default, plus one decision planning surfaced:
+
+- **D13 — commonness on a heterogeneous background.** The Phase 3
+  rule made a background that activates only some channels an error,
+  which was correct for backgrounds with one mode only. The D11
+  background is heterogeneous by construction — only the synthetic
+  half holds RELATION atoms. Ruling: each channel's table is the
+  **mean across the submissions that activate it**, the contributor
+  counts go into the meta file, and a run stops before it spends
+  anything if its trials read a channel with zero contributors. The
+  P3 strict rule and its tests are amended.
+
+The build settled these points the spec did not cover:
+
+1. **Locating is image-first.** A text-bearing atom locates through
+   the box of its best-matching element in each image, and the stroke
+   bounding box is the fallback — not the opposite. A
+   relation between two canvas-located atoms scores the same value in
+   each image, thus it moves no ranking (Rule 2), and a
+   strokes-first rule made the full channel that: constant, and cut
+   on an incorrect basis.
+2. **Synthetic relations ride the frozen wire shape.** A relation
+   emits two labeled rectangle groups drawn along the element boxes,
+   plus the relations row naming them. The rectangle ink clears the
+   Layer 0 gates, the element channel reads the groups' labels, the
+   rectangle strokes make the WHOLE-DRAWING atom, and nothing in
+   Layer 0 or Layer 1 changes (I5).
+3. **The weight table carries its provenance.** `fusion.fit_record`
+   names the committed fit record with these weights as its winner,
+   null when unfitted. Harness records read `fusion_weights_fitted`
+   from it — no more hardcoded `false`.
+4. **A harness config carries the candidate weight set.** While the
+   placement build is alive, the fit and the V3 through V6 runs must
+   have a placement weight — relation-bearing synthetics activate the
+   channel, and an active channel must have a weight and a table.
+   After the fit, the frozen configs hold the winner.
+5. **A grid endpoint cannot freeze.** The config rejects a zero
+   weight and fusion rejects an active channel without one, thus an
+   endpoint winner writes `freeze_blocked: true` into the fit record
+   — the honest interpretation of a flat curve is a channel cut (§19), which
+   is a ruling, not a weight.
+6. **Union photographs hold no boxes.** No gate run scores placement
+   against the union index, thus the photographs' box masks stay
+   `false` and no detector post is spent. A placement-active union run
+   in a phase after this one must first build photograph boxes through the
+   p07 slot (Rule 3).
+7. **The generator identity resolves through stored artifacts.** The
+   commonness key covers `generator_config_hash` — the level table,
+   the rule version, the vocabulary digest, and the stored table
+   content — thus the table build is a deliberate step, and a
+   background assembly refuses to build it as a side effect.
+8. **The R1 scan pins imports, not names.** `validation/fit.py` and
+   its dependencies must import only from an allowlist (datasets,
+   generator, pipeline, standard library). No module that stores live
+   player submissions exists in this build. The scan makes importing
+   a future one a test failure and a review conversation.
 
 ## 18. Code layout
 

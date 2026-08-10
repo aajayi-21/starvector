@@ -20,20 +20,35 @@
       "sinkhorn_iterations": 20,
       "tier2_count": 500,
       "alpha": 1.0
+    },
+    "placement": {
+      "check_rule": "axis-ramp-v1",
+      "relation_vocabulary": [
+        "left-of",
+        "right-of",
+        "above",
+        "below"
+      ],
+      "area_cap": 0.9,
+      "margin": 0.15
     }
   },
   "fusion": {
     "weights": {
       "outline": 1.0,
       "element": 1.0
-    }
+    },
+    "fit_record": null
   },
   "commonness": {
     "dataset": {
       "provider": "fscoco",
       "url": "https://cvssp.org/data/fscoco/fscoco.tar.gz",
       "archive_sha256": "4c71f8976bd9085baa1e530c45d38ce715ea3fb06bb1a9a3f1b8a7c789912f13",
-      "coordinate_extent": [256.0, 256.0],
+      "coordinate_extent": [
+        256.0,
+        256.0
+      ],
       "budget_bytes": 2500000000,
       "fake_pair_count": null,
       "fake_neardup_families": null
@@ -44,7 +59,8 @@
       "background": 0.5,
       "v1": 0.25,
       "v2": 0.25
-    }
+    },
+    "synthetic": null
   },
   "validation": {
     "v1_pair_count": 200,

@@ -1,15 +1,21 @@
 """The commonness tables: keyed artifacts built from the background set.
 
 Spec: docs/specs/scoring-path.md sections 11 and 14, extended by
-docs/specs/element-channel.md section 10 (decision D11). A table
-answers, for each pool image, how high it scores against a typical
-submission (architecture section 13.2) — in this phase from source A
-only: the dataset's background split (D6). One table is written for
-each built channel the background activates, at one shared key. The
-artifacts are written one time. The index and the encoders come as
-arguments, thus the V1 harness reuses the task with its union index
-(D7). The background comes as a thunk: a warm run reads the artifacts
-and does not touch the dataset or the network (U1).
+docs/specs/element-channel.md section 10 (D11) and
+docs/specs/fuse-and-validate.md sections 12 and 13. A table answers,
+for each pool image, how high it scores against a typical submission
+(architecture section 13.2). The background is source A (dataset
+submissions) plus, when the config says so, source B (synthetic
+submissions from the generator, labels discarded). One table is
+written for each built channel the background activates, at one
+shared key. Each channel's table is the mean across the background
+submissions that activate that channel (P4 decision D13) — a mixed
+background activates different channels with different subsets, and
+the contributor counts go into the meta file. The artifacts are
+written one time. The index and the encoders come as arguments, thus
+the V1 harness reuses the task with its union index (D7). The
+background comes as a thunk: a warm run reads the artifacts and does
+not touch the dataset or the network (U1).
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -22,7 +28,8 @@ from core.canonical import JsonValue, canonical_json, sha256_hex
 from core.fusion import active_channels
 from core.intake import validate_submission
 from core.types import (ROUTING_TABLE, ChannelName, ElementConfig, IntakeGates,
-                        OutlineConfig, PoolIndex, PoolScores, RenderParams)
+                        OutlineConfig, PlacementConfig, PoolIndex, PoolScores,
+                        RenderParams)
 from pipeline.config import ScoringConfig, config_to_json_value
 from pipeline.score import Encoders, channel_scores, encode_submissions
 from pool.artifacts import ManifestError, write_json_pretty
@@ -40,12 +47,22 @@ class CommonnessResult(NamedTuple):
 
     posts and cache_hits are the totals across the Layer 2 slots. The
     harness reports the slots one by one from its own deltas.
+    contributors holds, for each built channel, how many background
+    submissions its mean ranges across (D13).
     """
 
     tables: Mapping[ChannelName, PoolScores]
+    contributors: Mapping[ChannelName, int]
     posts: int
     cache_hits: int
     reused: bool
+
+
+class BuiltTables(NamedTuple):
+    """One cold build: the tables and their contributor counts."""
+
+    tables: dict[ChannelName, PoolScores]
+    contributors: dict[ChannelName, int]
 
 
 def table_file(channel: ChannelName) -> str:
@@ -55,17 +72,25 @@ def table_file(channel: ChannelName) -> str:
 
 def commonness_config_hash(config: ScoringConfig, render: RenderParams,
                            sketch_encoder_hash: str, text_encoder_hash: str,
-                           dataset_config_hash: str) -> str:
+                           dataset_config_hash: str,
+                           generator_hash: str | None = None) -> str:
     """The artifact key half that names the tables' determinants.
 
     Covers the dataset identity, the split salt and background range,
     the background count, the submission mode, the two Layer 2 slots,
-    the render values, and the full channels config (spec P3 section
-    6). The v1 and v2 fractions are not in the key: the background
+    the render values, the intake gates (the pre-flight shapes the
+    background — P4 decision D12), the full channels config, and the
+    source B identity when the config asks for one (spec P4 section
+    12). The v1 and v2 fractions are not in the key: the background
     range is [0, background), and the other fractions cannot move its
     membership (D8).
     """
-    return sha256_hex(canonical_json({
+    synthetic = config.commonness.synthetic
+    if (synthetic is None) != (generator_hash is None):
+        raise ValueError(
+            "generator_hash must be given when commonness.synthetic is set, "
+            "and must be None when it is not")
+    document: dict[str, JsonValue] = {
         "dataset_config_hash": dataset_config_hash,
         "split_salt": config.commonness.split_salt,
         "background_fraction": config.commonness.split_fractions.background,
@@ -75,8 +100,15 @@ def commonness_config_hash(config: ScoringConfig, render: RenderParams,
         "text_encoder_config_hash": text_encoder_hash,
         "render": {"canvas_px": render.canvas_px,
                    "line_width_px": render.line_width_px},
+        "intake": config_to_json_value(config)["intake"],
         "channels": config_to_json_value(config)["channels"],
-    }))
+        "synthetic": (None if synthetic is None else {
+            "generator_config_hash": generator_hash,
+            "count": synthetic.count,
+            "seed": synthetic.seed,
+        }),
+    }
+    return sha256_hex(canonical_json(document))
 
 
 def commonness_dir(data_root: Path, index_id: str,
@@ -88,25 +120,29 @@ def commonness_dir(data_root: Path, index_id: str,
 def build_commonness_tables(
     index: PoolIndex, background: Sequence[tuple[str, JsonValue]], *,
     gates: IntakeGates, render: RenderParams, outline: OutlineConfig,
-    element: ElementConfig, channels: Sequence[ChannelName],
-    encoders: Encoders,
-) -> dict[ChannelName, PoolScores]:
-    """The mean raw channel score across the background set.
+    element: ElementConfig, placement: PlacementConfig,
+    channels: Sequence[ChannelName], encoders: Encoders,
+) -> BuiltTables:
+    """The mean raw channel score across the activating background.
 
-    commonness[channel][x] = mean across the background submissions of
-    the raw channel score for image x (architecture section 13.2) —
-    before correction and before standardizing. Each table has shape
-    (N,), float32.
+    commonness[channel][x] = mean across the background submissions
+    that activate the channel of the raw channel score for image x
+    (architecture section 13.2, P4 decision D13) — before correction
+    and before standardizing. Each table has shape (N,), float32.
+
+    A mixed background activates different channels with different
+    subsets — the dataset half holds no RELATION atoms and the
+    synthetic half does — thus the mean of each channel ranges across
+    its own activating subset, and the contributor counts are part of
+    the output and the meta file. A channel no background submission
+    activates gets no table. Phase 3's rule, that a background which
+    activates a channel in part is an error, applied to backgrounds of
+    one mode, and D13 amends it.
 
     background holds (pair key, wire record) rows in ascending key
     sequence, thus the sum is made in a fixed sequence and two runs
-    give equal bytes. The records are built for the run's submission mode
-    before this task starts, so it knows nothing about modes or
-    datasets.
-
-    A table is built for each named channel the background activates.
-    A channel that only some of the background activates raises: a mean
-    across part of the set is a plausible number that is incorrect.
+    give equal bytes. The records are built before this task starts,
+    so it knows nothing about modes, datasets, or generators.
     """
     if not background:
         raise ValueError("the background set is empty")
@@ -125,21 +161,17 @@ def build_commonness_tables(
         encoded = encode_submissions(submissions, render, encoders)
         for row in encoded:
             for name in sorted(active_channels(row, ROUTING_TABLE) & wanted):
-                scores = channel_scores(name, row, index, outline, element)
+                scores = channel_scores(name, row, index, outline, element,
+                                        placement)
                 if name not in totals:
                     totals[name] = np.zeros(count, dtype=np.float64)
                     contributors[name] = 0
                 totals[name] += scores.astype(np.float64)
                 contributors[name] += 1
 
-    for name, built in contributors.items():
-        if built != len(background):
-            raise ValueError(
-                f"channel {name!r} was activated by {built} of "
-                f"{len(background)} background submissions — a table built "
-                "from part of the background is not a commonness table")
-    return {name: (total / len(background)).astype(np.float32)
-            for name, total in totals.items()}
+    tables = {name: (total / contributors[name]).astype(np.float32)
+              for name, total in totals.items()}
+    return BuiltTables(tables=tables, contributors=contributors)
 
 
 def _provider_counter(encoders: Encoders, name: str) -> int:
@@ -169,8 +201,10 @@ def ensure_commonness_tables(
     *, data_root: Path, index: PoolIndex, commonness_hash: str,
     background: Callable[[], Sequence[tuple[str, JsonValue]]],
     gates: IntakeGates, render: RenderParams, outline: OutlineConfig,
-    element: ElementConfig, channels: Sequence[ChannelName],
-    encoders: Encoders, submission_mode: str, clock: Callable[[], str],
+    element: ElementConfig, placement: PlacementConfig,
+    channels: Sequence[ChannelName], encoders: Encoders,
+    submission_mode: str, clock: Callable[[], str],
+    required_channels: Sequence[ChannelName] = (),
 ) -> CommonnessResult:
     """Read the tables at their key, or build and store them one time.
 
@@ -180,10 +214,23 @@ def ensure_commonness_tables(
     completeness marker, the P1b resume rule. The meta file carries the
     U1 totals and is out of the byte-determinism scope (spec section
     17).
+
+    required_channels names the channels the caller's trials activate:
+    a required channel with no table stops the run here, and not after
+    a trial spends a post on a path that raises (D13).
     """
     directory = commonness_dir(data_root, index.index_id, commonness_hash)
     meta_path = directory / _META_FILE
     count = len(index.image_ids)
+
+    def checked_required(built: Mapping[ChannelName, PoolScores]) -> None:
+        missing = sorted(set(required_channels) - set(built))
+        if missing:
+            raise ValueError(
+                f"no background submission activates {missing} and the "
+                "run's trials read those channels — the background "
+                "composition cannot support this configuration (D13)")
+
     if meta_path.is_file():
         try:
             import json
@@ -205,19 +252,31 @@ def ensure_commonness_tables(
                 isinstance(name, str) for name in stored):
             raise ManifestError(
                 f"{meta_path}: the channels field is not a list of names")
-        return CommonnessResult(tables=_read_tables(directory, stored, count),
-                                posts=0, cache_hits=0, reused=True)
+        stored_contributors = meta_read.get("contributors")
+        if not isinstance(stored_contributors, dict):
+            raise ManifestError(
+                f"{meta_path}: the contributors field is not an object")
+        tables = _read_tables(directory, stored, count)
+        checked_required(tables)
+        return CommonnessResult(
+            tables=tables,
+            contributors={str(k): int(v)
+                          for k, v in stored_contributors.items()},
+            posts=0, cache_hits=0, reused=True)
 
     posts_before = _provider_counter(encoders, "post_count")
     hits_before = _provider_counter(encoders, "cache_hit_count")
     records = background()
-    tables = build_commonness_tables(
+    built = build_commonness_tables(
         index, records, gates=gates, render=render, outline=outline,
-        element=element, channels=channels, encoders=encoders)
+        element=element, placement=placement, channels=channels,
+        encoders=encoders)
+    tables = built.tables
     if not tables:
         raise ValueError(
             "the background set activates no weighted channel — nothing to "
             "correct with")
+    checked_required(tables)
     for name, table in tables.items():
         if not np.isfinite(table).all():
             raise ValueError(
@@ -236,11 +295,12 @@ def ensure_commonness_tables(
         "background_count": len(records),
         "pool_image_count": count,
         "channels": names,
+        "contributors": {name: built.contributors[name] for name in names},
         "array_shapes": {name: [count] for name in names},
         "provider_posts": posts,
         "provider_cache_hits": cache_hits,
         "created_at": clock(),
     }
     write_json_pretty(meta_path, meta)
-    return CommonnessResult(tables=tables, posts=posts, cache_hits=cache_hits,
-                            reused=False)
+    return CommonnessResult(tables=tables, contributors=built.contributors,
+                            posts=posts, cache_hits=cache_hits, reused=False)

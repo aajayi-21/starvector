@@ -60,7 +60,11 @@
       "v1": 0.25,
       "v2": 0.25
     },
-    "synthetic": null
+    "synthetic": {
+      "fit_config": "configs/fit/dev-wit.json",
+      "count": 500,
+      "seed": 20260813
+    }
   },
   "validation": {
     "v1_pair_count": 200,

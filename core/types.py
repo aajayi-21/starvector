@@ -54,12 +54,13 @@ INTAKE_CAUSES: tuple[str, ...] = (
     "min-ink", "min-strokes", "text-length", "atom-count", "bad-shape")
 
 # Routing table: atom type -> the built channels that read it (R14).
-# Phase 3 extends the tuples, not the shape. Fusion derives the active
-# channel set from this table, and the encode step reads it to select
-# the atoms to encode — no code branches on modality (I5).
+# Fusion derives the active channel set from this table, and the
+# encode step reads it to select the atoms to encode — no code
+# branches on modality (I5). RELATION atoms are read directly and are
+# not encoded (architecture section 6).
 ROUTING_TABLE: Mapping[AtomType, tuple[ChannelName, ...]] = {
     "DESCRIPTION": ("element",),
-    "RELATION": (),
+    "RELATION": ("placement",),
     "WHOLE-DRAWING": ("outline",),
 }
 
@@ -100,6 +101,22 @@ class ElementConfig(NamedTuple):
     sinkhorn_iterations: int
     tier2_count: int
     alpha: float
+
+
+class PlacementConfig(NamedTuple):
+    """Placement channel configuration (spec P4 decision D4).
+
+    relation_vocabulary names the relation strings scoring reads — a
+    RELATION atom with a different string contributes nothing.
+    area_cap keeps near-full-frame element boxes out of the locating
+    rule: a box that covers the frame says nothing about placement.
+    margin is the half-width of the axis-ramp-v1 soft check.
+    """
+
+    check_rule: str
+    relation_vocabulary: tuple[str, ...]
+    area_cap: float
+    margin: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +180,13 @@ class PoolIndex:
     pool-defined (spec P3 section 12). incidence indexes
     vocabulary_vectors for each image. element_space_mean is the raw
     stored mean of the pool vocabulary vectors, not unit-norm.
+
+    The box side comes from the p07 artifacts (spec P4 section 7).
+    box_table has shape (N, k, 4) with rows [x_min, y_min, x_max,
+    y_max] in the unit square, slot-aligned with incidence, and
+    box_mask (N, k) marks the slots that hold a box: the detector can
+    decline an element, padding slots hold nothing, and a V1 union
+    photograph holds no boxes at all. Masked-out slots hold zeros.
     """
 
     index_id: str
@@ -176,6 +200,8 @@ class PoolIndex:
     vocabulary_vectors: FloatArray
     incidence: Incidence
     element_space_mean: FloatArray
+    box_table: FloatArray
+    box_mask: NDArray[np.bool_]
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +222,7 @@ class ScoringContext:
     render: RenderParams
     outline: OutlineConfig
     element: ElementConfig
+    placement: PlacementConfig
     weights: Weights
     commonness: Mapping[ChannelName, PoolScores]
     scoring_config_hash: str

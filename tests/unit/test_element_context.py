@@ -28,6 +28,10 @@ def _side(**overrides) -> ElementSide:
         "element_space_mean": np.zeros(DIMENSION, dtype=np.float32),
     }
     defaults.update(overrides)
+    width = defaults["incidence"].shape[1]
+    defaults.setdefault(
+        "box_table", np.zeros((2, width, 4), dtype=np.float32))
+    defaults.setdefault("box_mask", np.zeros((2, width), dtype=np.bool_))
     return ElementSide(**defaults)
 
 

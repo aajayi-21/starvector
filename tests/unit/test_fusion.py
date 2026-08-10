@@ -28,7 +28,7 @@ def test_the_active_set_comes_from_the_routing_table() -> None:
     assert active_channels(
         _encoded(_atom("DESCRIPTION", "a1"), _atom("WHOLE-DRAWING", "a2"),
                  _atom("RELATION", "a3")),
-        ROUTING_TABLE) == frozenset({"outline", "element"})
+        ROUTING_TABLE) == frozenset({"outline", "element", "placement"})
     assert active_channels(_encoded(), ROUTING_TABLE) == frozenset()
 
 
@@ -39,6 +39,15 @@ def test_an_atom_with_no_vector_activates_nothing() -> None:
     drawing = _atom("WHOLE-DRAWING", "a2")
     assert active_channels(_encoded(group, drawing, without=("a1",)),
                            ROUTING_TABLE) == frozenset({"outline"})
+
+
+def test_a_relation_atom_activates_placement_without_a_vector() -> None:
+    # RELATION atoms are read directly and are not encoded
+    # (architecture section 6), thus the vector rule does not apply to
+    # them (spec P4 section 9.1).
+    relation = _atom("RELATION", "a1")
+    assert active_channels(_encoded(relation, without=("a1",)),
+                           ROUTING_TABLE) == frozenset({"placement"})
 
 
 def test_the_formula_is_pinned_on_hand_tables() -> None:

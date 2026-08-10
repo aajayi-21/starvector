@@ -15,7 +15,7 @@ from core.fusion import NoActiveChannels
 from core.intake import IntakeError
 from core.types import OutlineConfig
 from pipeline.config import (element_config, fusion_weights, intake_gates,
-                             outline_config)
+                             outline_config, placement_config)
 from pipeline.context import build_scoring_context, load_pool_index
 from pipeline.score import Encoders, score_trial
 from providers.fake import markers
@@ -32,13 +32,17 @@ def _context(prepared, channels=("outline", "element")):
                              dev_only=True)
     config = make_scoring_config(prepared["prep_record_path"])
     count = len(loaded.index.image_ids)
+    weights = fusion_weights(config)
+    for name in channels:
+        weights.setdefault(name, 1.0)
     return loaded, build_scoring_context(
         index=loaded.index,
         gates=intake_gates(config),
         render=loaded.render,
         outline=outline_config(config),
         element=element_config(config),
-        weights=fusion_weights(config),
+        placement=placement_config(config),
+        weights=weights,
         commonness={name: np.zeros(count, dtype=np.float32)
                     for name in channels},
         scoring_config_hash="0" * 64,
@@ -135,6 +139,47 @@ def test_a_submission_with_no_routed_atom_raises(scoring_preparation) -> None:
     }
     with pytest.raises(NoActiveChannels):
         score_trial(record, loaded.index.image_ids[0], context, _encoders())
+
+
+def test_a_relation_bearing_submission_scores_through_placement(
+        scoring_preparation) -> None:
+    # The full wire path: two labeled rectangle groups plus a stated
+    # relation. Placement activates with element and outline, and the
+    # trial ranks with the three-channel context.
+    loaded, context = _context(scoring_preparation,
+                               channels=("outline", "element", "placement"))
+    record = {
+        "impressions": ["tall vertical structure"],
+        "canvas_strokes": [
+            {"points": [[0.1, 0.4], [0.3, 0.4], [0.3, 0.6], [0.1, 0.6],
+                        [0.1, 0.4]], "group_id": "g1"},
+            {"points": [[0.6, 0.4], [0.9, 0.4], [0.9, 0.6], [0.6, 0.6],
+                        [0.6, 0.4]], "group_id": "g2"},
+        ],
+        "groups": [{"id": "g1", "label": "tower"},
+                   {"id": "g2", "label": "sea"}],
+        "relations": [{"relation": "left-of", "of": ["g1", "g2"]}],
+        "pasted_text": None,
+    }
+    first = score_trial(record, loaded.index.image_ids[0], context,
+                        _encoders())
+    assert 0.0 <= first.p <= 1.0
+    assert first == score_trial(record, loaded.index.image_ids[0], context,
+                                _encoders())
+
+
+def test_the_prewarm_step_leaves_scores_unchanged(
+        scoring_preparation) -> None:
+    from validation.harness import prewarm_records
+
+    loaded, context = _context(scoring_preparation)
+    record = _text_record("tall vertical structure, grey stone")
+    before = score_trial(record, loaded.index.image_ids[0], context,
+                         _encoders())
+    prewarm_records([record], context.gates, context.render, _encoders())
+    after = score_trial(record, loaded.index.image_ids[0], context,
+                        _encoders())
+    assert before == after
 
 
 def test_a_gate_violation_names_its_cause(scoring_preparation) -> None:

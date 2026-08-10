@@ -118,6 +118,33 @@ def chat_request_body(
     }
 
 
+def text_request_body(
+    config: _ChatSlotParams,
+    instruction: str,
+    schema: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """The chat-completions POST body for one text-only instruction.
+
+    The generalization slot sends no image (spec P4 section 8.2).
+    Everything else — model, sampling values, response format — follows
+    chat_request_body.
+    """
+    return {
+        "model": config.model,
+        "temperature": config.temperature,
+        "seed": config.seed,
+        "max_tokens": config.max_tokens,
+        "reasoning": {"enabled": config.reasoning_enabled},
+        "response_format": response_format_value(config, schema),
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": instruction}],
+            }
+        ],
+    }
+
+
 def content_text(response_body: object) -> str:
     """The assistant message content string, or a boundary error."""
     try:

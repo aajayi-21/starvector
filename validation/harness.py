@@ -7,14 +7,15 @@ The records root is a parameter, thus tests write to scratch paths
 and nothing lands in the repository without a deliberate run.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
 from core.canonical import JsonValue, canonical_json, quantize_measured, sha256_hex
-from core.types import StrokePath
+from core.types import (IntakeGates, PlacementConfig, PoolIndex, RenderParams,
+                        StrokePath)
 from pipeline.config import SUBMISSION_MODES, ScoringConfig
-from pipeline.score import Encoders
+from pipeline.score import Encoders, encode_submissions
 from pool.artifacts import write_json_pretty
 from providers.protocols import (SketchEncoder, SketchPair, SketchPairSource,
                                  TextEncoder)
@@ -356,6 +357,141 @@ def check_selected_pairs(pairs: Mapping[str, SketchPair],
             f"{len(failures)} selected pair(s) do not clear the Layer 0 "
             "gates — adjust the gates or the dataset before the run: "
             + "; ".join(failures))
+
+
+def prewarm_records(records: Sequence[JsonValue], gates: IntakeGates,
+                    render: RenderParams, encoders: Encoders) -> None:
+    """Warm the provider caches for a trial loop in batched calls.
+
+    The trial loop encodes one submission for each score_trial run,
+    which turns each cold atom into one post of its own (the Phase 3
+    accounting: 641 of 871 posts). One batched step here fills the
+    caches, thus the loop runs warm. The result is discarded — an
+    encode is deterministic and cached by content, so this step cannot
+    change a score (P4 decision D12).
+    """
+    from core.intake import validate_submission
+
+    submissions = [validate_submission(record, gates, render.canvas_px)
+                   for record in records]
+    encode_submissions(submissions, render, encoders)
+
+
+def full_background(config: ScoringConfig, source: SketchPairSource,
+                    mode: str, index: PoolIndex,
+                    placement: PlacementConfig, data_root: Path,
+                    generalizer: object | None = None,
+                    ) -> list[tuple[str, JsonValue]]:
+    """The full background: the dataset half plus the source B half.
+
+    The dataset half draws background_count minus the synthetic count
+    from the background split, thus the total stays background_count
+    (D11). The rows come back sorted by key — synthetic keys hold
+    their own prefix and cannot collide with pair keys.
+    """
+    from validation.splits import select_keys
+
+    synthetic = config.commonness.synthetic
+    dataset_count = config.commonness.background_count \
+        - (synthetic.count if synthetic else 0)
+    keys = pair_keys_of(source)
+    background_keys = select_keys(
+        keys, config.commonness.split_salt,
+        config.commonness.split_fractions, "background", dataset_count)
+    pairs = pairs_by_key(source, set(background_keys))
+    rows = [(key, submission_record(pairs[key], mode))
+            for key in background_keys]
+    rows.extend(synthetic_background(config, index, placement, data_root,
+                                     generalizer))
+    rows.sort(key=lambda entry: entry[0])
+    return rows
+
+
+def synthetic_background(config: ScoringConfig, index: PoolIndex,
+                         placement: PlacementConfig, data_root: Path,
+                         generalizer: object | None = None,
+                         ) -> list[tuple[str, JsonValue]]:
+    """The source B half of the background, labels discarded (D11).
+
+    Resolves the fit config the commonness section names and reads the
+    stored generalization table. Without an injected generalizer the
+    table build task must have run — a missing table stops here with
+    the command to run, because the build is a deliberate owner step,
+    not a side effect of a background assembly.
+    """
+    synthetic = config.commonness.synthetic
+    if synthetic is None:
+        return []
+    from validation.fitconfig import load_fit_config
+    from validation.generator import synthetic_set
+
+    fit_config = load_fit_config(Path(synthetic.fit_config))
+    table = _stored_table(index, fit_config, data_root, generalizer)
+    rows = synthetic_set(index, fit_config, table, placement,
+                         seed=synthetic.seed, count=synthetic.count)
+    return [(row.key, row.record) for row in rows]
+
+
+def _stored_table(index: PoolIndex, fit_config, data_root: Path,
+                  generalizer: object | None) -> dict[str, str]:
+    from validation.generalize import ensure_table
+
+    entry_count = len(index.pool_frequency)
+    try:
+        return ensure_table(
+            data_root=data_root,
+            vocabulary=index.vocabulary[:entry_count],
+            config=fit_config, clock=default_clock,
+            generalizer=generalizer or _no_generalizer())
+    except _TableMissing as error:
+        raise ValueError(
+            "the generalization table is not built — run "
+            "`uv run python -m validation.generalize` first "
+            f"({error})") from error
+
+
+class _TableMissing(RuntimeError):
+    """The stored generalization table is not on disk."""
+
+
+def _no_generalizer():
+    """A generalizer stub that refuses to build — warm reads only.
+
+    The background assembly must not spend the table-build posts as
+    a side effect: the build is a deliberate owner-run step.
+    """
+    class _Refuses:
+        config_hash = "unused"
+
+        def generalize(self, texts):
+            raise _TableMissing(f"{len(texts)} entries need the build job")
+
+    return _Refuses()
+
+
+def resolved_generator_hash(config: ScoringConfig, index: PoolIndex,
+                            data_root: Path,
+                            generalizer: object | None = None,
+                            ) -> str | None:
+    """The generator identity for the commonness key (spec P4 §6).
+
+    None when the config has no synthetic section. The identity covers
+    the level table, the vocabulary content, and the stored table
+    content, thus it needs the table on disk.
+    """
+    synthetic = config.commonness.synthetic
+    if synthetic is None:
+        return None
+    from validation.fitconfig import load_fit_config
+    from validation.generalize import table_hash, vocabulary_digest
+    from validation.generator import generator_config_hash
+
+    fit_config = load_fit_config(Path(synthetic.fit_config))
+    entry_count = len(index.pool_frequency)
+    vocabulary = index.vocabulary[:entry_count]
+    table = _stored_table(index, fit_config, data_root, generalizer)
+    return generator_config_hash(fit_config, vocabulary_digest(vocabulary),
+                                 table_hash(table))
 
 
 def record_label(harness: str, tag: str, harness_hash: str) -> str:
