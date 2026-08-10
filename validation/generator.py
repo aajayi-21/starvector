@@ -42,18 +42,20 @@ class SyntheticSubmission(NamedTuple):
 
 
 def generator_config_hash(config: FitConfig, vocabulary_digest: str,
-                          table_digest: str) -> str:
+                          table_digest: str, area_cap: float) -> str:
     """The generator identity (spec P4 section 6).
 
     Covers the level table, the rule version, the vocabulary content,
-    and the generalization table content — each change forks the
-    synthetic-set lineage (R11).
+    the generalization table content, and the area cap the relation
+    sampler reads — each change forks the synthetic-set lineage
+    (R11).
     """
     return sha256_hex(canonical_json({
         "rule": GENERATOR_RULE,
         "levels": fit_config_to_json_value(config)["generator"]["levels"],
         "vocabulary_digest": vocabulary_digest,
         "table_digest": table_digest,
+        "area_cap": area_cap,
     }))
 
 
@@ -120,10 +122,24 @@ def _noise_box(rng: np.random.Generator) -> list[float]:
 
 def _noise_entries(index: PoolIndex, position: int, count: int,
                    rng: np.random.Generator) -> list[int]:
-    """Noise atoms: entries drawn from the element lists of other images."""
+    """Noise atoms: entries drawn from the element lists of other images.
+
+    Raises when no other image holds an entry that is not in this
+    image's own elements — the sample loop can then not end, and a
+    loud stop beats a hang (CLAUDE.md section 3). The check does not
+    touch the RNG, thus the output stays byte-stable.
+    """
     entries: list[int] = []
     own = set(_image_elements(index, position))
     image_count = len(index.image_ids)
+    if count > 0 and not any(
+            other != position
+            and any(entry not in own
+                    for entry in _image_elements(index, other))
+            for other in range(image_count)):
+        raise ValueError(
+            f"no noise entry is possible for image {position}: no other "
+            "image holds an element outside its own list")
     while len(entries) < count:
         other = int(rng.integers(0, image_count))
         if other == position and image_count > 1:

@@ -178,9 +178,12 @@ def test_the_emitted_relation_agrees_with_the_group_boxes() -> None:
 
 def test_the_generator_hash_moves_with_its_determinants() -> None:
     config = _fit_config()
-    base = generator_config_hash(config, "a" * 64, "b" * 64)
-    assert generator_config_hash(config, "c" * 64, "b" * 64) != base
-    assert generator_config_hash(config, "a" * 64, "d" * 64) != base
+    base = generator_config_hash(config, "a" * 64, "b" * 64, 0.9)
+    assert generator_config_hash(config, "c" * 64, "b" * 64, 0.9) != base
+    assert generator_config_hash(config, "a" * 64, "d" * 64, 0.9) != base
+    # The relation sampler reads the area cap, thus the cap is part
+    # of the generator identity.
+    assert generator_config_hash(config, "a" * 64, "b" * 64, 0.8) != base
     moved = {**_FIT_DOCUMENT,
              "generator": {"levels": [
                  {"n_atoms": 4, "generalize_p": 0.0, "n_noise": 0,
@@ -189,4 +192,25 @@ def test_the_generator_hash_moves_with_its_determinants() -> None:
                    in _FIT_DOCUMENT["generator"]["levels"][1:]],
              ]}}
     other = parse_fit_config(moved, "test-fit")
-    assert generator_config_hash(other, "a" * 64, "b" * 64) != base
+    assert generator_config_hash(other, "a" * 64, "b" * 64, 0.9) != base
+
+
+def test_an_impossible_noise_draw_raises() -> None:
+    """A one-image pool offers no noise entries — a loud stop."""
+    index = _index()
+    one_image = make_pool_index(
+        index_id="f" * 64, image_ids=IDS[:1],
+        outline_vectors=np.zeros((1, 6, DIMENSION), dtype=np.float32),
+        outline_space_mean=np.zeros(DIMENSION, dtype=np.float32),
+        group_ids=IDS[:1],
+        pool_image_count=1, vocabulary=index.vocabulary,
+        pool_frequency=(1,) * len(index.vocabulary),
+        vocabulary_vectors=index.vocabulary_vectors,
+        incidence=index.incidence[:1],
+        element_space_mean=np.zeros(DIMENSION, dtype=np.float32),
+        box_table=index.box_table[:1], box_mask=index.box_mask[:1])
+    config = _fit_config()
+    rng = np.random.default_rng(3)
+    with pytest.raises(ValueError, match="no noise entry is possible"):
+        synthetic_submission(one_image, 0, config.generator.levels[2],
+                             TABLE, PLACEMENT, rng)

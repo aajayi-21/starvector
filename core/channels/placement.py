@@ -167,7 +167,9 @@ def placement_scores(submission: EncodedSubmission, index: PoolIndex,
     for atom in relations:
         if atom.relation not in config.relation_vocabulary:
             continue
-        assert atom.refers_to is not None
+        if atom.refers_to is None:
+            raise ValueError(
+                f"RELATION atom {atom.id!r} names no referents")
         first, second = atom.refers_to
         if first not in located or second not in located:
             continue

@@ -486,12 +486,15 @@ def resolved_generator_hash(config: ScoringConfig, index: PoolIndex,
     from validation.generalize import table_hash, vocabulary_digest
     from validation.generator import generator_config_hash
 
+    from pipeline.config import placement_config
+
     fit_config = load_fit_config(Path(synthetic.fit_config))
     entry_count = len(index.pool_frequency)
     vocabulary = index.vocabulary[:entry_count]
     table = _stored_table(index, fit_config, data_root, generalizer)
     return generator_config_hash(fit_config, vocabulary_digest(vocabulary),
-                                 table_hash(table))
+                                 table_hash(table),
+                                 placement_config(config).area_cap)
 
 
 def record_label(harness: str, tag: str, harness_hash: str) -> str:

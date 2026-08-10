@@ -391,7 +391,7 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         generator_hash=generator_config_hash(
             fit_config,
             vocabulary_digest(loaded.index.vocabulary[:entry_count]),
-            table_hash(table)),
+            table_hash(table), placement.area_cap),
         preparation_version_id=loaded.record.preparation_version_id,
         fit_pair_count=len(fit_keys),
         holdout_pair_count=len(holdout_keys),
@@ -479,13 +479,22 @@ def run_fit(scoring: ScoringConfig, fit_config: FitConfig, *,
 
 
 def _kept_verdict(path: Path, content: dict[str, JsonValue]) -> bool:
-    """Keep a filled verdict on a byte-equal re-run (the P2 rule)."""
+    """Keep a filled verdict when the record names this run's identity.
+
+    The P2 rule: a re-run must not move a recorded decision back to
+    pending. The identity covers the full lineage — a moved
+    generator, commonness, union, or preparation identity raises,
+    because a kept stale curve hides a data change behind a filled
+    verdict.
+    """
     import json
 
     existing = json.loads(path.read_text(encoding="utf-8"))
     if existing.get("verdict") == harness.VERDICT_TEMPLATE["verdict"]:
         return False
-    for name in ("scoring_config_hash", "fit_config_hash", "index_id"):
+    for name in ("scoring_config_hash", "fit_config_hash", "index_id",
+                 "union_index_id", "preparation_version_id",
+                 "commonness_config_hash", "generator_config_hash"):
         if existing.get(name) != content.get(name):
             raise ValueError(
                 f"{path}: a record with a filled verdict names a different "

@@ -15,9 +15,8 @@ from core.canonical import JsonValue, canonical_json, sha256_hex
 from providers.openrouter.client import OpenRouterClient
 from providers.openrouter.errors import OpenRouterResponseError
 from providers.openrouter.resolve import (checked_response_format_mode,
-                                          content_text, default_clock,
-                                          json_payload, resolve_chat,
-                                          strip_one_fence, text_request_body)
+                                          default_clock, json_payload,
+                                          resolve_chat, text_request_body)
 
 GENERALIZE_MAX_TOKENS = 128
 
@@ -118,8 +117,9 @@ class OpenRouterGeneralizer:
             return text_request_body(self._config, instruction, schema)
 
         def parse(response_body: object) -> str:
-            text = content_text(response_body)
-            return _parsed_phrase(json_payload(strip_one_fence(text)))
+            # json_payload reads the full response body itself — it
+            # does the fence removal and the content extraction.
+            return _parsed_phrase(json_payload(response_body))
 
         def entry_extra_at(position: int) -> dict[str, JsonValue]:
             return {"element": texts[position]}
