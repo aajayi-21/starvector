@@ -6,7 +6,7 @@ frequency the pool itself defines drives the selection - no model.
 """
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from core.canonical import quantize_measured
 from pool.preparation.types import CutRecord
@@ -54,9 +54,43 @@ def cap_decisions(
         for element in set(sequence):
             df[element] = df.get(element, 0) + 1
 
+    return cap_with_frequencies(ids, element_sequences, max_elements, df,
+                                count)
+
+
+def cap_with_frequencies(
+    image_ids: Sequence[str],
+    element_sequences: Sequence[Sequence[str]],
+    max_elements: int,
+    df_of: Mapping[str, int],
+    image_count: int,
+) -> tuple[tuple[tuple[str, ...], ...], tuple[CutRecord, ...]]:
+    """The R3 cap with the document frequencies given, not measured.
+
+    cap_decisions measures df across the sequences it caps, which is
+    the pool definition. The V1 union side caps photograph element
+    lists against the pool's frequencies, because rarity is
+    pool-defined and a set of 200 photographs is not the pool (spec P3
+    decision D8). An element the mapping does not name is unknown to
+    the pool and takes frequency 1 — it appears nowhere there, which is
+    the rarest an element can be.
+
+    Arguments:
+        image_ids: unique image identifiers, ascending.
+        element_sequences: element sequences, aligned with image_ids.
+        max_elements: the R3 cap from the stage config.
+        df_of: the document frequency of each known element.
+        image_count: the image count across which the frequencies range.
+    """
+    if image_count < 1:
+        raise ValueError(f"image_count {image_count} is not positive")
+    if max_elements < 1:
+        raise ValueError(f"max_elements {max_elements} is not positive")
+    ids = list(image_ids)
     capped: list[tuple[str, ...]] = []
     cuts: list[CutRecord] = []
     for image_id, sequence in zip(ids, element_sequences):
+        df = {element: df_of.get(element, 1) for element in sequence}
         entries = list(sequence)
         if len(entries) <= max_elements:
             capped.append(tuple(entries))
@@ -79,7 +113,8 @@ def cap_decisions(
                     image_id=image_id,
                     element=element,
                     df=df[element],
-                    capping_rarity=quantize_measured(-math.log(df[element] / count)),
+                    capping_rarity=quantize_measured(
+                        -math.log(df[element] / image_count)),
                 )
             )
     return tuple(capped), tuple(cuts)

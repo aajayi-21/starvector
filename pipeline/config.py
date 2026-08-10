@@ -16,16 +16,24 @@ from pathlib import Path
 from typing import Mapping
 
 from core.canonical import JsonValue, canonical_json, sha256_hex
-from core.types import IntakeGates, OutlineConfig
+from core.types import ElementConfig, IntakeGates, OutlineConfig
 
-SCORING_SLOT_NAMES: tuple[str, ...] = ("sketch_encoder", "sketch_pairs")
-BUILT_CHANNELS: tuple[str, ...] = ("outline",)
+SCORING_SLOT_NAMES: tuple[str, ...] = ("sketch_encoder", "sketch_pairs",
+                                       "text_encoder")
+BUILT_CHANNELS: tuple[str, ...] = ("outline", "element")
 COMPARISON_RULES: tuple[str, ...] = ("center-cosine-v1",)
+ELEMENT_COMPARISON_RULES: tuple[str, ...] = ("element-center-cosine-v1",)
+MATCHING_RULES: tuple[str, ...] = ("sinkhorn-slack-v1",)
 SKETCH_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
+TEXT_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
 SKETCH_PAIR_PROVIDERS: tuple[str, ...] = ("fscoco", "fake")
 RESPONSE_FORMAT_MODES: tuple[str, ...] = ("json_schema", "json_object")
+SUBMISSION_MODES: tuple[str, ...] = ("sketch", "text", "mixed")
 DEVICES: tuple[str, ...] = ("auto", "cuda", "xpu", "cpu")
 CONFIG_VERSION = 1
+
+# The alpha value the element channel implements (P3 decision D10).
+BUILT_ALPHA = 1.0
 
 
 class ConfigError(ValueError):
@@ -53,8 +61,21 @@ class OutlineChannelSection:
 
 
 @dataclass(frozen=True, slots=True)
+class ElementChannelSection:
+    """The element channel values (P3 decisions D2, D3, D4, D10)."""
+
+    comparison_rule: str
+    matching_rule: str
+    epsilon: float
+    sinkhorn_iterations: int
+    tier2_count: int
+    alpha: float
+
+
+@dataclass(frozen=True, slots=True)
 class ChannelsSection:
     outline: OutlineChannelSection
+    element: ElementChannelSection
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,9 +124,12 @@ class CommonnessSection:
 
 @dataclass(frozen=True, slots=True)
 class ValidationSection:
+    """The harness values. submission_mode is P3 decision D7."""
+
     v1_pair_count: int
     v2_trial_count: int
     v2_target_seed: int
+    submission_mode: str
     tag: str
 
 
@@ -131,6 +155,7 @@ class SlotSection:
 class ProvidersSection:
     openrouter: OpenRouterSection
     sketch_encoder: SlotSection
+    text_encoder: SlotSection
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,15 +349,15 @@ def _parse_dataset(node: _Node) -> DatasetSection:
     return section
 
 
-def _parse_sketch_encoder(node: _Node) -> SlotSection:
+def _parse_encoder_slot(node: _Node, path: str,
+                        providers: tuple[str, ...]) -> SlotSection:
     section = SlotSection(
-        provider=node.choice("provider", SKETCH_ENCODER_PROVIDERS),
+        provider=node.choice("provider", providers),
         model=node.opt_str("model"),
         instruction_template=node.opt_str("instruction_template"),
         dimension=node.opt_int("dimension", minimum=1),
     )
     node.finish()
-    path = "providers.sketch_encoder"
     if section.instruction_template is not None:
         raise ConfigError(
             f"{path}.instruction_template: must be null — the slot has no "
@@ -370,10 +395,27 @@ def parse_scoring_config(raw: object, source: str = "config") -> ScoringConfig:
 
     channels_node = root.child("channels")
     outline_node = channels_node.child("outline")
-    channels = ChannelsSection(outline=OutlineChannelSection(
+    outline = OutlineChannelSection(
         comparison_rule=outline_node.choice("comparison_rule",
-                                            COMPARISON_RULES)))
+                                            COMPARISON_RULES))
     outline_node.finish()
+    element_node = channels_node.child("element")
+    element = ElementChannelSection(
+        comparison_rule=element_node.choice("comparison_rule",
+                                            ELEMENT_COMPARISON_RULES),
+        matching_rule=element_node.choice("matching_rule", MATCHING_RULES),
+        epsilon=element_node.float_("epsilon", low=0.0, low_open=True),
+        sinkhorn_iterations=element_node.int_("sinkhorn_iterations",
+                                              minimum=1),
+        tier2_count=element_node.int_("tier2_count", minimum=1),
+        alpha=element_node.float_("alpha", low=0.0, high=1.0),
+    )
+    element_node.finish()
+    if element.alpha != BUILT_ALPHA:
+        raise ConfigError(
+            f"channels.element.alpha: expected {BUILT_ALPHA} — the "
+            "sketch-vector path behind lower values is not built (D10)")
+    channels = ChannelsSection(outline=outline, element=element)
     channels_node.finish()
 
     fusion_node = root.child("fusion")
@@ -411,6 +453,8 @@ def parse_scoring_config(raw: object, source: str = "config") -> ScoringConfig:
         v1_pair_count=validation_node.int_("v1_pair_count", minimum=1),
         v2_trial_count=validation_node.int_("v2_trial_count", minimum=1),
         v2_target_seed=validation_node.any_int("v2_target_seed"),
+        submission_mode=validation_node.choice("submission_mode",
+                                               SUBMISSION_MODES),
         tag=validation_node.str_("tag"),
     )
     validation_node.finish()
@@ -431,8 +475,12 @@ def parse_scoring_config(raw: object, source: str = "config") -> ScoringConfig:
     openrouter_node.finish()
     providers = ProvidersSection(
         openrouter=openrouter,
-        sketch_encoder=_parse_sketch_encoder(
-            providers_node.child("sketch_encoder")),
+        sketch_encoder=_parse_encoder_slot(
+            providers_node.child("sketch_encoder"),
+            "providers.sketch_encoder", SKETCH_ENCODER_PROVIDERS),
+        text_encoder=_parse_encoder_slot(
+            providers_node.child("text_encoder"),
+            "providers.text_encoder", TEXT_ENCODER_PROVIDERS),
     )
     providers_node.finish()
 
@@ -478,6 +526,8 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
     dataset = config.commonness.dataset
     fractions = config.commonness.split_fractions
     encoder = config.providers.sketch_encoder
+    text_encoder = config.providers.text_encoder
+    element = config.channels.element
     openrouter = config.providers.openrouter
     return {
         "config_version": config.config_version,
@@ -492,6 +542,14 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
         "channels": {
             "outline": {
                 "comparison_rule": config.channels.outline.comparison_rule,
+            },
+            "element": {
+                "comparison_rule": element.comparison_rule,
+                "matching_rule": element.matching_rule,
+                "epsilon": element.epsilon,
+                "sinkhorn_iterations": element.sinkhorn_iterations,
+                "tier2_count": element.tier2_count,
+                "alpha": element.alpha,
             },
         },
         "fusion": {"weights": dict(config.fusion.weights)},
@@ -520,6 +578,7 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
             "v1_pair_count": config.validation.v1_pair_count,
             "v2_trial_count": config.validation.v2_trial_count,
             "v2_target_seed": config.validation.v2_target_seed,
+            "submission_mode": config.validation.submission_mode,
             "tag": config.validation.tag,
         },
         "providers": {
@@ -536,6 +595,12 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
                 "model": encoder.model,
                 "instruction_template": encoder.instruction_template,
                 "dimension": encoder.dimension,
+            },
+            "text_encoder": {
+                "provider": text_encoder.provider,
+                "model": text_encoder.model,
+                "instruction_template": text_encoder.instruction_template,
+                "dimension": text_encoder.dimension,
             },
         },
         "runtime": {"device": config.runtime.device},
@@ -579,6 +644,19 @@ def outline_config(config: ScoringConfig) -> OutlineConfig:
     """The core outline channel record for this config."""
     return OutlineConfig(
         comparison_rule=config.channels.outline.comparison_rule)
+
+
+def element_config(config: ScoringConfig) -> ElementConfig:
+    """The core element channel record for this config."""
+    section = config.channels.element
+    return ElementConfig(
+        comparison_rule=section.comparison_rule,
+        matching_rule=section.matching_rule,
+        epsilon=section.epsilon,
+        sinkhorn_iterations=section.sinkhorn_iterations,
+        tier2_count=section.tier2_count,
+        alpha=section.alpha,
+    )
 
 
 def fusion_weights(config: ScoringConfig) -> dict[str, float]:

@@ -17,7 +17,8 @@ def _hashes(**overrides):
     slots = scoring_provider_hashes(config)
     scoring = scoring_config_hash(config, slots)
     commonness = commonness_config_hash(
-        config, RENDER, slots["sketch_encoder"], slots["sketch_pairs"])
+        config, RENDER, slots["sketch_encoder"], slots["text_encoder"],
+        slots["sketch_pairs"])
     return scoring, commonness
 
 

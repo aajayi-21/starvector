@@ -73,8 +73,28 @@ def test_a_zero_weight_is_rejected_as_deactivation() -> None:
 
 def test_an_unbuilt_channel_in_the_weights_is_rejected() -> None:
     document = _base()
-    document["fusion"]["weights"]["element"] = 1.0
+    document["fusion"]["weights"]["placement"] = 1.0
     with pytest.raises(ConfigError, match="not a built channel"):
+        parse_scoring_config(document, "test")
+
+
+def test_the_element_channel_is_built_and_weighted() -> None:
+    config = parse_scoring_config(_base(), "test")
+    assert dict(config.fusion.weights) == {"outline": 1.0, "element": 1.0}
+    assert config.channels.element.matching_rule == "sinkhorn-slack-v1"
+
+
+def test_an_alpha_below_one_is_rejected() -> None:
+    document = _base()
+    document["channels"]["element"]["alpha"] = 0.5
+    with pytest.raises(ConfigError, match="not built"):
+        parse_scoring_config(document, "test")
+
+
+def test_an_unknown_submission_mode_is_rejected() -> None:
+    document = _base()
+    document["validation"]["submission_mode"] = "drawing"
+    with pytest.raises(ConfigError, match="expected one of"):
         parse_scoring_config(document, "test")
 
 
@@ -98,7 +118,8 @@ def test_the_dataset_cross_field_rules_hold() -> None:
 
 def test_the_hash_is_stable_and_ignores_runtime() -> None:
     config = parse_scoring_config(_base(), "test")
-    hashes = {"sketch_encoder": "a" * 64, "sketch_pairs": "b" * 64}
+    hashes = {"sketch_encoder": "a" * 64, "sketch_pairs": "b" * 64,
+              "text_encoder": "c" * 64}
     first = scoring_config_hash(config, hashes)
     assert first == scoring_config_hash(config, hashes)
     moved = parse_scoring_config(
@@ -109,7 +130,8 @@ def test_the_hash_is_stable_and_ignores_runtime() -> None:
     assert scoring_config_hash(gated, hashes) != first
 
 
-def test_the_hash_needs_exactly_the_two_slot_names() -> None:
+def test_the_hash_needs_exactly_the_three_slot_names() -> None:
     config = parse_scoring_config(_base(), "test")
-    with pytest.raises(ValueError, match="sketch_encoder"):
-        scoring_config_hash(config, {"sketch_encoder": "a" * 64})
+    with pytest.raises(ValueError, match="text_encoder"):
+        scoring_config_hash(config, {"sketch_encoder": "a" * 64,
+                                     "sketch_pairs": "b" * 64})

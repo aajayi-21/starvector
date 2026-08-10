@@ -19,13 +19,14 @@ TRIALS = 24
 ACCEPTANCE = 0.333
 
 
-def _run(tmp_path, seed: int = 7):
+def _run(tmp_path, seed: int = 7, mode: str = "sketch"):
     prepared = build_direct_prepared_pool(tmp_path, POOL_SIZE)
     config = make_scoring_config(
         prepared["prep_record_path"],
         **{"commonness.dataset.fake_pair_count": 128,
            "commonness.background_count": 12,
            "validation.v2_trial_count": TRIALS,
+           "validation.submission_mode": mode,
            "validation.v2_target_seed": seed})
     report = run_v2(
         config,
@@ -67,6 +68,28 @@ def test_the_seeded_targets_are_pinned_by_the_seed(tmp_path) -> None:
     assert first.trials == again.trials
     _, different = _run(tmp_path / "c", seed=8)
     assert different.trials != first.trials
+
+
+def test_the_text_mode_baseline_agrees_with_uniform(tmp_path) -> None:
+    # The baseline claim is modality-free (architecture section 14).
+    # Descriptions against seeded targets must agree with Uniform too.
+    _, report = _run(tmp_path, mode="text")
+    assert report.submission_mode == "text"
+    assert report.trial_count == TRIALS
+    assert report.statistic < ACCEPTANCE
+    assert report.significance > 0.01
+
+
+def test_the_mixed_mode_baseline_agrees_with_uniform(tmp_path) -> None:
+    _, report = _run(tmp_path, mode="mixed")
+    assert report.statistic < ACCEPTANCE
+    assert report.significance > 0.01
+
+
+def test_the_mode_forks_the_artifact_lineage(tmp_path) -> None:
+    _, sketch = _run(tmp_path / "a", mode="sketch")
+    _, text = _run(tmp_path / "b", mode="text")
+    assert sketch.harness_config_hash != text.harness_config_hash
 
 
 def test_the_conditional_row_lands_in_report_and_record(tmp_path) -> None:

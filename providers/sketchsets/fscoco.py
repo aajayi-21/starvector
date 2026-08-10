@@ -39,9 +39,16 @@ _PEN_STATES = (0.0, 1.0)
 # Check at first download: directory names in the extracted tree.
 _VECTOR_DIR = "vector_sketches"
 _IMAGE_DIR = "images"
+_TEXT_DIR = "text"
 _IMAGE_SUFFIX = ".jpg"
+_TEXT_SUFFIX = ".txt"
 
 _PAIR_KEY_RULE = "user-slash-cocoid-v1"
+
+# The written description of one pair: the file bytes decoded as UTF-8
+# with the outer white space removed, and no other change. The frozen
+# Layer 1 paste rule makes the atoms (spec P3 decision D9).
+_TEXT_RULE = "utf8-strip-v1"
 
 # v2 (measured 2026-08-08 on the pinned archive): the official raster
 # renders are 256 x 256, and 0.34% of vector points land off that
@@ -77,6 +84,7 @@ def fscoco_config_hash(config: FSCocoConfig) -> str:
                               if config.coordinate_extent else None),
         "pair_key_rule": _PAIR_KEY_RULE,
         "parse_rule": _PARSE_RULE,
+        "text_rule": _TEXT_RULE,
     }))
 
 
@@ -124,6 +132,26 @@ def strokes_from_array(array: np.ndarray,
     if current:
         strokes.append(tuple(current))
     return tuple(strokes)
+
+
+def _read_text(path: Path, where: str) -> str:
+    """Read one description file by rule utf8-strip-v1.
+
+    Bytes to UTF-8, outer white space removed, no other change. The
+    frozen paste rule of Layer 1 makes the atoms (D9). An unreadable or
+    empty file raises — an empty description makes a submission with no
+    atom, which is not a submission.
+    """
+    try:
+        text = path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError(
+            f"{where}: cannot read the description at {path}: "
+            f"{error}") from error
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError(f"{where}: the description at {path} is empty")
+    return stripped
 
 
 def _checked_member_name(name: str) -> None:
@@ -176,7 +204,8 @@ class FSCocoSketchPairSource:
         digest = self._ensure_materialized()
         vector_root = self._vector_root(digest)
         image_root = vector_root.parent / _IMAGE_DIR
-        entries: list[tuple[str, Path, Path]] = []
+        text_root = vector_root.parent / _TEXT_DIR
+        entries: list[tuple[str, Path, Path, Path]] = []
         for user_dir in sorted(vector_root.iterdir()):
             if not user_dir.is_dir():
                 raise ValueError(
@@ -188,11 +217,16 @@ class FSCocoSketchPairSource:
                 if not photo_path.is_file():
                     raise ValueError(
                         f"{pair_key}: photograph missing at {photo_path}")
-                entries.append((pair_key, sketch_path, photo_path))
+                text_path = (text_root / user_dir.name
+                             / (sketch_path.stem + _TEXT_SUFFIX))
+                if not text_path.is_file():
+                    raise ValueError(
+                        f"{pair_key}: description missing at {text_path}")
+                entries.append((pair_key, sketch_path, photo_path, text_path))
         # The walk sequence approximates pair_key sequence but a stem
         # with a dot can reorder — sort by pair_key, the contract.
         entries.sort(key=lambda entry: entry[0])
-        for pair_key, sketch_path, photo_path in entries:
+        for pair_key, sketch_path, photo_path, text_path in entries:
             array = np.load(sketch_path, allow_pickle=False)
             strokes = strokes_from_array(
                 array, self._config.coordinate_extent, pair_key)
@@ -201,7 +235,8 @@ class FSCocoSketchPairSource:
                 photo_bytes=photo_path.read_bytes(),
                 sketch_strokes=strokes,
                 sketch_bytes=None,
-                category=None)
+                category=None,
+                text=_read_text(text_path, pair_key))
             check_sketch_pair(pair)
             yield pair
 

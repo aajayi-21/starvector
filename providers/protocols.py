@@ -244,6 +244,11 @@ class SketchPair(NamedTuple):
     time. Stroke points are floats in the unit square, (0, 0) top
     left, y down (spec P2 decision D2). category is recorded, not
     acted on.
+
+    text is the pair's written description of the photograph, which the
+    harness uses to build text and mixed submissions (spec P3 decision
+    D6). It is optional at the type level, and a source that has
+    descriptions raises rather than yielding a pair without one.
     """
 
     pair_key: str
@@ -251,6 +256,7 @@ class SketchPair(NamedTuple):
     sketch_strokes: tuple[StrokePath, ...] | None
     sketch_bytes: bytes | None
     category: str | None
+    text: str | None = None
 
 
 class SketchPairSource(Protocol):

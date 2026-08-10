@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from core.fusion import NoActiveChannels, active_channels, fuse
-from core.types import ROUTING_TABLE, Atom
+from core.types import ROUTING_TABLE, Atom, EncodedSubmission
 
 
 def _atom(atom_type: str, atom_id: str = "a1") -> Atom:
@@ -12,16 +12,33 @@ def _atom(atom_type: str, atom_id: str = "a1") -> Atom:
                 strokes=None, refers_to=None, relation=None)
 
 
+def _encoded(*atoms: Atom, without: tuple[str, ...] = ()) -> EncodedSubmission:
+    """The atoms with a vector each, minus the named identifiers."""
+    vector = np.zeros(2, dtype=np.float32)
+    return EncodedSubmission(
+        atoms=atoms,
+        vectors={atom.id: vector for atom in atoms if atom.id not in without})
+
+
 def test_the_active_set_comes_from_the_routing_table() -> None:
-    assert active_channels([_atom("WHOLE-DRAWING")], ROUTING_TABLE) \
+    assert active_channels(_encoded(_atom("WHOLE-DRAWING")), ROUTING_TABLE) \
         == frozenset({"outline"})
-    assert active_channels([_atom("DESCRIPTION")], ROUTING_TABLE) \
-        == frozenset()
+    assert active_channels(_encoded(_atom("DESCRIPTION")), ROUTING_TABLE) \
+        == frozenset({"element"})
     assert active_channels(
-        [_atom("DESCRIPTION", "a1"), _atom("WHOLE-DRAWING", "a2"),
-         _atom("RELATION", "a3")],
-        ROUTING_TABLE) == frozenset({"outline"})
-    assert active_channels([], ROUTING_TABLE) == frozenset()
+        _encoded(_atom("DESCRIPTION", "a1"), _atom("WHOLE-DRAWING", "a2"),
+                 _atom("RELATION", "a3")),
+        ROUTING_TABLE) == frozenset({"outline", "element"})
+    assert active_channels(_encoded(), ROUTING_TABLE) == frozenset()
+
+
+def test_an_atom_with_no_vector_activates_nothing() -> None:
+    # A labeled stroke group routes to the element channel by type and
+    # carries no text, thus Layer 2 gives it no vector (D10).
+    group = _atom("DESCRIPTION", "a1")
+    drawing = _atom("WHOLE-DRAWING", "a2")
+    assert active_channels(_encoded(group, drawing, without=("a1",)),
+                           ROUTING_TABLE) == frozenset({"outline"})
 
 
 def test_the_formula_is_pinned_on_hand_tables() -> None:

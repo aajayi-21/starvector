@@ -451,9 +451,12 @@ enter fusion).
 Development gate runs (not CI): V1 text, V2 text, V1 mixed, recorded
 with verdicts (R12).
 
-## 16. Open decisions — agreement required before implementation
+## 16. Decisions — ruled 2026-08-09
 
-| # | Decision | Proposed default | Notes |
+The owner ruled the twelve decisions one by one on 2026-08-09, each
+at its proposed default. The table below is the record.
+
+| # | Decision | Ruling | Notes |
 |---|---|---|---|
 | D1 | Rarity match rule | The atom's best-matching vocabulary entry (argmax centered cosine) supplies the document frequency, and equal values resolve to the lowest index | §12.1 defines rarity by "something this atom matches" without a rule. Argmax is deterministic, one lookup, and it uses the tier-1 matrix again. Alternative: a similarity-weighted soft frequency — more machinery, unclear benefit. Look again with V-harness data. |
 | D2 | Element similarity rule | `element-center-cosine-v1`: center the two sides on `element_space_mean`, then cosine | The mirror of P2 D4 (R7). The rule name is in config. |
@@ -467,6 +470,72 @@ with verdicts (R12).
 | D10 | The α knob | `channels.element.alpha` exists at 1.0, and the sketch-vector path behind values below 1.0 is not built | §6 of the architecture: start text-only, and increase α only when the V-harness says the sketch path helps. A DESCRIPTION atom with strokes and no text contributes nothing at 1.0. |
 | D11 | Commonness generalization | One `<channel>.npy` for each weighted channel at the existing key, and the commonness hash covers the full channels config | The P2 layout wrote `outline.npy` alone. The meta gains counts for each channel. |
 | D12 | Match report scope | The pure `match_report` function plus V1 trial recording, and no player-facing surface | The §27 feedback seed and a review instrument. The full report on the results screen comes with a phase after this one. |
+
+## 16a. What the build settled that the spec left open
+
+The build made these decisions because §16 does not answer them. Each
+one is a point a reader will come back to, so each is written down.
+
+1. **The element bank is one table.** `vocabulary` and
+   `vocabulary_vectors` hold B entries and `pool_frequency` holds the
+   first V of them, which are the pool vocabulary. Rarity reads the
+   first V alone. A V1 union index appends photograph entries above V
+   and keeps `pool_image_count` as it is. Pool images and photographs
+   then share one incidence table and one channel code path, and
+   rarity is pool-defined by construction (R1, I3).
+2. **A commonness table exists for each weighted channel the
+   background activates**, which is a subset when the submission mode
+   leaves a channel silent. Section 10 asked for one table for each
+   weighted channel, and a sketch-mode background cannot build an
+   element table. A trial that activates a channel with no table
+   raises in `score_trial`. The pre-flight makes the background set
+   the same in this respect, so a table is built from the full
+   background or not at all.
+3. **The p03 cap is factored, not copied.** `cap_decisions` measures
+   document frequency across the sequences it caps.
+   `cap_with_frequencies` takes the frequencies as an argument, and
+   `cap_decisions` runs it. The V1 union side gives it the pool
+   frequencies with unknown elements at 1 (D8). The outputs of
+   `cap_decisions` do not move.
+4. **The active channel set follows the encoded atoms, not the atom
+   types.** A DESCRIPTION atom with strokes and no text routes to the
+   element channel by type and has no vector at alpha 1.0 (D10). The
+   channel set is the union of the routing entries across the atoms
+   that hold a vector. This is data-driven and adds no modality branch
+   (I5).
+5. **The submission mode is in the scoring config, so each mode is a
+   config file.** `configs/scoring/dev-wit.json` holds the sketch
+   mode and `dev-wit-text.json` and `dev-wit-mixed.json` hold the
+   others. A scoring config is not a released artifact, so the
+   extension of the committed file is one edit.
+6. **The element space has its own Rule 3 guard.**
+   `check_element_space` stops a run when the scoring `text_encoder`
+   config hash is not the one the preparation record names. The p04
+   stage encoded the vocabulary with that slot, and two different
+   encoders give cosine values with no meaning. This mirrors the P2
+   R7 guard on the outline space.
+7. **The element dimension is not tied to the outline dimension.**
+   The §7 table says `d` equal to the outline dimension. The build
+   checks the element artifacts against each other and against the
+   atom vectors, and does not compare them with the p06 space: the
+   text encoder and the image encoder are different slots (CLAUDE.md
+   §6), and a text encoder of a different width is a correct future
+   configuration. The check that matters is item 6.
+8. **Twenty alternations do not converge, and that is the pinned
+   behavior.** At epsilon 0.10 the kernel spans exp(20), and the
+   plan after twenty alternations is short of the limit. The count is
+   fixed for reproducibility (D3), and the sequence ends on a row
+   rescaling so each atom holds one unit of mass accurately — the
+   quantity the score adds up. A unit test records the distance from
+   the limit as a measured property. Phase 5 can revisit epsilon and
+   the count together with the tier work.
+9. **The match report names an element only when it beats the
+   reserve.** An atom with no similarity to anything in an image
+   spreads its mass equally. To name the first element then reports a
+   correspondence the submission does not hold, so the row gives
+   element None. The row keeps its similarity and weight, thus a small
+   value stays a small value to the reader. No threshold enters the
+   scoring path (I2).
 
 ## 17. Code layout
 

@@ -7,29 +7,37 @@ branches on modality (Rule 5). The division by the sum of the active
 weights is what makes a missing modality safe.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 import numpy as np
 
-from core.types import Atom, AtomType, ChannelName, PoolScores, Weights
+from core.types import (AtomType, ChannelName, EncodedSubmission, PoolScores,
+                        Weights)
 
 
 class NoActiveChannels(ValueError):
     """The submission carries no signal a built channel reads."""
 
 
-def active_channels(atoms: Sequence[Atom],
+def active_channels(submission: EncodedSubmission,
                     routing: Mapping[AtomType, tuple[ChannelName, ...]],
                     ) -> frozenset[ChannelName]:
-    """The channels the submission activates, from its atom types.
+    """The channels the submission activates, from its encoded atoms.
 
-    The union of the routing entries across atoms. Pure data lookup —
-    this is the full mechanism by which text-only, sketch-only, and
-    mixed submissions work without a branch (Rule 5).
+    The union of the routing entries across the atoms that hold a
+    Layer 2 vector. Pure data lookup — this is the full mechanism by
+    which text-only, sketch-only, and mixed submissions work without a
+    branch (Rule 5).
+
+    The vector condition is what keeps a labeled stroke group out of
+    the element channel at alpha 1.0: the group atom routes to that
+    channel by type, holds no text, and thus has no vector to
+    contribute (spec P3 section 8.1).
     """
     names: set[ChannelName] = set()
-    for atom in atoms:
-        names.update(routing[atom.type])
+    for atom in submission.atoms:
+        if atom.id in submission.vectors:
+            names.update(routing[atom.type])
     return frozenset(names)
 
 

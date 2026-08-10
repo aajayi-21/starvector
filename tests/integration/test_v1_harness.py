@@ -81,9 +81,102 @@ def test_the_artifact_shapes_of_section_14_land(v1_run) -> None:
     assert (directory / "trials.jsonl").is_file()
     assert (directory / "report.json").is_file()
     assert (directory / "meta.json").is_file()
+    assert (directory / "match_reports.jsonl").is_file()
     commonness = list((data / "commonness").glob("*/*/outline.npy"))
     assert len(commonness) == 1
     assert (commonness[0].parent / "meta.json").is_file()
+    # Sketch mode activates the outline channel alone, thus the
+    # element table is missing and is not built from nothing (P3
+    # section 10).
+    assert not (commonness[0].parent / "element.npy").exists()
+
+
+def test_the_sketch_mode_match_reports_are_empty_rows(v1_run) -> None:
+    import json
+
+    report = v1_run["report"]
+    data = v1_run["clone"]["data"]
+    path = (data / "validation" / "v1" / report.index_id[:8]
+            / report.harness_config_hash[:8] / "match_reports.jsonl")
+    rows = [json.loads(line) for line in
+            path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == V1_COUNT
+    # No text atom in sketch mode, thus no correspondence to report —
+    # and no branch in the harness that decides that.
+    assert all(row["atoms"] == [] for row in rows)
+
+
+def test_the_text_mode_finds_the_paired_photograph(
+        scoring_preparation, tmp_path) -> None:  # noqa: F811
+    # The offline element-channel signal: the description names three
+    # of its own photograph's scripted elements, and FakeTextEncoder
+    # seeds by string, thus the atom vector and the element vector
+    # agree (D6).
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    report, _ = _run(clone, **{"validation.submission_mode": "text"})
+    assert report.submission_mode == "text"
+    assert report.pair_count == V1_COUNT
+    assert report.first_rank_fraction >= 0.8
+    assert report.mean_trial_score > 0.8
+
+
+def test_the_text_mode_match_report_names_the_matched_elements(
+        scoring_preparation, tmp_path) -> None:  # noqa: F811
+    import json
+
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    report, _ = _run(clone, **{"validation.submission_mode": "text"})
+    path = (clone["data"] / "validation" / "v1" / report.index_id[:8]
+            / report.harness_config_hash[:8] / "match_reports.jsonl")
+    rows = [json.loads(line) for line in
+            path.read_text(encoding="utf-8").splitlines()]
+    atoms = {row["pair_key"]: row["atoms"] for row in rows}
+    described = atoms["fake://pair/0006"]
+    # Four description atoms: three name elements of the photograph and
+    # one names nothing there.
+    assert len(described) == 4
+    matched = [row for row in described if row["element"] is not None]
+    assert len(matched) == 3
+    assert all(row["similarity"] > 0.9 for row in matched)
+    assert all(row["rarity"] > 0.0 for row in described)
+
+
+def test_the_mixed_mode_engages_the_two_channels(
+        scoring_preparation, tmp_path) -> None:  # noqa: F811
+    clone = clone_preparation(scoring_preparation, tmp_path)
+    report, _ = _run(clone, **{"validation.submission_mode": "mixed"})
+    assert report.submission_mode == "mixed"
+    assert report.pair_count == V1_COUNT
+    tables = sorted(path.name for path in
+                    (clone["data"] / "commonness").glob("*/*/*.npy"))
+    assert tables == ["element.npy", "outline.npy"]
+    assert report.first_rank_fraction >= 0.8
+
+
+def test_the_union_photographs_get_element_banks(v1_run) -> None:
+    # Rule 3: the photograph element lists come from the same describer
+    # slot and the same p02 and p03 rules the pool went through, thus
+    # the union vocabulary grows and the pool frequencies do not.
+    from pipeline.context import load_pool_index
+    from validation.v1 import build_union_elements
+
+    clone = v1_run["clone"]
+    fakes = v1_run["fakes"]
+    loaded = load_pool_index(clone["prep_record_path"], clone["data"],
+                             dev_only=True)
+    photo_bytes = {sha256_hex(pair.photo_bytes): pair.photo_bytes
+                   for pair in fakes["sketch_pairs"].iter_pairs()}
+    union_ids = tuple(sorted(set(loaded.index.image_ids) | set(photo_bytes)))
+    from pool.preparation.config import load_preparation_config
+
+    prep_config = load_preparation_config(clone["config_path"])
+    side = build_union_elements(loaded, prep_config, photo_bytes, union_ids,
+                                fakes["describer"], fakes["text_encoder"])
+    assert len(side.vocabulary) > len(loaded.index.vocabulary)
+    assert side.pool_frequency == loaded.index.pool_frequency
+    assert side.pool_image_count == loaded.index.pool_image_count
+    assert side.incidence.shape == (len(union_ids),
+                                    loaded.index.incidence.shape[1])
 
 
 def test_the_record_carries_verdict_fields_and_dev_only(v1_run) -> None:

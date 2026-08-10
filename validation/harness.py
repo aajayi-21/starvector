@@ -13,9 +13,11 @@ from pathlib import Path
 
 from core.canonical import JsonValue, canonical_json, quantize_measured, sha256_hex
 from core.types import StrokePath
-from pipeline.config import ScoringConfig
+from pipeline.config import SUBMISSION_MODES, ScoringConfig
+from pipeline.score import Encoders
 from pool.artifacts import write_json_pretty
-from providers.protocols import SketchEncoder, SketchPair, SketchPairSource
+from providers.protocols import (SketchEncoder, SketchPair, SketchPairSource,
+                                 TextEncoder)
 
 # The s08-shape verdict fields, for the human to fill before commit.
 VERDICT_TEMPLATE: dict[str, JsonValue] = {
@@ -79,6 +81,24 @@ def sketch_encoder_hash(config: ScoringConfig) -> str:
     return FakeSketchEncoder(dimension=slot.dimension or 64).config_hash
 
 
+def text_encoder_hash(config: ScoringConfig) -> str:
+    """The text_encoder slot hash, computed without wiring."""
+    slot = config.providers.text_encoder
+    if slot.provider == "openrouter":
+        from providers.openrouter.embeddings import (EmbeddingSlotConfig,
+                                                     embedding_config_hash)
+
+        return embedding_config_hash(EmbeddingSlotConfig(
+            slot="text_encoder",
+            model=slot.model or config.providers.openrouter.default_model,
+            dimension=slot.dimension or 0,
+            encoding_format="float",
+        ))
+    from providers.fake.text_encoder import FakeTextEncoder
+
+    return FakeTextEncoder(dimension=slot.dimension or 64).config_hash
+
+
 def sketch_pairs_hash(config: ScoringConfig) -> str:
     """The sketch_pairs slot hash, computed without wiring."""
     dataset = config.commonness.dataset
@@ -120,6 +140,8 @@ def scoring_provider_hashes(
             "sketch_encoder", lambda: sketch_encoder_hash(config)),
         "sketch_pairs": hash_for(
             "sketch_pairs", lambda: sketch_pairs_hash(config)),
+        "text_encoder": hash_for(
+            "text_encoder", lambda: text_encoder_hash(config)),
     }
 
 
@@ -160,6 +182,53 @@ def wire_sketch_encoder(config: ScoringConfig,
     return FakeSketchEncoder(dimension=slot.dimension or 64)
 
 
+def wire_text_encoder(config: ScoringConfig, data_root: Path) -> TextEncoder:
+    """Build the text encoder instance for this config."""
+    import os
+
+    slot = config.providers.text_encoder
+    if slot.provider == "openrouter":
+        from providers.openrouter.client import (OpenRouterClient,
+                                                 OpenRouterClientConfig)
+        from providers.openrouter.embeddings import (EmbeddingSlotConfig,
+                                                     OpenRouterTextEncoder)
+
+        section = config.providers.openrouter
+        client = OpenRouterClient(
+            OpenRouterClientConfig(
+                max_concurrency=section.max_concurrency,
+                requests_per_second=section.requests_per_second,
+                timeout_seconds=section.timeout_seconds,
+                retry_limit=section.retry_limit,
+            ),
+            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+        )
+        return OpenRouterTextEncoder(
+            EmbeddingSlotConfig(
+                slot="text_encoder",
+                model=slot.model or section.default_model,
+                dimension=slot.dimension or 0,
+                encoding_format="float",
+            ),
+            client,
+            data_root / "cache" / "openrouter",
+        )
+    from providers.fake.text_encoder import FakeTextEncoder
+
+    return FakeTextEncoder(dimension=slot.dimension or 64)
+
+
+def wire_encoders(config: ScoringConfig, data_root: Path,
+                  providers: Mapping[str, object] | None = None) -> Encoders:
+    """The two Layer 2 slots, with injected instances used first."""
+    providers = providers or {}
+    sketch = providers.get("sketch_encoder") or wire_sketch_encoder(
+        config, data_root)
+    text = providers.get("text_encoder") or wire_text_encoder(
+        config, data_root)
+    return Encoders(sketch=sketch, text=text)   # type: ignore[arg-type]
+
+
 def wire_sketch_pairs(config: ScoringConfig,
                       data_root: Path) -> SketchPairSource:
     """Build the sketch-pair source instance for this config."""
@@ -186,6 +255,25 @@ def wire_sketch_pairs(config: ScoringConfig,
     ))
 
 
+def check_element_space(record_provider_hashes: Mapping[str, str],
+                        slot_hashes: Mapping[str, str]) -> None:
+    """Atom vectors and element vectors must share one space (R7).
+
+    The p04 stage encoded the vocabulary with the preparation's
+    text_encoder slot. The element channel compares atom vectors with
+    those vectors, thus the scoring slot must be the same provider
+    configuration. Two different encoders give cosines with no meaning,
+    and the numbers look ordinary.
+    """
+    prepared = record_provider_hashes.get("text_encoder")
+    if prepared != slot_hashes["text_encoder"]:
+        raise ValueError(
+            "the scoring text_encoder config_hash "
+            f"{slot_hashes['text_encoder'][:8]} is not the preparation's "
+            f"{str(prepared)[:8]} — the atom vectors and the element "
+            "vectors would not share a space (R7)")
+
+
 def pair_keys_of(source: SketchPairSource) -> list[str]:
     """First walk: the pair keys alone, payloads dropped."""
     return [pair.pair_key for pair in source.iter_pairs()]
@@ -202,9 +290,31 @@ def pairs_by_key(source: SketchPairSource,
     return selected
 
 
-def submission_record_from_strokes(
-        strokes: tuple[StrokePath, ...]) -> dict[str, JsonValue]:
-    """The frozen wire record for one dataset sketch (spec section 12)."""
+def submission_record(pair: SketchPair, mode: str) -> dict[str, JsonValue]:
+    """The frozen wire record for one dataset pair (spec P3 section 11).
+
+    The mode says which of the pair's payloads become a submission:
+    sketch fills canvas_strokes, text fills pasted_text, and mixed
+    fills the two. The mode is a harness concept and stops here — the
+    scoring path reads the record and does not learn which mode built
+    it (Rule 5). A payload the mode needs and the pair does not have
+    raises: a silently thinner submission makes numbers that do not
+    answer the question asked.
+    """
+    if mode not in SUBMISSION_MODES:
+        raise ValueError(f"unknown submission mode: {mode!r}")
+    strokes: tuple[StrokePath, ...] = ()
+    if mode in ("sketch", "mixed"):
+        if pair.sketch_strokes is None:
+            raise ValueError(
+                f"{pair.pair_key}: no vector strokes (D10 is not built)")
+        strokes = pair.sketch_strokes
+    text: str | None = None
+    if mode in ("text", "mixed"):
+        if pair.text is None:
+            raise ValueError(
+                f"{pair.pair_key}: the dataset gave no description")
+        text = pair.text
     return {
         "impressions": [],
         "canvas_strokes": [
@@ -213,34 +323,33 @@ def submission_record_from_strokes(
         ],
         "groups": [],
         "relations": [],
-        "pasted_text": None,
+        "pasted_text": text,
     }
 
 
 def check_selected_pairs(pairs: Mapping[str, SketchPair],
-                         keys: list[str], gates,
-                         canvas_px: int) -> None:
-    """Pre-flight: each selected sketch must clear the Layer 0 gates.
+                         keys: list[str], gates, canvas_px: int,
+                         mode: str) -> None:
+    """Pre-flight: each selected pair must build and clear Layer 0.
 
     Runs before the encoder spend, and covers the background split
-    too — a sketch that Layer 0 rejects cannot be a live submission,
-    thus it must not shape the commonness table. Raises one aggregate
-    error naming each failing pair, so the operator adjusts the
-    config before the run costs anything.
+    too — a submission Layer 0 rejects cannot be a live submission,
+    thus it must not shape a commonness table. A missing payload for
+    the mode also fails here, which keeps the background set the
+    same: each background submission activates the same channels,
+    which is what a commonness table means (spec P3 section 10).
+    Raises one aggregate error naming each failing pair, so the
+    operator adjusts the config before the run costs anything.
     """
     from core.intake import IntakeError, validate_submission
 
     failures = []
     for key in keys:
         pair = pairs[key]
-        if pair.sketch_strokes is None:
-            failures.append(f"{key}: no vector strokes (D10 is not built)")
-            continue
         try:
-            validate_submission(
-                submission_record_from_strokes(pair.sketch_strokes),
-                gates, canvas_px)
-        except IntakeError as error:
+            validate_submission(submission_record(pair, mode), gates,
+                                canvas_px)
+        except (IntakeError, ValueError) as error:
             failures.append(f"{key}: {error}")
     if failures:
         raise ValueError(

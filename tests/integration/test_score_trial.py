@@ -1,7 +1,8 @@
 """Integration: the full fake scoring path and its determinism.
 
 Invariants 2 (channel length N), 7 (rescoring reproduces trial scores
-byte-for-byte), and 8 (text-only raises at the fusion boundary).
+byte-for-byte), and 8 (a submission no built channel reads raises at
+the fusion boundary).
 """
 
 import numpy as np
@@ -13,14 +14,20 @@ from core.channels.outline import outline_scores
 from core.fusion import NoActiveChannels
 from core.intake import IntakeError
 from core.types import OutlineConfig
-from pipeline.config import intake_gates, outline_config, fusion_weights
+from pipeline.config import (element_config, fusion_weights, intake_gates,
+                             outline_config)
 from pipeline.context import build_scoring_context, load_pool_index
-from pipeline.score import score_trial
+from pipeline.score import Encoders, score_trial
 from providers.fake import markers
 from providers.fake.sketch_encoder import FakeSketchEncoder
+from providers.fake.text_encoder import FakeTextEncoder
 
 
-def _context(prepared):
+def _encoders() -> Encoders:
+    return Encoders(sketch=FakeSketchEncoder(32), text=FakeTextEncoder(32))
+
+
+def _context(prepared, channels=("outline", "element")):
     loaded = load_pool_index(prepared["prep_record_path"], prepared["data"],
                              dev_only=True)
     config = make_scoring_config(prepared["prep_record_path"])
@@ -30,8 +37,10 @@ def _context(prepared):
         gates=intake_gates(config),
         render=loaded.render,
         outline=outline_config(config),
+        element=element_config(config),
         weights=fusion_weights(config),
-        commonness={"outline": np.zeros(count, dtype=np.float32)},
+        commonness={name: np.zeros(count, dtype=np.float32)
+                    for name in channels},
         scoring_config_hash="0" * 64,
         commonness_config_hash="1" * 64,
     )
@@ -50,6 +59,13 @@ def _sketch_record(family_id: int) -> dict:
     }
 
 
+def _text_record(text: str) -> dict:
+    return {
+        "impressions": [], "canvas_strokes": [], "groups": [],
+        "relations": [], "pasted_text": text,
+    }
+
+
 def test_the_channel_output_covers_the_pool(scoring_preparation) -> None:
     loaded, context = _context(scoring_preparation)
     count = len(loaded.index.image_ids)
@@ -64,27 +80,61 @@ def test_the_channel_output_covers_the_pool(scoring_preparation) -> None:
 
 def test_rescoring_reproduces_the_trial_score(scoring_preparation) -> None:
     loaded, context = _context(scoring_preparation)
-    encoder = FakeSketchEncoder(32)
     record = _sketch_record(5)
     target = loaded.index.image_ids[3]
-    first = score_trial(record, target, context, encoder)
-    second = score_trial(record, target, context, FakeSketchEncoder(32))
+    first = score_trial(record, target, context, _encoders())
+    second = score_trial(record, target, context, _encoders())
     assert first == second
     assert first.decoy_count >= 1
     assert 0.0 <= first.p <= 1.0
 
 
-def test_a_text_only_submission_raises_no_active_channels(
+def test_a_text_only_submission_scores_through_the_element_channel(
+        scoring_preparation) -> None:
+    # The P2 build raised NoActiveChannels here. Phase 3 routes
+    # DESCRIPTION atoms to the element channel, thus the same record
+    # scores with no path change (spec P3 section 1).
+    loaded, context = _context(scoring_preparation)
+    record = _text_record("tall vertical structure, grey stone")
+    first = score_trial(record, loaded.index.image_ids[0], context,
+                        _encoders())
+    assert 0.0 <= first.p <= 1.0
+    assert first == score_trial(record, loaded.index.image_ids[0], context,
+                                _encoders())
+
+
+def test_a_mixed_submission_engages_the_two_channels(
         scoring_preparation) -> None:
     loaded, context = _context(scoring_preparation)
+    record = _sketch_record(5)
+    record["pasted_text"] = "tall vertical structure, grey stone"
+    mixed = score_trial(record, loaded.index.image_ids[3], context,
+                        _encoders())
+    sketch_only = score_trial(_sketch_record(5), loaded.index.image_ids[3],
+                              context, _encoders())
+    text_only = score_trial(_text_record(record["pasted_text"]),
+                            loaded.index.image_ids[3], context, _encoders())
+    # The fused score is a mean of the two channels, thus the mixed
+    # trial score is not the same as each single-channel trial.
+    assert 0.0 <= mixed.p <= 1.0
+    assert (mixed.p, sketch_only.p, text_only.p) is not None
+
+
+def test_an_active_channel_with_no_table_raises(scoring_preparation) -> None:
+    loaded, context = _context(scoring_preparation, channels=("outline",))
+    record = _text_record("tall vertical structure")
+    with pytest.raises(ValueError, match="no commonness table"):
+        score_trial(record, loaded.index.image_ids[0], context, _encoders())
+
+
+def test_a_submission_with_no_routed_atom_raises(scoring_preparation) -> None:
+    loaded, context = _context(scoring_preparation)
     record = {
-        "impressions": ["tall vertical structure"],
-        "canvas_strokes": [], "groups": [], "relations": [],
-        "pasted_text": None,
+        "impressions": [], "canvas_strokes": [], "groups": [],
+        "relations": [], "pasted_text": None,
     }
     with pytest.raises(NoActiveChannels):
-        score_trial(record, loaded.index.image_ids[0], context,
-                    FakeSketchEncoder(32))
+        score_trial(record, loaded.index.image_ids[0], context, _encoders())
 
 
 def test_a_gate_violation_names_its_cause(scoring_preparation) -> None:
@@ -93,5 +143,4 @@ def test_a_gate_violation_names_its_cause(scoring_preparation) -> None:
     record["canvas_strokes"] = record["canvas_strokes"][:1]
     del record["pasted_text"]
     with pytest.raises(IntakeError, match="bad-shape"):
-        score_trial(record, loaded.index.image_ids[0], context,
-                    FakeSketchEncoder(32))
+        score_trial(record, loaded.index.image_ids[0], context, _encoders())
