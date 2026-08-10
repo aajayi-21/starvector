@@ -4,7 +4,7 @@
   "created_at": "2026-08-10T01:27:44.992525+00:00",
   "dataset_bytes_retrieved": 0,
   "dataset_config_hash": "98edabaf0d710750f8bb94ed080384392783fee874352c8c7c67777de1cf3ea4",
-  "date": "",
+  "date": "2026-08-09",
   "dev_only": true,
   "first_rank_fraction": 0.405,
   "harness": "v1",
@@ -31,9 +31,9 @@
   },
   "reference_first": 0.002362,
   "reference_top_ten": 0.023624,
-  "reviewer": "",
+  "reviewer": "ade",
   "scoring_config_hash": "38cca4e2b3b23b0d51b6eb72e4b736117e41e2d33e638065f22206ee8d6e5c81",
   "tag": "dev-wit",
   "top_ten_fraction": 0.735,
-  "verdict": "pending"
+  "verdict": "pass"
 }
