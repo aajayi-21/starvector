@@ -4,7 +4,7 @@
   "created_at": "2026-08-10T20:19:29.580504+00:00",
   "dataset_bytes_retrieved": 0,
   "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
-  "date": "",
+  "date": "2026-08-10",
   "decoy_count_max": 224,
   "decoy_count_min": 219,
   "dev_only": true,
@@ -20,7 +20,7 @@
   "ks_statistic": 0.035143,
   "mean_p_at_max_decoy_count": 0.513383,
   "mean_p_at_min_decoy_count": 0.305667,
-  "notes": "",
+  "notes": "Phase 3 follow-up gate: V2 mixed mode, the two-channel baseline a player would use, equal unfitted weights (I6). KS statistic 0.035143 at significance 0.567379 over 500 trials - the marginal distribution is uniform and the run passes. Warm run: zero posts on the two encoder slots (acceptance criterion 6), same seeded (submission, target) pairs as the text run c46466de. FINDING, the standing per-image commonness measurement continued: the conditional row returns in mixed mode. Mean p at decoy_count 219 (the six-member near-duplicate group, n=17) is 0.3057 (z -2.78), with 0.4041 at 223 (n=19) and 0.5134 at 224 (n=464). This sits between the sketch reference 0.2477 (ab193017) and the clean text row 0.4948 (c46466de), which is what a two-channel fusion of the known per-image commonness residual gives: the leak enters mostly through the outline channel, at half weight here. Mechanism and full measurement recorded in v2-dev-wit-c46466de - trial-level Spearman of target commonness against p is +0.4722 (outline) and +0.2053 (element). The Phase 4 source B commonness rebuild carries the acceptance criterion that this slope shrinks.",
   "preparation_version_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
   "provider_usage": {
     "sketch_encoder": {
@@ -32,9 +32,9 @@
       "posts": 0
     }
   },
-  "reviewer": "",
+  "reviewer": "ade",
   "scoring_config_hash": "f37830ae2420da4faebeff4e59a9c80db6adb40acfc276c36dff95a75415b908",
   "tag": "dev-wit",
   "trial_count": 500,
-  "verdict": "pending"
+  "verdict": "pass"
 }
