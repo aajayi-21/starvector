@@ -1,0 +1,39 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "e619c4b1d94340fcb559c374ca067a4ccbdd9cadbc7f0f25fd1f1bd4b39924ec",
+  "created_at": "2026-08-10T01:27:44.992525+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "98edabaf0d710750f8bb94ed080384392783fee874352c8c7c67777de1cf3ea4",
+  "date": "",
+  "dev_only": true,
+  "first_rank_fraction": 0.405,
+  "harness": "v1",
+  "harness_config_hash": "99c8b50838f17a383b8b969ecd95ee2b6ec73ba24d0f13fdb89e7e7a9d4ff9ce",
+  "index_id": "fd60d18f2ebe153be4fee7a0ab4287ed0c43e780cd8726feaeacb221e0965aa9",
+  "mean_trial_score": 0.956539,
+  "median_rank": 2.0,
+  "notes": "P2b iteration (binarize_threshold 0.50 to 0.40, spec docs/specs/linedraw-iteration.md, scan-ruled 2026-08-08). R4 comparison against v1-dev-wit-9d463458: first-rank 25.0% to 40.5%, top-ten 42.5% to 73.5%, median rank 25 to 2, mean trial score 0.781 to 0.957. Largest p08 component 43 to 6 members. V1 did not regress on any measure.",
+  "pair_count": 200,
+  "preparation_version_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
+  "provider_usage": {
+    "image_encoder": {
+      "cache_hits": 3,
+      "posts": 20
+    },
+    "line_drawer": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 1200,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002362,
+  "reference_top_ten": 0.023624,
+  "reviewer": "",
+  "scoring_config_hash": "38cca4e2b3b23b0d51b6eb72e4b736117e41e2d33e638065f22206ee8d6e5c81",
+  "tag": "dev-wit",
+  "top_ten_fraction": 0.735,
+  "verdict": "pending"
+}

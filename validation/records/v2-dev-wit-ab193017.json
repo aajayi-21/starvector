@@ -1,0 +1,31 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "e619c4b1d94340fcb559c374ca067a4ccbdd9cadbc7f0f25fd1f1bd4b39924ec",
+  "created_at": "2026-08-10T01:30:39.665568+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "98edabaf0d710750f8bb94ed080384392783fee874352c8c7c67777de1cf3ea4",
+  "date": "",
+  "decoy_count_max": 224,
+  "decoy_count_min": 219,
+  "dev_only": true,
+  "harness": "v2",
+  "harness_config_hash": "ab193017c498aa796297570c7da5b385a82eb54709b1e27c2a38f3d4cdff815e",
+  "index_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
+  "ks_significance": 0.385035,
+  "ks_statistic": 0.0405,
+  "mean_p_at_max_decoy_count": 0.516337,
+  "mean_p_at_min_decoy_count": 0.24765,
+  "notes": "P2b iteration, compared against v2-dev-wit-28a7484d: KS 0.0496 to 0.0405 (significance 0.171 to 0.385), overall mean p 0.5001. Conditional row: mean p 0.248 at D=219 (17 trials, the residual six-member group) against 0.516 at D=224 — the low-D footprint shrank from 110 to 36 trials of 500. The residual per-image effect follows low-commonness sparse-drawing targets and is the standing measurement for the next pool release (drawing-space curation, spec P2b section 8).",
+  "preparation_version_id": "f24e0b9e90032d623fc25fe9b125e81d28960de67acd82b569b092d416d666ea",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 1500,
+      "posts": 0
+    }
+  },
+  "reviewer": "",
+  "scoring_config_hash": "38cca4e2b3b23b0d51b6eb72e4b736117e41e2d33e638065f22206ee8d6e5c81",
+  "tag": "dev-wit",
+  "trial_count": 500,
+  "verdict": "pending"
+}
