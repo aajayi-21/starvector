@@ -136,7 +136,7 @@ The identity of the target enters the system for the first time at Layer 8.
 
 Raw similarity numbers are meaningless. A similarity of 0.71 tells a player nothing, and any fixed threshold can be gamed by matching what's common in the pool rather than what's in the target. The output is where the target landed in a sorted list.
 
-**Useful consequence:** any adjustment that depends only on the submission cannot change the sorted order, and is therefore free. Standardizing is one such adjustment. Anything that depends on the *image* — commonness correction, for instance — does change the order and is genuinely part of the scoring method.
+**Useful consequence:** any *additive* adjustment that depends only on the submission cannot change the sorted order, and is therefore free. The qualifier is load-bearing: a submission-only *multiplicative* factor applied before the commonness correction rescales `raw` against the image-dependent baseline in `2 × raw − common(x)`, and does change the order — the Phase 4 review measured this defect in the placement channel's first form. Standardizing comes after the correction and stays free. Anything that depends on the *image* — commonness correction, for instance — does change the order and is genuinely part of the scoring method.
 
 ### Rule 3 — The target must be indistinguishable from the decoys
 

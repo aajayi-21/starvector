@@ -712,6 +712,12 @@ def scoring_config_hash(
             f"provider_config_hashes must have keys {list(SCORING_SLOT_NAMES)}")
     config_document = config_to_json_value(config)
     del config_document["runtime"]
+    # fit_record is provenance: it names the weights' source and moves
+    # no score, thus it stays out of the artifact key — a label
+    # correction after the freeze must not fork each artifact
+    # directory (ruling 2026-08-10).
+    config_document["fusion"] = {
+        "weights": config_document["fusion"]["weights"]}
     document: dict[str, JsonValue] = {
         "config": config_document,
         "provider_config_hashes": {

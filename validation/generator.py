@@ -176,7 +176,12 @@ def synthetic_submission(index: PoolIndex, position: int, level: LevelRow,
     for entry in picked:
         text = index.vocabulary[entry]
         if level.generalize_p > 0.0 and rng.random() < level.generalize_p:
-            text = table.get(text, text)
+            if text not in table:
+                raise ValueError(
+                    f"the generalization table misses {text!r} — a "
+                    "partial table gives a weaker degradation than the "
+                    "level states")
+            text = table[text]
         impressions.append(text)
     for entry in _noise_entries(index, position, level.n_noise, rng):
         impressions.append(index.vocabulary[entry])
@@ -217,6 +222,11 @@ def synthetic_submission(index: PoolIndex, position: int, level: LevelRow,
                          for v in index.box_table[position, second_slot]]
                 label_b = index.vocabulary[
                     int(index.incidence[position, second_slot])]
+                # Equal box centers give the axis rule no honest
+                # label: the pair emits no relation (D3).
+                if (box_a[0] + box_a[2] == box_b[0] + box_b[2]
+                        and box_a[1] + box_a[3] == box_b[1] + box_b[3]):
+                    continue
             first_id = add_group(label_a, box_a)
             second_id = add_group(label_b, box_b)
             relations.append({

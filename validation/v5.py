@@ -122,6 +122,15 @@ def run_v5(config: ScoringConfig, fit_config: FitConfig, *,
         scoring_config_hash=scoring_hash,
         commonness_config_hash=commonness_hash)
 
+    # A constant table has no rank correlation. The stop comes
+    # before the trial loops, not after their cost is spent.
+    for name in sorted(context.commonness):
+        stored = context.commonness[name]
+        if float(stored.max()) == float(stored.min()):
+            raise ValueError(
+                f"the {name} commonness table is constant — the slope "
+                "has no value, and the run stops before the trial loops")
+
     # Concentration: each background submission's fused top ten.
     count = len(loaded.index.image_ids)
     appearances = np.zeros(count, dtype=np.int64)
@@ -208,6 +217,7 @@ def run_v5(config: ScoringConfig, fit_config: FitConfig, *,
         "slope_trial_count": len(scores),
         "commonness_slopes": slopes,
         "phase3_reference_slopes": {"outline": 0.4722, "element": 0.2053},
+        "commonness_contributors": dict(tables.contributors),
     }
     directory = harness.validation_dir(data_root, "v5",
                                        loaded.index.index_id, harness_hash)

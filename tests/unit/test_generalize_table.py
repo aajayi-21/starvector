@@ -80,3 +80,26 @@ def test_a_new_vocabulary_forks_the_table_key(tmp_path) -> None:
 def test_the_table_hash_reads_the_content() -> None:
     assert table_hash({"a": "b"}) != table_hash({"a": "c"})
     assert vocabulary_digest(("a", "b")) != vocabulary_digest(("a", "c"))
+
+def test_the_stored_table_path_refuses_a_side_effect_build(tmp_path) -> None:
+    # The build is a deliberate owner step (spec P4 §17a item 7): a
+    # harness with no generalizer must stop, not spend the posts.
+    from tests.conftest import make_pool_index
+    from validation import harness
+
+    import numpy as np
+
+    dimension = 4
+    ids = ("a" * 64,)
+    index = make_pool_index(
+        index_id="f" * 64, image_ids=ids,
+        outline_vectors=np.zeros((1, 6, dimension), dtype=np.float32),
+        outline_space_mean=np.zeros(dimension, dtype=np.float32),
+        group_ids=ids,
+        pool_image_count=1, vocabulary=VOCABULARY,
+        pool_frequency=(1,) * len(VOCABULARY),
+        vocabulary_vectors=np.ones((3, dimension), dtype=np.float32),
+        incidence=np.zeros((1, 1), dtype=np.int32),
+        element_space_mean=np.zeros(dimension, dtype=np.float32))
+    with pytest.raises(ValueError, match="validation.generalize"):
+        harness.stored_table(index, _fit_config(), tmp_path, None)

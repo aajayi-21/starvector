@@ -77,14 +77,23 @@ class FitSection:
 
 @dataclass(frozen=True, slots=True)
 class HarnessSection:
-    """The V3 and V6 run sizes and seeds (D10)."""
+    """The V3 and V6 run values (D10, amended 2026-08-10).
+
+    v3_bootstrap_count and v3_interval shape the V3 gate verdict, and
+    v6_levels names the degradation levels V6 reads — the review
+    found them hardcoded with no spec source, and the ruling put them
+    here, hashed with the full fit config.
+    """
 
     v3_trials_for_each_level: int
     v3_seed: int
+    v3_bootstrap_count: int
+    v3_interval: float
     v6_trial_count: int
     v6_seed: int
     v6_tier1_widths: tuple[int, ...]
     v6_tier2_widths: tuple[int, ...]
+    v6_levels: tuple[int, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,20 +205,43 @@ def parse_fit_config(raw: object, source: str = "fit-config") -> FitConfig:
         v3_trials_for_each_level=harness_node.int_(
             "v3_trials_for_each_level", minimum=1),
         v3_seed=harness_node.any_int("v3_seed"),
+        v3_bootstrap_count=harness_node.int_("v3_bootstrap_count",
+                                             minimum=1),
+        v3_interval=harness_node.float_("v3_interval", low=0.0, high=1.0,
+                                        low_open=True),
         v6_trial_count=harness_node.int_("v6_trial_count", minimum=1),
         v6_seed=harness_node.any_int("v6_seed"),
         v6_tier1_widths=_width_tuple(
             harness_node._take("v6_tier1_widths"), "harness.v6_tier1_widths"),
         v6_tier2_widths=_width_tuple(
             harness_node._take("v6_tier2_widths"), "harness.v6_tier2_widths"),
+        v6_levels=_level_tuple(
+            harness_node._take("v6_levels"), "harness.v6_levels"),
     )
     harness_node.finish()
+    out_of_range = [level for level in harness.v6_levels
+                    if level >= len(generator.levels)]
+    if out_of_range:
+        raise ConfigError(
+            f"harness.v6_levels: {out_of_range} name no generator level")
 
     tag = root.str_("tag")
     root.finish()
     return FitConfig(config_version=version, generator=generator,
                      generalize=generalize, openrouter=openrouter, fit=fit,
                      harness=harness, tag=tag)
+
+
+def _level_tuple(raw: object, where: str) -> tuple[int, ...]:
+    """Ascending level indexes, zero permitted, with no two equal."""
+    if (not isinstance(raw, list) or not raw
+            or any(isinstance(v, bool) or not isinstance(v, int) or v < 0
+                   for v in raw)):
+        raise ConfigError(f"{where}: expected level indexes of zero or more")
+    levels = tuple(raw)
+    if any(levels[i] >= levels[i + 1] for i in range(len(levels) - 1)):
+        raise ConfigError(f"{where}: levels must be strictly ascending")
+    return levels
 
 
 def _width_tuple(raw: object, where: str) -> tuple[int, ...]:
@@ -272,10 +304,13 @@ def fit_config_to_json_value(config: FitConfig) -> dict[str, JsonValue]:
         "harness": {
             "v3_trials_for_each_level": config.harness.v3_trials_for_each_level,
             "v3_seed": config.harness.v3_seed,
+            "v3_bootstrap_count": config.harness.v3_bootstrap_count,
+            "v3_interval": config.harness.v3_interval,
             "v6_trial_count": config.harness.v6_trial_count,
             "v6_seed": config.harness.v6_seed,
             "v6_tier1_widths": list(config.harness.v6_tier1_widths),
             "v6_tier2_widths": list(config.harness.v6_tier2_widths),
+            "v6_levels": list(config.harness.v6_levels),
         },
         "tag": config.tag,
     }

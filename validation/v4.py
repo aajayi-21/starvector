@@ -44,10 +44,15 @@ def _grid_for(channels: tuple[str, ...],
 def _best(grid: list[dict[str, float]],
           objective: Callable[[Mapping[str, float]], float],
           ) -> tuple[dict[str, float], float]:
+    """The first grid point with the highest quantized objective.
+
+    The quantized compare matches the fit's _winner rule (ruling
+    2026-08-10) — two selectors on one objective must pick one point.
+    """
     best_weights = grid[0]
-    best_value = objective(grid[0])
+    best_value = harness.quantized(objective(grid[0]))
     for weights in grid[1:]:
-        value = objective(weights)
+        value = harness.quantized(objective(weights))
         if value > best_value:
             best_weights, best_value = weights, value
     return best_weights, best_value
@@ -106,6 +111,9 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
                              else harness.quantized(data.placement_signal)),
         "placement_ablation_line": fit_config.fit.ablation_line,
         "placement_earns_its_place": placement_earns,
+        "commonness_contributors": {
+            "union": dict(data.union_contributors),
+            "pool": dict(data.pool_contributors)},
     }
     directory = harness.validation_dir(data_root, "v4",
                                        data.pool_index.index_id,

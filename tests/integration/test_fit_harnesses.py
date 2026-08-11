@@ -44,8 +44,10 @@ FIT_DOCUMENT = {
             "line_points": 5, "simplex_step": 0.25, "signal_line": 0.65,
             "ablation_line": 0.01},
     "harness": {"v3_trials_for_each_level": 24, "v3_seed": 5,
+                "v3_bootstrap_count": 400, "v3_interval": 0.95,
                 "v6_trial_count": 24, "v6_seed": 6,
-                "v6_tier1_widths": [3, 10], "v6_tier2_widths": [1, 5]},
+                "v6_tier1_widths": [3, 10], "v6_tier2_widths": [1, 5],
+                "v6_levels": [0, 1]},
     "tag": "dev-test",
 }
 

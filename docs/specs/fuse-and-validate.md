@@ -278,6 +278,15 @@ there, which is what a weak player produces. The flag is config
 noise count, which corrupted level 1 too and halved the honest
 levels behind the D8 signal.
 
+Two geometry rules are part of the `synthetic-v1` rule itself, not
+config (ruling 2026-08-10): the noise box comes from the
+submission's RNG with its corner in [0, 0.7] and its side in
+[0.1, 0.3], each with equal probability across the interval — a
+change is a new rule version, not a knob. And a candidate pair with
+equal box centers emits no relation: the axis rule has no honest
+label there, and a coin-flip label can only pull the D8 signal
+down.
+
 This gives the placement channel labeled data with a known answer,
 and it is the only labeled source that produces RELATION atoms at
 all.
@@ -403,10 +412,13 @@ record with verdict fields, numbers not adjectives.
 
 - **V3 — monotone quality response** (R4, gate). Holdout synthetic
   submissions at each level, frozen weights. Report the mean trial
-  score for each level with a bootstrap interval. The gate clears
-  when each adjacent pair of level means is in sequence and level 4
-  sits in the interval around 0.5. An inversion is a gate failure,
-  not a note.
+  score for each level with a bootstrap interval — the resample
+  count and the interval level are fit config (`v3_bootstrap_count` and
+  `v3_interval`, ruling 2026-08-10), and the verdict reads the
+  quantized values the record shows. The gate clears when each
+  adjacent pair of level means is in sequence and level 4 sits in
+  the interval around 0.5. An inversion is a gate failure, not a
+  note.
 - **V4 — ablation** (R5). For each built channel: fit again on the
   fit split without it, report the holdout delta. The report feeds
   the placement cut criterion and stands as the record for a cut of
@@ -417,10 +429,12 @@ record with verdict fields, numbers not adjectives.
   the image-level commonness slope of the Phase 3 records — before and
   after the source B build (§12). V5 has no hard line in the
   architecture. The record is the owner's read of the tail.
-- **V6 — tier recall** (R7, D10). On labeled synthetic submissions,
-  the fraction of known targets in the tier-1 shortlist at widths
-  {10, 25, 50} and in the tier-2 head at {5, 10}. Dev-only numbers.
-  The 90% line applies to the production pool in Phase 5.
+- **V6 — tier recall** (R7, D10). On labeled synthetic submissions
+  at the fit config's `v6_levels` (the committed value reads levels
+  {0, 1}, ruling 2026-08-10), the fraction of known targets in the
+  tier-1 shortlist at widths {10, 25, 50} and in the tier-2 head at
+  {5, 10}. Dev-only numbers. The 90% line applies to the production
+  pool in Phase 5.
 - **Runs again with frozen weights** (gate). V1 mixed and V2 mixed
   run again in the fitted configuration: V1 must not regress against
   the equal-weight record by more than noise, and V2 must agree with
@@ -460,7 +474,12 @@ correction, not a tuning knob: record it and stop.
 ## 14. Artifacts, storage, cost
 
 - `data/generalization/<vocab[:8]>/<slot[:8]>/{table.jsonl, meta.json}`
-- `data/synthetic/<generator_hash[:8]>/<seed>/{submissions.jsonl, meta.json}`
+- Synthetic submission sets are **ephemeral by construction** (ruling
+  2026-08-10 — the stored `data/synthetic/` artifact this section
+  first named is withdrawn): a deterministic function of (generator hash,
+  seed, count), regenerated at use and stored nowhere — a stored
+  copy is a second source of truth that can drift. Each consuming
+  record holds the three identity values.
 - `data/validation/{v3,v4,v5,v6}/...` in the P2 layout. Fit records
   and harness records go in `validation/records/`.
 - **Development `POST` estimate (U1):** generalization table ~1,527
@@ -628,6 +647,33 @@ by the owner on 2026-08-10:
    the caller's weight table cannot shape the stored bytes. This
    amends the "each weighted channel" wording of P3 D11.
 
+The review's smaller findings closed with four more rulings, made
+2026-08-10 with the same procedure:
+
+5. **Synthetic sets are ephemeral by construction.** No
+   `data/synthetic/` artifact — the sets regenerate from (generator
+   hash, seed, count), and each consuming record holds those values
+   (§14).
+6. **The V3 bootstrap values and the V6 levels are fit config.**
+   `v3_bootstrap_count`, `v3_interval`, and `v6_levels` are hashed
+   fields, and the V3 verdict reads the quantized record values. The
+   noise-box geometry stays in the `synthetic-v1` rule (§8.3, §11).
+7. **The architecture's Rule 2 lemma gains its qualifier.** Additive
+   submission-only adjustments are free — multiplicative ones before
+   the commonness correction are not (`docs/ARCHITECTURE.md` §3,
+   with the P4 measurement).
+8. **`fusion.fit_record` stays out of `scoring_config_hash`.** The
+   field is provenance: it names the weights' source and moves no
+   score, thus a label correction after the freeze forks no
+   artifact directory. The weights themselves stay in the key.
+
+The guard code landed with these rulings: a union trial that activates
+placement stops loudly (item 6 above, the p07 message), the fit and
+the V3/V6 runs read the stored generalization table alone (item 7
+above — the build stays a deliberate owner step), a hole in the
+generalization table raises in the generator, and V5 stops on a
+constant table before it spends the trial loops.
+
 ## 18. Code layout
 
 ```
@@ -658,7 +704,9 @@ the fit code sees generators and datasets only (R1).
 2. The §15 unit, invariant, and integration tests are written and
    green, the fit-boundary scan with them.
 3. The generator reproduces byte-for-byte with a fixed seed, and
-   its artifacts hold config hashes and seeds (R11, R12).
+   each consuming record holds the generator hash, the seed, and the
+   count (R11, R12 — the sets are ephemeral by construction,
+   ruling 2026-08-10).
 4. A committed fit record holds the full curve, and the frozen
    weights in the configs match its winner (R3).
 5. V3 clears the monotone gate on holdout data with level 4 near

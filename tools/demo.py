@@ -35,7 +35,6 @@ from pipeline.context import build_scoring_context, load_pool_index
 from pipeline.score import Encoders, channel_scores, encode_submission
 from validation import harness
 from validation.fitconfig import FitConfig, load_fit_config, parse_fit_config
-from validation.generalize import ensure_table
 from validation.generator import SyntheticSubmission, synthetic_set
 
 # The fixture fit document for --fixture mode. These are demo fixture
@@ -62,8 +61,10 @@ _FIXTURE_FIT: dict = {
             "simplex_step": 0.25, "signal_line": 0.65,
             "ablation_line": 0.01},
     "harness": {"v3_trials_for_each_level": 4, "v3_seed": 5,
+                "v3_bootstrap_count": 200, "v3_interval": 0.95,
                 "v6_trial_count": 4, "v6_seed": 6,
-                "v6_tier1_widths": [3, 10], "v6_tier2_widths": [1, 5]},
+                "v6_tier1_widths": [3, 10], "v6_tier2_widths": [1, 5],
+                "v6_levels": [0, 1]},
     "tag": "demo-fixture",
 }
 
@@ -129,12 +130,11 @@ def demo_data(config: ScoringConfig, fit_config: FitConfig, *,
         placement=placement, weights=fusion_weights(config),
         commonness=tables.tables, scoring_config_hash=scoring_hash,
         commonness_config_hash=commonness_hash)
-    entry_count = len(loaded.index.pool_frequency)
-    table = ensure_table(
-        data_root=data_root,
-        vocabulary=loaded.index.vocabulary[:entry_count],
-        config=fit_config, clock=clock,
-        generalizer=providers.get("generalizer"))
+    # The stored table alone — the build is a deliberate owner step
+    # (spec P4 §17a item 7). Fixture mode gives a fake generalizer,
+    # thus its scratch build proceeds.
+    table = harness.stored_table(loaded.index, fit_config, data_root,
+                                 providers.get("generalizer"))
     return DemoData(context=context, encoders=encoders, table=table,
                     scoring_hash=scoring_hash,
                     commonness_hash=commonness_hash,

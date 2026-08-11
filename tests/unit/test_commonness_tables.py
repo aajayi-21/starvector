@@ -190,3 +190,49 @@ def test_an_unsorted_background_raises() -> None:
 def test_an_empty_background_raises() -> None:
     with pytest.raises(ValueError, match="background set is empty"):
         _build([])
+
+
+def _hash_config(**overrides):
+    from tests.conftest import make_scoring_config
+
+    return make_scoring_config("unused-record.json", **overrides)
+
+
+def test_the_key_enforces_the_two_sided_generator_identity(tmp_path) -> None:
+    from pipeline.commonness import commonness_config_hash
+
+    fit_path = tmp_path / "fit.json"
+    fit_path.write_text("{}", encoding="utf-8")
+    with_synthetic = _hash_config(
+        **{"commonness.background_count": 12,
+           "commonness.synthetic": {"fit_config": str(fit_path),
+                                    "count": 6, "seed": 17}})
+    plain = _hash_config()
+    with pytest.raises(ValueError, match="generator_hash"):
+        commonness_config_hash(with_synthetic, RENDER, "a" * 64, "b" * 64,
+                               "c" * 64, generator_hash=None)
+    with pytest.raises(ValueError, match="generator_hash"):
+        commonness_config_hash(plain, RENDER, "a" * 64, "b" * 64,
+                               "c" * 64, generator_hash="d" * 64)
+
+
+def test_the_source_b_identity_moves_the_key(tmp_path) -> None:
+    from pipeline.commonness import commonness_config_hash
+
+    fit_path = tmp_path / "fit.json"
+    fit_path.write_text("{}", encoding="utf-8")
+    with_synthetic = _hash_config(
+        **{"commonness.background_count": 12,
+           "commonness.synthetic": {"fit_config": str(fit_path),
+                                    "count": 6, "seed": 17}})
+    plain = _hash_config()
+    base = commonness_config_hash(plain, RENDER, "a" * 64, "b" * 64,
+                                  "c" * 64)
+    first = commonness_config_hash(with_synthetic, RENDER, "a" * 64,
+                                   "b" * 64, "c" * 64,
+                                   generator_hash="d" * 64)
+    second = commonness_config_hash(with_synthetic, RENDER, "a" * 64,
+                                    "b" * 64, "c" * 64,
+                                    generator_hash="e" * 64)
+    assert base != first
+    assert first != second

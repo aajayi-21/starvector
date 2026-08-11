@@ -43,8 +43,10 @@ _FIT_DOCUMENT = {
             "simplex_step": 0.25, "signal_line": 0.65,
             "ablation_line": 0.01},
     "harness": {"v3_trials_for_each_level": 4, "v3_seed": 5,
+                "v3_bootstrap_count": 200, "v3_interval": 0.95,
                 "v6_trial_count": 4, "v6_seed": 6,
-                "v6_tier1_widths": [2, 4], "v6_tier2_widths": [1, 2]},
+                "v6_tier1_widths": [2, 4], "v6_tier2_widths": [1, 2],
+                "v6_levels": [0, 1]},
     "tag": "dev-test",
 }
 
@@ -238,3 +240,29 @@ def test_an_impossible_noise_draw_raises() -> None:
     with pytest.raises(ValueError, match="no noise entry is possible"):
         synthetic_submission(one_image, 0, config.generator.levels[2],
                              TABLE, PLACEMENT, rng)
+
+
+def test_equal_box_centers_emit_no_relation() -> None:
+    index = _index()
+    boxes = index.box_table.copy()
+    for slot in range(4):
+        boxes[2, slot] = (0.2, 0.2, 0.5, 0.5)
+    same_centers = dataclasses.replace(index, box_table=boxes)
+    config = _fit_config()
+    for seed in range(4):
+        rng = np.random.default_rng(seed)
+        record = synthetic_submission(same_centers, 2,
+                                      config.generator.levels[0],
+                                      TABLE, PLACEMENT, rng)
+        # The axis rule has no honest label on equal centers (D3):
+        # each candidate pair skips, and no relation goes out.
+        assert record["relations"] == []
+
+
+def test_a_generalization_table_gap_raises() -> None:
+    index = _index()
+    config = _fit_config()
+    rng = np.random.default_rng(1)
+    with pytest.raises(ValueError, match="misses"):
+        synthetic_submission(index, 2, config.generator.levels[1], {},
+                             PLACEMENT, rng)

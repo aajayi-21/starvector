@@ -28,13 +28,8 @@ from pipeline.score import encode_submission
 from pool.artifacts import write_json_pretty
 from validation import harness
 from validation.fitconfig import FitConfig, fit_config_hash, load_fit_config
-from validation.generalize import ensure_table
 from validation.generator import synthetic_set
 from validation.v3 import fit_harness_hash
-
-# V6 reads the informative levels alone: recall of a noise
-# submission's source image measures nothing.
-_LEVELS = (0, 1)
 
 
 def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
@@ -60,18 +55,20 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
     placement = placement_config(config)
 
     entry_count = len(loaded.index.pool_frequency)
-    table = ensure_table(
-        data_root=data_root,
-        vocabulary=loaded.index.vocabulary[:entry_count],
-        config=fit_config, clock=clock,
-        generalizer=providers.get("generalizer"))
+    # The stored table alone — the build is a deliberate owner step
+    # (spec P4 §17a item 7).
+    table = harness.stored_table(loaded.index, fit_config, data_root,
+                                 providers.get("generalizer"))
 
     position_of = {image_id: position for position, image_id
                    in enumerate(loaded.index.image_ids)}
     tier1_hits = {width: 0 for width in fit_config.harness.v6_tier1_widths}
     tier2_hits = {width: 0 for width in fit_config.harness.v6_tier2_widths}
     trial_count = 0
-    for level in _LEVELS:
+    # The levels V6 reads come from the fit config (ruling
+    # 2026-08-10): recall of a noise submission's source image
+    # measures nothing, thus the committed value names levels 0 and 1.
+    for level in fit_config.harness.v6_levels:
         rows = synthetic_set(
             loaded.index, fit_config, table, placement,
             seed=fit_config.harness.v6_seed,
@@ -110,7 +107,7 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
 
     aggregates: dict[str, JsonValue] = {
         "trial_count": trial_count,
-        "levels": list(_LEVELS),
+        "levels": list(fit_config.harness.v6_levels),
         "tier1_recall": {
             str(width): harness.quantized(tier1_hits[width] / trial_count)
             for width in fit_config.harness.v6_tier1_widths},
