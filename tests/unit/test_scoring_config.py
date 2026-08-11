@@ -135,3 +135,22 @@ def test_the_hash_needs_exactly_the_three_slot_names() -> None:
     with pytest.raises(ValueError, match="text_encoder"):
         scoring_config_hash(config, {"sketch_encoder": "a" * 64,
                                      "sketch_pairs": "b" * 64})
+
+
+def test_the_hash_ignores_the_fit_record_and_reads_the_weights() -> None:
+    # fit_record is provenance (ruling 2026-08-10): a label
+    # correction after the freeze must not fork the artifact keys.
+    hashes = {"sketch_encoder": "a" * 64, "sketch_pairs": "b" * 64,
+              "text_encoder": "c" * 64}
+    base = scoring_config_hash(parse_scoring_config(_base(), "test"), hashes)
+    labeled = parse_scoring_config(
+        scoring_config_dict(
+            RECORD,
+            **{"fusion.fit_record": "validation/records/fit-x.json"}),
+        "test")
+    assert scoring_config_hash(labeled, hashes) == base
+    weighted = parse_scoring_config(
+        scoring_config_dict(RECORD, **{"fusion.weights": {"outline": 2.0,
+                                                          "element": 1.0}}),
+        "test")
+    assert scoring_config_hash(weighted, hashes) != base

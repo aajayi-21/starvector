@@ -28,12 +28,8 @@ from pipeline.score import score_trial
 from pool.artifacts import write_json_pretty, write_jsonl
 from validation import harness
 from validation.fitconfig import FitConfig, fit_config_hash, load_fit_config
-from validation.generalize import ensure_table
-from validation.generator import synthetic_set
-
-# Bootstrap resamples for the level-mean intervals. Seeded, thus two
-# runs give equal intervals.
-_BOOTSTRAP = 2000
+from validation.generalize import table_hash, vocabulary_digest
+from validation.generator import generator_config_hash, synthetic_set
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,24 +50,40 @@ def fit_harness_hash(name: str, scoring_hash: str, fit_hash: str) -> str:
     }))
 
 
-def bootstrap_interval(values: list[float], seed: int,
-                       ) -> tuple[float, float]:
-    """A seeded 95% bootstrap interval around the mean."""
+def bootstrap_interval(values: list[float], seed: int, count: int,
+                       interval: float) -> tuple[float, float]:
+    """A seeded bootstrap interval around the mean.
+
+    count resamples at the stated interval level — the two come from
+    the fit config (ruling 2026-08-10), thus the values that shape
+    the gate verdict are hashed, not hardcoded.
+    """
     rng = np.random.default_rng(seed)
     array = np.asarray(values, dtype=np.float64)
     means = np.sort([
         float(array[rng.integers(0, len(array), len(array))].mean())
-        for _ in range(_BOOTSTRAP)])
-    return (float(means[int(0.025 * _BOOTSTRAP)]),
-            float(means[int(0.975 * _BOOTSTRAP)]))
+        for _ in range(count)])
+    tail = (1.0 - interval) / 2.0
+    # The rounded index stays accurate when tail * count lands a
+    # float ulp low of an integer — a plain int() cut the low bound
+    # short at some (interval, count) values.
+    low_index = min(count - 1, int(round(tail * count)))
+    high_index = min(count - 1, int(round((1.0 - tail) * count)))
+    return (float(means[low_index]), float(means[high_index]))
 
 
 def monotone_verdict(levels: list[V3Level]) -> tuple[bool, bool]:
-    """The two R4 checks: adjacent means in sequence, top near 0.5."""
-    ordered = all(levels[i].mean_p > levels[i + 1].mean_p
-                  for i in range(len(levels) - 1))
+    """The two R4 checks: adjacent means in sequence, top near 0.5.
+
+    The checks read the quantized values the record shows (ruling
+    2026-08-10) — a verdict computed on digits the record rounds away
+    can contradict the recorded numbers.
+    """
+    means = [harness.quantized(row.mean_p) for row in levels]
+    ordered = all(means[i] > means[i + 1] for i in range(len(means) - 1))
     top = levels[-1]
-    control_at_half = top.low <= 0.5 <= top.high
+    control_at_half = (harness.quantized(top.low) <= 0.5
+                       <= harness.quantized(top.high))
     return ordered, control_at_half
 
 
@@ -105,12 +117,20 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
     gates = intake_gates(config)
     placement = placement_config(config)
 
+    # The stored table alone: the ~1,527-post build is a deliberate
+    # owner step, not a harness side effect (spec P4 §17a,
+    # build-settled item 7).
+    table = harness.stored_table(loaded.index, fit_config, data_root,
+                                 providers.get("generalizer"))
+    # The identity of the trial sets this run scores (§14): the level
+    # table, the stored table content, and the placement values —
+    # this is what the record must pin. The background lineage is in
+    # the commonness hash, with no second copy.
     entry_count = len(loaded.index.pool_frequency)
-    table = ensure_table(
-        data_root=data_root,
-        vocabulary=loaded.index.vocabulary[:entry_count],
-        config=fit_config, clock=clock,
-        generalizer=providers.get("generalizer"))
+    trial_generator_hash = generator_config_hash(
+        fit_config,
+        vocabulary_digest(loaded.index.vocabulary[:entry_count]),
+        table_hash(table), placement)
 
     def background() -> list[tuple[str, JsonValue]]:
         return harness.full_background(
@@ -153,15 +173,21 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         values = []
         for row in rows:
             trial = score_trial(row.record, row.image_id, context, encoders)
-            values.append(trial.p)
+            # The quantized value feeds the row, the mean, and the
+            # interval alike, thus a reviewer recomputing the means
+            # from trials.jsonl lands on the recorded numbers.
+            p_value = harness.quantized(trial.p)
+            values.append(p_value)
             trial_rows.append({
                 "key": row.key, "level": level_index,
-                "p": harness.quantized(trial.p),
+                "p": p_value,
                 "decoy_count": trial.decoy_count,
                 "beaten": trial.beaten, "tied": trial.tied,
             })
         low, high = bootstrap_interval(
-            values, fit_config.harness.v3_seed + level_index)
+            values, fit_config.harness.v3_seed + level_index,
+            fit_config.harness.v3_bootstrap_count,
+            fit_config.harness.v3_interval)
         level_rows.append(V3Level(
             level=level_index, trial_count=len(values),
             mean_p=float(np.mean(values)), low=low, high=high))
@@ -177,6 +203,12 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         ],
         "monotone": ordered,
         "control_at_half": control_at_half,
+        "bootstrap_count": fit_config.harness.v3_bootstrap_count,
+        "bootstrap_interval": fit_config.harness.v3_interval,
+        # D13: how many background submissions each channel's
+        # commonness mean ranges across — in the record, thus the
+        # reviewer sees it at verdict time.
+        "commonness_contributors": dict(tables.contributors),
     }
 
     directory = harness.validation_dir(data_root, "v3",
@@ -190,7 +222,7 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         "scoring_config_hash": scoring_hash,
         "fit_config_hash": fit_hash,
         "commonness_config_hash": commonness_hash,
-        "generator_config_hash": generator_hash,
+        "generator_config_hash": trial_generator_hash,
         "created_at": clock(),
         "code_version": code_version,
     }
@@ -206,6 +238,9 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         "scoring_config_hash": scoring_hash,
         "fit_config_hash": fit_hash,
         "commonness_config_hash": commonness_hash,
+        "generator_config_hash": trial_generator_hash,
+        "synthetic_seed": fit_config.harness.v3_seed,
+        "synthetic_count": fit_config.harness.v3_trials_for_each_level,
         "preparation_version_id": loaded.record.preparation_version_id,
         "fusion_weights": dict(config.fusion.weights),
         "fusion_weights_fitted": config.fusion.fit_record is not None,

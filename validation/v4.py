@@ -44,10 +44,15 @@ def _grid_for(channels: tuple[str, ...],
 def _best(grid: list[dict[str, float]],
           objective: Callable[[Mapping[str, float]], float],
           ) -> tuple[dict[str, float], float]:
+    """The first grid point with the highest quantized objective.
+
+    The quantized compare matches the fit's _winner rule (ruling
+    2026-08-10) — two selectors on one objective must pick one point.
+    """
     best_weights = grid[0]
-    best_value = objective(grid[0])
+    best_value = harness.quantized(objective(grid[0]))
     for weights in grid[1:]:
-        value = objective(weights)
+        value = harness.quantized(objective(weights))
         if value > best_value:
             best_weights, best_value = weights, value
     return best_weights, best_value
@@ -75,16 +80,20 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
     full_weights, _ = _best(_grid_for(full_set, fit_config), objective)
     full_holdout = holdout(full_weights)
 
+    full_quantized = harness.quantized(full_holdout)
     ablations: list[dict[str, JsonValue]] = []
     for name in full_set:
         remaining = tuple(other for other in full_set if other != name)
         weights, _ = _best(_grid_for(remaining, fit_config), objective)
-        value = holdout(weights)
+        value = harness.quantized(holdout(weights))
+        # The cost is the difference of the two recorded values, thus
+        # the three record fields agree (ruling 2026-08-10 on
+        # quantized verdicts).
         ablations.append({
             "removed": name,
             "refit_weights": weights,
-            "holdout_objective": harness.quantized(value),
-            "cost": harness.quantized(full_holdout - value),
+            "holdout_objective": value,
+            "cost": harness.quantized(full_quantized - value),
             "readable_trials": counts(weights),
         })
 
@@ -99,13 +108,16 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
         "channel_set": list(full_set),
         "objective_basis": basis,
         "full_weights": full_weights,
-        "full_holdout_objective": harness.quantized(full_holdout),
+        "full_holdout_objective": full_quantized,
         "ablations": ablations,
         "placement_alive": data.placement_alive,
         "placement_signal": (None if data.placement_signal is None
                              else harness.quantized(data.placement_signal)),
         "placement_ablation_line": fit_config.fit.ablation_line,
         "placement_earns_its_place": placement_earns,
+        "commonness_contributors": {
+            "union": dict(data.union_contributors),
+            "pool": dict(data.pool_contributors)},
     }
     directory = harness.validation_dir(data_root, "v4",
                                        data.pool_index.index_id,
@@ -118,6 +130,8 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
         "harness_config_hash": harness_hash,
         "scoring_config_hash": data.scoring_hash,
         "fit_config_hash": data.fit_hash,
+        "commonness_config_hash": data.commonness_hash,
+        "generator_config_hash": data.generator_hash,
         "created_at": clock(),
         "code_version": code_version,
     }
@@ -132,6 +146,10 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
         "harness_config_hash": harness_hash,
         "scoring_config_hash": data.scoring_hash,
         "fit_config_hash": data.fit_hash,
+        "commonness_config_hash": data.commonness_hash,
+        "generator_config_hash": data.generator_hash,
+        "synthetic_seed": fit_config.fit.synthetic_seed,
+        "synthetic_count": fit_config.fit.synthetic_count,
         "preparation_version_id": data.preparation_version_id,
         "created_at": clock(),
         "code_version": code_version,

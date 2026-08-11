@@ -15,7 +15,7 @@ player submissions. The fit-boundary scan test pins the import set.
 import argparse
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from core.canonical import JsonValue, sha256_hex
@@ -38,7 +38,7 @@ from pool.preparation.config import load_preparation_config
 from pool.preparation.run import wire_slot
 from validation import harness
 from validation.fitconfig import FitConfig, fit_config_hash, load_fit_config
-from validation.generalize import ensure_table, table_hash, vocabulary_digest
+from validation.generalize import table_hash, vocabulary_digest
 from validation.generator import generator_config_hash, synthetic_set
 from validation.splits import selection_key, split_of
 from validation.v1 import _check_shared_space, build_union_index
@@ -53,11 +53,16 @@ class LabeledTrial:
     of them with candidate weights and ranks. The channel set can be
     different between trials (a level 3 synthetic has no relations), and
     the fusion denominator handles that, as always (I5).
+
+    level is the degradation level of a synthetic trial and None for
+    a dataset pair — the D8 strong-trial filter reads it from the
+    trial itself, thus no positional pairing can drift.
     """
 
     key: str
     standardized: Mapping[ChannelName, PoolScores]
     label: str
+    level: int | None = None
 
 
 def standardized_scores(record: JsonValue, context: ScoringContext,
@@ -242,6 +247,9 @@ class FitData:
     preparation_version_id: str
     fit_pair_count: int
     holdout_pair_count: int
+    v1_pair_count: int
+    union_contributors: Mapping[ChannelName, int]
+    pool_contributors: Mapping[ChannelName, int]
 
 
 def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
@@ -308,13 +316,11 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
 
     # Source 2: labeled synthetic sets, plain pool, seed-disjoint
     # halves (spec section 10.1). Built before the commonness thunks
-    # so a missing generalization table stops the run first.
+    # so a missing generalization table stops the run first — the
+    # table build is a deliberate owner step (spec P4 §17a item 7).
     entry_count = len(loaded.index.pool_frequency)
-    table = ensure_table(
-        data_root=data_root,
-        vocabulary=loaded.index.vocabulary[:entry_count],
-        config=fit_config, clock=clock,
-        generalizer=providers.get("generalizer"))
+    table = harness.stored_table(loaded.index, fit_config, data_root,
+                                 providers.get("generalizer"))
     fit_synthetic = synthetic_set(
         loaded.index, fit_config, table, placement,
         seed=fit_config.fit.synthetic_seed,
@@ -378,17 +384,34 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         [(key, harness.submission_record(pairs[key], "mixed"),
           sha256_hex(pairs[key].photo_bytes)) for key in holdout_keys],
         union_context, encoders)
-    source2_fit = _labeled_trials(
-        [(row.key, row.record, row.image_id) for row in fit_synthetic],
-        pool_context, encoders)
-    source2_holdout = _labeled_trials(
-        [(row.key, row.record, row.image_id) for row in holdout_synthetic],
-        pool_context, encoders)
+    # The union photographs hold no boxes (spec P4 §17a,
+    # build-settled item 6): a
+    # union trial that activates placement scores relations against
+    # geometry that is not there, and the run stops loudly.
+    for trial in (*source1_fit, *source1_holdout):
+        if "placement" in trial.standardized:
+            raise ValueError(
+                f"union trial {trial.key} activates placement, and the "
+                "union photographs hold no boxes — build photograph "
+                "boxes through the p07 slot first (spec P4 §17a item 6)")
+    source2_fit = [
+        replace(trial, level=row.level)
+        for trial, row in zip(_labeled_trials(
+            [(row.key, row.record, row.image_id) for row in fit_synthetic],
+            pool_context, encoders), fit_synthetic)]
+    source2_holdout = [
+        replace(trial, level=row.level)
+        for trial, row in zip(_labeled_trials(
+            [(row.key, row.record, row.image_id)
+             for row in holdout_synthetic],
+            pool_context, encoders), holdout_synthetic)]
 
     # The placement signal test (D8, first half): placement alone on
-    # the strong-level holdout synthetics that name a relation.
-    strong = [trial for trial, row in zip(source2_holdout, holdout_synthetic)
-              if row.level <= 1 and "placement" in trial.standardized]
+    # the strong-level holdout synthetics that name a relation. The
+    # level comes from the trial itself, not a positional pairing.
+    strong = [trial for trial in source2_holdout
+              if trial.level is not None and trial.level <= 1
+              and "placement" in trial.standardized]
     placement_signal = None
     if strong:
         placement_signal = mean_trial_score(
@@ -411,10 +434,13 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         generator_hash=generator_config_hash(
             fit_config,
             vocabulary_digest(loaded.index.vocabulary[:entry_count]),
-            table_hash(table), placement.area_cap),
+            table_hash(table), placement),
         preparation_version_id=loaded.record.preparation_version_id,
         fit_pair_count=len(fit_keys),
         holdout_pair_count=len(holdout_keys),
+        v1_pair_count=scoring.validation.v1_pair_count,
+        union_contributors=dict(union_tables.contributors),
+        pool_contributors=dict(pool_tables.contributors),
     )
 
 
@@ -510,7 +536,14 @@ def run_fit(scoring: ScoringConfig, fit_config: FitConfig, *,
         "preparation_version_id": data.preparation_version_id,
         "fit_pair_count": data.fit_pair_count,
         "holdout_pair_count": data.holdout_pair_count,
+        # The fit-tail split starts after the recorded gate pairs,
+        # thus the record pins the boundary value it was cut with.
+        "v1_pair_count": data.v1_pair_count,
+        "synthetic_seed": fit_config.fit.synthetic_seed,
         "synthetic_count": fit_config.fit.synthetic_count,
+        "commonness_contributors": {
+            "union": dict(data.union_contributors),
+            "pool": dict(data.pool_contributors)},
         "curve": curve,
         "winner": winner,
         "objective_basis": basis,

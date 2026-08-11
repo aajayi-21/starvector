@@ -43,8 +43,10 @@ _FIT_DOCUMENT = {
             "simplex_step": 0.25, "signal_line": 0.65,
             "ablation_line": 0.01},
     "harness": {"v3_trials_for_each_level": 4, "v3_seed": 5,
+                "v3_bootstrap_count": 200, "v3_interval": 0.95,
                 "v6_trial_count": 4, "v6_seed": 6,
-                "v6_tier1_widths": [2, 4], "v6_tier2_widths": [1, 2]},
+                "v6_tier1_widths": [2, 4], "v6_tier2_widths": [1, 2],
+                "v6_levels": [0, 1]},
     "tag": "dev-test",
 }
 
@@ -183,12 +185,19 @@ def test_the_emitted_relation_agrees_with_the_group_boxes() -> None:
 
 def test_the_generator_hash_moves_with_its_determinants() -> None:
     config = _fit_config()
-    base = generator_config_hash(config, "a" * 64, "b" * 64, 0.9)
-    assert generator_config_hash(config, "c" * 64, "b" * 64, 0.9) != base
-    assert generator_config_hash(config, "a" * 64, "d" * 64, 0.9) != base
-    # The relation sampler reads the area cap, thus the cap is part
-    # of the generator identity.
-    assert generator_config_hash(config, "a" * 64, "b" * 64, 0.8) != base
+    base = generator_config_hash(config, "a" * 64, "b" * 64, PLACEMENT)
+    assert generator_config_hash(config, "c" * 64, "b" * 64,
+                                 PLACEMENT) != base
+    assert generator_config_hash(config, "a" * 64, "d" * 64,
+                                 PLACEMENT) != base
+    # The relation sampler reads the area cap and the margin, thus
+    # the two are part of the generator identity.
+    assert generator_config_hash(
+        config, "a" * 64, "b" * 64,
+        PLACEMENT._replace(area_cap=0.8)) != base
+    assert generator_config_hash(
+        config, "a" * 64, "b" * 64,
+        PLACEMENT._replace(margin=0.2)) != base
     moved = {**_FIT_DOCUMENT,
              "generator": {"levels": [
                  {"n_atoms": 4, "generalize_p": 0.0, "n_noise": 0,
@@ -197,7 +206,8 @@ def test_the_generator_hash_moves_with_its_determinants() -> None:
                    in _FIT_DOCUMENT["generator"]["levels"][1:]],
              ]}}
     other = parse_fit_config(moved, "test-fit")
-    assert generator_config_hash(other, "a" * 64, "b" * 64, 0.9) != base
+    assert generator_config_hash(other, "a" * 64, "b" * 64,
+                                 PLACEMENT) != base
 
 
 def test_an_uncorrupted_relation_level_names_the_source_image() -> None:
@@ -238,3 +248,33 @@ def test_an_impossible_noise_draw_raises() -> None:
     with pytest.raises(ValueError, match="no noise entry is possible"):
         synthetic_submission(one_image, 0, config.generator.levels[2],
                              TABLE, PLACEMENT, rng)
+
+
+def test_center_distances_below_the_margin_emit_no_relation() -> None:
+    index = _index()
+    boxes = index.box_table.copy()
+    # Four boxes with one mathematical center and different sizes:
+    # their float32 sums are not equal in representation, which a
+    # float-equality skip let through with a rounding-decided label.
+    # The margin rule closes the full class (D3, amended).
+    for slot in range(4):
+        half = 0.05 + 0.03 * slot
+        boxes[2, slot] = (0.35 - half, 0.35 - half,
+                          0.35 + half, 0.35 + half)
+    same_centers = dataclasses.replace(index, box_table=boxes)
+    config = _fit_config()
+    for seed in range(6):
+        rng = np.random.default_rng(seed)
+        record = synthetic_submission(same_centers, 2,
+                                      config.generator.levels[0],
+                                      TABLE, PLACEMENT, rng)
+        assert record["relations"] == []
+
+
+def test_a_generalization_table_gap_raises() -> None:
+    index = _index()
+    config = _fit_config()
+    rng = np.random.default_rng(1)
+    with pytest.raises(ValueError, match="misses"):
+        synthetic_submission(index, 2, config.generator.levels[1], {},
+                             PLACEMENT, rng)

@@ -41,10 +41,13 @@
   "harness": {
     "v3_trials_for_each_level": 200,
     "v3_seed": 20260811,
+    "v3_bootstrap_count": 2000,
+    "v3_interval": 0.95,
     "v6_trial_count": 200,
     "v6_seed": 20260812,
     "v6_tier1_widths": [10, 25, 50],
-    "v6_tier2_widths": [5, 10]
+    "v6_tier2_widths": [5, 10],
+    "v6_levels": [0, 1]
   },
   "tag": "dev-wit"
 }
