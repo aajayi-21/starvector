@@ -384,7 +384,8 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         [(key, harness.submission_record(pairs[key], "mixed"),
           sha256_hex(pairs[key].photo_bytes)) for key in holdout_keys],
         union_context, encoders)
-    # The union photographs hold no boxes (spec P4 §17a item 6): a
+    # The union photographs hold no boxes (spec P4 §17a,
+    # build-settled item 6): a
     # union trial that activates placement scores relations against
     # geometry that is not there, and the run stops loudly.
     for trial in (*source1_fit, *source1_holdout):
@@ -433,7 +434,7 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         generator_hash=generator_config_hash(
             fit_config,
             vocabulary_digest(loaded.index.vocabulary[:entry_count]),
-            table_hash(table), placement.area_cap),
+            table_hash(table), placement),
         preparation_version_id=loaded.record.preparation_version_id,
         fit_pair_count=len(fit_keys),
         holdout_pair_count=len(holdout_keys),
@@ -538,6 +539,7 @@ def run_fit(scoring: ScoringConfig, fit_config: FitConfig, *,
         # The fit-tail split starts after the recorded gate pairs,
         # thus the record pins the boundary value it was cut with.
         "v1_pair_count": data.v1_pair_count,
+        "synthetic_seed": fit_config.fit.synthetic_seed,
         "synthetic_count": fit_config.fit.synthetic_count,
         "commonness_contributors": {
             "union": dict(data.union_contributors),

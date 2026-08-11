@@ -80,16 +80,20 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
     full_weights, _ = _best(_grid_for(full_set, fit_config), objective)
     full_holdout = holdout(full_weights)
 
+    full_quantized = harness.quantized(full_holdout)
     ablations: list[dict[str, JsonValue]] = []
     for name in full_set:
         remaining = tuple(other for other in full_set if other != name)
         weights, _ = _best(_grid_for(remaining, fit_config), objective)
-        value = holdout(weights)
+        value = harness.quantized(holdout(weights))
+        # The cost is the difference of the two recorded values, thus
+        # the three record fields agree (ruling 2026-08-10 on
+        # quantized verdicts).
         ablations.append({
             "removed": name,
             "refit_weights": weights,
-            "holdout_objective": harness.quantized(value),
-            "cost": harness.quantized(full_holdout - value),
+            "holdout_objective": value,
+            "cost": harness.quantized(full_quantized - value),
             "readable_trials": counts(weights),
         })
 
@@ -104,7 +108,7 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
         "channel_set": list(full_set),
         "objective_basis": basis,
         "full_weights": full_weights,
-        "full_holdout_objective": harness.quantized(full_holdout),
+        "full_holdout_objective": full_quantized,
         "ablations": ablations,
         "placement_alive": data.placement_alive,
         "placement_signal": (None if data.placement_signal is None
@@ -126,6 +130,8 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
         "harness_config_hash": harness_hash,
         "scoring_config_hash": data.scoring_hash,
         "fit_config_hash": data.fit_hash,
+        "commonness_config_hash": data.commonness_hash,
+        "generator_config_hash": data.generator_hash,
         "created_at": clock(),
         "code_version": code_version,
     }
@@ -140,6 +146,10 @@ def run_v4(config: ScoringConfig, fit_config: FitConfig, *,
         "harness_config_hash": harness_hash,
         "scoring_config_hash": data.scoring_hash,
         "fit_config_hash": data.fit_hash,
+        "commonness_config_hash": data.commonness_hash,
+        "generator_config_hash": data.generator_hash,
+        "synthetic_seed": fit_config.fit.synthetic_seed,
+        "synthetic_count": fit_config.fit.synthetic_count,
         "preparation_version_id": data.preparation_version_id,
         "created_at": clock(),
         "code_version": code_version,

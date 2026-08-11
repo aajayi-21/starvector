@@ -131,8 +131,8 @@ def demo_data(config: ScoringConfig, fit_config: FitConfig, *,
         commonness=tables.tables, scoring_config_hash=scoring_hash,
         commonness_config_hash=commonness_hash)
     # The stored table alone — the build is a deliberate owner step
-    # (spec P4 §17a item 7). Fixture mode gives a fake generalizer,
-    # thus its scratch build proceeds.
+    # (spec P4 §17a, build-settled item 7). Fixture mode gives a fake
+    # generalizer, thus its scratch build proceeds.
     table = harness.stored_table(loaded.index, fit_config, data_root,
                                  providers.get("generalizer"))
     return DemoData(context=context, encoders=encoders, table=table,

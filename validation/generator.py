@@ -42,20 +42,23 @@ class SyntheticSubmission(NamedTuple):
 
 
 def generator_config_hash(config: FitConfig, vocabulary_digest: str,
-                          table_digest: str, area_cap: float) -> str:
+                          table_digest: str,
+                          placement: PlacementConfig) -> str:
     """The generator identity (spec P4 section 6).
 
     Covers the level table, the rule version, the vocabulary content,
-    the generalization table content, and the area cap the relation
-    sampler reads — each change forks the synthetic-set lineage
-    (R11).
+    the generalization table content, and the placement values the
+    relation sampler reads — the area cap selects the located slots
+    and the margin gates the emitted pairs. Each change forks the
+    synthetic-set lineage (R11).
     """
     return sha256_hex(canonical_json({
         "rule": GENERATOR_RULE,
         "levels": fit_config_to_json_value(config)["generator"]["levels"],
         "vocabulary_digest": vocabulary_digest,
         "table_digest": table_digest,
-        "area_cap": area_cap,
+        "area_cap": placement.area_cap,
+        "margin": placement.margin,
     }))
 
 
@@ -222,10 +225,15 @@ def synthetic_submission(index: PoolIndex, position: int, level: LevelRow,
                          for v in index.box_table[position, second_slot]]
                 label_b = index.vocabulary[
                     int(index.incidence[position, second_slot])]
-                # Equal box centers give the axis rule no honest
-                # label: the pair emits no relation (D3).
-                if (box_a[0] + box_a[2] == box_b[0] + box_b[2]
-                        and box_a[1] + box_a[3] == box_b[1] + box_b[3]):
+                # A pair with each center distance below the channel
+                # margin gives no honest label: the axis decision can
+                # ride a float rounding remainder, and a coin-flip
+                # label pulls the D8 signal down (D3, amended
+                # 2026-08-10). The margin is the channel's own
+                # resolution — no new constant.
+                dx = ((box_b[0] + box_b[2]) - (box_a[0] + box_a[2])) / 2.0
+                dy = ((box_b[1] + box_b[3]) - (box_a[1] + box_a[3])) / 2.0
+                if max(abs(dx), abs(dy)) < placement.margin:
                     continue
             first_id = add_group(label_a, box_a)
             second_id = add_group(label_b, box_b)

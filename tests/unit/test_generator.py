@@ -185,12 +185,19 @@ def test_the_emitted_relation_agrees_with_the_group_boxes() -> None:
 
 def test_the_generator_hash_moves_with_its_determinants() -> None:
     config = _fit_config()
-    base = generator_config_hash(config, "a" * 64, "b" * 64, 0.9)
-    assert generator_config_hash(config, "c" * 64, "b" * 64, 0.9) != base
-    assert generator_config_hash(config, "a" * 64, "d" * 64, 0.9) != base
-    # The relation sampler reads the area cap, thus the cap is part
-    # of the generator identity.
-    assert generator_config_hash(config, "a" * 64, "b" * 64, 0.8) != base
+    base = generator_config_hash(config, "a" * 64, "b" * 64, PLACEMENT)
+    assert generator_config_hash(config, "c" * 64, "b" * 64,
+                                 PLACEMENT) != base
+    assert generator_config_hash(config, "a" * 64, "d" * 64,
+                                 PLACEMENT) != base
+    # The relation sampler reads the area cap and the margin, thus
+    # the two are part of the generator identity.
+    assert generator_config_hash(
+        config, "a" * 64, "b" * 64,
+        PLACEMENT._replace(area_cap=0.8)) != base
+    assert generator_config_hash(
+        config, "a" * 64, "b" * 64,
+        PLACEMENT._replace(margin=0.2)) != base
     moved = {**_FIT_DOCUMENT,
              "generator": {"levels": [
                  {"n_atoms": 4, "generalize_p": 0.0, "n_noise": 0,
@@ -199,7 +206,8 @@ def test_the_generator_hash_moves_with_its_determinants() -> None:
                    in _FIT_DOCUMENT["generator"]["levels"][1:]],
              ]}}
     other = parse_fit_config(moved, "test-fit")
-    assert generator_config_hash(other, "a" * 64, "b" * 64, 0.9) != base
+    assert generator_config_hash(other, "a" * 64, "b" * 64,
+                                 PLACEMENT) != base
 
 
 def test_an_uncorrupted_relation_level_names_the_source_image() -> None:
@@ -242,20 +250,24 @@ def test_an_impossible_noise_draw_raises() -> None:
                              TABLE, PLACEMENT, rng)
 
 
-def test_equal_box_centers_emit_no_relation() -> None:
+def test_center_distances_below_the_margin_emit_no_relation() -> None:
     index = _index()
     boxes = index.box_table.copy()
+    # Four boxes with one mathematical center and different sizes:
+    # their float32 sums are not equal in representation, which a
+    # float-equality skip let through with a rounding-decided label.
+    # The margin rule closes the full class (D3, amended).
     for slot in range(4):
-        boxes[2, slot] = (0.2, 0.2, 0.5, 0.5)
+        half = 0.05 + 0.03 * slot
+        boxes[2, slot] = (0.35 - half, 0.35 - half,
+                          0.35 + half, 0.35 + half)
     same_centers = dataclasses.replace(index, box_table=boxes)
     config = _fit_config()
-    for seed in range(4):
+    for seed in range(6):
         rng = np.random.default_rng(seed)
         record = synthetic_submission(same_centers, 2,
                                       config.generator.levels[0],
                                       TABLE, PLACEMENT, rng)
-        # The axis rule has no honest label on equal centers (D3):
-        # each candidate pair skips, and no relation goes out.
         assert record["relations"] == []
 
 

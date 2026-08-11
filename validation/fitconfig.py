@@ -224,6 +224,10 @@ def parse_fit_config(raw: object, source: str = "fit-config") -> FitConfig:
     if out_of_range:
         raise ConfigError(
             f"harness.v6_levels: {out_of_range} name no generator level")
+    if harness.v3_interval >= 1.0:
+        raise ConfigError(
+            "harness.v3_interval: a 100% interval spans the full resample "
+            "range and degenerates the V3 gate — use a value below 1.0")
 
     tag = root.str_("tag")
     root.finish()

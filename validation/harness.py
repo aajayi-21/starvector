@@ -436,7 +436,8 @@ def stored_table(index: PoolIndex, fit_config, data_root: Path,
                  generalizer: object | None = None) -> dict[str, str]:
     """Read the stored generalization table, with no side-effect build.
 
-    The table build is a deliberate owner step (spec P4 §17a item 7):
+    The table build is a deliberate owner step (spec P4 §17a,
+    build-settled item 7):
     with no generalizer given, a missing table raises with the build
     command and spends none of the ~1,527 live posts. A caller with
     an explicit generalizer (tests, fixture mode) builds as before.
@@ -501,7 +502,7 @@ def resolved_generator_hash(config: ScoringConfig, index: PoolIndex,
     table = stored_table(index, fit_config, data_root, generalizer)
     return generator_config_hash(fit_config, vocabulary_digest(vocabulary),
                                  table_hash(table),
-                                 placement_config(config).area_cap)
+                                 placement_config(config))
 
 
 def record_label(harness: str, tag: str, harness_hash: str) -> str:
@@ -525,9 +526,14 @@ def write_harness_record(records_root: Path, harness: str, tag: str,
     if path.is_file():
         existing = json.loads(path.read_text(encoding="utf-8"))
         if existing.get("verdict") != VERDICT_TEMPLATE["verdict"]:
+            # The full lineage, compared when the new content carries
+            # the field — a moved generalization table or commonness
+            # lineage must not hide behind a filled verdict.
             for name in ("index_id", "preparation_version_id",
-                         "scoring_config_hash"):
-                if existing.get(name) != content.get(name):
+                         "scoring_config_hash", "fit_config_hash",
+                         "commonness_config_hash", "generator_config_hash",
+                         "synthetic_seed", "synthetic_count"):
+                if name in content and existing.get(name) != content.get(name):
                     raise ValueError(
                         f"{path}: a record with a filled verdict names a "
                         f"different {name} — move the old record aside "

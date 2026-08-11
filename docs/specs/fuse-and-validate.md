@@ -283,9 +283,12 @@ config (ruling 2026-08-10): the noise box comes from the
 submission's RNG with its corner in [0, 0.7] and its side in
 [0.1, 0.3], each with equal probability across the interval — a
 change is a new rule version, not a knob. And a candidate pair with
-equal box centers emits no relation: the axis rule has no honest
-label there, and a coin-flip label can only pull the D8 signal
-down.
+each center distance below the channel margin emits no relation:
+the axis decision there can ride a float rounding remainder, a
+coin-flip label can only pull the D8 signal down, and the margin is
+the channel's own resolution — no new constant. (First stated for
+equal centers alone. The verification run showed float equality
+made that rule representation-dependent, amended 2026-08-10.)
 
 This gives the placement channel labeled data with a known answer,
 and it is the only labeled source that produces RELATION atoms at
@@ -667,12 +670,16 @@ The review's smaller findings closed with four more rulings, made
    score, thus a label correction after the freeze forks no
    artifact directory. The weights themselves stay in the key.
 
-The guard code landed with these rulings: a union trial that activates
-placement stops loudly (item 6 above, the p07 message), the fit and
-the V3/V6 runs read the stored generalization table alone (item 7
-above — the build stays a deliberate owner step), a hole in the
-generalization table raises in the generator, and V5 stops on a
-constant table before it spends the trial loops.
+The guard code landed with these rulings: a union trial that
+activates placement stops loudly (build-settled item 6, the p07
+message), the fit and the V3/V6 runs read the stored generalization
+table alone (build-settled item 7 — the build stays a deliberate
+owner step), a hole in the generalization table raises in the
+generator, and V5 stops on a constant table before it spends the
+trial loops. Each record that consumes a synthetic set holds the
+generator hash, the seed, and the count (§14), and the kept-verdict
+guard compares the full lineage — a moved generalization table
+cannot hide behind a filled verdict.
 
 ## 18. Code layout
 

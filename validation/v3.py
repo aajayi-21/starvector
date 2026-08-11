@@ -28,7 +28,8 @@ from pipeline.score import score_trial
 from pool.artifacts import write_json_pretty, write_jsonl
 from validation import harness
 from validation.fitconfig import FitConfig, fit_config_hash, load_fit_config
-from validation.generator import synthetic_set
+from validation.generalize import table_hash, vocabulary_digest
+from validation.generator import generator_config_hash, synthetic_set
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +64,12 @@ def bootstrap_interval(values: list[float], seed: int, count: int,
         float(array[rng.integers(0, len(array), len(array))].mean())
         for _ in range(count)])
     tail = (1.0 - interval) / 2.0
-    return (float(means[int(tail * count)]),
-            float(means[min(count - 1, int((1.0 - tail) * count))]))
+    # The rounded index stays accurate when tail * count lands a
+    # float ulp low of an integer — a plain int() cut the low bound
+    # short at some (interval, count) values.
+    low_index = min(count - 1, int(round(tail * count)))
+    high_index = min(count - 1, int(round((1.0 - tail) * count)))
+    return (float(means[low_index]), float(means[high_index]))
 
 
 def monotone_verdict(levels: list[V3Level]) -> tuple[bool, bool]:
@@ -113,9 +118,19 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
     placement = placement_config(config)
 
     # The stored table alone: the ~1,527-post build is a deliberate
-    # owner step, not a harness side effect (spec P4 §17a item 7).
+    # owner step, not a harness side effect (spec P4 §17a,
+    # build-settled item 7).
     table = harness.stored_table(loaded.index, fit_config, data_root,
                                  providers.get("generalizer"))
+    # The identity of the trial sets this run scores (§14): the level
+    # table, the stored table content, and the placement values —
+    # this is what the record must pin. The background lineage is in
+    # the commonness hash, with no second copy.
+    entry_count = len(loaded.index.pool_frequency)
+    trial_generator_hash = generator_config_hash(
+        fit_config,
+        vocabulary_digest(loaded.index.vocabulary[:entry_count]),
+        table_hash(table), placement)
 
     def background() -> list[tuple[str, JsonValue]]:
         return harness.full_background(
@@ -158,10 +173,14 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         values = []
         for row in rows:
             trial = score_trial(row.record, row.image_id, context, encoders)
-            values.append(trial.p)
+            # The quantized value feeds the row, the mean, and the
+            # interval alike, thus a reviewer recomputing the means
+            # from trials.jsonl lands on the recorded numbers.
+            p_value = harness.quantized(trial.p)
+            values.append(p_value)
             trial_rows.append({
                 "key": row.key, "level": level_index,
-                "p": harness.quantized(trial.p),
+                "p": p_value,
                 "decoy_count": trial.decoy_count,
                 "beaten": trial.beaten, "tied": trial.tied,
             })
@@ -203,7 +222,7 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         "scoring_config_hash": scoring_hash,
         "fit_config_hash": fit_hash,
         "commonness_config_hash": commonness_hash,
-        "generator_config_hash": generator_hash,
+        "generator_config_hash": trial_generator_hash,
         "created_at": clock(),
         "code_version": code_version,
     }
@@ -219,6 +238,9 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         "scoring_config_hash": scoring_hash,
         "fit_config_hash": fit_hash,
         "commonness_config_hash": commonness_hash,
+        "generator_config_hash": trial_generator_hash,
+        "synthetic_seed": fit_config.harness.v3_seed,
+        "synthetic_count": fit_config.harness.v3_trials_for_each_level,
         "preparation_version_id": loaded.record.preparation_version_id,
         "fusion_weights": dict(config.fusion.weights),
         "fusion_weights_fitted": config.fusion.fit_record is not None,

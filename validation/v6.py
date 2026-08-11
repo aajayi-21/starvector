@@ -28,7 +28,8 @@ from pipeline.score import encode_submission
 from pool.artifacts import write_json_pretty
 from validation import harness
 from validation.fitconfig import FitConfig, fit_config_hash, load_fit_config
-from validation.generator import synthetic_set
+from validation.generalize import table_hash, vocabulary_digest
+from validation.generator import generator_config_hash, synthetic_set
 from validation.v3 import fit_harness_hash
 
 
@@ -56,9 +57,15 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
 
     entry_count = len(loaded.index.pool_frequency)
     # The stored table alone — the build is a deliberate owner step
-    # (spec P4 §17a item 7).
+    # (spec P4 §17a, build-settled item 7).
     table = harness.stored_table(loaded.index, fit_config, data_root,
                                  providers.get("generalizer"))
+    # The identity of the trial sets this run scores (§14): the record
+    # must pin the generator hash, the seed, and the count.
+    trial_generator_hash = generator_config_hash(
+        fit_config,
+        vocabulary_digest(loaded.index.vocabulary[:entry_count]),
+        table_hash(table), placement)
 
     position_of = {image_id: position for position, image_id
                    in enumerate(loaded.index.image_ids)}
@@ -124,6 +131,7 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
         "harness_config_hash": harness_hash,
         "scoring_config_hash": scoring_hash,
         "fit_config_hash": fit_hash,
+        "generator_config_hash": trial_generator_hash,
         "created_at": clock(),
         "code_version": code_version,
     }
@@ -138,6 +146,9 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
         "harness_config_hash": harness_hash,
         "scoring_config_hash": scoring_hash,
         "fit_config_hash": fit_hash,
+        "generator_config_hash": trial_generator_hash,
+        "synthetic_seed": fit_config.harness.v6_seed,
+        "synthetic_count": fit_config.harness.v6_trial_count,
         "preparation_version_id": loaded.record.preparation_version_id,
         "created_at": clock(),
         "code_version": code_version,
