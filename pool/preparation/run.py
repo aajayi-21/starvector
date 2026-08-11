@@ -622,10 +622,31 @@ def run_p04_vocabulary(
 
 
 def run_p05_linedraw(
-    line_drawer: object, config: PreparationConfig, tree: PreparationTree, code_version: str
+    line_drawer: object | None,
+    config: PreparationConfig,
+    tree: PreparationTree,
+    code_version: str,
 ) -> StageMeta:
     stage = "p05-linedraw"
     ids = _intake_ids(tree)
+    if config.outline.source == "photo":
+        meta = _meta(
+            tree,
+            stage,
+            "p04-vocabulary",
+            image_count=len(ids),
+            config_echo={"source": "photo"},
+            provider_hashes={},
+            counters={"bypassed": len(ids)},
+            array_shapes={},
+            provider_posts=0,
+            provider_cache_hits=0,
+            code_version=code_version,
+        )
+        _write_stage(tree, stage, meta, {})
+        return meta
+    if line_drawer is None:
+        raise ValueError("the linedraw outline source needs a line drawer")
     drawer_hash = getattr(line_drawer, "config_hash")
     missing = [
         image_id for image_id in ids
@@ -659,6 +680,7 @@ def run_p05_linedraw(
         "p04-vocabulary",
         image_count=len(ids),
         config_echo={
+            "source": "linedraw",
             "binarize_threshold": config.linedraw.binarize_threshold,
             "min_segment_px": config.linedraw.min_segment_px,
             "canvas_px": config.linedraw.canvas_px,
@@ -685,11 +707,12 @@ def run_p06_outline(
 ) -> StageMeta:
     stage = "p06-outline"
     ids = _intake_ids(tree)
-    drawer_hash = dict(mf.read_meta(tree, "p05-linedraw").provider_config_hashes)["line_drawer"]
+    p05_hashes = dict(mf.read_meta(tree, "p05-linedraw").provider_config_hashes)
+    drawer_hash = p05_hashes.get("line_drawer")
     encoder_hash = getattr(image_encoder, "config_hash")
-    # The image-level cache key covers the two hashes: a change to the
-    # drawings or the encoder moves the cached vectors (spec section 6).
-    combined_hash = sha256_hex(encoder_hash + drawer_hash)
+    source_hash = drawer_hash if drawer_hash is not None else "photo-v1"
+    # The cache key covers the encoder and the specified p06 input source.
+    combined_hash = sha256_hex(encoder_hash + source_hash)
     rows_for_image = len(outline.ROW_LAYOUT)
     per_image: dict[str, np.ndarray] = {}
     missing: list[str] = []
@@ -710,14 +733,24 @@ def run_p06_outline(
         chunk = missing[start : start + _BYTE_SLICE]
         batch: list[bytes] = []
         for image_id in chunk:
-            drawing_path = mf.linedraw_path(tree.data_root, drawer_hash, image_id)
-            try:
-                drawing = drawing_path.read_bytes()
-            except OSError as error:
-                raise mf.ManifestError(
-                    f"{drawing_path}: line drawing missing from the cache: {error}"
-                ) from error
-            batch.extend(outline.outline_crop_images(drawing, config.outline.crop_fraction))
+            if config.outline.source == "linedraw":
+                assert drawer_hash is not None
+                drawing_path = mf.linedraw_path(
+                    tree.data_root, drawer_hash, image_id
+                )
+                try:
+                    source_bytes = drawing_path.read_bytes()
+                except OSError as error:
+                    raise mf.ManifestError(
+                        f"{drawing_path}: line drawing missing from the cache: {error}"
+                    ) from error
+            else:
+                source_bytes = mf.load_image_bytes(tree.data_root, image_id)
+            batch.extend(
+                outline.outline_crop_images(
+                    source_bytes, config.outline.crop_fraction
+                )
+            )
         encoded = np.asarray(image_encoder.encode_images(batch))  # (6 * B, d)
         if encoded.ndim != 2 or encoded.shape[0] != len(batch):
             raise mf.ManifestError(
@@ -743,10 +776,14 @@ def run_p06_outline(
         "p05-linedraw",
         image_count=len(ids),
         config_echo={
+            "source": config.outline.source,
             "crop_fraction": config.outline.crop_fraction,
             "crop_grid": config.outline.crop_grid,
         },
-        provider_hashes={"image_encoder": encoder_hash, "line_drawer": drawer_hash},
+        provider_hashes={
+            "image_encoder": encoder_hash,
+            **({"line_drawer": drawer_hash} if drawer_hash is not None else {}),
+        },
         # No encoded-against-cached split - see the p05 counter note.
         counters={},
         array_shapes={"outline_vectors": stacked.shape, "outline_space_mean": mean.shape},
@@ -1045,7 +1082,14 @@ def _execute_stage(
         )
     if stage == "p05-linedraw":
         return (
-            run_p05_linedraw(provider_for("line_drawer"), config, tree, code_version),
+            run_p05_linedraw(
+                provider_for("line_drawer")
+                if config.outline.source == "linedraw"
+                else None,
+                config,
+                tree,
+                code_version,
+            ),
             None,
         )
     if stage == "p06-outline":

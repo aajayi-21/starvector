@@ -5,7 +5,14 @@ from pathlib import Path
 
 import numpy as np
 
-from conftest import find_prep_stage_dir, read_prep_stage_jsonl
+from conftest import (
+    PREP_DEFAULT_SPECS,
+    build_released_pool,
+    find_prep_stage_dir,
+    make_prep_config,
+    read_prep_stage_jsonl,
+    run_prep,
+)
 
 from core.canonical import sha256_hex
 from pool.artifacts import load_image_bytes
@@ -57,6 +64,35 @@ def test_full_fake_run_creates_complete_artifact_tree(completed_preparation):
         assert (directory / "meta.json").exists(), stage
         for name in _STAGE_DATA_FILES[stage]:
             assert (directory / name).exists(), f"{stage}/{name}"
+
+
+def test_photo_outline_source_bypasses_p05_and_writes_six_rows(
+    tmp_path,
+) -> None:
+    data = tmp_path / "data"
+    pool = build_released_pool(
+        data, tmp_path / "pool-releases", PREP_DEFAULT_SPECS
+    )
+    config = make_prep_config(
+        pool["record_path"], **{"outline.source": "photo"}
+    )
+    report = run_prep(
+        config, data, tmp_path / "preparation-releases", through="p06"
+    )
+
+    p05 = next(stage for stage in report.stages if stage.stage == "p05-linedraw")
+    p05_directory = find_prep_stage_dir(data, "p05-linedraw")
+    p05_meta = json.loads((p05_directory / "meta.json").read_text())
+    assert p05.provider_posts == 0
+    assert p05.provider_cache_hits == 0
+    assert p05_meta["config_echo"] == {"source": "photo"}
+    assert p05_meta["provider_config_hashes"] == {}
+    assert not (p05_directory / "drawings.jsonl").exists()
+
+    vectors = np.load(
+        find_prep_stage_dir(data, "p06-outline") / "outline_vectors.npy"
+    )
+    assert vectors.shape[:2] == (len(pool["image_ids"]), 6)
 
 
 def test_committed_record_agrees_with_the_tree(completed_preparation):

@@ -40,7 +40,11 @@ def _base_raw() -> dict:
             "background": "white",
             "antialias": False,
         },
-        "outline": {"crop_fraction": 0.6, "crop_grid": "center-corners"},
+        "outline": {
+            "source": "linedraw",
+            "crop_fraction": 0.6,
+            "crop_grid": "center-corners",
+        },
         "neardup": {"similarity_threshold": 0.95},
         "providers": {
             "openrouter": {
@@ -103,6 +107,34 @@ def test_base_config_parses() -> None:
 def test_round_trip_is_identity() -> None:
     raw = _base_raw()
     assert config_to_json_value(parse_preparation_config(raw)) == raw
+
+
+def test_outline_source_defaults_without_moving_the_a_hash() -> None:
+    explicit = _base_raw()
+    omitted = copy.deepcopy(explicit)
+    del omitted["outline"]["source"]
+    defaulted = parse_preparation_config(omitted)
+    assert defaulted.outline.source == "linedraw"
+    assert preparation_config_hash(defaulted, _hashes()) == preparation_config_hash(
+        parse_preparation_config(explicit), _hashes()
+    )
+
+
+def test_photo_outline_source_moves_the_preparation_hash() -> None:
+    linedraw = parse_preparation_config(_base_raw())
+    raw = _base_raw()
+    raw["outline"]["source"] = "photo"
+    photo = parse_preparation_config(raw)
+    assert preparation_config_hash(photo, _hashes()) != preparation_config_hash(
+        linedraw, _hashes()
+    )
+
+
+def test_unknown_outline_source_is_rejected() -> None:
+    raw = _base_raw()
+    raw["outline"]["source"] = "paint"
+    with pytest.raises(ConfigError, match=r"outline\.source"):
+        parse_preparation_config(raw)
 
 
 def test_unknown_field_names_path() -> None:

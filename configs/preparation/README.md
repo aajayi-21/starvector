@@ -40,6 +40,10 @@ does not touch a slot reuses that slot's responses at zero cost (U1).
   constants with the future Layer 0 sketch render: pool drawings and
   player sketches must render identically, or the style difference the
   bridge closes opens again. Read them from here — one source.
+- `outline.source` — `linedraw` (the default, method A) embeds the
+  cached p05 drawing. `photo` (method B) bypasses p05 and embeds the
+  source photograph with the same p06 six-crop layout and image encoder
+  used by A. Sketch encoding and downstream ranking stay unchanged.
 - `providers.text_encoder.dimension` — the expected embedding width.
   A response with a different width raises (R14). The first live run
   confirms the served width of `google/gemini-embedding-2`. When it is

@@ -476,7 +476,9 @@ def completed_preparation(tmp_path_factory: pytest.TempPathFactory):
 # --- scoring (P2) fixtures --------------------------------------------------
 
 
-def build_prepared_pool_for_scoring(root: Path) -> dict:
+def build_prepared_pool_for_scoring(
+    root: Path, *, outline_source: str = "linedraw"
+) -> dict:
     """One full fake preparation with a config file on disk.
 
     The scoring context loader re-reads the preparation config from
@@ -487,7 +489,9 @@ def build_prepared_pool_for_scoring(root: Path) -> dict:
     data = root / "data"
     releases = root / "releases"
     pool = build_released_pool(data, root / "pool-releases", PREP_DEFAULT_SPECS)
-    document = prep_config_dict(pool["record_path"])
+    document = prep_config_dict(
+        pool["record_path"], **{"outline.source": outline_source}
+    )
     config_path = root / "prep-config.json"
     config_path.write_text(canonical_json_pretty(document) + "\n",
                            encoding="utf-8")

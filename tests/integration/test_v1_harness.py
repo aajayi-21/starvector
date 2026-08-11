@@ -61,6 +61,17 @@ def test_the_marker_pairs_rank_their_photographs_first(v1_run) -> None:
     assert report.reference_first < 0.1
 
 
+def test_photo_carrier_v1_uses_the_same_direct_image_path(tmp_path) -> None:
+    prepared = build_prepared_pool_for_scoring(
+        tmp_path / "photo-preparation", outline_source="photo"
+    )
+    report, _ = _run(prepared)
+    assert report.pair_count == V1_COUNT
+    assert report.first_rank_fraction >= 0.8
+    assert ("line_drawer", (0, 0)) in report.usage
+    assert not (prepared["data"] / "images" / "linedraw").exists()
+
+
 def test_the_neardup_photograph_exits_with_the_pool_group(v1_run) -> None:
     # The union holds 8 pool images plus 9 photographs. The scripted
     # photograph joins the two-member pool fam-a group, thus its trial

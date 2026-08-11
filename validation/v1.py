@@ -101,41 +101,52 @@ class V1Report:
 def build_union_index(
     loaded: LoadedPreparation, prep_config: PreparationConfig,
     photo_bytes_by_id: dict[str, bytes], dataset_config_hash: str,
-    data_root: Path, line_drawer: object, image_encoder: object,
+    data_root: Path, line_drawer: object | None, image_encoder: object,
 ) -> PoolIndex:
     """The V1 union index: pool plus photographs, one path (Rule 3).
 
-    Photographs go through the same providers and image-level caches
-    as p05 and p06 — the drawing cache keyed by the drawer hash, the
-    vector cache keyed by the combined hash sha256(encoder hash +
-    drawer hash). Near-duplicate grouping runs again across the union
-    at the preparation threshold, and the stored p06 mean stays the
+    Photographs go through the same carrier and image-level caches as
+    p05 and p06. Near-duplicate grouping runs again across the union at
+    the preparation threshold, and the stored p06 mean stays the
     centering (spec section 12).
     """
-    drawer_hash = str(getattr(line_drawer, "config_hash"))
+    drawer_hash = (
+        str(getattr(line_drawer, "config_hash"))
+        if line_drawer is not None
+        else None
+    )
     encoder_hash = str(getattr(image_encoder, "config_hash"))
-    combined_hash = sha256_hex(encoder_hash + drawer_hash)
+    source_hash = drawer_hash if drawer_hash is not None else "photo-v1"
+    combined_hash = sha256_hex(encoder_hash + source_hash)
 
     pool_ids = set(loaded.index.image_ids)
     new_ids = sorted(set(photo_bytes_by_id) - pool_ids)
 
-    # Line drawings first, then vectors, in ascending image_id chunks.
+    # Prepare the configured carrier, then vectors, in ascending chunks.
     missing_vectors = [image_id for image_id in new_ids
                        if not vector_path(data_root, combined_hash,
                                           image_id).is_file()]
-    for image_id in missing_vectors:
-        drawing_path = mf.linedraw_path(data_root, drawer_hash, image_id)
-        if not drawing_path.is_file():
-            drawing = line_drawer.draw_lines(
-                [photo_bytes_by_id[image_id]])[0]
-            write_bytes_atomic(drawing_path, drawing)
+    if prep_config.outline.source == "linedraw":
+        assert drawer_hash is not None and line_drawer is not None
+        for image_id in missing_vectors:
+            drawing_path = mf.linedraw_path(data_root, drawer_hash, image_id)
+            if not drawing_path.is_file():
+                drawing = line_drawer.draw_lines(
+                    [photo_bytes_by_id[image_id]])[0]
+                write_bytes_atomic(drawing_path, drawing)
     for start in range(0, len(missing_vectors), _PHOTO_ENCODE_CHUNK):
         chunk = missing_vectors[start:start + _PHOTO_ENCODE_CHUNK]
         crops: list[bytes] = []
         for image_id in chunk:
-            drawing_path = mf.linedraw_path(data_root, drawer_hash, image_id)
+            if prep_config.outline.source == "linedraw":
+                assert drawer_hash is not None
+                source_bytes = mf.linedraw_path(
+                    data_root, drawer_hash, image_id
+                ).read_bytes()
+            else:
+                source_bytes = photo_bytes_by_id[image_id]
             crops.extend(outline_crop_images(
-                drawing_path.read_bytes(),
+                source_bytes,
                 prep_config.outline.crop_fraction))
         encoded = image_encoder.encode_images(crops)   # (6 * B, d)
         if encoded.shape[0] != len(crops):
@@ -214,13 +225,17 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
                                  intake_gates(config),
                                  loaded.render.canvas_px)
 
-    line_drawer = providers.get("line_drawer") or wire_slot(
-        "line_drawer", prep_config, data_root)
+    line_drawer = None
+    if prep_config.outline.source == "linedraw":
+        line_drawer = providers.get("line_drawer") or wire_slot(
+            "line_drawer", prep_config, data_root)
     image_encoder = providers.get("image_encoder") or wire_slot(
         "image_encoder", prep_config, data_root)
     record_hashes = dict(loaded.record.provider_config_hashes)
-    for slot_name, provider in (("line_drawer", line_drawer),
-                                ("image_encoder", image_encoder)):
+    checked_providers = [("image_encoder", image_encoder)]
+    if line_drawer is not None:
+        checked_providers.append(("line_drawer", line_drawer))
+    for slot_name, provider in checked_providers:
         measured = str(getattr(provider, "config_hash"))
         if measured != record_hashes[slot_name]:
             raise ValueError(

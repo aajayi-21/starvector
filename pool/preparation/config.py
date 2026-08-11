@@ -30,6 +30,7 @@ CONFIG_VERSION = 1
 NORMALIZE_RULES: tuple[str, ...] = ("d7-v1",)
 BACKGROUNDS: tuple[str, ...] = ("white",)
 CROP_GRIDS: tuple[str, ...] = ("center-corners",)
+OUTLINE_SOURCES: tuple[str, ...] = ("linedraw", "photo")
 DEVICES: tuple[str, ...] = ("auto", "cuda", "xpu", "cpu")
 
 
@@ -74,6 +75,7 @@ class LinedrawSection:
 
 @dataclass(frozen=True, slots=True)
 class OutlineSection:
+    source: str
     crop_fraction: float
     crop_grid: str
 
@@ -231,6 +233,14 @@ class _Node:
             raise ConfigError(f"{self._path}.{key}: expected one of {list(allowed)}")
         return value
 
+    def choice_default(
+        self, key: str, allowed: tuple[str, ...], default: str
+    ) -> str:
+        """Read one optional enumerated field, returning its schema default."""
+        if key not in self._raw:
+            return default
+        return self.choice(key, allowed)
+
     def finish(self) -> None:
         if self._raw:
             names = ", ".join(sorted(self._raw))
@@ -341,6 +351,9 @@ def parse_preparation_config(raw: object, source: str = "config") -> Preparation
 
     outline_node = root.child("outline")
     outline = OutlineSection(
+        source=outline_node.choice_default(
+            "source", OUTLINE_SOURCES, "linedraw"
+        ),
         crop_fraction=outline_node.float_("crop_fraction", low=0.0, high=1.0, low_open=True),
         crop_grid=outline_node.choice("crop_grid", CROP_GRIDS),
     )
@@ -427,6 +440,7 @@ def config_to_json_value(config: PreparationConfig) -> dict[str, JsonValue]:
             "antialias": config.linedraw.antialias,
         },
         "outline": {
+            "source": config.outline.source,
             "crop_fraction": config.outline.crop_fraction,
             "crop_grid": config.outline.crop_grid,
         },
@@ -465,6 +479,10 @@ def preparation_config_hash(
         raise ValueError(f"provider_config_hashes must have keys {list(SLOT_NAMES)}")
     config_document = config_to_json_value(config)
     del config_document["runtime"]
+    # Adding the selector must not invalidate the existing A lineage:
+    # omitted and explicit "linedraw" values describe the same method.
+    if config.outline.source == "linedraw":
+        del config_document["outline"]["source"]
     document: dict[str, JsonValue] = {
         "config": config_document,
         "provider_config_hashes": {k: provider_config_hashes[k] for k in SLOT_NAMES},
