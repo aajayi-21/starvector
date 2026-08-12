@@ -41,7 +41,9 @@ from pool.preparation.run import wire_slot
 from pool.preparation.stages.cap import cap_with_frequencies
 from pool.preparation.stages.neardup import neardup_groups
 from pool.preparation.stages.normalize import normalize_elements
-from pool.preparation.stages.outline import outline_crop_images
+from pool.preparation.stages.outline import (outline_crop_images,
+                                             photo_canonical,
+                                             photo_source_token)
 from pool.preparation.types import GroupRow
 from validation import harness
 from validation.splits import select_keys
@@ -242,7 +244,7 @@ class V1Report:
 def build_union_index(
     loaded: LoadedPreparation, prep_config: PreparationConfig,
     photo_bytes_by_id: dict[str, bytes], dataset_config_hash: str,
-    data_root: Path, line_drawer: object, image_encoder: object,
+    data_root: Path, line_drawer: object | None, image_encoder: object,
     describer: object, text_encoder: object,
 ) -> PoolIndex:
     """The V1 union index: pool plus photographs, one path (Rule 3).
@@ -250,14 +252,26 @@ def build_union_index(
     Photographs go through the same providers and image-level caches
     as p05 and p06 — the drawing cache keyed by the drawer hash, the
     vector cache keyed by the combined hash sha256(encoder hash +
-    drawer hash). Near-duplicate grouping runs again across the union
-    at the preparation threshold, and the stored p06 mean stays the
+    drawer hash). With outline.source = "photo" (spec P2c sections 4
+    and 6) the drawer is None, each photograph goes through the same
+    canonical render and crop path as stage p06, and the vector cache
+    key holds the photograph token in the drawer-hash position.
+    Near-duplicate grouping runs again across the union at the
+    preparation threshold, and the stored p06 mean stays the
     centering (spec P2 section 12). The element side comes from
     build_union_elements (spec P3 section 12).
     """
-    drawer_hash = str(getattr(line_drawer, "config_hash"))
+    photo_source = prep_config.outline.source == "photo"
+    grayscale = prep_config.outline.photo_render == "grayscale"
     encoder_hash = str(getattr(image_encoder, "config_hash"))
-    combined_hash = sha256_hex(encoder_hash + drawer_hash)
+    if photo_source:
+        drawer_hash = None
+        combined_hash = sha256_hex(
+            encoder_hash + photo_source_token(prep_config.linedraw.canvas_px,
+                                              grayscale))
+    else:
+        drawer_hash = str(getattr(line_drawer, "config_hash"))
+        combined_hash = sha256_hex(encoder_hash + drawer_hash)
 
     pool_ids = set(loaded.index.image_ids)
     new_ids = sorted(set(photo_bytes_by_id) - pool_ids)
@@ -266,20 +280,26 @@ def build_union_index(
     missing_vectors = [image_id for image_id in new_ids
                        if not vector_path(data_root, combined_hash,
                                           image_id).is_file()]
-    for image_id in missing_vectors:
-        drawing_path = mf.linedraw_path(data_root, drawer_hash, image_id)
-        if not drawing_path.is_file():
-            drawing = line_drawer.draw_lines(
-                [photo_bytes_by_id[image_id]])[0]
-            write_bytes_atomic(drawing_path, drawing)
+    if not photo_source:
+        for image_id in missing_vectors:
+            drawing_path = mf.linedraw_path(data_root, drawer_hash, image_id)
+            if not drawing_path.is_file():
+                drawing = line_drawer.draw_lines(
+                    [photo_bytes_by_id[image_id]])[0]
+                write_bytes_atomic(drawing_path, drawing)
     for start in range(0, len(missing_vectors), _PHOTO_ENCODE_CHUNK):
         chunk = missing_vectors[start:start + _PHOTO_ENCODE_CHUNK]
         crops: list[bytes] = []
         for image_id in chunk:
-            drawing_path = mf.linedraw_path(data_root, drawer_hash, image_id)
+            if photo_source:
+                source_image = photo_canonical(
+                    photo_bytes_by_id[image_id],
+                    prep_config.linedraw.canvas_px, grayscale)
+            else:
+                source_image = mf.linedraw_path(
+                    data_root, drawer_hash, image_id).read_bytes()
             crops.extend(outline_crop_images(
-                drawing_path.read_bytes(),
-                prep_config.outline.crop_fraction))
+                source_image, prep_config.outline.crop_fraction))
         encoded = image_encoder.encode_images(crops)   # (6 * B, d)
         if encoded.shape[0] != len(crops):
             raise ValueError(
@@ -363,8 +383,13 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
                                  intake_gates(config),
                                  loaded.render.canvas_px, mode)
 
-    prepared_slots = ("line_drawer", "image_encoder", "describer",
-                      "text_encoder")
+    # With a photograph-source preparation no drawer is wired (P2c
+    # R4) — the row leaves the Rule 3 guard because the slot leaves
+    # the photograph path, not because the guard loosens.
+    photo_source = prep_config.outline.source == "photo"
+    prepared_slots = ("image_encoder", "describer", "text_encoder")
+    if not photo_source:
+        prepared_slots = ("line_drawer",) + prepared_slots
     wired = {name: providers.get(name) or wire_slot(name, prep_config,
                                                     data_root)
              for name in prepared_slots}
@@ -376,7 +401,7 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
                 f"{slot_name}: wired hash {measured[:8]} does not agree "
                 f"with the preparation record {record_hashes[slot_name][:8]} "
                 "— the photograph path must equal the pool path (Rule 3)")
-    line_drawer = wired["line_drawer"]
+    line_drawer = wired.get("line_drawer")
     image_encoder = wired["image_encoder"]
 
     slot_hashes = harness.scoring_provider_hashes(config, providers)
@@ -388,7 +413,7 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
     photo_bytes_by_id = {
         sha256_hex(pairs[key].photo_bytes): pairs[key].photo_bytes
         for key in v1_keys}
-    drawer_delta = harness.UsageDelta(line_drawer)
+    drawer_delta = None if photo_source else harness.UsageDelta(line_drawer)
     encoder_delta = harness.UsageDelta(image_encoder)
     describer_delta = harness.UsageDelta(wired["describer"])
     # The union element side encodes its strings through the
@@ -479,7 +504,8 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
         ("text_encoder", (text_delta.posts, text_delta.cache_hits)),
         ("union_text_encoder", (union_text_delta.posts,
                                 union_text_delta.cache_hits)),
-        ("line_drawer", (drawer_delta.posts, drawer_delta.cache_hits)),
+        *(() if drawer_delta is None else
+          (("line_drawer", (drawer_delta.posts, drawer_delta.cache_hits)),)),
         ("image_encoder", (encoder_delta.posts, encoder_delta.cache_hits)),
         ("describer", (describer_delta.posts, describer_delta.cache_hits)),
     )

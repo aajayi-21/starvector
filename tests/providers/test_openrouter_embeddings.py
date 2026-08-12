@@ -60,8 +60,16 @@ def embedding_for(item: object) -> list[float]:
         text = item
     else:
         # The multimodal item shape, checked live 2026-08-08: a
-        # content wrapper around one image_url entry.
-        text = item["content"][0]["image_url"]["url"]  # type: ignore[index]
+        # content wrapper around one image_url entry - with the joint
+        # instruction text in front when the slot config has one, so
+        # the row derives from the full entry sequence.
+        parts = []
+        for entry in item["content"]:  # type: ignore[index]
+            if entry["type"] == "image_url":
+                parts.append(entry["image_url"]["url"])
+            else:
+                parts.append(entry["text"])
+        text = "|".join(parts)
     digest = hashlib.sha256(text.encode("utf-8")).digest()
     return [1.0 + digest[position] for position in range(DIMENSION)]
 
@@ -348,6 +356,79 @@ def test_text_and_image_slot_hashes_are_different() -> None:
     text_hash = embedding_config_hash(embedding_slot_config("text_encoder"))
     image_hash = embedding_config_hash(embedding_slot_config("image_encoder"))
     assert text_hash != image_hash
+
+
+def test_instruction_none_keeps_the_released_hash() -> None:
+    # P2c R5: the hash document omits the field at None, thus each
+    # hash - and each warm cache tree - released before the field
+    # stays unchanged.
+    from core.canonical import canonical_json
+
+    released_document = {
+        "slot": "image_encoder",
+        "model": "test/embed",
+        "dimension": DIMENSION,
+        "encoding_format": "float",
+    }
+    assert embedding_config_hash(
+        embedding_slot_config("image_encoder")
+    ) == sha256_hex(canonical_json(released_document))
+
+
+def test_an_instruction_moves_the_hash() -> None:
+    plain = embedding_slot_config("image_encoder")
+    joint = plain._replace(instruction="sketch it")
+    assert embedding_config_hash(plain) != embedding_config_hash(joint)
+
+
+def test_the_joint_item_holds_instruction_then_image(tmp_path: Path) -> None:
+    captured: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.read().decode("utf-8"))
+        captured.append(body)
+        return httpx.Response(200, json=embeddings_response(body["input"]))
+
+    client = make_client(handler)
+    encoder = OpenRouterImageEncoder(
+        embedding_slot_config("image_encoder")._replace(
+            instruction="sketch it"),
+        client, tmp_path / "cache", clock=fixed_clock,
+    )
+    encoder.encode_images([PNG_BYTES])
+    uri = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode("ascii")
+    assert captured[0]["input"] == [
+        {"content": [
+            {"type": "text", "text": "sketch it"},
+            {"type": "image_url", "image_url": {"url": uri}},
+        ]}
+    ]
+
+
+def test_the_joint_cache_entry_records_the_instruction(tmp_path: Path) -> None:
+    cache_root = tmp_path / "cache"
+    client = make_client(embeddings_handler)
+    encoder = OpenRouterImageEncoder(
+        embedding_slot_config("image_encoder")._replace(
+            instruction="sketch it"),
+        client, cache_root, clock=fixed_clock,
+    )
+    encoder.encode_images([PNG_BYTES])
+    path = response_cache_path(
+        cache_root, encoder.config_hash, sha256_hex(PNG_BYTES))
+    entry = load_cached_response(path)
+    assert entry is not None
+    assert entry["instruction"] == "sketch it"
+    assert entry["input_kind"] == "image"
+
+
+def test_the_text_encoder_refuses_an_instruction(tmp_path: Path) -> None:
+    client = make_client(embeddings_handler)
+    with pytest.raises(ValueError, match="P2c R7"):
+        OpenRouterTextEncoder(
+            embedding_slot_config()._replace(instruction="sketch it"),
+            client, tmp_path / "cache", clock=fixed_clock,
+        )
 
 
 def test_retry_on_429_through_post_embeddings() -> None:

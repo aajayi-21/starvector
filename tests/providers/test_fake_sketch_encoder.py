@@ -89,3 +89,14 @@ def test_the_hash_differs_from_the_fake_image_encoder() -> None:
 def test_a_family_identifier_off_the_range_raises() -> None:
     with pytest.raises(ValueError, match="family_id"):
         markers.encode_family_strokes(128)
+
+
+def test_an_instruction_moves_the_hash_and_no_vector() -> None:
+    # The P2c mirror rule: identity moves, scripted structure stays.
+    plain = FakeSketchEncoder(DIMENSION)
+    instructed = FakeSketchEncoder(DIMENSION, instruction="sketch it")
+    assert plain.config_hash != instructed.config_hash
+    render = render_strokes(markers.encode_family_strokes(3) +
+                            _content_strokes(3), CANVAS, WIDTH)
+    np.testing.assert_array_equal(
+        plain.encode_images([render]), instructed.encode_images([render]))

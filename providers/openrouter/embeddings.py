@@ -8,7 +8,7 @@ zero-norm row raises (R14).
 """
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -35,17 +35,31 @@ class EmbeddingSlotConfig(NamedTuple):
     embedding_config_hash covers all fields, the slot name included,
     thus the text slot and the image slot keep their own cache trees
     also when the model is the same (CLAUDE.md section 6).
+
+    instruction is the joint-embedding text of spec P2c section 5.
+    The image encoder sends it with each image in one item. None means
+    the plain image item, and the hash document omits the field at
+    None, thus each hash released before the field stays unchanged
+    (P2c R5). The text slot does not implement instructions (P2c R7).
     """
 
     slot: str
     model: str
     dimension: int
     encoding_format: str
+    instruction: str | None = None
 
 
 def embedding_config_hash(config: EmbeddingSlotConfig) -> str:
-    """The SHA-256 hex digest of the canonical JSON of the config."""
-    return sha256_hex(canonical_json(dict(config._asdict())))
+    """The SHA-256 hex digest of the canonical JSON of the config.
+
+    The instruction field is omitted at None (P2c R5), thus a config
+    without one hashes as it did before the field existed.
+    """
+    document = dict(config._asdict())
+    if document["instruction"] is None:
+        del document["instruction"]
+    return sha256_hex(canonical_json(document))
 
 
 def _validated_row(
@@ -156,14 +170,16 @@ def _resolved_rows(
     cache_root: Path,
     clock: Callable[[], str],
     batch_size: int,
+    entry_extra: Mapping[str, JsonValue] | None = None,
 ) -> tuple[list[list[float]], int]:
     """Cache-first resolution of one embedding row for each input index.
 
     A cache hit is validated again (length and finiteness). Misses are
     deduplicated by key, batched by count and by accumulated bytes,
     sent through client.post_embeddings, validated, and then stored
-    one entry for each item. The first output is index-aligned with
-    keys. The second output is the cache hit count across
+    one entry for each item — with the entry_extra fields merged in
+    when that mapping is not None. The first output is index-aligned
+    with keys. The second output is the cache hit count across
     deduplicated keys.
     """
     rows_by_key: dict[str, list[float]] = {}
@@ -205,6 +221,8 @@ def _resolved_rows(
                 "embedding": row,
                 "created_at": clock(),
             }
+            if entry_extra is not None:
+                entry.update(entry_extra)
             store_response(response_cache_path(cache_root, config_hash, key), entry)
             rows_by_key[key] = row
     return [rows_by_key[key] for key in keys], cache_hits
@@ -242,7 +260,12 @@ def _unit_norm_vectors(
 
 
 class OpenRouterTextEncoder:
-    """TextEncoder through OpenRouter - the p04 slot."""
+    """TextEncoder through OpenRouter - the p04 slot.
+
+    The slot does not implement instructions: a slot config with one
+    raises here, at construction, and is not silently ignored (P2c
+    R7).
+    """
 
     def __init__(
         self,
@@ -252,6 +275,11 @@ class OpenRouterTextEncoder:
         clock: Callable[[], str] | None = None,
         batch_size: int = EMBEDDING_BATCH_SIZE,
     ) -> None:
+        if slot_config.instruction is not None:
+            raise ValueError(
+                f"slot {slot_config.slot}: the text encoder does not "
+                "implement instructions (P2c R7)"
+            )
         self._slot_config = slot_config
         self._client = client
         self._cache_root = Path(cache_root)
@@ -300,7 +328,10 @@ class OpenRouterImageEncoder:
     """ImageEncoder through OpenRouter - the p06 slot.
 
     Image input goes through content blocks with a data URI, the shape
-    the embeddings endpoint accepts (U2).
+    the embeddings endpoint accepts (U2). With an instruction in the
+    slot config, each item holds two content entries — the instruction
+    text first, the image second, the entry sequence the chat slots
+    use — and one joint embedding row comes back (spec P2c section 5).
     """
 
     def __init__(
@@ -334,15 +365,23 @@ class OpenRouterImageEncoder:
     def encode_images(self, images: Sequence[bytes]) -> Vectors:
         """The output is float32 (B, d), each row unit-norm."""
         keys = [sha256_hex(image) for image in images]
+        instruction = self._slot_config.instruction
 
         def item_at(index: int) -> JsonValue:
             # One input item is a content wrapper around the image
             # entry, not the bare entry - checked live 2026-08-08: the
             # bare shape fails the endpoint's input union, the wrapped
             # shape returns rows at dimension 3072.
+            image_entry: JsonValue = {
+                "type": "image_url",
+                "image_url": {"url": data_uri(images[index])},
+            }
+            if instruction is None:
+                return {"content": [image_entry]}
             return {
                 "content": [
-                    {"type": "image_url", "image_url": {"url": data_uri(images[index])}}
+                    {"type": "text", "text": instruction},
+                    image_entry,
                 ]
             }
 
@@ -356,6 +395,9 @@ class OpenRouterImageEncoder:
             self._cache_root,
             self._clock,
             self._batch_size,
+            entry_extra=(
+                None if instruction is None else {"instruction": instruction}
+            ),
         )
         self._cache_hit_count += hits
         return _unit_norm_vectors(

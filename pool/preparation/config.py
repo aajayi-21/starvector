@@ -82,10 +82,29 @@ class LinedrawSection:
     detect_resolution_px: int | None
 
 
+OUTLINE_SOURCES: tuple[str, ...] = ("linedraw", "photo")
+PHOTO_RENDERS: tuple[str, ...] = ("color", "grayscale")
+
+
 @dataclass(frozen=True, slots=True)
 class OutlineSection:
+    """The p06 crop values plus the P2c source and render fields.
+
+    source is "linedraw" — the rule before spec P2c: p05 draws, p06
+    encodes the drawing — or "photo": p05 records a skip and p06
+    encodes the canonical photograph render. photo_render selects the
+    render variant of that path — "color", or "grayscale" for the
+    photo-gray condition (P2c section 9a) — and is only meaningful
+    with the photo source. The two fields can be missing from the
+    config document, and the document shape omits them at their
+    defaults, thus the hash of a config released before the fields
+    stays unchanged (P2c R5).
+    """
+
     crop_fraction: float
     crop_grid: str
+    source: str
+    photo_render: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +231,21 @@ class _Node:
             return None
         return self.opt_int(key, minimum)
 
+    def absent_or_choice(self, key: str, allowed: tuple[str, ...],
+                         default: str) -> str:
+        """One selection field added after a release (the absent_or_int rule).
+
+        Missing and null give the default alike, thus a config written
+        before the field existed parses unchanged (P2c R5). A value
+        must be one of the allowed strings.
+        """
+        if key not in self._raw:
+            return default
+        if self._raw.get(key) is None:
+            self._raw.pop(key)
+            return default
+        return self.choice(key, allowed)
+
     def float_(self, key: str, low: float | None = None, high: float | None = None,
                low_open: bool = False) -> float:
         value = self._take(key)
@@ -279,6 +313,16 @@ def _parse_slot(node: _Node, slot: str) -> SlotSection:
         if section.provider == "openrouter" and section.instruction_template is None:
             raise ConfigError(
                 f"{path}.instruction_template: required for the openrouter provider"
+            )
+    # The text encoder does not implement instructions - an ignored
+    # field is a silent thinning of the config (P2c R7). The
+    # image_encoder slot reads it as the joint-embedding instruction
+    # (P2c section 5).
+    if slot in ("text_encoder", "line_drawer"):
+        if section.instruction_template is not None:
+            raise ConfigError(
+                f"{path}.instruction_template: must be null - the "
+                f"{slot} slot implements no instruction"
             )
     if slot in ("text_encoder", "image_encoder"):
         if section.provider in ("openrouter", "fake") and section.dimension is None:
@@ -365,8 +409,17 @@ def parse_preparation_config(raw: object, source: str = "config") -> Preparation
     outline = OutlineSection(
         crop_fraction=outline_node.float_("crop_fraction", low=0.0, high=1.0, low_open=True),
         crop_grid=outline_node.choice("crop_grid", CROP_GRIDS),
+        source=outline_node.absent_or_choice("source", OUTLINE_SOURCES,
+                                             default="linedraw"),
+        photo_render=outline_node.absent_or_choice("photo_render",
+                                                   PHOTO_RENDERS,
+                                                   default="color"),
     )
     outline_node.finish()
+    if outline.photo_render != "color" and outline.source != "photo":
+        raise ConfigError(
+            'outline.photo_render: only the "photo" source reads a render '
+            "variant - the linedraw path has no photograph render")
 
     neardup_node = root.child("neardup")
     neardup = NeardupSection(
@@ -455,6 +508,12 @@ def config_to_json_value(config: PreparationConfig) -> dict[str, JsonValue]:
         "outline": {
             "crop_fraction": config.outline.crop_fraction,
             "crop_grid": config.outline.crop_grid,
+            # Omitted at the defaults: a config released before the
+            # fields keeps its document and thus its hash (P2c R5).
+            **({"source": config.outline.source}
+               if config.outline.source != "linedraw" else {}),
+            **({"photo_render": config.outline.photo_render}
+               if config.outline.photo_render != "color" else {}),
         },
         "neardup": {"similarity_threshold": config.neardup.similarity_threshold},
         "providers": {

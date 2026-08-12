@@ -476,18 +476,20 @@ def completed_preparation(tmp_path_factory: pytest.TempPathFactory):
 # --- scoring (P2) fixtures --------------------------------------------------
 
 
-def build_prepared_pool_for_scoring(root: Path) -> dict:
+def build_prepared_pool_for_scoring(root: Path, **config_overrides) -> dict:
     """One full fake preparation with a config file on disk.
 
     The scoring context loader re-reads the preparation config from
     the path in the committed record (R2), thus the config document
-    must live on disk. Output keys: data, releases, prep_record_path,
-    pool, report, config_path.
+    must live on disk. Dotted config_overrides go through
+    prep_config_dict — the P2c photograph-source fixtures use them.
+    Output keys: data, releases, prep_record_path, pool, report,
+    config_path.
     """
     data = root / "data"
     releases = root / "releases"
     pool = build_released_pool(data, root / "pool-releases", PREP_DEFAULT_SPECS)
-    document = prep_config_dict(pool["record_path"])
+    document = prep_config_dict(pool["record_path"], **config_overrides)
     config_path = root / "prep-config.json"
     config_path.write_text(canonical_json_pretty(document) + "\n",
                            encoding="utf-8")

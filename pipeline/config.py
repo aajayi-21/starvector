@@ -388,7 +388,8 @@ def _parse_dataset(node: _Node) -> DatasetSection:
 
 
 def _parse_encoder_slot(node: _Node, path: str,
-                        providers: tuple[str, ...]) -> SlotSection:
+                        providers: tuple[str, ...],
+                        allow_instruction: bool = False) -> SlotSection:
     section = SlotSection(
         provider=node.choice("provider", providers),
         model=node.opt_str("model"),
@@ -396,7 +397,11 @@ def _parse_encoder_slot(node: _Node, path: str,
         dimension=node.opt_int("dimension", minimum=1),
     )
     node.finish()
-    if section.instruction_template is not None:
+    # The sketch slot reads the field as its joint-embedding
+    # instruction (spec P2c section 9a). The text slot keeps the
+    # must-be-null rule — an ignored field is a silent thinning of
+    # the config (P2c R7).
+    if section.instruction_template is not None and not allow_instruction:
         raise ConfigError(
             f"{path}.instruction_template: must be null — the slot has no "
             "instruction")
@@ -553,7 +558,8 @@ def parse_scoring_config(raw: object, source: str = "config") -> ScoringConfig:
         openrouter=openrouter,
         sketch_encoder=_parse_encoder_slot(
             providers_node.child("sketch_encoder"),
-            "providers.sketch_encoder", SKETCH_ENCODER_PROVIDERS),
+            "providers.sketch_encoder", SKETCH_ENCODER_PROVIDERS,
+            allow_instruction=True),
         text_encoder=_parse_encoder_slot(
             providers_node.child("text_encoder"),
             "providers.text_encoder", TEXT_ENCODER_PROVIDERS),

@@ -154,3 +154,29 @@ def test_the_hash_ignores_the_fit_record_and_reads_the_weights() -> None:
                                                           "element": 1.0}}),
         "test")
     assert scoring_config_hash(weighted, hashes) != base
+
+
+def test_a_sketch_encoder_instruction_parses_and_moves_the_slot_hash() -> None:
+    # Spec P2c section 9a: the sketch slot reads the field as its
+    # joint-embedding instruction, and the instruction forks the
+    # scoring lineage through the slot hash.
+    from validation.harness import sketch_encoder_hash
+
+    plain = parse_scoring_config(_base(), "test")
+    instructed = parse_scoring_config(
+        scoring_config_dict(
+            RECORD,
+            **{"providers.sketch_encoder.instruction_template": "sketch it"}),
+        "test")
+    assert instructed.providers.sketch_encoder.instruction_template \
+        == "sketch it"
+    assert sketch_encoder_hash(plain) != sketch_encoder_hash(instructed)
+
+
+def test_a_text_encoder_instruction_stays_a_config_error() -> None:
+    with pytest.raises(ConfigError, match="text_encoder.instruction"):
+        parse_scoring_config(
+            scoring_config_dict(
+                RECORD,
+                **{"providers.text_encoder.instruction_template": "x"}),
+            "test")

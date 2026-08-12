@@ -132,7 +132,8 @@ def _wire_fake(slot_name: str, slot: SlotSection):
     if slot_name == "image_encoder":
         from providers.fake.encoder import FakeImageEncoder
 
-        return FakeImageEncoder(dimension=slot.dimension or 64)
+        return FakeImageEncoder(dimension=slot.dimension or 64,
+                                instruction=slot.instruction_template)
     if slot_name == "line_drawer":
         from providers.fake.linedrawer import FakeLineDrawer
 
@@ -175,6 +176,9 @@ def _embedding_slot_config(slot_name: str, slot: SlotSection, config: Preparatio
         model=slot.model or config.providers.openrouter.default_model,
         dimension=slot.dimension,
         encoding_format="float",
+        # The joint-embedding instruction of the image slot (spec P2c
+        # section 5). The config parser keeps it null on the text slot.
+        instruction=slot.instruction_template,
     )
 
 
@@ -621,6 +625,34 @@ def run_p04_vocabulary(
     return meta
 
 
+def run_p05_skip(
+    config: PreparationConfig, tree: PreparationTree, code_version: str
+) -> StageMeta:
+    """The p05 skip of a photograph-source preparation (P2c R4).
+
+    The stage directory holds a meta and no drawings, no drawer is
+    wired, and the resume and p09 accounting reads keep their one
+    shape.
+    """
+    stage = "p05-linedraw"
+    ids = _intake_ids(tree)
+    meta = _meta(
+        tree,
+        stage,
+        "p04-vocabulary",
+        image_count=len(ids),
+        config_echo={"outline_source": config.outline.source},
+        provider_hashes={},
+        counters={"skipped-photo-source": 1},
+        array_shapes={},
+        provider_posts=0,
+        provider_cache_hits=0,
+        code_version=code_version,
+    )
+    _write_stage(tree, stage, meta, {})
+    return meta
+
+
 def run_p05_linedraw(
     line_drawer: object, config: PreparationConfig, tree: PreparationTree, code_version: str
 ) -> StageMeta:
@@ -685,11 +717,25 @@ def run_p06_outline(
 ) -> StageMeta:
     stage = "p06-outline"
     ids = _intake_ids(tree)
-    drawer_hash = dict(mf.read_meta(tree, "p05-linedraw").provider_config_hashes)["line_drawer"]
     encoder_hash = getattr(image_encoder, "config_hash")
-    # The image-level cache key covers the two hashes: a change to the
-    # drawings or the encoder moves the cached vectors (spec section 6).
-    combined_hash = sha256_hex(encoder_hash + drawer_hash)
+    photo_source = config.outline.source == "photo"
+    grayscale = config.outline.photo_render == "grayscale"
+    if photo_source:
+        # The photograph path (spec P2c section 4): the canonical
+        # render token sits in the drawer-hash position, thus the two
+        # paths cannot share a cached vector.
+        drawer_hash = None
+        combined_hash = sha256_hex(
+            encoder_hash
+            + outline.photo_source_token(config.linedraw.canvas_px, grayscale)
+        )
+    else:
+        drawer_hash = dict(
+            mf.read_meta(tree, "p05-linedraw").provider_config_hashes
+        )["line_drawer"]
+        # The image-level cache key covers the two hashes: a change to the
+        # drawings or the encoder moves the cached vectors (spec section 6).
+        combined_hash = sha256_hex(encoder_hash + drawer_hash)
     rows_for_image = len(outline.ROW_LAYOUT)
     per_image: dict[str, np.ndarray] = {}
     missing: list[str] = []
@@ -710,14 +756,23 @@ def run_p06_outline(
         chunk = missing[start : start + _BYTE_SLICE]
         batch: list[bytes] = []
         for image_id in chunk:
-            drawing_path = mf.linedraw_path(tree.data_root, drawer_hash, image_id)
-            try:
-                drawing = drawing_path.read_bytes()
-            except OSError as error:
-                raise mf.ManifestError(
-                    f"{drawing_path}: line drawing missing from the cache: {error}"
-                ) from error
-            batch.extend(outline.outline_crop_images(drawing, config.outline.crop_fraction))
+            if photo_source:
+                source_image = outline.photo_canonical(
+                    mf.load_image_bytes(tree.data_root, image_id),
+                    config.linedraw.canvas_px,
+                    grayscale,
+                )
+            else:
+                drawing_path = mf.linedraw_path(tree.data_root, drawer_hash, image_id)
+                try:
+                    source_image = drawing_path.read_bytes()
+                except OSError as error:
+                    raise mf.ManifestError(
+                        f"{drawing_path}: line drawing missing from the cache: {error}"
+                    ) from error
+            batch.extend(
+                outline.outline_crop_images(source_image, config.outline.crop_fraction)
+            )
         encoded = np.asarray(image_encoder.encode_images(batch))  # (6 * B, d)
         if encoded.ndim != 2 or encoded.shape[0] != len(batch):
             raise mf.ManifestError(
@@ -745,8 +800,16 @@ def run_p06_outline(
         config_echo={
             "crop_fraction": config.outline.crop_fraction,
             "crop_grid": config.outline.crop_grid,
+            # The photograph path names itself. The linedraw path
+            # keeps its released meta shape byte-for-byte.
+            **({"outline_source": config.outline.source,
+                "photo_render": config.outline.photo_render}
+               if photo_source else {}),
         },
-        provider_hashes={"image_encoder": encoder_hash, "line_drawer": drawer_hash},
+        provider_hashes=(
+            {"image_encoder": encoder_hash} if photo_source
+            else {"image_encoder": encoder_hash, "line_drawer": drawer_hash}
+        ),
         # No encoded-against-cached split - see the p05 counter note.
         counters={},
         array_shapes={"outline_vectors": stacked.shape, "outline_space_mean": mean.shape},
@@ -1044,6 +1107,10 @@ def _execute_stage(
             None,
         )
     if stage == "p05-linedraw":
+        if config.outline.source == "photo":
+            # No drawer is wired: a photograph-source preparation runs
+            # with no line-drawing model and no torch stack (P2c R4).
+            return run_p05_skip(config, tree, code_version), None
         return (
             run_p05_linedraw(provider_for("line_drawer"), config, tree, code_version),
             None,

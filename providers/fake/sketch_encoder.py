@@ -21,21 +21,36 @@ from providers.fake.vectors import _seed_from, _unit_gaussian
 
 
 class FakeSketchEncoder:
-    """Fake encoder keyed by the rendered marker geometry."""
+    """Fake encoder keyed by the rendered marker geometry.
 
-    def __init__(self, dimension: int, family_epsilon: float = 0.05) -> None:
+    instruction mirrors the joint-embedding field of the live sketch
+    slot (spec P2c section 9a): it moves the config hash — thus the
+    cache and lineage identity — and moves no vector, so the scripted
+    family structure stays in force across the P2c conditions.
+    """
+
+    def __init__(self, dimension: int, family_epsilon: float = 0.05,
+                 instruction: str | None = None) -> None:
         self._dimension = dimension
         self._family_epsilon = family_epsilon
+        self._instruction = instruction
 
     @property
     def config_hash(self) -> str:
-        """Stable hash of the fake encoder parameters."""
-        return sha256_hex(canonical_json({
+        """Stable hash of the fake encoder parameters.
+
+        The instruction is omitted at None (P2c R5), thus a config
+        without one hashes as it did before the field existed.
+        """
+        document = {
             "provider": "fake-sketch-encoder",
             "dimension": self._dimension,
             "family_epsilon": self._family_epsilon,
             "marker_rule": markers.MARKER_RULE,
-        }))
+        }
+        if self._instruction is not None:
+            document["instruction"] = self._instruction
+        return sha256_hex(canonical_json(document))
 
     def encode_images(self, images: Sequence[bytes]) -> Vectors:
         """Encode a batch of rendered sketch PNG images.

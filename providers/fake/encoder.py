@@ -25,24 +25,38 @@ class FakeImageEncoder:
     gives an almost equal vector, all other values give a family-level
     distance. An image without an embed_family chunk gets a vector
     seeded from its bytes.
+
+    instruction mirrors the joint-embedding field of the live image
+    slot (spec P2c section 5): it moves the config hash — thus the
+    cache and lineage identity — and moves no vector, so a scripted
+    family structure stays in force across the P2c conditions.
     """
 
     def __init__(
-        self, dimension: int, dup_epsilon: float = 0.05, family_epsilon: float = 0.7
+        self, dimension: int, dup_epsilon: float = 0.05,
+        family_epsilon: float = 0.7, instruction: str | None = None,
     ) -> None:
         self._dimension = dimension
         self._dup_epsilon = dup_epsilon
         self._family_epsilon = family_epsilon
+        self._instruction = instruction
 
     @property
     def config_hash(self) -> str:
-        """Stable hash of the fake encoder parameters."""
-        return sha256_hex(canonical_json({
+        """Stable hash of the fake encoder parameters.
+
+        The instruction is omitted at None (P2c R5), thus a config
+        without one hashes as it did before the field existed.
+        """
+        document = {
             "provider": "fake-encoder",
             "dimension": self._dimension,
             "dup_epsilon": self._dup_epsilon,
             "family_epsilon": self._family_epsilon,
-        }))
+        }
+        if self._instruction is not None:
+            document["instruction"] = self._instruction
+        return sha256_hex(canonical_json(document))
 
     def encode_images(self, images: Sequence[bytes]) -> Vectors:
         """Encode a batch of images.

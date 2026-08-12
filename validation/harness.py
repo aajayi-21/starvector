@@ -65,7 +65,12 @@ def validation_dir(data_root: Path, harness: str, index_id: str,
 
 
 def sketch_encoder_hash(config: ScoringConfig) -> str:
-    """The sketch_encoder slot hash, computed without wiring."""
+    """The sketch_encoder slot hash, computed without wiring.
+
+    The slot's instruction_template enters the hash (spec P2c section
+    9a), thus a sketch-side instruction forks the embedding cache and
+    the scoring lineage by construction.
+    """
     slot = config.providers.sketch_encoder
     if slot.provider == "openrouter":
         from providers.openrouter.embeddings import (EmbeddingSlotConfig,
@@ -76,10 +81,12 @@ def sketch_encoder_hash(config: ScoringConfig) -> str:
             model=slot.model or config.providers.openrouter.default_model,
             dimension=slot.dimension or 0,
             encoding_format="float",
+            instruction=slot.instruction_template,
         ))
     from providers.fake.sketch_encoder import FakeSketchEncoder
 
-    return FakeSketchEncoder(dimension=slot.dimension or 64).config_hash
+    return FakeSketchEncoder(dimension=slot.dimension or 64,
+                             instruction=slot.instruction_template).config_hash
 
 
 def text_encoder_hash(config: ScoringConfig) -> str:
@@ -174,13 +181,15 @@ def wire_sketch_encoder(config: ScoringConfig,
                 model=slot.model or section.default_model,
                 dimension=slot.dimension or 0,
                 encoding_format="float",
+                instruction=slot.instruction_template,
             ),
             client,
             data_root / "cache" / "openrouter",
         )
     from providers.fake.sketch_encoder import FakeSketchEncoder
 
-    return FakeSketchEncoder(dimension=slot.dimension or 64)
+    return FakeSketchEncoder(dimension=slot.dimension or 64,
+                             instruction=slot.instruction_template)
 
 
 def wire_text_encoder(config: ScoringConfig, data_root: Path) -> TextEncoder:

@@ -1,0 +1,83 @@
+{
+  "config_version": 1,
+  "input": {
+    "release_record": "pool/releases/dev-wit-001-b89d8614.json"
+  },
+  "elements": {
+    "counts": {
+      "objects": 3,
+      "materials": 3,
+      "colors": 3,
+      "shapes": 2,
+      "scale": 1,
+      "setting": 1,
+      "ambience": 3
+    },
+    "max_elements": 20,
+    "normalize_rule": "d7-v1"
+  },
+  "linedraw": {
+    "binarize_threshold": 0.4,
+    "min_segment_px": 10,
+    "canvas_px": 512,
+    "line_width_px": 3,
+    "background": "white",
+    "antialias": false
+  },
+  "outline": {
+    "crop_fraction": 0.6,
+    "crop_grid": "center-corners",
+    "source": "photo",
+    "photo_render": "grayscale"
+  },
+  "neardup": {
+    "similarity_threshold": 0.95
+  },
+  "providers": {
+    "openrouter": {
+      "default_model": "openai/gpt-5.6-luna",
+      "max_concurrency": 4,
+      "requests_per_second": 2.0,
+      "timeout_seconds": 120.0,
+      "retry_limit": 3,
+      "response_format_mode": "json_schema"
+    },
+    "describer": {
+      "provider": "openrouter",
+      "model": null,
+      "instruction_template": "Describe the image as a JSON object with exactly these fields: objects (3 short noun phrases naming the most salient things), materials (3 words or short phrases naming visible materials), colors (3 color names), shapes (2 short phrases naming dominant shapes), scale (one word for the subject scale, such as small, medium, or large), setting (a short phrase naming the setting), ambience (3 words for mood or atmosphere). Use short, concrete, lowercase phrases. Return JSON only.",
+      "dimension": null
+    },
+    "text_encoder": {
+      "provider": "openrouter",
+      "model": "google/gemini-embedding-2",
+      "instruction_template": null,
+      "dimension": 3072
+    },
+    "image_encoder": {
+      "provider": "openrouter",
+      "model": "google/gemini-embedding-2",
+      "instruction_template": null,
+      "dimension": 3072
+    },
+    "line_drawer": {
+      "provider": "local",
+      "model": "lineart",
+      "instruction_template": null,
+      "dimension": null
+    },
+    "element_boxes": {
+      "provider": "openrouter",
+      "model": null,
+      "instruction_template": "Locate each of these elements in the image: {element_list}. For each element, give a bounding box as an object with x_min, y_min, x_max, y_max, each a number between 0 and 1 relative to the image width and height, with x_min less than x_max and y_min less than y_max. If an element is not visible or cannot be located, use null for that element. Return a JSON object that maps each element name to its box or null. Return JSON only.",
+      "dimension": null
+    }
+  },
+  "runtime": {
+    "device": "auto"
+  },
+  "release": {
+    "tag": "dev-wit-prep-photo-gray",
+    "dev_only": true
+  }
+}

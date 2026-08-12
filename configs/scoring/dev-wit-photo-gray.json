@@ -1,0 +1,100 @@
+{
+  "config_version": 1,
+  "input": {
+    "preparation_record": "pool/preparations/dev-wit-prep-photo-gray-09d1d4cd.json"
+  },
+  "intake": {
+    "min_ink_pixels": 100,
+    "min_strokes_whole_drawing": 2,
+    "max_text_length": 200,
+    "max_atoms": 64
+  },
+  "channels": {
+    "outline": {
+      "comparison_rule": "center-cosine-v1"
+    },
+    "element": {
+      "comparison_rule": "element-center-cosine-v1",
+      "matching_rule": "sinkhorn-slack-v1",
+      "epsilon": 0.1,
+      "sinkhorn_iterations": 20,
+      "tier2_count": 500,
+      "alpha": 1.0
+    },
+    "placement": {
+      "check_rule": "axis-ramp-v1",
+      "relation_vocabulary": [
+        "left-of",
+        "right-of",
+        "above",
+        "below"
+      ],
+      "area_cap": 0.9,
+      "margin": 0.15
+    }
+  },
+  "fusion": {
+    "weights": {
+      "outline": 1.0,
+      "element": 1.0
+    },
+    "fit_record": null
+  },
+  "commonness": {
+    "dataset": {
+      "provider": "fscoco",
+      "url": "https://cvssp.org/data/fscoco/fscoco.tar.gz",
+      "archive_sha256": "4c71f8976bd9085baa1e530c45d38ce715ea3fb06bb1a9a3f1b8a7c789912f13",
+      "coordinate_extent": [
+        256.0,
+        256.0
+      ],
+      "budget_bytes": 2500000000,
+      "fake_pair_count": null,
+      "fake_neardup_families": null
+    },
+    "split_salt": "dev-wit-scoring-001",
+    "background_count": 1000,
+    "split_fractions": {
+      "background": 0.5,
+      "v1": 0.25,
+      "v2": 0.25
+    },
+    "synthetic": null
+  },
+  "validation": {
+    "v1_pair_count": 200,
+    "v2_trial_count": 500,
+    "v2_target_seed": 20260808,
+    "submission_mode": "sketch",
+    "tag": "dev-wit-photo-gray"
+  },
+  "providers": {
+    "openrouter": {
+      "default_model": "google/gemini-embedding-2",
+      "max_concurrency": 4,
+      "requests_per_second": 2.0,
+      "timeout_seconds": 120.0,
+      "retry_limit": 3,
+      "response_format_mode": "json_schema"
+    },
+    "sketch_encoder": {
+      "provider": "openrouter",
+      "model": "google/gemini-embedding-2",
+      "instruction_template": null,
+      "dimension": 3072
+    },
+    "text_encoder": {
+      "provider": "openrouter",
+      "model": "google/gemini-embedding-2",
+      "instruction_template": null,
+      "dimension": 3072
+    }
+  },
+  "runtime": {
+    "device": "cpu"
+  },
+  "report": {
+    "dev_only": true
+  }
+}
