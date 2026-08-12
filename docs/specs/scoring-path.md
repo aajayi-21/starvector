@@ -471,7 +471,9 @@ sequence:
    from group identifiers to the atom identifiers of step 3.
 
 The optional point fields (`time`, `pressure`) are kept in the raw record
-and are not read by assembly. The function is around fifty lines, has
+and are not read by assembly. One recorded change: a stroke can
+have an optional `color` key (owner ruling 2026-08-12,
+`docs/specs/color-sketches.md`). The function is around fifty lines, has
 no configuration, and does not change (§9 of the architecture). A
 relations row that names an unknown group identifier is an intake
 `bad-shape` rejection — checked in Layer 0, before assembly.

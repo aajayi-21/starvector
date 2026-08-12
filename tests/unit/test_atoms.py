@@ -82,3 +82,24 @@ def test_the_fragment_strip_set_is_ascii_only() -> None:
     # A no-break space (\xa0) is not in the pinned strip set and stays.
     assert split_pasted_text("\xa0kite\xa0, boat") == ("\xa0kite\xa0",
                                                        "boat")
+
+
+def test_stroke_colors_align_and_collapse_to_none() -> None:
+    # A colored record: the drawing atom and the owning group atom
+    # carry colors aligned with their strokes; a colorless record
+    # (the pinned _RECORD above) assembles with stroke_colors=None on
+    # each atom - the pinned equality test is the byte-stability
+    # proof for records from before the color ruling.
+    record = dict(_RECORD)
+    record["canvas_strokes"] = [
+        {"points": [[0.1, 0.2], [0.3, 0.4]], "group_id": "g1",
+         "color": "#1a73e8"},
+        {"points": [[0.5, 0.5], [0.6, 0.6]], "group_id": None},
+    ]
+    atoms = assemble_atoms(record).atoms
+    group_atom = [a for a in atoms if a.strokes and a.type == "DESCRIPTION"][0]
+    drawing = [a for a in atoms if a.type == "WHOLE-DRAWING"][0]
+    assert group_atom.stroke_colors == ("#1a73e8",)
+    assert drawing.stroke_colors == ("#1a73e8", None)
+    colorless = [a for a in assemble_atoms(_RECORD).atoms]
+    assert all(a.stroke_colors is None for a in colorless)
