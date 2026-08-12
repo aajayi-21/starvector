@@ -414,3 +414,74 @@ def test_json_object_mode_body(tmp_path: Path) -> None:
     )
     provider.estimate_text_coverage([PNG_BYTES])
     assert captured[0]["response_format"] == {"type": "json_object"}
+
+
+def test_a_transient_in_body_error_is_retried() -> None:
+    # OpenRouter can answer 200 with an error object when the routed
+    # provider fails after the POST is accepted. A retryable code gets
+    # the standard backoff loop, not a parse failure.
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(
+                200,
+                json={"error": {"code": 502, "message": "upstream failed"}},
+            )
+        return httpx.Response(200, json=chat_body('{"x": 1}'))
+
+    client = make_client(handler)
+    body = client.post_chat({"model": "test/model", "messages": []})
+    assert client.post_count == 2
+    assert "choices" in body
+
+
+def test_a_permanent_in_body_error_raises_with_the_code() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"error": {"code": 403, "message": "input flagged"}}
+        )
+
+    client = make_client(handler)
+    with pytest.raises(OpenRouterRequestError,
+                       match=r"code 403.*input flagged"):
+        client.post_chat({"model": "test/model", "messages": []})
+    assert client.post_count == 1
+
+
+def test_an_in_body_error_that_stays_exhausts_the_retries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"error": {"code": 429, "message": "provider limited"}}
+        )
+
+    client = make_client(handler, retry_limit=1)
+    with pytest.raises(OpenRouterRequestError,
+                       match=r"did not succeed.*in-body error code 429"):
+        client.post_chat({"model": "test/model", "messages": []})
+    assert client.post_count == 2
+
+
+def test_a_result_body_with_an_error_field_is_not_an_error() -> None:
+    # A body that holds "choices" is a result. An added error field -
+    # some providers attach warnings there - must not turn it into a
+    # failure or a retry.
+    body = chat_body('{"x": 1}')
+    body["error"] = {"code": 500, "message": "warning, not a failure"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    client = make_client(handler)
+    answered = client.post_chat({"model": "test/model", "messages": []})
+    assert client.post_count == 1
+    assert "choices" in answered
+
+
+def test_a_body_without_content_names_its_shape() -> None:
+    from providers.openrouter.resolve import content_text
+
+    with pytest.raises(OpenRouterResponseError,
+                       match=r"no message content.*unexpected_key"):
+        content_text({"unexpected_key": True})

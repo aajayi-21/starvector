@@ -145,13 +145,30 @@ def text_request_body(
     }
 
 
+def _body_excerpt(response_body: object, limit: int = 300) -> str:
+    """A short text shape of one response body, for error messages.
+
+    A diagnosis needs the shape that came back - an error that names
+    the missing key alone hides the cause (measured on the 2026-08-12
+    generalization build, where the body was an error object).
+    """
+    try:
+        text = json.dumps(response_body, sort_keys=True, default=repr)
+    except (TypeError, ValueError):
+        text = repr(response_body)
+    if len(text) > limit:
+        return text[:limit] + "..."
+    return text
+
+
 def content_text(response_body: object) -> str:
     """The assistant message content string, or a boundary error."""
     try:
         content = response_body["choices"][0]["message"]["content"]  # type: ignore[index]
     except (KeyError, IndexError, TypeError) as error:
         raise OpenRouterResponseError(
-            f"response body has no message content: {error!r}"
+            f"response body has no message content ({error!r}); "
+            f"the body is {_body_excerpt(response_body)}"
         ) from error
     if not isinstance(content, str):
         raise OpenRouterResponseError("message content is not a string")

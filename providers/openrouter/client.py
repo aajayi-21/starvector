@@ -71,6 +71,30 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     return max(0.0, seconds)
 
 
+def _body_error(parsed: Mapping[str, object]) -> tuple[int | None, str] | None:
+    """The in-body error of one 2xx response, or None.
+
+    OpenRouter can answer status 200 with an error object in the body
+    when the routed provider fails after the POST is accepted. A body
+    that holds "choices" or "data" is a result, not an error, and a
+    body with no "error" field is left to the caller's parser.
+    """
+    if "choices" in parsed or "data" in parsed:
+        return None
+    error_value = parsed.get("error")
+    if error_value is None:
+        return None
+    if isinstance(error_value, Mapping):
+        code_value = error_value.get("code")
+        code = (code_value if isinstance(code_value, int)
+                and not isinstance(code_value, bool) else None)
+        message = str(error_value.get("message", error_value))
+    else:
+        code = None
+        message = str(error_value)
+    return code, message
+
+
 class OpenRouterClient:
     """Shared POST transport with a rate limit, retries, and a counter.
 
@@ -125,6 +149,12 @@ class OpenRouterClient:
         at the configured limit and then OpenRouterRequestError raises.
         A different 4xx status raises with no retry. A response that is
         not a JSON object raises OpenRouterResponseError.
+
+        A 2xx body that holds an error object and no result gets the
+        same treatment by its code: 408, 429, and 500 and up retry,
+        each different code raises with the code and the message named
+        - OpenRouter answers this shape when the routed provider fails
+        after the POST is accepted.
         """
         delay = 0.0
         detail = "no tries made"
@@ -168,6 +198,17 @@ class OpenRouterClient:
             if not isinstance(parsed, dict):
                 raise OpenRouterResponseError(
                     "OpenRouter response JSON is not an object at the top level"
+                )
+            body_error = _body_error(parsed)
+            if body_error is not None:
+                code, message = body_error
+                if code in (408, 429) or (code is not None and code >= 500):
+                    detail = f"in-body error code {code}: {message[:160]}"
+                    delay = _BACKOFF_BASE_SECONDS * (2.0 ** attempt_index)
+                    continue
+                raise OpenRouterRequestError(
+                    f"OpenRouter answered 2xx with an error body "
+                    f"(code {code}): {message[:300]}"
                 )
             return parsed
         raise OpenRouterRequestError(
