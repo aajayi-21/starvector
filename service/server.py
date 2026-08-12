@@ -147,17 +147,49 @@ def create_app(service_config: ServiceConfig,
         return Response(content=dev_script_bytes,
                         media_type="text/javascript")
 
-    @app.get("/api/dev/submission")
-    def dev_submission() -> Response:
+    def _picked_day(day: str | None) -> str | Response:
+        """The requested day, or the latest one - the day browser
+        (fifth 14b ruling) reads each stored day."""
+        if day is None:
+            latest = store.latest_day(root)
+            if latest is None:
+                return Response(content=_NO_DAY, status_code=404,
+                                media_type="application/json")
+            return latest
+        if day not in store.list_days(root):
+            return JSONResponse({"cause": "no-such-day",
+                                 "detail": f"no stored day {day!r}"},
+                                status_code=404)
+        return day
+
+    @app.get("/api/dev/days")
+    def dev_days() -> Response:
         if not dev_mode:
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
-        day = store.latest_day(root)
-        if day is None:
-            return Response(content=_NO_DAY, status_code=404,
+        rows = []
+        for day in reversed(store.list_days(root)):
+            record = store.read_day_record(root, day)
+            rows.append({
+                "day": record.day,
+                "status": record.status,
+                "trial_code": record.trial_code,
+                "target_id": record.target_id,
+                "commitment": record.commitment,
+                "submitted": player in store.list_submissions(root, day),
+            })
+        return JSONResponse({"days": rows})
+
+    @app.get("/api/dev/submission")
+    def dev_submission(day: str | None = None) -> Response:
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
+        picked = _picked_day(day)
+        if isinstance(picked, Response):
+            return picked
         stored = store.read_json_or_none(
-            store.submission_path(root, day, player))
+            store.submission_path(root, picked, player))
         if stored is None:
             return JSONResponse({"cause": "no-submission",
                                  "detail": "no stored submission this "
@@ -182,17 +214,16 @@ def create_app(service_config: ServiceConfig,
         })
 
     @app.get("/api/dev/rankings")
-    def dev_stored_rankings() -> Response:
+    def dev_stored_rankings(day: str | None = None) -> Response:
         if not dev_mode:
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
-        day = store.latest_day(root)
-        if day is None:
-            return Response(content=_NO_DAY, status_code=404,
-                            media_type="application/json")
-        record = store.read_day_record(root, day)
+        picked = _picked_day(day)
+        if isinstance(picked, Response):
+            return picked
+        record = store.read_day_record(root, picked)
         stored = store.read_json_or_none(
-            store.submission_path(root, day, player))
+            store.submission_path(root, picked, player))
         if stored is None:
             return JSONResponse({"cause": "no-submission",
                                  "detail": "no stored submission this "
@@ -200,6 +231,9 @@ def create_app(service_config: ServiceConfig,
         from service.scoring import dev_rankings
 
         try:
+            # An earlier day scores with the config the latest
+            # day names - a drifted config gives the browser
+            # numbers different from the stored trial row.
             value = dev_rankings(stored["record"], record.target_id,
                                  _dev_wired())
         except Exception as error:

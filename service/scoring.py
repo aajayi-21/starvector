@@ -155,7 +155,10 @@ def dev_rankings(record: JsonValue, target_id: TargetId,
     numbers plus the full fused ordering with the target marked. The
     draft is not stored, the day does not move, and the computation
     is the production path - validate, encode, the weighted
-    channels, fusion, rank.
+    channels, fusion, rank. Each ranking row also carries the
+    standardized score of each active channel - the fifth 14b
+    ruling: the console shows which channel drove a position - and
+    the answer holds the atom-by-atom report of the trial row.
     """
     import numpy as np
 
@@ -167,9 +170,11 @@ def dev_rankings(record: JsonValue, target_id: TargetId,
     submission = validate_submission(record, context.gates,
                                      context.render.canvas_px)
     encoded = encode_submission(submission, context.render, wired.encoders)
-    fused = fuse(standardized_channels(encoded, context), context.weights)
+    standardized = standardized_channels(encoded, context)
+    fused = fuse(standardized, context.weights)
     trial = rank(fused, target_id, decoy_set(context.index, target_id),
                  context.index)
+    channel_names = sorted(standardized)
     order = np.argsort(-fused, kind="stable")            # (N,) positions
     rankings: list[JsonValue] = []
     target_position = 0
@@ -181,8 +186,14 @@ def dev_rankings(record: JsonValue, target_id: TargetId,
             "position": position,
             "image_id": image_id,
             "fused": harness.quantized(float(fused[int(index)])),
+            "channels": {
+                name: harness.quantized(float(standardized[name][int(index)]))
+                for name in channel_names},
             "is_target": image_id == target_id,
         })
+    report = match_report(encoded, context.index,
+                          context.index.image_ids.index(target_id),
+                          context.element)
     return {
         "trial": {"p": harness.quantized(trial.p),
                   "decoy_count": trial.decoy_count,
@@ -190,7 +201,16 @@ def dev_rankings(record: JsonValue, target_id: TargetId,
                   "target_rank": trial.decoy_count - trial.beaten
                   - trial.tied + 1},
         "target_position": target_position,
+        "channel_names": channel_names,
         "rankings": rankings,
+        "report": [
+            {"atom_id": row.atom_id, "atom_text": row.atom_text,
+             "element": row.element,
+             "weight": harness.quantized(row.weight),
+             "similarity": harness.quantized(row.similarity),
+             "rarity": harness.quantized(row.rarity)}
+            for row in report
+        ],
     }
 
 

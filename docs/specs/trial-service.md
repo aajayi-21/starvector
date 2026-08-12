@@ -521,6 +521,22 @@ active day at a time, thus test days run back to back. The draft
 scorer of the third ruling is out: play comes in from the player
 page alone.
 
+### Console diagnostics (2026-08-12, fifth ruling)
+
+The console answers *why* a position, not the fused sequence
+alone. Each `/api/dev/rankings` row carries the standardized score
+of each active weighted channel adjacent to the fused number, the
+answer carries the atom-by-atom report (the trial-row shape), and
+the page shows the two. A day browser reads each stored day:
+`GET /api/dev/days` lists them newest first with status, trial
+code, target, and commitment, and `?day=` on the submission and
+rankings surfaces selects one. The day controls move the latest
+day alone. An earlier day scores with the config the latest day
+names - with a drifted config the browser's numbers are different
+from the stored trial row, and the stored row stays the record.
+These surfaces are dev mode alone and gate to the same constant
+404.
+
 ## 15. Acceptance criteria
 
 1. `core/aggregate.py` lands with the §8 property tests, and the

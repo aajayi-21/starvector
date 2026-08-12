@@ -15,7 +15,12 @@
   table { border-collapse: collapse; }
   td, th { border-bottom: 1px solid #e2e5e7; padding: 4px 10px 4px 0;
            text-align: left; }
-  #rankings img { vertical-align: middle; }
+  #rankings img { vertical-align: middle; transition: transform .12s;
+                  transform-origin: left center; }
+  #rankings img:hover { transform: scale(5); position: relative;
+                        z-index: 5; }
+  #rankings-target { vertical-align: middle; margin-left: 10px;
+                     border: 2px solid #b3611e; }
   .target-row { background: #fff3cd; font-weight: 600; }
   code { background: #f1f3f4; padding: 1px 5px; border-radius: 4px; }
   #trial-code { font-size: 40px; letter-spacing: 6px; font-weight: 700;
@@ -32,6 +37,11 @@
   interface, and there is no sketch input on this page.</p>
 
 <h1>day control</h1>
+<div class="row">
+  <select id="day-select" class="hidden"></select>
+  <span class="muted">each stored day is readable - the control
+    row moves the latest one</span>
+</div>
 <div id="trial-code">······</div>
 <p><span id="status-line"></span> <span id="day-label" class="muted">
 </span></p>
@@ -68,7 +78,9 @@
   <p id="submission-paste" class="muted"></p>
 </div>
 
-<h2>Scoring and ranking</h2>
+<h2>Scoring and ranking
+  <img id="rankings-target" alt="the target, small" width="48"
+       class="hidden"></h2>
 <p class="muted" id="leaderboard-note">Scores the stored submission
    through the production path. Available as soon as a submission
    is in - before close it is a preview, after close it equals the
@@ -79,9 +91,13 @@
   <span id="rank-note" class="muted"></span>
 </div>
 <p id="dev-trial"></p>
+<table id="report-table" class="hidden">
+  <thead><tr><th>atom</th><th>matched element</th><th>weight</th>
+             <th>similarity</th><th>rarity</th></tr></thead>
+  <tbody id="report-body"></tbody>
+</table>
 <table id="rankings" class="hidden">
-  <thead><tr><th>#</th><th></th><th>image</th><th>fused</th></tr>
-  </thead>
+  <thead id="rankings-head"></thead>
   <tbody id="rankings-body"></tbody>
 </table>
 <div class="row">
@@ -108,6 +124,8 @@
      configs/scoring/dev-wit-mixed.json</code> builds the commonness
      tables.</p>
 </details>
+
+<p><a href="/history">history and skill number</a></p>
 
 <script src="/ui/dev.js"></script>
 <script>if (typeof startDevConsole === "function") startDevConsole();

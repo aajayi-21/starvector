@@ -184,7 +184,7 @@ def test_dev_surfaces_are_constant_404_without_the_flag(tmp_path) -> None:
     fixture, client = _world(tmp_path)
     record = store.read_day_record(fixture["store"], DAY)
     for path in ("/api/dev", "/dev", "/ui/dev.js", "/api/dev/rankings",
-                 "/api/dev/submission"):
+                 "/api/dev/submission", "/api/dev/days"):
         for _ in range(2):
             answer = client.get(path)
             assert answer.status_code == 404, path
@@ -227,6 +227,15 @@ def test_the_console_reads_target_submission_and_preview_rankings(
     body = preview.json()
     assert len(body["rankings"]) == len(fixture["image_ids"])
     assert sum(1 for row in body["rankings"] if row["is_target"]) == 1
+    # The fifth 14b ruling: each row carries the standardized score
+    # of each active weighted channel, and the answer carries the
+    # atom report - the console shows what drove a position.
+    assert body["channel_names"] == ["element", "outline"]
+    for row in body["rankings"]:
+        assert set(row["channels"]) == {"element", "outline"}
+    assert body["report"]
+    assert {"atom_id", "atom_text", "element", "weight", "similarity",
+            "rarity"} == set(body["report"][0])
     assert store.read_day_record(fixture["store"], DAY).status == "open"
     assert store.read_json_or_none(
         store.trial_row_path(fixture["store"], DAY, "ade")) is None
@@ -296,13 +305,37 @@ def test_the_console_page_drives_days_back_to_back(tmp_path) -> None:
         store.trial_row_path(fixture["store"], first_day, "ade"))
     assert board["trial"]["p"] == day_row["p"]
     assert board["trial"]["target_rank"] == day_row["target_rank"]
+    assert board["report"] == day_row["report"]
 
     assert dev_client.post("/api/day/reveal").status_code == 200
     # Open rolls to the next free date.
     second = dev_client.post("/api/day/open")
     assert second.status_code == 200
-    assert second.json()["day"] > first_day
-    assert store.latest_day(fixture["store"]) == second.json()["day"]
+    second_day = second.json()["day"]
+    assert second_day > first_day
+    assert store.latest_day(fixture["store"]) == second_day
+
+    # The day browser (fifth 14b ruling): each stored day is
+    # readable by name, newest first, and the first day's rankings
+    # mark the first day's target.
+    days = dev_client.get("/api/dev/days").json()["days"]
+    assert [row["day"] for row in days] == [second_day, first_day]
+    assert days[1]["submitted"] is True
+    assert days[0]["submitted"] is False
+    first_record = store.read_day_record(fixture["store"], first_day)
+    assert days[1]["trial_code"] == first_record.trial_code
+    assert days[1]["target_id"] == first_record.target_id
+    browsed = dev_client.get(f"/api/dev/rankings?day={first_day}").json()
+    target_rows = [row for row in browsed["rankings"] if row["is_target"]]
+    assert [row["image_id"] for row in target_rows] \
+        == [first_record.target_id]
+    stored = dev_client.get(f"/api/dev/submission?day={first_day}").json()
+    assert stored["record"] == mixed_wire_record()
+    assert dev_client.get(f"/api/dev/submission?day={second_day}"
+                          ).json()["cause"] == "no-submission"
+    unknown = dev_client.get("/api/dev/rankings?day=1999-01-01")
+    assert unknown.status_code == 404
+    assert unknown.json()["cause"] == "no-such-day"
 
 
 def test_an_empty_store_answers_with_constants(tmp_path) -> None:
