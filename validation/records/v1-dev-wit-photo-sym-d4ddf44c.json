@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "a2133ad06986c372e8bb1ca869c7f13b319bfed3febcf84e3430eac75a7fd4cd",
+  "created_at": "2026-08-12T06:16:36.523372+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-12",
+  "dev_only": true,
+  "first_rank_fraction": 0.585,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "d4ddf44c7dd0c43ea61c186e2b209c042997e865a250b8a8de0db3014b4f0b6a",
+  "index_id": "c100fb451e76a2d36bc7bd23c52be40f2c367aae68614199c26617de1bcbb5d7",
+  "mean_trial_score": 0.995118,
+  "median_rank": 1.0,
+  "notes": "P2c factorial cell, the sketch instruction alone on the raw photo index (shares c100fb45 with the photo run). First-rank 58.5%, top-ten 95.5%, tail 1 of 200. Against photo on identical pairs: 54 better / 37 worse (sign p 0.093), 20 first-rank gains / 14 losses (p 0.39) - the sketch instruction alone is a weak trend, not significant. Against photo-instructed-sym: 12 first-rank gains / 33 losses (p 2.5e-3) - the photograph-side instruction is significant given the sketch instruction. Together with the recorded inst-vs-photo null, this establishes the pair interaction: neither instruction is significant alone, the two together add 13.5 points. Zero posts on every slot - the cell ran fully cache-warm.",
+  "pair_count": 200,
+  "preparation_version_id": "5b0ee330172a203c63c543876816c32f91a9c9334289ee84a145bf69701926e6",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 1600,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 747,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002353,
+  "reference_top_ten": 0.023529,
+  "reviewer": "ade",
+  "scoring_config_hash": "26787b7ffb3a80d9822291eb966bbf683b32b88170ca201b0ea2e48629bd5cde",
+  "tag": "dev-wit-photo-sym",
+  "top_ten_fraction": 0.955,
+  "verdict": "pass"
+}

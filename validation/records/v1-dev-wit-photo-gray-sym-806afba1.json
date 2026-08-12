@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "a2133ad06986c372e8bb1ca869c7f13b319bfed3febcf84e3430eac75a7fd4cd",
+  "created_at": "2026-08-12T06:19:59.897910+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-12",
+  "dev_only": true,
+  "first_rank_fraction": 0.64,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "806afba1ba48c1d544dd0369d58c73dfe162807599258a3454b6ec7113bc3a57",
+  "index_id": "4513ae1022c3c2c375fb5c264f1bbde1bbe81e034209508e529f6b348a76cb74",
+  "mean_trial_score": 0.995283,
+  "median_rank": 1.0,
+  "notes": "P2c factorial cell, the sketch instruction on the grayscale index (shares 4513ae10 with the photo-gray run). First-rank 64.0%, top-ten 95.0%, tail 1 of 200. Against photo-sym: 46 better / 30 worse (p 0.085), 20 first-rank gains / 9 (p 0.061) - grayscale stays a suggestive trend, three measurements in the same direction, none past the bar at 200 pairs. Against photo-instructed-sym head to head: 28 better / 43 worse - the color both-instructions recipe leads 69.0% to 64.0% (p 0.096, not separated). Grayscale is closed for adoption; revisit at production scale if wanted. Zero posts.",
+  "pair_count": 200,
+  "preparation_version_id": "09d1d4cd892972490ad889da9889c216ea4fd624a4f40c890a3c7244613f8d56",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 1600,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 747,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002353,
+  "reference_top_ten": 0.02353,
+  "reviewer": "ade",
+  "scoring_config_hash": "42b175270be46d43e7e18f8d0748f44f132d52a768d9e412d73d07e7c114f806",
+  "tag": "dev-wit-photo-gray-sym",
+  "top_ten_fraction": 0.95,
+  "verdict": "pass"
+}

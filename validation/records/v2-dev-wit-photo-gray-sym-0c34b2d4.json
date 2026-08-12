@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "a2133ad06986c372e8bb1ca869c7f13b319bfed3febcf84e3430eac75a7fd4cd",
+  "created_at": "2026-08-12T06:21:34.300947+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-12",
+  "decoy_count_max": 224,
+  "decoy_count_min": 224,
+  "dev_only": true,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2",
+  "harness_config_hash": "0c34b2d41ef674eb912b7b209e96472841db85e37467c952de2fa2f7b2c6877c",
+  "index_id": "09d1d4cd892972490ad889da9889c216ea4fd624a4f40c890a3c7244613f8d56",
+  "ks_significance": 0.722555,
+  "ks_statistic": 0.031,
+  "mean_p_at_max_decoy_count": 0.506705,
+  "mean_p_at_min_decoy_count": 0.506705,
+  "notes": "KS 0.0310 at significance 0.723 over 500 trials - passes, the best fit of the seven conditions. Decoy count uniform at 224. Mean p 0.5067 (z 0.52). Commonness leak Spearman +0.5182 - see the photo-sym note; the leak pattern has no clean story and the marginals stay uniform.",
+  "preparation_version_id": "09d1d4cd892972490ad889da9889c216ea4fd624a4f40c890a3c7244613f8d56",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 2000,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "42b175270be46d43e7e18f8d0748f44f132d52a768d9e412d73d07e7c114f806",
+  "tag": "dev-wit-photo-gray-sym",
+  "trial_count": 500,
+  "verdict": "pass"
+}
