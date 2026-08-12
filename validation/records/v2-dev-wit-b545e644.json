@@ -4,7 +4,7 @@
   "created_at": "2026-08-12T20:13:36.703387+00:00",
   "dataset_bytes_retrieved": 0,
   "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
-  "date": "",
+  "date": "2026-08-12",
   "decoy_count_max": 224,
   "decoy_count_min": 224,
   "dev_only": true,
@@ -33,9 +33,9 @@
       "posts": 0
     }
   },
-  "reviewer": "",
+  "reviewer": "ade",
   "scoring_config_hash": "e51c37556516fe8f001579828e84385224baad530f1bbbd4caff9f116e750b80",
   "tag": "dev-wit",
   "trial_count": 500,
-  "verdict": "pending"
+  "verdict": "pass"
 }
