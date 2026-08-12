@@ -75,10 +75,17 @@ class IntakeGates(NamedTuple):
 
 
 class RenderParams(NamedTuple):
-    """Canonical render values, read from the preparation config (R2)."""
+    """Canonical render values, read from the preparation config (R2).
+
+    stroke_color selects the spec C1 render rule: "mono" strips
+    submission stroke colors, "rgb" promotes a drawing with one or
+    more color strokes to an RGB render. The default keeps the
+    two-field constructions from before the color ruling equal.
+    """
 
     canvas_px: int
     line_width_px: int
+    stroke_color: str = "mono"
 
 
 class OutlineConfig(NamedTuple):

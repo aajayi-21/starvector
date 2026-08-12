@@ -20,7 +20,8 @@ from numpy.typing import NDArray
 from core import lineart
 from core.atoms import assemble_atoms, split_pasted_text
 from core.canonical import JsonValue
-from core.types import INTAKE_CAUSES, IntakeGates, StrokePath, Submission
+from core.types import (INTAKE_CAUSES, IntakeGates, RenderParams, StrokePath,
+                        Submission)
 
 _RECORD_KEYS = ("impressions", "canvas_strokes", "groups", "relations",
                 "pasted_text")
@@ -288,6 +289,49 @@ def render_strokes(strokes: tuple[StrokePath, ...] | list[StrokePath],
     """
     mask = strokes_line_mask(strokes, canvas_px)
     return lineart.render_canonical(mask, canvas_px, line_width_px)
+
+
+def _color_rgb(color: str) -> tuple[int, int, int]:
+    """One checked '#rrggbb' string to its RGB triple."""
+    return (int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16))
+
+
+def render_strokes_rgb(strokes: tuple[StrokePath, ...] | list[StrokePath],
+                       colors: tuple[str | None, ...],
+                       canvas_px: int, line_width_px: int) -> bytes:
+    """Render one color strokes payload as canonical RGB PNG bytes.
+
+    colors aligns with strokes entry for entry. A None entry paints
+    as ink (black). With no color entry at all the output falls back
+    to render_strokes - the byte rule of spec C1 section 2 holds
+    without regard to how the caller got here.
+    """
+    if all(color is None for color in colors):
+        return render_strokes(strokes, canvas_px, line_width_px)
+    layers = [(strokes_line_mask([stroke], canvas_px),
+               _color_rgb(color) if color is not None else (0, 0, 0))
+              for stroke, color in zip(strokes, colors, strict=True)]
+    return lineart.render_canonical_rgb(layers, canvas_px, line_width_px)
+
+
+def render_submission_strokes(strokes: tuple[StrokePath, ...],
+                              colors: tuple[str | None, ...] | None,
+                              render: RenderParams) -> bytes:
+    """The spec C1 promotion rule: one render for one drawing.
+
+    "mono" strips colors and gives the render_strokes bytes. "rgb"
+    gives the same bytes when colors is None - the byte-stable half
+    of the rule that keeps colorless records and the background
+    caches warm - and the RGB render when a stroke has a color.
+    """
+    if render.stroke_color == "mono" or colors is None:
+        return render_strokes(strokes, render.canvas_px,
+                              render.line_width_px)
+    if render.stroke_color != "rgb":
+        raise ValueError(
+            f"unknown stroke_color rule: {render.stroke_color!r}")
+    return render_strokes_rgb(strokes, colors, render.canvas_px,
+                              render.line_width_px)
 
 
 def validate_submission(record: JsonValue, gates: IntakeGates,

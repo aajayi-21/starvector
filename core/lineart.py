@@ -90,6 +90,41 @@ def _dilate_square(mask: NDArray[np.bool_]) -> NDArray[np.bool_]:
     return result
 
 
+def render_canonical_rgb(
+    layers: list[tuple[NDArray[np.bool_], tuple[int, int, int]]],
+    canvas_size: int, line_width: int,
+) -> bytes:
+    """Render color line layers as canonical RGB PNG bytes (spec C1).
+
+    Each layer is one boolean line image plus its RGB color. A layer
+    goes through the render_canonical steps - nearest-neighbor scale,
+    then (line_width - 1) // 2 dilation steps - and paints its color
+    on a white canvas in layer sequence: at an overlap, the layer
+    that comes after paints above the one before. The output is an
+    RGB PNG with no anti-aliasing, and the pixel values are white
+    plus the given colors alone. Equal inputs give byte-for-byte
+    equal output.
+    """
+    if canvas_size < 1:
+        raise ValueError(f"canvas_size must be positive, got {canvas_size}")
+    if line_width < 1:
+        raise ValueError(f"line_width must be positive, got {line_width}")
+    pixels = np.full((canvas_size, canvas_size, 3), 255, dtype=np.uint8)
+    for mask, color in layers:
+        if mask.ndim != 2:
+            raise ValueError(f"mask must be 2-D, got shape {mask.shape}")
+        scaled_image = Image.fromarray(
+            mask.astype(np.uint8) * 255, mode="L"
+        ).resize((canvas_size, canvas_size), Image.Resampling.NEAREST)
+        scaled = np.asarray(scaled_image, dtype=np.uint8) > 0
+        for _ in range((line_width - 1) // 2):
+            scaled = _dilate_square(scaled)
+        pixels[scaled] = np.asarray(color, dtype=np.uint8)
+    buffer = BytesIO()
+    Image.fromarray(pixels, mode="RGB").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def render_canonical(
     mask: NDArray[np.bool_], canvas_size: int, line_width: int
 ) -> bytes:

@@ -16,7 +16,7 @@ from core.channels.element import element_channel
 from core.channels.outline import outline_channel
 from core.channels.placement import placement_channel
 from core.fusion import active_channels, fuse
-from core.intake import render_strokes, validate_submission
+from core.intake import render_submission_strokes, validate_submission
 from core.normalize import commonness_correct, standardize
 from core.ranking import decoy_set, rank
 from core.types import (ROUTING_TABLE, Atom, ChannelName, ElementConfig,
@@ -69,8 +69,9 @@ def _routed_payloads(submissions: Sequence[Submission],
                         raise ValueError(
                             f"atom {atom.id} routes to a channel but has "
                             "no strokes")
-                    payloads.drawing.append((number, atom, render_strokes(
-                        atom.strokes, render.canvas_px, render.line_width_px)))
+                    payloads.drawing.append(
+                        (number, atom, render_submission_strokes(
+                            atom.strokes, atom.stroke_colors, render)))
                 case "DESCRIPTION":
                     if atom.text is not None:
                         payloads.text.append((number, atom, atom.text))
