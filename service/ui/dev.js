@@ -140,18 +140,24 @@ function startDevConsole() {
       item.textContent = "impression: " + text;
       impressions.appendChild(item);
     });
+    var labels = {};
+    (record.groups || []).forEach(function (group) {
+      labels[group.id] = group.label
+        ? group.label + " (" + group.id + ")" : group.id;
+    });
     var groups = byId("submission-groups");
     groups.innerHTML = "";
     (record.groups || []).forEach(function (group) {
       var item = document.createElement("li");
-      item.textContent = "group " + group.id
-        + (group.label ? " - " + group.label : "");
+      item.textContent = "group: " + labels[group.id];
       groups.appendChild(item);
     });
     (record.relations || []).forEach(function (relation) {
       var item = document.createElement("li");
-      item.textContent = "relation: " + relation.of[0] + " "
-        + relation.relation + " " + relation.of[1];
+      item.textContent = "relation: "
+        + (labels[relation.of[0]] || relation.of[0]) + " "
+        + relation.relation + " "
+        + (labels[relation.of[1]] || relation.of[1]);
       groups.appendChild(item);
     });
     byId("submission-paste").textContent =

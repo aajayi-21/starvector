@@ -97,8 +97,37 @@ function startTrialPage() {
   var context = canvas.getContext("2d");
   var drawing = null;
   var CANVAS = 512;
+  var INK = "#1a1c1e";
+  var SELECTED = "#b3261e";
+  /* One color for each group, in creation order, thus a stroke's
+   * color on the canvas matches its group's swatch in the list. */
+  var GROUP_COLORS = ["#1b6b3a", "#7a4ec9", "#0e7a8a", "#b3611e",
+                      "#4356c9"];
+  var RELATION_WORDING = {"left-of": "is left of",
+                          "right-of": "is right of",
+                          "above": "is above", "below": "is below"};
 
   function byId(id) { return document.getElementById(id); }
+
+  function groupColor(groupId) {
+    var index = state.groups.map(function (group) { return group.id; })
+      .indexOf(groupId);
+    return GROUP_COLORS[((index % GROUP_COLORS.length)
+                         + GROUP_COLORS.length) % GROUP_COLORS.length];
+  }
+
+  function groupName(groupId) {
+    var found = null;
+    state.groups.forEach(function (group) {
+      if (group.id === groupId) { found = group; }
+    });
+    if (!found) { return groupId; }
+    return found.label ? found.label + " (" + found.id + ")" : found.id;
+  }
+
+  function relationWording(name) {
+    return RELATION_WORDING[name] || ("is " + name);
+  }
   function show(view) {
     ["view-loading", "view-noday", "view-intake", "view-submitted",
      "view-closed", "view-reveal"].forEach(function (name) {
@@ -113,8 +142,8 @@ function startTrialPage() {
       context.lineWidth = 3;
       context.lineCap = "round";
       context.lineJoin = "round";
-      context.strokeStyle = stroke.selected ? "#b3261e"
-        : (stroke.groupId ? "#1b6b3a" : "#1a1c1e");
+      context.strokeStyle = stroke.selected ? SELECTED
+        : (stroke.groupId ? groupColor(stroke.groupId) : INK);
       stroke.points.forEach(function (point, index) {
         var x = point[0] * CANVAS;
         var y = point[1] * CANVAS;
@@ -164,7 +193,7 @@ function startTrialPage() {
     redraw();
     context.beginPath();
     context.lineWidth = 3;
-    context.strokeStyle = "#1a1c1e";
+    context.strokeStyle = INK;
     drawing.points.forEach(function (point, index) {
       var x = point[0] * CANVAS;
       var y = point[1] * CANVAS;
@@ -189,35 +218,61 @@ function startTrialPage() {
     refreshControls();
   });
 
+  function removeButton(onRemove) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "remove";
+    button.textContent = "\u00d7";
+    button.title = "remove";
+    button.addEventListener("click", onRemove);
+    return button;
+  }
+
   function refreshLists() {
     byId("impression-list").innerHTML = "";
-    state.impressions.forEach(function (text) {
+    state.impressions.forEach(function (text, index) {
       var item = document.createElement("li");
-      item.textContent = text;
+      item.textContent = text + " ";
+      item.appendChild(removeButton(function () {
+        state.impressions.splice(index, 1);
+        refreshControls();
+      }));
       byId("impression-list").appendChild(item);
     });
     byId("group-list").innerHTML = "";
     state.groups.forEach(function (group) {
       var item = document.createElement("li");
-      item.textContent = group.id + (group.label ? " - " + group.label : "");
+      var swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = groupColor(group.id);
+      item.appendChild(swatch);
+      item.appendChild(document.createTextNode(
+        group.label ? group.label + " (" + group.id + ")" : group.id));
       byId("group-list").appendChild(item);
     });
     byId("relation-list").innerHTML = "";
-    state.relations.forEach(function (relation) {
+    state.relations.forEach(function (relation, index) {
       var item = document.createElement("li");
-      item.textContent = relation.of[0] + " " + relation.relation + " "
-        + relation.of[1];
+      item.textContent = groupName(relation.of[0]) + " "
+        + relationWording(relation.relation) + " "
+        + groupName(relation.of[1]) + " ";
+      item.appendChild(removeButton(function () {
+        state.relations.splice(index, 1);
+        refreshControls();
+      }));
       byId("relation-list").appendChild(item);
     });
     ["relation-first", "relation-second"].forEach(function (name) {
       var select = byId(name);
+      var kept = select.value;
       select.innerHTML = "";
       state.groups.forEach(function (group) {
         var option = document.createElement("option");
         option.value = group.id;
-        option.textContent = group.id;
+        option.textContent = groupName(group.id);
         select.appendChild(option);
       });
+      if (kept) { select.value = kept; }
     });
   }
 
@@ -226,8 +281,49 @@ function startTrialPage() {
       || (byId("paste-input").value.trim() !== "");
   }
 
+  function countOf(count, word) {
+    return count + " " + word + (count === 1 ? "" : "s");
+  }
+
+  function refreshSketchHint() {
+    var selected = state.strokes.filter(function (stroke) {
+      return stroke.selected;
+    }).length;
+    if (state.strokes.length === 0) {
+      byId("sketch-hint").textContent =
+        "Draw with the pointer - each drag is one stroke.";
+    } else if (selected > 0) {
+      byId("sketch-hint").textContent = countOf(selected, "stroke")
+        + " selected - name the group below, then Make a group.";
+    } else {
+      byId("sketch-hint").textContent =
+        "Click a stroke to select it - it turns red.";
+    }
+    return selected;
+  }
+
   function refreshControls() {
+    var selected = refreshSketchHint();
+    byId("group-button").disabled = selected === 0;
+    var last = state.strokes[state.strokes.length - 1];
+    byId("undo-button").disabled = !last || last.groupId !== null;
+    var ready = state.groups.length >= 2;
+    ["relation-first", "relation-name", "relation-second",
+     "relation-button"].forEach(function (name) {
+      byId(name).disabled = !ready;
+    });
+    byId("relation-hint").textContent = ready
+      ? "Read the row as a sentence, then Add."
+      : "Make two or more groups, then state how one sits relative "
+        + "to another - \"the tower is left of the sea\".";
     byId("send-button").disabled = !scoreable();
+    byId("send-summary").textContent = !scoreable() ? ""
+      : countOf(state.impressions.length, "impression") + " \u00b7 "
+        + countOf(state.strokes.length, "stroke") + " \u00b7 "
+        + countOf(state.groups.length, "group") + " \u00b7 "
+        + countOf(state.relations.length, "relation")
+        + (byId("paste-input").value.trim() !== ""
+           ? " \u00b7 pasted text" : "");
     byId("send-note").textContent = scoreable() ? ""
       : "add an impression, strokes, or pasted text first";
     refreshLists();
@@ -245,6 +341,15 @@ function startTrialPage() {
   byId("group-button").addEventListener("click", function () {
     groupSelected(state, byId("group-label").value.trim());
     byId("group-label").value = "";
+    redraw();
+    refreshControls();
+  });
+  byId("undo-button").addEventListener("click", function () {
+    /* The last stroke goes, when it is not in a group yet - a
+     * grouped stroke stays, thus group ids never dangle. */
+    var last = state.strokes[state.strokes.length - 1];
+    if (!last || last.groupId !== null) { return; }
+    state.strokes.pop();
     redraw();
     refreshControls();
   });
@@ -333,7 +438,7 @@ function startTrialPage() {
       vocabulary.forEach(function (name) {
         var option = document.createElement("option");
         option.value = name;
-        option.textContent = name;
+        option.textContent = relationWording(name);
         select.appendChild(option);
       });
       if (day.status === "revealed") { renderReveal(); }

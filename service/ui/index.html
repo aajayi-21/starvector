@@ -19,6 +19,10 @@
   td, th { border-bottom: 1px solid #e2e5e7; padding: 4px 10px 4px 0;
            text-align: left; }
   #commitment { word-break: break-all; }
+  .swatch { display: inline-block; width: 10px; height: 10px;
+            border-radius: 2px; margin-right: 6px; }
+  .remove { border: none; background: none; color: #b3261e;
+            cursor: pointer; padding: 0 4px; }
   #trial-code { font-size: 44px; letter-spacing: 6px; font-weight: 700;
                 margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
 </style>
@@ -35,6 +39,9 @@
 
 <div id="view-intake" class="hidden">
   <h2>Impressions</h2>
+  <p class="muted">Write what comes to you, one impression at a time —
+     "tall vertical structure", "cold", "water nearby". Enter commits
+     a row.</p>
   <div class="row">
     <input id="impression-input" placeholder="one impression, Enter commits"
            size="48">
@@ -42,21 +49,35 @@
   <ul id="impression-list"></ul>
 
   <h2>Sketch</h2>
-  <p class="muted">Draw with the pointer. Click a stroke to select it,
-     then group the selection and label it if you want. Relations need
-     two groups.</p>
   <canvas id="canvas" width="512" height="512"></canvas>
+  <p class="muted" id="sketch-hint"></p>
   <div class="row">
-    <button id="group-button" type="button">Group selected</button>
-    <input id="group-label" placeholder="optional label" size="20">
+    <button id="undo-button" type="button">Undo stroke</button>
     <button id="clear-button" type="button">Clear sketch</button>
   </div>
-  <ul id="group-list"></ul>
+
+  <h3>Name what you drew</h3>
+  <p class="muted">Click strokes to select them (they turn red), then
+     make them a group and say what the group shows. A named group
+     counts as one of your impressions — "tower" can match the
+     hidden image's tower.</p>
   <div class="row">
+    <input id="group-label" placeholder="what is it? e.g. tower"
+           size="20">
+    <button id="group-button" type="button" disabled>Make a group
+    </button>
+  </div>
+  <ul id="group-list"></ul>
+
+  <h3>How things sit</h3>
+  <p class="muted" id="relation-hint">Make two or more groups, then
+     state how one sits relative to another — "the tower is left of
+     the sea".</p>
+  <div class="row" id="relation-row">
     <select id="relation-first"></select>
     <select id="relation-name"></select>
     <select id="relation-second"></select>
-    <button id="relation-button" type="button">Add relation</button>
+    <button id="relation-button" type="button">Add</button>
   </div>
   <ul id="relation-list"></ul>
 
@@ -66,8 +87,10 @@
 
   <div class="row">
     <button id="send-button" type="button" disabled>Send</button>
+    <span id="send-summary" class="muted"></span>
     <span id="send-note" class="muted"></span>
   </div>
+  <p class="muted">One send for each day — it locks when it lands.</p>
   <p id="send-error" class="error"></p>
 </div>
 
