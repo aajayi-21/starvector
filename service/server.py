@@ -130,8 +130,32 @@ def create_app(service_config: ServiceConfig,
                 named, record.scoring_config_path, data_root)
         return dev_state["wired"]
 
+    @app.get("/dev")
+    def dev_page() -> Response:
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        return HTMLResponse(content=page_bytes)
+
     @app.get("/api/dev")
     def dev_view() -> Response:
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        day = store.latest_day(root)
+        if day is None:
+            # The dev page needs its open control in this status.
+            return JSONResponse({"day": None, "status": "none"})
+        record = store.read_day_record(root, day)
+        return JSONResponse({
+            "day": record.day,
+            "status": record.status,
+            "trial_code": record.trial_code,
+            "target_id": record.target_id,
+        })
+
+    @app.get("/api/dev/rankings")
+    def dev_stored_rankings() -> Response:
         if not dev_mode:
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
@@ -140,12 +164,21 @@ def create_app(service_config: ServiceConfig,
             return Response(content=_NO_DAY, status_code=404,
                             media_type="application/json")
         record = store.read_day_record(root, day)
-        return JSONResponse({
-            "day": record.day,
-            "status": record.status,
-            "trial_code": record.trial_code,
-            "target_id": record.target_id,
-        })
+        stored = store.read_json_or_none(
+            store.submission_path(root, day, player))
+        if stored is None:
+            return JSONResponse({"cause": "no-submission",
+                                 "detail": "no stored submission this "
+                                           "day"}, status_code=404)
+        from service.scoring import dev_rankings
+
+        try:
+            value = dev_rankings(stored["record"], record.target_id,
+                                 _dev_wired())
+        except Exception as error:
+            return JSONResponse({"cause": "dev-score-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse(value)
 
     @app.post("/api/dev/score")
     async def dev_score(request: Request) -> Response:
@@ -172,7 +205,9 @@ def create_app(service_config: ServiceConfig,
         except IntakeError as error:
             return JSONResponse({"cause": error.cause,
                                  "detail": str(error)}, status_code=400)
-        except ValueError as error:
+        except Exception as error:
+            # A dev surface answers each failure shaped - a missing
+            # provider key is a RuntimeError, not a ValueError.
             return JSONResponse({"cause": "dev-score-failed",
                                  "detail": str(error)}, status_code=400)
         return JSONResponse(value)

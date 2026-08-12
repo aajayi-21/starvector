@@ -488,6 +488,21 @@ Three changes after the first build, ruled by the owner:
   its refusal: the reader refuses loudly, and the migrate command
   moves the store forward one time.
 
+### The single test page (2026-08-12, third ruling)
+
+Development work happens on one page: `GET /dev`, served in dev
+mode alone (one constant 404 without the flag). It holds the trial
+code, the day controls, the target image behind a show-and-hide
+control - hidden at first, thus a blind run works from this page
+too - the intake surface, the draft scorer, and the leaderboard:
+after close or reveal, `GET /api/dev/rankings` scores the stored
+submission through the production path and the page shows the top
+matches across the full pool with the target row marked, plus a
+show-all control for the full ordering. `/api/dev` answers status
+`none` before a day exists, thus the open control works from an
+empty store. The player page at `/` carries none of the dev
+chrome, and the day-control markup sits in the dev panel alone.
+
 ## 15. Acceptance criteria
 
 1. `core/aggregate.py` lands with the §8 property tests, and the

@@ -35,34 +35,52 @@
   <span id="day-label"></span></h1>
 <p class="muted">commitment <span id="commitment"></span></p>
 
-<div class="row" id="day-controls">
-  <button id="open-day-button" type="button" class="hidden">Open
-    today's day</button>
-  <button id="close-day-button" type="button" class="hidden">Close the
-    day (scores now)</button>
-  <button id="reveal-day-button" type="button" class="hidden">Reveal
-  </button>
-  <span id="day-control-note" class="muted"></span>
-</div>
-
 <div id="dev-panel" class="hidden">
-  <h2>Dev mode</h2>
-  <p class="muted">The target is readable and drafts score without
-     being stored. This panel exists only with <code>--dev</code>;
-     this page is a development surface, not the production
-     interface.</p>
-  <p><img id="dev-target" alt="the hidden target" width="192"></p>
+  <h2>Test page</h2>
+  <p class="muted">Development only, with <code>--dev</code>. The
+     player page at <code>/</code> carries none of this. Not the
+     production interface.</p>
+
+  <h3>Run the day</h3>
+  <div class="row" id="day-controls">
+    <button id="open-day-button" type="button" class="hidden">Open
+      today's day</button>
+    <button id="close-day-button" type="button" class="hidden">Close
+      the day (scores now)</button>
+    <button id="reveal-day-button" type="button" class="hidden">Reveal
+    </button>
+    <span id="day-control-note" class="muted"></span>
+  </div>
+
+  <h3>The target</h3>
+  <div class="row">
+    <button id="target-toggle" type="button">Show the target</button>
+    <span class="muted">hidden by default, so a blind run works from
+      this page too</span>
+  </div>
+  <p><img id="dev-target" alt="the hidden target" width="192"
+          class="hidden"></p>
+
+  <h3>Draft scoring</h3>
   <div class="row">
     <button id="dev-score-button" type="button">Score current draft
     </button>
     <span id="dev-score-note" class="muted"></span>
   </div>
   <p id="dev-trial"></p>
+
+  <h3>Leaderboard</h3>
+  <p class="muted" id="leaderboard-note">After close or reveal: the
+     top matches of the stored submission across the full pool.</p>
   <table id="dev-rankings" class="hidden">
     <thead><tr><th>#</th><th></th><th>image</th><th>fused</th></tr>
     </thead>
     <tbody id="dev-rankings-body"></tbody>
   </table>
+  <div class="row">
+    <button id="show-all-rankings" type="button" class="hidden">Show
+      the full ranking</button>
+  </div>
   <details>
     <summary>How to run a real day</summary>
     <p>Start the server <strong>without</strong> <code>--dev</code>

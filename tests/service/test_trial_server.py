@@ -183,11 +183,12 @@ def test_the_day_view_carries_the_trial_code_front_and_center(
 def test_dev_surfaces_are_constant_404_without_the_flag(tmp_path) -> None:
     fixture, client = _world(tmp_path)
     record = store.read_day_record(fixture["store"], DAY)
-    for _ in range(2):
-        answer = client.get("/api/dev")
-        assert answer.status_code == 404
-        assert answer.content == b'{"detail":"not found"}'
-        assert record.target_id not in answer.text
+    for path in ("/api/dev", "/dev", "/api/dev/rankings"):
+        for _ in range(2):
+            answer = client.get(path)
+            assert answer.status_code == 404, path
+            assert answer.content == b'{"detail":"not found"}', path
+            assert record.target_id not in answer.text, path
     score = client.post("/api/dev/score", json=mixed_wire_record())
     assert score.status_code == 404
     assert score.content == b'{"detail":"not found"}'
@@ -241,7 +242,7 @@ def test_dev_mode_shows_the_target_and_scores_without_storing(
 
 
 def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
-    # The section 14b ruling: the whole day lifecycle runs from the
+    # The section 14b ruling: the full day lifecycle runs from the
     # page. The fixture scoring config wires fake providers, thus
     # the close endpoint scores offline.
     fixture = build_service_fixture(tmp_path)
@@ -266,6 +267,49 @@ def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
     assert revealed.status_code == 200
     reveal = client.get("/api/reveal").json()
     assert 0.0 <= reveal["trial"]["p"] <= 1.0
+
+
+def test_the_test_page_serves_and_drives_a_full_day(tmp_path) -> None:
+    # The single test page (section 14b): /dev serves the page in dev
+    # mode, /api/dev answers status none before a day exists (the
+    # open control needs it), and after close the stored submission's
+    # leaderboard reads from /api/dev/rankings.
+    fixture = build_service_fixture(tmp_path)
+    dev_client = TestClient(create_app(fixture["service_config"],
+                                       dev_mode=True))
+
+    page = dev_client.get("/dev")
+    assert page.status_code == 200
+    assert page.content == dev_client.get("/").content
+    assert 'id="target-toggle"' in page.text
+    assert 'id="day-controls"' in page.text
+
+    assert dev_client.get("/api/dev").json() == {"day": None,
+                                                 "status": "none"}
+    assert dev_client.get("/api/dev/rankings").status_code == 404
+
+    assert dev_client.post("/api/day/open").status_code == 200
+    assert dev_client.get("/api/dev").json()["status"] == "open"
+    assert dev_client.get("/api/dev/rankings").json()["cause"] \
+        == "no-submission"
+
+    assert dev_client.post("/api/submission",
+                           json=mixed_wire_record()).status_code == 200
+    assert dev_client.post("/api/day/close").status_code == 200
+
+    board = dev_client.get("/api/dev/rankings")
+    assert board.status_code == 200
+    body = board.json()
+    assert len(body["rankings"]) == len(fixture["image_ids"])
+    assert sum(1 for row in body["rankings"] if row["is_target"]) == 1
+    assert 0.0 <= body["trial"]["p"] <= 1.0
+
+    # The leaderboard equals the trial row the close wrote.
+    day = store.latest_day(fixture["store"])
+    row = store.read_json_or_none(
+        store.trial_row_path(fixture["store"], day, "ade"))
+    assert body["trial"]["p"] == row["p"]
+    assert body["trial"]["target_rank"] == row["target_rank"]
 
 
 def test_an_empty_store_answers_with_constants(tmp_path) -> None:
