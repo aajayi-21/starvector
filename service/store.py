@@ -169,6 +169,13 @@ def read_day_record(store: Path, day: str) -> DayRecord:
         raise StoreError(f"{path}: cannot read the day record: {error}") \
             from error
     if not isinstance(raw, dict) or set(raw) != set(_DAY_FIELDS):
+        if isinstance(raw, dict) \
+                and set(_DAY_FIELDS) - set(raw) == {"trial_code"} \
+                and set(raw) <= set(_DAY_FIELDS):
+            raise StoreError(
+                f"{path}: a day record from before the section 14b "
+                "trial-code amendment - run `uv run python -m "
+                "service.day migrate` one time to backfill it")
         raise StoreError(
             f"{path}: the day record must have the fields "
             f"{sorted(_DAY_FIELDS)}")

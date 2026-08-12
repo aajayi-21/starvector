@@ -167,6 +167,30 @@ def test_a_differing_stored_row_stops_the_close(tmp_path) -> None:
                   providers=fixture["providers"])
 
 
+def test_migrate_backfills_a_legacy_day_record(tmp_path) -> None:
+    import json
+    import re
+
+    from service.day import migrate_store
+
+    fixture = build_service_fixture(tmp_path)
+    _open(fixture)
+    path = store.day_record_path(fixture["store"], DAY)
+    raw = json.loads(path.read_text())
+    del raw["trial_code"]
+    path.write_text(json.dumps(raw))
+    with pytest.raises(store.StoreError, match="migrate"):
+        store.read_day_record(fixture["store"], DAY)
+    counts = migrate_store(fixture["service_config"])
+    assert counts == {"days": 1, "backfilled": 1}
+    record = store.read_day_record(fixture["store"], DAY)
+    assert re.match(r"^[A-Z0-9]{6}$", record.trial_code)
+    # Repeatable: a complete record stays untouched.
+    assert migrate_store(fixture["service_config"]) \
+        == {"days": 1, "backfilled": 0}
+    assert store.read_day_record(fixture["store"], DAY) == record
+
+
 def test_status_prints_no_score_and_no_target(tmp_path) -> None:
     fixture = build_service_fixture(tmp_path)
     record = _open(fixture)

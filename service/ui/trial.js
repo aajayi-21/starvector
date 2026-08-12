@@ -323,6 +323,45 @@ function startTrialPage() {
     });
   }
 
+  function lifecycleAction(path, confirmation) {
+    /* The owner's day controls: the server refuses out-of-sequence
+     * moves, and close is the one live step (the server process
+     * needs the provider key). */
+    if (confirmation && !window.confirm(confirmation)) { return; }
+    byId("day-control-note").textContent = "working…";
+    fetch(path, {method: "POST"}).then(function (response) {
+      return response.json().then(function (body) {
+        if (response.ok) { window.location.reload(); }
+        else {
+          byId("day-control-note").textContent =
+            body.detail || body.cause || "refused";
+        }
+      });
+    }).catch(function () {
+      byId("day-control-note").textContent = "the server did not answer";
+    });
+  }
+
+  function startDayControls(status) {
+    byId("open-day-button").classList.toggle("hidden",
+                                             status !== "none");
+    byId("close-day-button").classList.toggle("hidden",
+                                              status !== "open");
+    byId("reveal-day-button").classList.toggle("hidden",
+                                               status !== "closed");
+    byId("open-day-button").addEventListener("click", function () {
+      lifecycleAction("/api/day/open", null);
+    });
+    byId("close-day-button").addEventListener("click", function () {
+      lifecycleAction("/api/day/close",
+                      "Close the day? Scoring runs and the window "
+                      + "locks.");
+    });
+    byId("reveal-day-button").addEventListener("click", function () {
+      lifecycleAction("/api/day/reveal", null);
+    });
+  }
+
   function startDevPanel() {
     /* Dev mode (the section 14a amendment): the panel appears only
      * when /api/dev answers - the server exposes it with --dev
@@ -391,7 +430,11 @@ function startTrialPage() {
   }
 
   fetch("/api/day").then(function (response) {
-    if (!response.ok) { show("view-noday"); return; }
+    if (!response.ok) {
+      show("view-noday");
+      startDayControls("none");
+      return;
+    }
     response.json().then(function (day) {
       byId("day-label").textContent = day.day;
       byId("trial-code").textContent = day.trial_code;
@@ -408,6 +451,7 @@ function startTrialPage() {
       else if (day.submitted) { show("view-submitted"); }
       else if (day.status === "closed") { show("view-closed"); }
       else { show("view-intake"); refreshControls(); }
+      startDayControls(day.status);
       startDevPanel();
     });
   }).catch(function () { show("view-noday"); });

@@ -35,6 +35,16 @@
   <span id="day-label"></span></h1>
 <p class="muted">commitment <span id="commitment"></span></p>
 
+<div class="row" id="day-controls">
+  <button id="open-day-button" type="button" class="hidden">Open
+    today's day</button>
+  <button id="close-day-button" type="button" class="hidden">Close the
+    day (scores now)</button>
+  <button id="reveal-day-button" type="button" class="hidden">Reveal
+  </button>
+  <span id="day-control-note" class="muted"></span>
+</div>
+
 <div id="dev-panel" class="hidden">
   <h2>Dev mode</h2>
   <p class="muted">The target is readable and drafts score without
@@ -55,26 +65,28 @@
   </table>
   <details>
     <summary>How to run a real day</summary>
+    <p>Start the server <strong>without</strong> <code>--dev</code>
+       (this panel spoils the target) and with the provider key in
+       the environment. Then the whole day runs from the page with
+       the buttons at the top:</p>
     <ol>
-      <li>One time, before the first day: build the mixed commonness
-          tables —
+      <li><strong>Open today's day</strong> — shows the trial code
+          and the commitment. (One time before the very first day:
           <code>uv run python -m validation.v2 --config
-          configs/scoring/dev-wit-mixed.json</code>
-          (a warm run, near zero posts; key set in the
-          environment).</li>
-      <li><code>uv run python -m service.day open</code> — prints the
-          trial code and the commitment.</li>
-      <li><code>uv run python -m service.server</code> (no
-          <code>--dev</code>) — play at
-          <code>http://127.0.0.1:8321</code>: view the trial code,
-          describe and sketch, send once.</li>
-      <li><code>uv run python -m service.day close</code> — the one
-          live step; needs the key. Spend: the new drawing's
-          embedding items.</li>
-      <li><code>uv run python -m service.day reveal</code> — then
-          the page shows the target, the score, the report, and the
-          secret for the commitment check.</li>
+          configs/scoring/dev-wit-mixed.json</code> builds the
+          commonness tables, a warm run at near zero posts.)</li>
+      <li>Play: view the trial code, describe and sketch, send
+          once.</li>
+      <li><strong>Close the day</strong> — the one live step; the
+          server needs the key. Spend: the new drawing's embedding
+          items.</li>
+      <li><strong>Reveal</strong> — the page shows the target, the
+          score, the atom-by-atom report, and the secret for the
+          commitment check.</li>
     </ol>
+    <p>The same steps run from the terminal:
+       <code>uv run python -m service.day open|close|reveal</code>.
+    </p>
   </details>
 </div>
 

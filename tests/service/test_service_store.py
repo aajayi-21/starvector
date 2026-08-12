@@ -90,6 +90,16 @@ def test_a_malformed_trial_code_raises(tmp_path: Path) -> None:
         read_day_record(tmp_path, "2026-08-12")
 
 
+def test_a_legacy_record_names_the_migrate_command(tmp_path: Path) -> None:
+    write_day_record(tmp_path, _record())
+    path = day_record_path(tmp_path, "2026-08-12")
+    raw = json.loads(path.read_text())
+    del raw["trial_code"]
+    path.write_text(json.dumps(raw))
+    with pytest.raises(StoreError, match="service.day migrate"):
+        read_day_record(tmp_path, "2026-08-12")
+
+
 def test_ensure_store_writes_the_permanence_readme_once(
         tmp_path: Path) -> None:
     ensure_store(tmp_path)

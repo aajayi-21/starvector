@@ -469,6 +469,25 @@ Three changes after the first build, ruled by the owner:
   production interface is a stage of its own, and nothing in the
   wire contract binds to this page's shape.
 
+### More rulings (2026-08-12, after the first live day)
+
+- **The day lifecycle runs from the page.** Three endpoints - open,
+  close, reveal below `/api/day/` - run the same functions the
+  commands use, with the same out-of-sequence refusals (409) and
+  the close answer naming the row count and no score (R3). The page
+  shows buttons that follow the day status. Close from the page is the one live
+  step, thus the server process needs the provider key in its
+  environment for a live config. The controls sit on the page in
+  each mode - a solo localhost server is the owner's own terminal -
+  and the production interface makes its own ruling here.
+- **The migrate command.** The trial-code field landed after the
+  owner's first live day, thus a stored day record without it
+  refuses to read. `service.day migrate` backfills one new random
+  code into each legacy day record, atomically, touching no play
+  data, and is repeatable. The strict reader names the command in
+  its refusal: the reader refuses loudly, and the migrate command
+  moves the store forward one time.
+
 ## 15. Acceptance criteria
 
 1. `core/aggregate.py` lands with the §8 property tests, and the

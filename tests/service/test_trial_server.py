@@ -240,6 +240,34 @@ def test_dev_mode_shows_the_target_and_scores_without_storing(
     assert store.read_day_record(fixture["store"], DAY).status == "open"
 
 
+def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
+    # The section 14b ruling: the whole day lifecycle runs from the
+    # page. The fixture scoring config wires fake providers, thus
+    # the close endpoint scores offline.
+    fixture = build_service_fixture(tmp_path)
+    client = TestClient(create_app(fixture["service_config"]))
+
+    assert client.post("/api/day/close").status_code == 409
+    opened = client.post("/api/day/open")
+    assert opened.status_code == 200
+    assert set(opened.json()) == {"day", "trial_code", "commitment"}
+    assert client.post("/api/day/open").status_code == 409
+
+    ack = client.post("/api/submission", json=mixed_wire_record())
+    assert ack.status_code == 200
+
+    assert client.post("/api/day/reveal").status_code == 409
+    closed = client.post("/api/day/close")
+    assert closed.status_code == 200
+    # The close answer names the row count and no score (R3).
+    assert closed.json() == {"trial_rows": 1}
+
+    revealed = client.post("/api/day/reveal")
+    assert revealed.status_code == 200
+    reveal = client.get("/api/reveal").json()
+    assert 0.0 <= reveal["trial"]["p"] <= 1.0
+
+
 def test_an_empty_store_answers_with_constants(tmp_path) -> None:
     fixture = build_service_fixture(tmp_path)
     client = TestClient(create_app(fixture["service_config"]))

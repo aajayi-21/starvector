@@ -253,6 +253,33 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
     return counts
 
 
+def migrate_store(service_config: ServiceConfig) -> dict[str, int]:
+    """Backfill day records from before the section 14b rulings.
+
+    A legacy record - the section 5 fields with no trial_code - gets
+    one new random code, written atomically. Records with the full
+    field set stay untouched, thus the command is repeatable. Play
+    data (submissions, trial rows) is not read and not written.
+    """
+    import json
+
+    root = Path(service_config.store_root)
+    counts = {"days": 0, "backfilled": 0}
+    for day in store.list_days(root):
+        counts["days"] += 1
+        path = store.day_record_path(root, day)
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict) and "trial_code" not in raw:
+            raw["trial_code"] = make_trial_code()
+            from pool.artifacts import write_json_pretty
+
+            write_json_pretty(path, raw)
+            counts["backfilled"] += 1
+        # The strict reader checks the moved record in full.
+        store.read_day_record(root, day)
+    return counts
+
+
 def day_status_lines(service_config: ServiceConfig) -> list[str]:
     """The status text: day, status, and if a submission is stored."""
     root = Path(service_config.store_root)
@@ -284,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
     reveal_parser = commands.add_parser("reveal")
     reveal_parser.add_argument("--date", default=None)
     commands.add_parser("status")
+    commands.add_parser("migrate")
     rescore_parser = commands.add_parser("rescore")
     rescore_parser.add_argument("--config", required=True,
                                 help="the scoring config to rescore with")
@@ -313,6 +341,10 @@ def main(argv: list[str] | None = None) -> int:
         elif arguments.command == "status":
             for line in day_status_lines(service_config):
                 print(line)
+        elif arguments.command == "migrate":
+            counts = migrate_store(service_config)
+            print(f"migrate days={counts['days']} "
+                  f"backfilled={counts['backfilled']}")
         elif arguments.command == "rescore":
             counts = rescore_days(service_config,
                                   config_path=arguments.config,

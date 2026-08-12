@@ -251,6 +251,53 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"trial_id": trial_id,
                              "atom_count": len(submission.atoms)})
 
+    @app.post("/api/day/open")
+    def day_open() -> Response:
+        from service.day import open_day
+
+        try:
+            record = open_day(service_config)
+        except store.StoreError as error:
+            return JSONResponse({"cause": "refused",
+                                 "detail": str(error)}, status_code=409)
+        except Exception as error:
+            return JSONResponse({"cause": "open-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse({"day": record.day,
+                             "trial_code": record.trial_code,
+                             "commitment": record.commitment})
+
+    @app.post("/api/day/close")
+    def day_close() -> Response:
+        from service.day import close_day
+
+        # The one live step (R5): the server process needs the
+        # provider key in its environment for a live config. The
+        # answer names the row count and no score (R3).
+        try:
+            count = close_day(service_config)
+        except store.StoreError as error:
+            return JSONResponse({"cause": "refused",
+                                 "detail": str(error)}, status_code=409)
+        except Exception as error:
+            return JSONResponse({"cause": "close-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse({"trial_rows": count})
+
+    @app.post("/api/day/reveal")
+    def day_reveal() -> Response:
+        from service.day import reveal_day
+
+        try:
+            record = reveal_day(service_config)
+        except store.StoreError as error:
+            return JSONResponse({"cause": "refused",
+                                 "detail": str(error)}, status_code=409)
+        except Exception as error:
+            return JSONResponse({"cause": "reveal-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse({"day": record.day})
+
     @app.get("/api/reveal")
     def reveal_view() -> Response:
         day = store.latest_day(root)
