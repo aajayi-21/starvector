@@ -19,10 +19,64 @@
   td, th { border-bottom: 1px solid #e2e5e7; padding: 4px 10px 4px 0;
            text-align: left; }
   #commitment { word-break: break-all; }
+  #trial-code { font-size: 44px; letter-spacing: 6px; font-weight: 700;
+                margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+  #dev-panel { border: 2px dashed #b3261e; padding: 12px 16px;
+               margin: 18px 0; }
+  #dev-panel h2 { margin-top: 0; }
+  #dev-rankings img { vertical-align: middle; }
+  #dev-rankings .target-row { background: #fff3cd; font-weight: 600; }
+  code { background: #f1f3f4; padding: 1px 5px; border-radius: 4px; }
 </style>
 
-<h1>daily trial <span id="day-label" class="muted"></span></h1>
+<p class="muted">the target is</p>
+<div id="trial-code">······</div>
+<h1 class="muted" style="font-size:15px">daily trial
+  <span id="day-label"></span></h1>
 <p class="muted">commitment <span id="commitment"></span></p>
+
+<div id="dev-panel" class="hidden">
+  <h2>Dev mode</h2>
+  <p class="muted">The target is readable and drafts score without
+     being stored. This panel exists only with <code>--dev</code>;
+     this page is a development surface, not the production
+     interface.</p>
+  <p><img id="dev-target" alt="the hidden target" width="192"></p>
+  <div class="row">
+    <button id="dev-score-button" type="button">Score current draft
+    </button>
+    <span id="dev-score-note" class="muted"></span>
+  </div>
+  <p id="dev-trial"></p>
+  <table id="dev-rankings" class="hidden">
+    <thead><tr><th>#</th><th></th><th>image</th><th>fused</th></tr>
+    </thead>
+    <tbody id="dev-rankings-body"></tbody>
+  </table>
+  <details>
+    <summary>How to run a real day</summary>
+    <ol>
+      <li>One time, before the first day: build the mixed commonness
+          tables —
+          <code>uv run python -m validation.v2 --config
+          configs/scoring/dev-wit-mixed.json</code>
+          (a warm run, near zero posts; key set in the
+          environment).</li>
+      <li><code>uv run python -m service.day open</code> — prints the
+          trial code and the commitment.</li>
+      <li><code>uv run python -m service.server</code> (no
+          <code>--dev</code>) — play at
+          <code>http://127.0.0.1:8321</code>: view the trial code,
+          describe and sketch, send once.</li>
+      <li><code>uv run python -m service.day close</code> — the one
+          live step; needs the key. Spend: the new drawing's
+          embedding items.</li>
+      <li><code>uv run python -m service.day reveal</code> — then
+          the page shows the target, the score, the report, and the
+          secret for the commitment check.</li>
+    </ol>
+  </details>
+</div>
 
 <div id="view-loading"><p>loading…</p></div>
 

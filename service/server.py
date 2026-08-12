@@ -36,6 +36,7 @@ POPULATION_SPREAD = 0.15
 # path, with no target-dependent work before it.
 _NOT_REVEALED = b'{"detail":"not revealed"}'
 _NO_DAY = b'{"detail":"no day open"}'
+_DEV_OFF = b'{"detail":"not found"}'
 
 _UI_ROOT = Path(__file__).parent / "ui"
 
@@ -82,8 +83,17 @@ def _revealed_targets(root: Path) -> dict[str, str]:
     return targets
 
 
-def create_app(service_config: ServiceConfig) -> FastAPI:
-    """The app factory - tests run it through TestClient."""
+def create_app(service_config: ServiceConfig,
+               dev_mode: bool = False) -> FastAPI:
+    """The app factory - tests run it through TestClient.
+
+    With dev_mode the server adds the section 14b surfaces: the
+    target is readable while the day is open, a draft scores when
+    asked with the full pool ordering, and each pool
+    image serves - the R3 wire rules are deliberately off, for the
+    owner's scoring work on the development pool alone. Without the
+    flag the dev paths answer one constant 404.
+    """
     scoring_config = load_scoring_config(Path(service_config.scoring_config))
     gates: IntakeGates = intake_gates(scoring_config)
     weights: Weights = fusion_weights(scoring_config)
@@ -103,6 +113,70 @@ def create_app(service_config: ServiceConfig) -> FastAPI:
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
 
+    # The dev-mode scoring context wires lazily on the first dev
+    # score and is kept for the process - a new start re-reads
+    # config.
+    dev_state: dict[str, object] = {}
+
+    def _dev_wired():
+        from pipeline.config import load_scoring_config as load_scoring
+        from service.scoring import wire_for_close
+
+        if "wired" not in dev_state:
+            day = store.latest_day(root)
+            record = store.read_day_record(root, day)
+            named = load_scoring(Path(record.scoring_config_path))
+            dev_state["wired"] = wire_for_close(
+                named, record.scoring_config_path, data_root)
+        return dev_state["wired"]
+
+    @app.get("/api/dev")
+    def dev_view() -> Response:
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        day = store.latest_day(root)
+        if day is None:
+            return Response(content=_NO_DAY, status_code=404,
+                            media_type="application/json")
+        record = store.read_day_record(root, day)
+        return JSONResponse({
+            "day": record.day,
+            "status": record.status,
+            "trial_code": record.trial_code,
+            "target_id": record.target_id,
+        })
+
+    @app.post("/api/dev/score")
+    async def dev_score(request: Request) -> Response:
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        day = store.latest_day(root)
+        if day is None:
+            return Response(content=_NO_DAY, status_code=404,
+                            media_type="application/json")
+        record = store.read_day_record(root, day)
+        try:
+            wire_record = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body is not JSON"},
+                status_code=400)
+        from service.scoring import dev_rankings
+
+        try:
+            value = dev_rankings(wire_record, record.target_id,
+                                 _dev_wired())
+        except IntakeError as error:
+            return JSONResponse({"cause": error.cause,
+                                 "detail": str(error)}, status_code=400)
+        except ValueError as error:
+            return JSONResponse({"cause": "dev-score-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse(value)
+
     @app.get("/")
     def index() -> Response:
         return HTMLResponse(content=page_bytes)
@@ -121,6 +195,7 @@ def create_app(service_config: ServiceConfig) -> FastAPI:
         record = store.read_day_record(root, day)
         value = {
             "day": record.day,
+            "trial_code": record.trial_code,
             "status": record.status,
             "commitment": record.commitment,
             "player": player,
@@ -204,11 +279,18 @@ def create_app(service_config: ServiceConfig) -> FastAPI:
 
     @app.get("/image/{image_id}")
     def image(image_id: str) -> Response:
-        targets = _revealed_targets(root)
-        if image_id not in targets:
+        if not dev_mode:
+            targets = _revealed_targets(root)
+            if image_id not in targets:
+                return Response(content=_NOT_REVEALED, status_code=404,
+                                media_type="application/json")
+        try:
+            image_bytes = load_image_bytes(data_root, image_id)
+        except Exception:
+            # Dev mode serves each stored pool image - one with no
+            # stored bytes gets the same constant refusal.
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")
-        image_bytes = load_image_bytes(data_root, image_id)
         return Response(content=image_bytes,
                         media_type=_mime_of(image_bytes))
 
@@ -270,6 +352,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--service-config",
                         default="configs/service/dev-wit.json")
     parser.add_argument("--port", type=int, default=None)
+    parser.add_argument("--dev", action="store_true",
+                        help="the section 14b dev surfaces - target "
+                             "readable, draft scoring, all images")
     arguments = parser.parse_args(argv)
     try:
         service_config = load_service_config(Path(arguments.service_config))
@@ -278,7 +363,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     import uvicorn
 
-    uvicorn.run(create_app(service_config), host="127.0.0.1",
+    uvicorn.run(create_app(service_config, dev_mode=arguments.dev),
+                host="127.0.0.1",
                 port=arguments.port or service_config.port)
     return 0
 

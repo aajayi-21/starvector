@@ -442,6 +442,33 @@ Resolutions the implementation pinned, recorded here as rulings:
   and the report columns) through the repository `quantize_measured`
   rule, thus the R8 byte equality reads on stable digits.
 
+## 14b. Amendments (2026-08-12, owner-requested)
+
+Three changes after the first build, ruled by the owner:
+
+- **The trial code.** Each day gets a player-facing identifier for
+  the hidden target: six random characters, A-Z and 0-9, made at
+  open with no derivation from the image (§22). It sits front and
+  center on the page and in the open and status command output, and
+  `/api/day` serves it in each day status. The §5 trial identifier
+  of a submission stays as bookkeeping - the code names the target,
+  the identifier names the submission.
+- **Dev mode.** `service.server --dev` adds the owner's scoring
+  surfaces, on the development pool alone: `/api/dev` names the
+  day's target, `/api/dev/score` scores a draft record when asked
+  and answers with the trial numbers plus the full fused ordering
+  of the pool with the target marked, and `/image/*` serves each
+  stored pool image. A dev score stores nothing and moves no day
+  status - the one-write submission stays the one committed play,
+  thus the owner iterates freely against the lockout. Without the
+  flag each dev path answers one constant 404, and the R3 tests
+  hold as written. The dev panel also shows the §6 run sequence
+  for a live day.
+- **The page is a development surface.** The intake page is the
+  working interface of this stage, not the production one - a
+  production interface is a stage of its own, and nothing in the
+  wire contract binds to this page's shape.
+
 ## 15. Acceptance criteria
 
 1. `core/aggregate.py` lands with the §8 property tests, and the

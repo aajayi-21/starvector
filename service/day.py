@@ -10,6 +10,7 @@ while the day is open (R3 covers the terminal).
 import argparse
 import datetime
 import secrets
+import string
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -39,6 +40,14 @@ def day_commitment(target_id: str, secret: str) -> str:
     return sha256_hex(f"{target_id}:{secret}")
 
 
+def make_trial_code() -> str:
+    """Six random characters, A-Z and 0-9 - the player-facing
+    identifier of the hidden target (section 14b ruling). No
+    derivation from the image (section 22)."""
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(6))
+
+
 def _local_day() -> str:
     """The owner machine's local date, ISO shape (D8)."""
     return datetime.date.today().isoformat()
@@ -59,7 +68,8 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
              scoring_config_path: str | None = None,
              clock: Callable[[], str] | None = None,
              pick_seed: str | None = None,
-             secret: str | None = None) -> store.DayRecord:
+             secret: str | None = None,
+             trial_code: str | None = None) -> store.DayRecord:
     """Open one day: wire warm, pick, commit, write (spec section 6)."""
     clock = clock or harness.default_clock
     day = date or _local_day()
@@ -72,9 +82,11 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
                                   Path(service_config.data_root))
     pick_seed = pick_seed or secrets.token_hex(16)
     secret = secret or secrets.token_hex(32)
+    trial_code = trial_code or make_trial_code()
     target_id = pick_target(wired.context.index.image_ids, day, pick_seed)
     record = store.DayRecord(
-        day=day, target_id=target_id, pick_seed=pick_seed, secret=secret,
+        day=day, trial_code=trial_code, target_id=target_id,
+        pick_seed=pick_seed, secret=secret,
         commitment=day_commitment(target_id, secret),
         scoring_config_path=config_path,
         scoring_config_hash=wired.scoring_hash,
@@ -251,6 +263,7 @@ def day_status_lines(service_config: ServiceConfig) -> list[str]:
     submitted = service_config.player in store.list_submissions(root, day)
     return [
         f"day {day}",
+        f"trial code {record.trial_code}",
         f"status {record.status}",
         f"commitment {record.commitment}",
         f"submission stored: {'yes' if submitted else 'no'}",
@@ -284,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
             record = open_day(service_config, date=arguments.date,
                               scoring_config_path=arguments.config)
             print(f"day {record.day} open")
+            print(f"trial code {record.trial_code}")
             print(f"commitment {record.commitment}")
         elif arguments.command == "close":
             count = close_day(service_config, date=arguments.date)

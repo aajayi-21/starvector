@@ -20,7 +20,8 @@ from service.store import (DayRecord, StoreError, day_record_path,
 
 def _record(day: str = "2026-08-12", status: str = "open") -> DayRecord:
     return DayRecord(
-        day=day, target_id="t" * 64, pick_seed="s" * 32, secret="x" * 64,
+        day=day, trial_code="R7K2QX", target_id="t" * 64,
+        pick_seed="s" * 32, secret="x" * 64,
         commitment="c" * 64, scoring_config_path="configs/scoring/x.json",
         scoring_config_hash="h" * 64, preparation_version_id="p" * 64,
         status=status, opened_at="2026-08-12T00:00:00+00:00",
@@ -76,6 +77,16 @@ def test_a_tampered_day_record_raises(tmp_path: Path) -> None:
     raw["extra"] = True
     path.write_text(json.dumps(raw))
     with pytest.raises(StoreError, match="fields"):
+        read_day_record(tmp_path, "2026-08-12")
+
+
+def test_a_malformed_trial_code_raises(tmp_path: Path) -> None:
+    write_day_record(tmp_path, _record())
+    path = day_record_path(tmp_path, "2026-08-12")
+    raw = json.loads(path.read_text())
+    raw["trial_code"] = "abc"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(StoreError, match="trial_code"):
         read_day_record(tmp_path, "2026-08-12")
 
 

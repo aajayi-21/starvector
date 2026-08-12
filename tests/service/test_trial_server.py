@@ -168,6 +168,78 @@ def test_post_is_refused_when_the_day_is_closed(tmp_path) -> None:
     assert answer.json()["cause"] == "day-closed"
 
 
+def test_the_day_view_carries_the_trial_code_front_and_center(
+        tmp_path) -> None:
+    import re
+
+    fixture, client = _world(tmp_path)
+    record = store.read_day_record(fixture["store"], DAY)
+    day_view = client.get("/api/day").json()
+    assert re.match(r"^[A-Z0-9]{6}$", day_view["trial_code"])
+    assert day_view["trial_code"] == record.trial_code
+    assert 'id="trial-code"' in client.get("/").text
+
+
+def test_dev_surfaces_are_constant_404_without_the_flag(tmp_path) -> None:
+    fixture, client = _world(tmp_path)
+    record = store.read_day_record(fixture["store"], DAY)
+    for _ in range(2):
+        answer = client.get("/api/dev")
+        assert answer.status_code == 404
+        assert answer.content == b'{"detail":"not found"}'
+        assert record.target_id not in answer.text
+    score = client.post("/api/dev/score", json=mixed_wire_record())
+    assert score.status_code == 404
+    assert score.content == b'{"detail":"not found"}'
+
+
+def test_dev_mode_shows_the_target_and_scores_without_storing(
+        tmp_path) -> None:
+    from pathlib import Path
+
+    from pipeline.config import load_scoring_config
+    from service.scoring import wire_for_close
+    from pipeline.score import score_trial
+
+    fixture, _ = _world(tmp_path)
+    record = store.read_day_record(fixture["store"], DAY)
+    dev_client = TestClient(create_app(fixture["service_config"],
+                                       dev_mode=True))
+
+    dev_view = dev_client.get("/api/dev").json()
+    assert dev_view["target_id"] == record.target_id
+    assert dev_view["trial_code"] == record.trial_code
+
+    # The target and each pool image answer in dev mode.
+    assert dev_client.get(f"/image/{record.target_id}").status_code == 200
+    other = [image_id for image_id in fixture["image_ids"]
+             if image_id != record.target_id][0]
+    assert dev_client.get(f"/image/{other}").status_code == 200
+
+    answer = dev_client.post("/api/dev/score", json=mixed_wire_record())
+    assert answer.status_code == 200
+    body = answer.json()
+    assert len(body["rankings"]) == len(fixture["image_ids"])
+    assert [row["position"] for row in body["rankings"]] \
+        == list(range(1, len(fixture["image_ids"]) + 1))
+    targets = [row for row in body["rankings"] if row["is_target"]]
+    assert len(targets) == 1
+    assert targets[0]["position"] == body["target_position"]
+
+    # The dev numbers equal the production path on the same record.
+    config = load_scoring_config(Path(fixture["scoring_config_path"]))
+    wired = wire_for_close(config, fixture["scoring_config_path"],
+                           fixture["data"], fixture["providers"])
+    direct = score_trial(mixed_wire_record(), record.target_id,
+                         wired.context, wired.encoders)
+    assert body["trial"]["p"] == pytest.approx(direct.p, abs=1e-6)
+    assert body["trial"]["decoy_count"] == direct.decoy_count
+
+    # Nothing is stored and the day does not move.
+    assert store.list_submissions(fixture["store"], DAY) == ()
+    assert store.read_day_record(fixture["store"], DAY).status == "open"
+
+
 def test_an_empty_store_answers_with_constants(tmp_path) -> None:
     fixture = build_service_fixture(tmp_path)
     client = TestClient(create_app(fixture["service_config"]))

@@ -146,6 +146,54 @@ def score_stored_submission(record: JsonValue, target_id: TargetId,
     return trial, report
 
 
+def dev_rankings(record: JsonValue, target_id: TargetId,
+                 wired: WiredScoring) -> dict[str, JsonValue]:
+    """Score one draft against the full pool, storing nothing.
+
+    The dev-mode surface (section 14b ruling, 2026-08-12): the
+    owner tests the scoring by eye, thus the answer holds the trial
+    numbers plus the full fused ordering with the target marked. The
+    draft is not stored, the day does not move, and the computation
+    is the production path - validate, encode, the weighted
+    channels, fusion, rank.
+    """
+    import numpy as np
+
+    from core.fusion import fuse
+    from core.ranking import decoy_set, rank
+    from pipeline.score import standardized_channels
+
+    context = wired.context
+    submission = validate_submission(record, context.gates,
+                                     context.render.canvas_px)
+    encoded = encode_submission(submission, context.render, wired.encoders)
+    fused = fuse(standardized_channels(encoded, context), context.weights)
+    trial = rank(fused, target_id, decoy_set(context.index, target_id),
+                 context.index)
+    order = np.argsort(-fused, kind="stable")            # (N,) positions
+    rankings: list[JsonValue] = []
+    target_position = 0
+    for position, index in enumerate(order, start=1):
+        image_id = context.index.image_ids[int(index)]
+        if image_id == target_id:
+            target_position = position
+        rankings.append({
+            "position": position,
+            "image_id": image_id,
+            "fused": harness.quantized(float(fused[int(index)])),
+            "is_target": image_id == target_id,
+        })
+    return {
+        "trial": {"p": harness.quantized(trial.p),
+                  "decoy_count": trial.decoy_count,
+                  "beaten": trial.beaten, "tied": trial.tied,
+                  "target_rank": trial.decoy_count - trial.beaten
+                  - trial.tied + 1},
+        "target_position": target_position,
+        "rankings": rankings,
+    }
+
+
 def trial_row_value(day: str, player: str, trial_id: str,
                     trial: TrialScore, report: tuple[MatchRow, ...],
                     wired: WiredScoring) -> dict[str, JsonValue]:

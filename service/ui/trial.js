@@ -323,10 +323,78 @@ function startTrialPage() {
     });
   }
 
+  function startDevPanel() {
+    /* Dev mode (the section 14a amendment): the panel appears only
+     * when /api/dev answers - the server exposes it with --dev
+     * alone. Drafts score without being stored. */
+    fetch("/api/dev").then(function (response) {
+      if (!response.ok) { return; }
+      response.json().then(function (dev) {
+        byId("dev-panel").classList.remove("hidden");
+        byId("dev-target").src = "/image/" + dev.target_id;
+        byId("dev-score-button").addEventListener("click", function () {
+          byId("dev-score-note").textContent = "scoring…";
+          var paste = byId("paste-input").value;
+          state.pastedText = paste.trim() === "" ? null : paste;
+          fetch("/api/dev/score", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(assembleRecord(state)),
+          }).then(function (answer) {
+            return answer.json().then(function (body) {
+              if (!answer.ok) {
+                byId("dev-score-note").textContent =
+                  body.detail || body.cause || "refused";
+                return;
+              }
+              byId("dev-score-note").textContent = "";
+              byId("dev-trial").textContent =
+                "trial score " + body.trial.p.toFixed(4)
+                + " - target at position " + body.target_position
+                + " of " + body.rankings.length
+                + " (rank " + body.trial.target_rank + " of "
+                + (body.trial.decoy_count + 1) + " after the "
+                + "near-duplicate group exits)";
+              var tbody = byId("dev-rankings-body");
+              tbody.innerHTML = "";
+              body.rankings.forEach(function (row) {
+                var line = document.createElement("tr");
+                if (row.is_target) { line.className = "target-row"; }
+                var cell = document.createElement("td");
+                cell.textContent = String(row.position);
+                line.appendChild(cell);
+                var imageCell = document.createElement("td");
+                var thumb = document.createElement("img");
+                thumb.src = "/image/" + row.image_id;
+                thumb.width = 40;
+                thumb.loading = "lazy";
+                imageCell.appendChild(thumb);
+                line.appendChild(imageCell);
+                var idCell = document.createElement("td");
+                idCell.textContent = row.image_id.slice(0, 8)
+                  + (row.is_target ? " ← target" : "");
+                line.appendChild(idCell);
+                var fusedCell = document.createElement("td");
+                fusedCell.textContent = row.fused.toFixed(4);
+                line.appendChild(fusedCell);
+                tbody.appendChild(line);
+              });
+              byId("dev-rankings").classList.remove("hidden");
+            });
+          }).catch(function () {
+            byId("dev-score-note").textContent =
+              "the server did not answer";
+          });
+        });
+      });
+    }).catch(function () {});
+  }
+
   fetch("/api/day").then(function (response) {
     if (!response.ok) { show("view-noday"); return; }
     response.json().then(function (day) {
       byId("day-label").textContent = day.day;
+      byId("trial-code").textContent = day.trial_code;
       byId("commitment").textContent = day.commitment;
       var vocabulary = day.relation_vocabulary || [];
       var select = byId("relation-name");
@@ -340,6 +408,7 @@ function startTrialPage() {
       else if (day.submitted) { show("view-submitted"); }
       else if (day.status === "closed") { show("view-closed"); }
       else { show("view-intake"); refreshControls(); }
+      startDevPanel();
     });
   }).catch(function () { show("view-noday"); });
 }

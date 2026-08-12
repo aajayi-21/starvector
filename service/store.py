@@ -19,7 +19,8 @@ DAY_STATUSES = ("open", "closed", "revealed")
 
 _DAY_RULE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-_DAY_FIELDS = ("day", "target_id", "pick_seed", "secret", "commitment",
+_DAY_FIELDS = ("day", "trial_code", "target_id", "pick_seed", "secret",
+               "commitment",
                "scoring_config_path", "scoring_config_hash",
                "preparation_version_id", "status", "opened_at", "closed_at",
                "revealed_at")
@@ -42,9 +43,16 @@ class StoreError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class DayRecord:
-    """The stored facts of one day (spec S1 sections 3 and 5)."""
+    """The stored facts of one day (spec S1 sections 3 and 5).
+
+    trial_code is the player-facing identifier of the hidden target:
+    six random characters, A-Z and 0-9, with no derivation from the
+    image (the section 22 hygiene rule and the section 14b ruling
+    of 2026-08-12). The page shows it front and center.
+    """
 
     day: str
+    trial_code: str
     target_id: str
     pick_seed: str
     secret: str
@@ -126,6 +134,7 @@ def write_once_json(path: Path, value: JsonValue) -> None:
 def _day_to_value(record: DayRecord) -> dict[str, JsonValue]:
     return {
         "day": record.day,
+        "trial_code": record.trial_code,
         "target_id": record.target_id,
         "pick_seed": record.pick_seed,
         "secret": record.secret,
@@ -174,6 +183,9 @@ def read_day_record(store: Path, day: str) -> DayRecord:
     if raw["status"] not in DAY_STATUSES:
         raise StoreError(
             f"{path}.status: expected one of {list(DAY_STATUSES)}")
+    if not re.match(r"^[A-Z0-9]{6}$", raw["trial_code"]):
+        raise StoreError(
+            f"{path}.trial_code: expected six characters, A-Z and 0-9")
     return DayRecord(**raw)
 
 

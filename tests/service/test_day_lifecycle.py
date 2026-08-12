@@ -32,9 +32,12 @@ def _submit(fixture, day=DAY, player="ade", record=None):
 
 
 def test_open_writes_the_committed_day(tmp_path) -> None:
+    import re
+
     fixture = build_service_fixture(tmp_path)
     record = _open(fixture)
     assert record.status == "open"
+    assert re.match(r"^[A-Z0-9]{6}$", record.trial_code)
     assert record.target_id in fixture["image_ids"]
     assert record.commitment == sha256_hex(
         f"{record.target_id}:{'b' * 64}")
@@ -171,6 +174,7 @@ def test_status_prints_no_score_and_no_target(tmp_path) -> None:
     lines = day_status_lines(fixture["service_config"])
     text = "\n".join(lines)
     assert f"day {DAY}" in text
+    assert f"trial code {record.trial_code}" in text
     assert "status open" in text
     assert "submission stored: yes" in text
     assert record.target_id not in text
