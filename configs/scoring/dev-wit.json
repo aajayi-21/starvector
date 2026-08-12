@@ -1,7 +1,7 @@
 {
   "config_version": 1,
   "input": {
-    "preparation_record": "pool/preparations/dev-wit-prep-002-f24e0b9e.json"
+    "preparation_record": "pool/preparations/dev-wit-prep-photo-inst-d67a70c3.json"
   },
   "intake": {
     "min_ink_pixels": 100,
@@ -81,7 +81,7 @@
     "sketch_encoder": {
       "provider": "openrouter",
       "model": "google/gemini-embedding-2",
-      "instruction_template": null,
+      "instruction_template": "Represent this rough freehand line sketch for retrieval against photographs of the scene it shows. Encode the salient objects, their shapes, and their arrangement.",
       "dimension": 3072
     },
     "text_encoder": {

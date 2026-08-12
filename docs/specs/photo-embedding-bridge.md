@@ -1,7 +1,8 @@
 # Spec P2c — the photograph-embedding bridge experiment
 
-**Status:** runs recorded with owner verdicts (§9b, 2026-08-11).
-The two §9b cells and the adoption ruling stay open.
+**Status:** complete. Runs and verdicts recorded (§9b, §9c).
+`photo-instructed-sym` adopted as the Phase 4 base (§9c,
+2026-08-12).
 **Phase:** after the P2b iteration (`docs/specs/linedraw-iteration.md`).
 Runs in parallel with the Phase 4 fit work — the experiment changes no
 frozen artifact and the two builds go forward without each other.
@@ -353,6 +354,42 @@ in cache from the recorded runs:
 
 The adoption ruling — which condition becomes the Phase 4 base —
 waits for these two cells.
+
+## 9c. The adoption ruling (2026-08-12)
+
+The two cells ran on 2026-08-11 with zero posts, the owner recorded
+their `pass` verdicts, and the cells answered the open question: the
+two instructions work as a pair. Alone, the photograph instruction
+moves nothing (first-rank 22 gains / 20 losses, p 0.88) and the
+sketch instruction is a weak trend (p 0.093). Given the other, each
+shows a clear measured effect (sign tests 3.6e-7 and 2.5e-3), and
+together they add 13.5 points. The grayscale trend stayed below the significance bar for
+the third time, and its best cell trails the winner 64.0% to 69.0%.
+
+**The owner adopted `photo-instructed-sym` as the Phase 4 base.**
+The dev-wit scoring configs (`dev-wit.json`, `dev-wit-b.json`,
+`dev-wit-text.json`, `dev-wit-mixed.json`) name the preparation
+record `dev-wit-prep-photo-inst-d67a70c3` and hold the D6 sketch
+instruction — the P2b re-point pattern, with the tag unchanged: the
+`dev-wit` line means the adopted configuration. The linedraw
+releases and records stay on disk and in git, reproducible (Rule
+4). The one untested cell (grayscale with the two instructions)
+is recorded as deferred: it needs a new preparation, and 200 pairs
+cannot resolve the margin it could win.
+
+Consequences the next build steps inherit:
+
+- The Phase 4 fit flow (spec `fuse-and-validate.md`) runs on the
+  adopted base through `dev-wit-b.json`, which points at it.
+- The re-pointed configs start a new scoring lineage for each mode.
+  The sketch-slot response cache is warm from the recorded cell
+  runs, thus V1 and V2 re-runs in sketch mode spend nothing. Text
+  and mixed modes also spend nothing on the sketch side — the
+  text-encoder slot did not move.
+- The p05 line-drawing stage and the P2b drawing-space curation
+  follow-up are retired with the bridge for this line. A future
+  encoder change can reopen the question at the cost of one
+  preparation.
 
 ## 10. Acceptance criteria
 
