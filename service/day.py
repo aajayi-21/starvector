@@ -152,6 +152,95 @@ def reveal_day(service_config: ServiceConfig, *,
                                    timestamp=clock())
 
 
+def _first_difference(stored: dict, recomputed: dict) -> str:
+    """The first field where two trial rows disagree, for the error."""
+    for key in sorted(set(stored) | set(recomputed)):
+        if stored.get(key) != recomputed.get(key):
+            return key
+    return "the byte shape"
+
+
+def rescore_days(service_config: ServiceConfig, *, config_path: str,
+                 from_date: str | None = None, to_date: str | None = None,
+                 providers: Mapping[str, object] | None = None,
+                 ) -> dict[str, int]:
+    """Re-run stored submissions with a named config (S1 R8).
+
+    With the pinned config the recomputation must equal the stored
+    rows byte-for-byte - a difference names the day, the player, and
+    the first differing field, and nothing is written. With a
+    different config the rows land adjacent
+    (trials/<player>.<hash8>.json), repeatable, and the stored rows
+    and day records stay untouched (architecture section 21:
+    rescore, do not migrate). Open days are skipped with a count -
+    they hold no row at this time.
+    """
+    import json
+
+    root = Path(service_config.store_root)
+    named = load_scoring_config(Path(config_path))
+    wired = scoring.wire_for_close(named, config_path,
+                                   Path(service_config.data_root),
+                                   providers)
+    counts = {"days": 0, "compared": 0, "equal": 0, "written": 0,
+              "skipped_open": 0}
+    for day in store.list_days(root):
+        if from_date is not None and day < from_date:
+            continue
+        if to_date is not None and day > to_date:
+            continue
+        record = store.read_day_record(root, day)
+        if record.status == "open":
+            counts["skipped_open"] += 1
+            continue
+        if record.preparation_version_id != wired.preparation_version_id:
+            raise store.StoreError(
+                f"day {day} was scored against preparation "
+                f"{record.preparation_version_id[:8]} and the named config "
+                f"wires {wired.preparation_version_id[:8]} - a rescore "
+                "across preparations needs its own ruling")
+        counts["days"] += 1
+        pinned = wired.scoring_hash == record.scoring_config_hash
+        for player in store.list_submissions(root, day):
+            stored = store.read_json_or_none(
+                store.submission_path(root, day, player))
+            if stored is None:
+                raise store.StoreError(
+                    f"day {day}: the submission of {player} does not parse")
+            trial, report = scoring.score_stored_submission(
+                stored["record"], record.target_id, wired)
+            value = scoring.trial_row_value(
+                day, player, str(stored["trial_id"]), trial, report, wired)
+            rendered = canonical_json_pretty(value) + "\n"
+            if pinned:
+                row_path = store.trial_row_path(root, day, player)
+                if not row_path.is_file():
+                    raise store.StoreError(
+                        f"{row_path}: a closed day has no stored trial row")
+                counts["compared"] += 1
+                current = row_path.read_text(encoding="utf-8")
+                if current != rendered:
+                    field = _first_difference(json.loads(current), value)
+                    raise store.StoreError(
+                        f"rescore mismatch on day {day}, player {player}: "
+                        f"the first differing field is {field} - the "
+                        "pinned config no longer reproduces the stored "
+                        "trial row (CLAUDE.md section 9)")
+                counts["equal"] += 1
+            else:
+                adjacent = store.trial_row_path(
+                    root, day, player, wired.scoring_hash[:8])
+                if adjacent.is_file():
+                    if adjacent.read_text(encoding="utf-8") != rendered:
+                        raise store.StoreError(
+                            f"{adjacent}: an earlier rescore wrote a "
+                            "different row for the same config hash")
+                    continue
+                store.write_once_json(adjacent, value)
+                counts["written"] += 1
+    return counts
+
+
 def day_status_lines(service_config: ServiceConfig) -> list[str]:
     """The status text: day, status, and if a submission is stored."""
     root = Path(service_config.store_root)
@@ -182,6 +271,11 @@ def main(argv: list[str] | None = None) -> int:
     reveal_parser = commands.add_parser("reveal")
     reveal_parser.add_argument("--date", default=None)
     commands.add_parser("status")
+    rescore_parser = commands.add_parser("rescore")
+    rescore_parser.add_argument("--config", required=True,
+                                help="the scoring config to rescore with")
+    rescore_parser.add_argument("--from", dest="from_date", default=None)
+    rescore_parser.add_argument("--to", dest="to_date", default=None)
     arguments = parser.parse_args(argv)
 
     try:
@@ -205,6 +299,14 @@ def main(argv: list[str] | None = None) -> int:
         elif arguments.command == "status":
             for line in day_status_lines(service_config):
                 print(line)
+        elif arguments.command == "rescore":
+            counts = rescore_days(service_config,
+                                  config_path=arguments.config,
+                                  from_date=arguments.from_date,
+                                  to_date=arguments.to_date)
+            print("rescore "
+                  + "  ".join(f"{name}={value}"
+                              for name, value in sorted(counts.items())))
     except (ServiceConfigError, ConfigError, store.StoreError,
             ValueError) as error:
         print(f"refused: {error}", file=sys.stderr)
