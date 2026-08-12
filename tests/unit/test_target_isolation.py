@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parents[2]
 # TargetId and DecoySet aliases and no behavior. pipeline/score.py has
 # its own AST rule (Rule B).
 SCANNED_CORE = (
+    "core/aggregate.py",
     "core/atoms.py",
     "core/canonical.py",
     "core/channels/__init__.py",

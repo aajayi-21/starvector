@@ -380,6 +380,68 @@ tests/service/             # the section 11 suite
 | D7 | Day secret | 256 random bits from the system generator, hex in `day.json` | §22 names the mechanism, not the width. |
 | D8 | The date of a day | The owner machine's local date at open, ISO `YYYY-MM-DD` | One machine, one player. Timezone rules can wait for live players. |
 
+## 14a. Rulings (2026-08-12)
+
+The owner ruled on the §14 decisions before implementation:
+
+- **D1 is overridden: the server builds on FastAPI, with uvicorn as
+  the runner** — two new dependencies. Tests go through
+  `fastapi.testclient` on the httpx dependency the repository has, and
+  the one uvicorn import sits in the `service.server` entry point.
+- **D2 through D8 stand at their proposed defaults.**
+
+The implementation surfaced two contract questions, each ruled by
+the owner on 2026-08-12:
+
+- **The weighted-channel cut.** `score_trial` raised for an active
+  channel with no configured weight, thus a relation-bearing
+  submission could not score with a placement-free config. The
+  ruling: an active channel with no configured weight is cut — the
+  fusion denominator renormalizes without it (architecture §12.3),
+  the rule lives in the shared `standardized_channels` helper, and a
+  weighted channel with a missing commonness table raises as before.
+- **The no-scoreable-atom refusal.** A record can clear each Layer 0
+  gate and read into no weighted channel — stored, it can not score,
+  and the one-write rule (R2) can wedge the day. The ruling: the
+  submission endpoint adds one pre-store refusal (400, cause
+  `no-scoreable-atom`) computed from the assembled atoms and the
+  configured weights — no encoder, nothing target-dependent — and
+  the page disables its send action in the same condition. This is
+  the one sanctioned extension of R1's Layer-0-alone rule.
+
+Resolutions the implementation pinned, recorded here as rulings:
+
+- **The scoring config is `configs/scoring/dev-wit-mixed.json`.**
+  Players send arbitrary mixtures (Rule 5), thus the commonness
+  background must be the mixed mode, with the element table and the
+  outline table stored together. The one-time build before the first
+  live open, named by the R5 refusal:
+  `uv run python -m validation.v2 --config
+  configs/scoring/dev-wit-mixed.json` — a warm run at near zero
+  posts.
+- **The evidence value is the lower chi-squared tail**,
+  `1 - exp(-S) * sum_{k<n} S^k / k!` — small values are the
+  evidence direction (§17), and the architecture §27 example
+  (2S = 10.96 at 24 degrees of freedom gives 0.011) pins it in the
+  tests.
+- **The unbiased skill number requires n >= 2** — `(n - 1) / S` at
+  n = 1 is 0, not an estimate. The history page uses the biased
+  variant at n = 1 and says so.
+- **The server config** is one strict five-field document
+  (`configs/service/dev-wit.json`): player, scoring config, data
+  root, store root, port. The player name is pinned to a
+  file-name-safe shape.
+- **`/api/day` holds** `submitted`, `relation_vocabulary`,
+  `player`, and `canvas_px` with the §9 fields — values with no
+  target dependence, which the one static page needs.
+- **The served day is the latest stored day** by ISO date. An empty
+  store answers each surface with one constant body.
+- **The commitment string** is SHA-256 of `"{target_id}:{secret}"`,
+  and the reveal prints the check command.
+- **The trial row quantizes** its measured values (the trial score
+  and the report columns) through the repository `quantize_measured`
+  rule, thus the R8 byte equality reads on stable digits.
+
 ## 15. Acceptance criteria
 
 1. `core/aggregate.py` lands with the §8 property tests, and the
