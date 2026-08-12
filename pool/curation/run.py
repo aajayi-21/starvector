@@ -69,9 +69,35 @@ class GateHalt(Exception):
         self.reason = reason
 
 
+def _encoder_slot_config(slot: SlotSection):
+    """The embeddings slot of the curation encoder (U2 change).
+
+    The slot name "encoder" keeps its cache tree apart from the
+    preparation image_encoder also on the same weights (CLAUDE.md
+    section 6). The parser requires the model and the dimension, and
+    the instruction stays None for plain image similarity.
+    """
+    from providers.openrouter.embeddings import EmbeddingSlotConfig
+
+    return EmbeddingSlotConfig(
+        slot="encoder",
+        model=slot.model or "",
+        dimension=slot.dimension or 0,
+        encoding_format="float",
+        instruction=slot.instruction_template,
+    )
+
+
 def _slot_hash(slot_name: str, slot: SlotSection, config: CurationConfig) -> str:
     """The config hash of one slot, computable with no client and no key."""
     if slot.provider == "openrouter":
+        # The encoder branches before the chat-slot hash: an
+        # embeddings slot keyed by the chat hash gives the artifact
+        # tree an incorrect identity while the wiring works.
+        if slot_name == "encoder":
+            from providers.openrouter.embeddings import embedding_config_hash
+
+            return embedding_config_hash(_encoder_slot_config(slot))
         from providers.openrouter import slots as orslots
 
         return orslots.slot_config_hash(_openrouter_slot_config(slot_name, slot, config))
@@ -197,10 +223,15 @@ def _wire_slot(slot_name: str, config: CurationConfig, data_root: Path):
             ),
             api_key=api_key,
         )
+        cache_root = data_root / "cache" / "openrouter"
+        if slot_name == "encoder":
+            from providers.openrouter.embeddings import OpenRouterImageEncoder
+
+            return OpenRouterImageEncoder(_encoder_slot_config(slot),
+                                          client, cache_root)
         from providers.openrouter import slots as orslots
 
         slot_config = _openrouter_slot_config(slot_name, slot, config)
-        cache_root = data_root / "cache" / "openrouter"
         cls = {
             "text_coverage": orslots.OpenRouterTextCoverageEstimator,
             "classifier": orslots.OpenRouterZeroShotImageClassifier,
@@ -662,6 +693,7 @@ def run_s06_neardup(
     id_to_source = _id_to_source(tree, "s05-object")
     records = _read_records(tree)
     areas = [records[i].width * records[i].height for i in ids]
+    posts_before = int(getattr(encoder, "post_count", 0))
     vectors = (
         _vectors_for(tree, encoder, ids)
         if ids
@@ -682,7 +714,7 @@ def run_s06_neardup(
         counters={},
         bytes_retrieved=0,
         bytes_cumulative=_cumulative(tree, "s05-object"),
-        provider_requests=0,
+        provider_requests=int(getattr(encoder, "post_count", 0)) - posts_before,
         code_version=code_version,
     )
     _write_stage(
@@ -699,6 +731,7 @@ def run_s07_diversity(
     stage = "s07-diversity"
     ids = _survivor_ids(tree, "s06-neardup")
     id_to_source = _id_to_source(tree, "s06-neardup")
+    posts_before = int(getattr(encoder, "post_count", 0))
     vectors = (
         _vectors_for(tree, encoder, ids)
         if ids
@@ -729,7 +762,7 @@ def run_s07_diversity(
         counters={},
         bytes_retrieved=0,
         bytes_cumulative=_cumulative(tree, "s06-neardup"),
-        provider_requests=0,
+        provider_requests=int(getattr(encoder, "post_count", 0)) - posts_before,
         code_version=code_version,
     )
     _write_stage(
