@@ -547,7 +547,8 @@ def load_pool_index(record_path: Path, data_root: Path, *,
             "the stroke render implements white background with no "
             "anti-aliasing only — the preparation config says different")
     render = RenderParams(canvas_px=prep_config.linedraw.canvas_px,
-                          line_width_px=prep_config.linedraw.line_width_px)
+                          line_width_px=prep_config.linedraw.line_width_px,
+                          stroke_color=prep_config.linedraw.stroke_color)
 
     tree = PreparationTree(
         data_root=data_root,

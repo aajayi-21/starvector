@@ -98,8 +98,14 @@ def commonness_config_hash(config: ScoringConfig, render: RenderParams,
         "submission_mode": config.validation.submission_mode,
         "sketch_encoder_config_hash": sketch_encoder_hash,
         "text_encoder_config_hash": text_encoder_hash,
+        # The stroke_color key appears at "rgb" alone (spec C1
+        # section 3): each commonness hash from before the color
+        # ruling stays byte-stable, and the rgb lineage forks its
+        # tables.
         "render": {"canvas_px": render.canvas_px,
-                   "line_width_px": render.line_width_px},
+                   "line_width_px": render.line_width_px,
+                   **({"stroke_color": render.stroke_color}
+                      if render.stroke_color != "mono" else {})},
         "intake": config_to_json_value(config)["intake"],
         "channels": config_to_json_value(config)["channels"],
         "synthetic": (None if synthetic is None else {

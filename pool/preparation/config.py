@@ -70,7 +70,11 @@ class LinedrawSection:
     the rule before spec P2b. The field can also be missing from the
     config document, and the document shape omits it at None, thus
     the hash of a config released before the field stays unchanged
-    (P2b R5).
+    (P2b R5). stroke_color selects the spec C1 submission render
+    rule — "mono", or "rgb" for the promotion render — with the same
+    omission rule at "mono". No p-stage reads it: the field rides
+    here because the preparation config is the one render source
+    (P2 R2).
     """
 
     binarize_threshold: float
@@ -80,10 +84,12 @@ class LinedrawSection:
     background: str
     antialias: bool
     detect_resolution_px: int | None
+    stroke_color: str
 
 
 OUTLINE_SOURCES: tuple[str, ...] = ("linedraw", "photo")
 PHOTO_RENDERS: tuple[str, ...] = ("color", "grayscale")
+STROKE_COLORS: tuple[str, ...] = ("mono", "rgb")
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,6 +406,8 @@ def parse_preparation_config(raw: object, source: str = "config") -> Preparation
         line_width_px=linedraw_node.int_("line_width_px", minimum=1),
         background=linedraw_node.choice("background", BACKGROUNDS),
         antialias=linedraw_node.bool_("antialias"),
+        stroke_color=linedraw_node.absent_or_choice(
+            "stroke_color", STROKE_COLORS, default="mono"),
         detect_resolution_px=linedraw_node.absent_or_int(
             "detect_resolution_px", minimum=64),
     )
@@ -504,6 +512,9 @@ def config_to_json_value(config: PreparationConfig) -> dict[str, JsonValue]:
             # keeps its document and thus its hash (P2b R5).
             **({"detect_resolution_px": config.linedraw.detect_resolution_px}
                if config.linedraw.detect_resolution_px is not None else {}),
+            # Omitted at "mono": the spec C1 omission rule.
+            **({"stroke_color": config.linedraw.stroke_color}
+               if config.linedraw.stroke_color != "mono" else {}),
         },
         "outline": {
             "crop_fraction": config.outline.crop_fraction,
