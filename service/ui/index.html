@@ -23,6 +23,10 @@
             border-radius: 2px; margin-right: 6px; }
   .remove { border: none; background: none; color: #b3261e;
             cursor: pointer; padding: 0 4px; }
+  .swatch-button { width: 22px; height: 22px; padding: 0;
+                   border: 2px solid transparent; border-radius: 4px;
+                   cursor: pointer; }
+  .swatch-button.current { border-color: #1a1c1e; }
   #trial-code { font-size: 44px; letter-spacing: 6px; font-weight: 700;
                 margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
 </style>
@@ -49,6 +53,10 @@
   <ul id="impression-list"></ul>
 
   <h2>Sketch</h2>
+  <div class="row">
+    <span class="muted">color</span>
+    <span class="row" id="palette"></span>
+  </div>
   <canvas id="canvas" width="512" height="512"></canvas>
   <p class="muted" id="sketch-hint"></p>
   <div class="row">
@@ -57,7 +65,8 @@
   </div>
 
   <h3>Name what you drew</h3>
-  <p class="muted">Click strokes to select them (they turn red), then
+  <p class="muted">Click strokes to select them (a red halo shows),
+     then
      make them a group and say what the group shows. A named group
      counts as one of your impressions — "tower" can match the
      hidden image's tower.</p>

@@ -184,7 +184,9 @@ def _strokes_svg(record: JsonValue) -> str:
         points = " ".join(f"{100 * x:.1f},{100 * y:.1f}"
                           for x, y in stroke["points"])
         css = "grouped" if stroke.get("group_id") else "loose"
-        parts.append(f'<polyline points="{points}" class="{css}"/>')
+        color = stroke.get("color")
+        paint = f' stroke="{color}"' if color else ""
+        parts.append(f'<polyline points="{points}" class="{css}"{paint}/>')
     parts.append("</svg>")
     return "".join(parts)
 
