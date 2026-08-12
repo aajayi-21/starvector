@@ -449,3 +449,69 @@ def test_retry_on_429_through_post_embeddings() -> None:
     )
     assert client.post_count == 2
     assert result["data"][0]["embedding"] == embedding_for("alpha")
+
+
+def _timeout_over(limit: int):
+    """A handler that times out each batch with more than limit items."""
+    sizes: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.read().decode("utf-8"))
+        sizes.append(len(body["input"]))
+        if len(body["input"]) > limit:
+            raise httpx.ReadTimeout("too slow", request=request)
+        return httpx.Response(200, json=embeddings_response(body["input"]))
+
+    return handler, sizes
+
+
+def test_a_timed_out_batch_splits_in_half_and_completes(
+        tmp_path: Path) -> None:
+    handler, sizes = _timeout_over(2)
+    client = make_client(handler, retry_limit=0)
+    encoder = OpenRouterTextEncoder(
+        embedding_slot_config(), client, tmp_path / "cache",
+        clock=fixed_clock)
+    texts = [f"text {number}" for number in range(6)]
+    vectors = encoder.encode_texts(texts)
+    assert vectors.shape == (6, DIMENSION)
+    for position, text in enumerate(texts):
+        assert np.allclose(vectors[position], expected_unit_row(text))
+    # 6 times out, then each 3 does, and the halves complete: 1, 2.
+    assert sizes == [6, 3, 1, 2, 3, 1, 2]
+
+
+def test_a_one_item_timeout_raises_the_timeout_type(
+        tmp_path: Path) -> None:
+    from providers.openrouter.errors import OpenRouterTimeoutError
+
+    handler, _ = _timeout_over(0)
+    client = make_client(handler, retry_limit=0)
+    encoder = OpenRouterTextEncoder(
+        embedding_slot_config(), client, tmp_path / "cache",
+        clock=fixed_clock)
+    with pytest.raises(OpenRouterTimeoutError):
+        encoder.encode_texts(["text"])
+
+
+def test_a_plain_failure_does_not_split(tmp_path: Path) -> None:
+    # A 404 is not a timeout: no split, the plain error surfaces
+    # with one post made.
+    from providers.openrouter.errors import (OpenRouterRequestError,
+                                             OpenRouterTimeoutError)
+
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.read().decode("utf-8"))
+        calls.append(len(body["input"]))
+        return httpx.Response(404, text="not here")
+
+    client = make_client(handler, retry_limit=0)
+    encoder = OpenRouterTextEncoder(
+        embedding_slot_config(), client, tmp_path / "cache",
+        clock=fixed_clock)
+    with pytest.raises(OpenRouterRequestError) as caught:
+        encoder.encode_texts(["a", "b", "c"])
+    assert not isinstance(caught.value, OpenRouterTimeoutError)
+    assert calls == [3]

@@ -18,7 +18,8 @@ from core.canonical import JsonValue, canonical_json, sha256_hex
 from core.types import Vectors
 from providers.openrouter.cache import load_cached_response, response_cache_path, store_response
 from providers.openrouter.client import OpenRouterClient
-from providers.openrouter.errors import OpenRouterResponseError
+from providers.openrouter.errors import (OpenRouterResponseError,
+                                         OpenRouterTimeoutError)
 from providers.openrouter.resolve import data_uri, default_clock
 
 EMBEDDING_BATCH_SIZE = 64
@@ -204,13 +205,27 @@ def _resolved_rows(
         items_by_key[key] = item
         sizes[key] = _item_byte_size(item)
         miss_keys.append(key)
-    for group in _batched_keys(miss_keys, sizes, batch_size):
+    def post_group(group: Sequence[str]) -> None:
         body: dict[str, JsonValue] = {
             "model": config.model,
             "input": [items_by_key[key] for key in group],
             "encoding_format": config.encoding_format,
         }
-        response_body = client.post_embeddings(body)
+        try:
+            response_body = client.post_embeddings(body)
+        except OpenRouterTimeoutError:
+            # A batch the endpoint cannot finish in the timeout
+            # splits in half and goes again, down to one item. The
+            # rows cannot change - each item embeds on its own and
+            # lands by index - and the batch shape is not part of a
+            # hash. A one-item timeout is an unrepairable failure
+            # and raises.
+            if len(group) <= 1:
+                raise
+            middle = len(group) // 2
+            post_group(group[:middle])
+            post_group(group[middle:])
+            return
         rows = _placed_rows(response_body, group, config)
         for key, row in zip(group, rows, strict=True):
             entry = {
@@ -225,6 +240,9 @@ def _resolved_rows(
                 entry.update(entry_extra)
             store_response(response_cache_path(cache_root, config_hash, key), entry)
             rows_by_key[key] = row
+
+    for group in _batched_keys(miss_keys, sizes, batch_size):
+        post_group(group)
     return [rows_by_key[key] for key in keys], cache_hits
 
 

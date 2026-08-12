@@ -12,5 +12,14 @@ class OpenRouterRequestError(RuntimeError):
     """An HTTP POST to OpenRouter could not get a good response."""
 
 
+class OpenRouterTimeoutError(OpenRouterRequestError):
+    """Each try of one POST ran out of time.
+
+    Its own type, thus a caller that can shrink the POST body -
+    the embeddings batcher - can tell a too-slow batch from a
+    failure that a smaller body cannot repair.
+    """
+
+
 class OpenRouterResponseError(ValueError):
     """A response or a cache entry arrived but did not validate."""
