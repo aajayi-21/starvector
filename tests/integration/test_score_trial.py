@@ -168,6 +168,53 @@ def test_a_relation_bearing_submission_scores_through_placement(
                                 _encoders())
 
 
+def test_an_active_unweighted_channel_is_cut_not_an_error(
+        scoring_preparation) -> None:
+    # The spec S1 section 14a ruling (2026-08-12): a channel with no
+    # configured weight is cut (architecture section 12.3), thus a
+    # relation-bearing submission scores with a placement-free
+    # config, and its trial equals the relation-free twin's - the
+    # relation atom moves no other channel.
+    loaded, context = _context(scoring_preparation,
+                               channels=("outline", "element"))
+    record = {
+        "impressions": ["tall vertical structure"],
+        "canvas_strokes": [
+            {"points": [[0.1, 0.4], [0.3, 0.4], [0.3, 0.6], [0.1, 0.6],
+                        [0.1, 0.4]], "group_id": "g1"},
+            {"points": [[0.6, 0.4], [0.9, 0.4], [0.9, 0.6], [0.6, 0.6],
+                        [0.6, 0.4]], "group_id": "g2"},
+        ],
+        "groups": [{"id": "g1", "label": "tower"},
+                   {"id": "g2", "label": "sea"}],
+        "relations": [{"relation": "left-of", "of": ["g1", "g2"]}],
+        "pasted_text": None,
+    }
+    twin = {**record, "relations": []}
+    target = loaded.index.image_ids[0]
+    with_relation = score_trial(record, target, context, _encoders())
+    assert with_relation == score_trial(twin, target, context, _encoders())
+
+
+def test_a_weighted_channel_with_no_table_still_raises(
+        scoring_preparation) -> None:
+    # The cut rule does not loosen the D13 guard: a weighted active
+    # channel with a missing commonness table is a configuration
+    # defect, not a cut.
+    loaded, context = _context(scoring_preparation,
+                               channels=("outline", "element"))
+    thinned = context.__class__(
+        index=context.index, gates=context.gates, render=context.render,
+        outline=context.outline, element=context.element,
+        placement=context.placement, weights=context.weights,
+        commonness={"outline": context.commonness["outline"]},
+        scoring_config_hash=context.scoring_config_hash,
+        commonness_config_hash=context.commonness_config_hash)
+    record = _text_record("tall vertical structure")
+    with pytest.raises(ValueError, match="no commonness table"):
+        score_trial(record, loaded.index.image_ids[0], thinned, _encoders())
+
+
 def test_the_prewarm_step_leaves_scores_unchanged(
         scoring_preparation) -> None:
     from validation.harness import prewarm_records

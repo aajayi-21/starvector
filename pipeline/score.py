@@ -155,6 +155,30 @@ def channel_scores(name: ChannelName, submission: EncodedSubmission,
             raise ValueError(f"unknown channel: {name!r}")
 
 
+def standardized_channels(encoded: EncodedSubmission,
+                          context: ScoringContext,
+                          ) -> dict[ChannelName, PoolScores]:
+    """Corrected, standardized scores for each weighted active channel.
+
+    An active channel with no configured weight is cut (architecture
+    section 12.3): the fusion denominator renormalizes without it, and
+    the channel contributes nothing (the spec S1 section 14a ruling,
+    2026-08-12). A weighted active channel with no commonness table
+    raises as before - that is a configuration defect, not a cut.
+    """
+    standardized: dict[ChannelName, PoolScores] = {}
+    for name in sorted(active_channels(encoded, ROUTING_TABLE)):
+        if name not in context.weights:
+            continue
+        if name not in context.commonness:
+            raise ValueError(f"channel {name!r} has no commonness table")
+        raw = channel_scores(name, encoded, context.index, context.outline,
+                             context.element, context.placement)
+        standardized[name] = standardize(
+            commonness_correct(raw, context.commonness[name]))
+    return standardized
+
+
 def score_trial(record: JsonValue, target: TargetId,
                 context: ScoringContext,
                 encoders: Encoders) -> TrialScore:
@@ -163,20 +187,11 @@ def score_trial(record: JsonValue, target: TargetId,
     The record is the frozen wire shape. The context carries the pool
     index and the configuration surface. The encoders are the wired
     Layer 2 slots. Raises IntakeError on a gate violation and
-    NoActiveChannels when no built channel reads the submission.
+    NoActiveChannels when no weighted channel reads the submission.
     """
     submission = validate_submission(record, context.gates,
                                      context.render.canvas_px)
     encoded = encode_submission(submission, context.render, encoders)
-    active = active_channels(encoded, ROUTING_TABLE)
-    standardized: dict[ChannelName, PoolScores] = {}
-    for name in sorted(active):
-        raw = channel_scores(name, encoded, context.index, context.outline,
-                             context.element, context.placement)
-        if name not in context.commonness:
-            raise ValueError(f"channel {name!r} has no commonness table")
-        corrected = commonness_correct(raw, context.commonness[name])
-        standardized[name] = standardize(corrected)
-    fused = fuse(standardized, context.weights)
+    fused = fuse(standardized_channels(encoded, context), context.weights)
     decoys = decoy_set(context.index, target)
     return rank(fused, target, decoys, context.index)

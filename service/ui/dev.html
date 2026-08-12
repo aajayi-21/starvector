@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>trial dev console</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 24px auto;
+         max-width: 860px; padding: 0 16px; color: #1a1c1e; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 16px; margin-top: 26px; }
+  .muted { color: #6a7076; font-size: 13px; }
+  .hidden { display: none; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0;
+         flex-wrap: wrap; }
+  button { font: inherit; padding: 4px 12px; }
+  ul { padding-left: 20px; }
+  table { border-collapse: collapse; }
+  td, th { border-bottom: 1px solid #e2e5e7; padding: 4px 10px 4px 0;
+           text-align: left; }
+  #rankings img { vertical-align: middle; }
+  .target-row { background: #fff3cd; font-weight: 600; }
+  code { background: #f1f3f4; padding: 1px 5px; border-radius: 4px; }
+  #trial-code { font-size: 40px; letter-spacing: 6px; font-weight: 700;
+                margin: 6px 0 0; }
+  #status-line { font-weight: 600; }
+  .banner { border: 2px dashed #b3261e; padding: 8px 14px;
+            color: #b3261e; font-weight: 600; }
+  #submission-sketch { border: 1px solid #c6cbce; }
+  #commitment { word-break: break-all; }
+</style>
+
+<p class="banner">DEV CONSOLE — development only. Players use
+  <a href="/">the main page</a>; nothing here is the production
+  interface, and there is no sketch input on this page.</p>
+
+<h1>day control</h1>
+<div id="trial-code">······</div>
+<p><span id="status-line"></span> <span id="day-label" class="muted">
+</span></p>
+<p class="muted">commitment <span id="commitment"></span></p>
+
+<div class="row" id="day-controls">
+  <button id="open-day-button" type="button" class="hidden">Open the
+    next day</button>
+  <button id="close-day-button" type="button" class="hidden">Close the
+    day (scores now)</button>
+  <button id="reveal-day-button" type="button" class="hidden">Reveal
+  </button>
+  <span id="day-control-note" class="muted"></span>
+</div>
+
+<h2>The target</h2>
+<div class="row">
+  <button id="target-toggle" type="button">Show the target</button>
+  <span class="muted">hidden by default, so a blind run stays
+    possible</span>
+</div>
+<p><img id="dev-target" alt="the hidden target" width="192"
+        class="hidden"></p>
+
+<h2>The player's submission</h2>
+<p class="muted" id="submission-note">nothing sent this day</p>
+<div id="submission-view" class="hidden">
+  <p class="muted">received <span id="submission-received"></span> ·
+     trial <span id="submission-trial-id"></span></p>
+  <svg id="submission-sketch" width="256" height="256"
+       viewBox="0 0 100 100"></svg>
+  <ul id="submission-impressions"></ul>
+  <ul id="submission-groups"></ul>
+  <p id="submission-paste" class="muted"></p>
+</div>
+
+<h2>Scoring and ranking</h2>
+<p class="muted" id="leaderboard-note">Scores the stored submission
+   through the production path. Available as soon as a submission
+   is in - before close it is a preview, after close it equals the
+   trial row.</p>
+<div class="row">
+  <button id="rank-button" type="button" class="hidden">Score and
+    rank the submission</button>
+  <span id="rank-note" class="muted"></span>
+</div>
+<p id="dev-trial"></p>
+<table id="rankings" class="hidden">
+  <thead><tr><th>#</th><th></th><th>image</th><th>fused</th></tr>
+  </thead>
+  <tbody id="rankings-body"></tbody>
+</table>
+<div class="row">
+  <button id="show-all-rankings" type="button" class="hidden">Show the
+    full ranking</button>
+</div>
+
+<details>
+  <summary>How a day runs</summary>
+  <ol>
+    <li><strong>Open the next day</strong> — today, or the day after
+        the latest stored one, thus test days run back to back. One
+        active day at a time.</li>
+    <li>The player sends a sketch on <a href="/">the main page</a> —
+        one send for each day.</li>
+    <li><strong>Close</strong> — scoring runs (the one live step; the
+        server needs the provider key for a live config).</li>
+    <li><strong>Reveal</strong> — the main page shows the player
+        their score and report; this console can see everything at
+        each step.</li>
+  </ol>
+  <p>One time before the very first day:
+     <code>uv run python -m validation.v2 --config
+     configs/scoring/dev-wit-mixed.json</code> builds the commonness
+     tables.</p>
+</details>
+
+<script src="/ui/dev.js"></script>
+<script>if (typeof startDevConsole === "function") startDevConsole();
+</script>

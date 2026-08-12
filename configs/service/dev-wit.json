@@ -1,0 +1,8 @@
+{
+  "config_version": 1,
+  "player": "ade",
+  "scoring_config": "configs/scoring/dev-wit-mixed.json",
+  "data_root": "data",
+  "store_root": "store",
+  "port": 8321
+}

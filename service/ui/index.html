@@ -1,0 +1,121 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>daily trial</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 24px auto;
+         max-width: 720px; padding: 0 16px; color: #1a1c1e; }
+  h1 { font-size: 20px; }
+  .muted { color: #6a7076; font-size: 13px; }
+  .hidden { display: none; }
+  #canvas { border: 1px solid #c6cbce; touch-action: none; cursor: crosshair;
+            display: block; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+  button { font: inherit; padding: 4px 12px; }
+  input, select, textarea { font: inherit; padding: 3px 6px; }
+  ul { padding-left: 20px; }
+  .error { color: #b3261e; }
+  .ok { color: #1b6b3a; }
+  table { border-collapse: collapse; }
+  td, th { border-bottom: 1px solid #e2e5e7; padding: 4px 10px 4px 0;
+           text-align: left; }
+  #commitment { word-break: break-all; }
+  .swatch { display: inline-block; width: 10px; height: 10px;
+            border-radius: 2px; margin-right: 6px; }
+  .remove { border: none; background: none; color: #b3261e;
+            cursor: pointer; padding: 0 4px; }
+  #trial-code { font-size: 44px; letter-spacing: 6px; font-weight: 700;
+                margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+</style>
+
+<p class="muted">the target is</p>
+<div id="trial-code">······</div>
+<h1 class="muted" style="font-size:15px">daily trial
+  <span id="day-label"></span></h1>
+<p class="muted">commitment <span id="commitment"></span></p>
+
+<div id="view-loading"><p>loading…</p></div>
+
+<div id="view-noday" class="hidden"><p>No day is open.</p></div>
+
+<div id="view-intake" class="hidden">
+  <h2>Impressions</h2>
+  <p class="muted">Write what comes to you, one impression at a time —
+     "tall vertical structure", "cold", "water nearby". Enter commits
+     a row.</p>
+  <div class="row">
+    <input id="impression-input" placeholder="one impression, Enter commits"
+           size="48">
+  </div>
+  <ul id="impression-list"></ul>
+
+  <h2>Sketch</h2>
+  <canvas id="canvas" width="512" height="512"></canvas>
+  <p class="muted" id="sketch-hint"></p>
+  <div class="row">
+    <button id="undo-button" type="button">Undo stroke</button>
+    <button id="clear-button" type="button">Clear sketch</button>
+  </div>
+
+  <h3>Name what you drew</h3>
+  <p class="muted">Click strokes to select them (they turn red), then
+     make them a group and say what the group shows. A named group
+     counts as one of your impressions — "tower" can match the
+     hidden image's tower.</p>
+  <div class="row">
+    <input id="group-label" placeholder="what is it? e.g. tower"
+           size="20">
+    <button id="group-button" type="button" disabled>Make a group
+    </button>
+  </div>
+  <ul id="group-list"></ul>
+
+  <h3>How things sit</h3>
+  <p class="muted" id="relation-hint">Make two or more groups, then
+     state how one sits relative to another — "the tower is left of
+     the sea".</p>
+  <div class="row" id="relation-row">
+    <select id="relation-first"></select>
+    <select id="relation-name"></select>
+    <select id="relation-second"></select>
+    <button id="relation-button" type="button">Add</button>
+  </div>
+  <ul id="relation-list"></ul>
+
+  <h2>Paste</h2>
+  <textarea id="paste-input" rows="3" cols="60"
+            placeholder="optional pasted notes"></textarea>
+
+  <div class="row">
+    <button id="send-button" type="button" disabled>Send</button>
+    <span id="send-summary" class="muted"></span>
+    <span id="send-note" class="muted"></span>
+  </div>
+  <p class="muted">One send for each day — it locks when it lands.</p>
+  <p id="send-error" class="error"></p>
+</div>
+
+<div id="view-submitted" class="hidden">
+  <p class="ok">Submitted. The reveal opens after the day closes.</p>
+  <p class="muted">trial <span id="ack-trial"></span> ·
+     atoms <span id="ack-atoms"></span></p>
+</div>
+
+<div id="view-closed" class="hidden">
+  <p>The day is closed. The reveal is next.</p>
+</div>
+
+<div id="view-reveal" class="hidden">
+  <h2>Reveal</h2>
+  <p id="reveal-score"></p>
+  <table id="report-table" class="hidden">
+    <thead><tr><th>atom</th><th>matched element</th><th>weight</th>
+               <th>similarity</th><th>rarity</th></tr></thead>
+    <tbody id="report-body"></tbody>
+  </table>
+  <p class="muted">secret <span id="reveal-secret"></span></p>
+  <p class="muted" id="reveal-check"></p>
+  <p><a href="/history">history</a></p>
+</div>
+
+<script src="/ui/trial.js"></script>
+<script>if (typeof startTrialPage === "function") startTrialPage();</script>

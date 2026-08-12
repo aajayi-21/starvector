@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "a91464187d8169df19c8e3cd734706b5e170e4f03dec0837372ab08df3a9c2a8",
+  "created_at": "2026-08-12T20:13:36.703387+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "",
+  "decoy_count_max": 224,
+  "decoy_count_min": 224,
+  "dev_only": true,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2",
+  "harness_config_hash": "b545e64486d75ddd01b6d5d3ac1a0884b3af226841f6f7731d73a3638d4334a7",
+  "index_id": "d67a70c33aaa30a7e9460180cc5b721965a70a30b6cecc50c667cd2cecdac4ce",
+  "ks_significance": 0.316426,
+  "ks_statistic": 0.042893,
+  "mean_p_at_max_decoy_count": 0.510393,
+  "mean_p_at_min_decoy_count": 0.510393,
+  "notes": "",
+  "preparation_version_id": "d67a70c33aaa30a7e9460180cc5b721965a70a30b6cecc50c667cd2cecdac4ce",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 1000,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 1010,
+      "posts": 0
+    }
+  },
+  "reviewer": "",
+  "scoring_config_hash": "e51c37556516fe8f001579828e84385224baad530f1bbbd4caff9f116e750b80",
+  "tag": "dev-wit",
+  "trial_count": 500,
+  "verdict": "pending"
+}

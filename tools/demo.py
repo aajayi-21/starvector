@@ -20,19 +20,18 @@ from typing import NamedTuple
 import numpy as np
 
 from core.canonical import JsonValue
-from core.fusion import active_channels, fuse
+from core.fusion import fuse
 from core.intake import validate_submission
-from core.normalize import commonness_correct, standardize
 from core.ranking import decoy_set, rank
-from core.types import (ROUTING_TABLE, ChannelName, PoolScores,
-                        ScoringContext, TrialScore)
+from core.types import ChannelName, PoolScores, ScoringContext, TrialScore
 from pipeline.commonness import commonness_config_hash, ensure_commonness_tables
 from pipeline.config import (ConfigError, ScoringConfig, element_config,
                              fusion_weights, intake_gates, load_scoring_config,
                              outline_config, placement_config,
                              scoring_config_hash)
 from pipeline.context import build_scoring_context, load_pool_index
-from pipeline.score import Encoders, channel_scores, encode_submission
+from pipeline.score import (Encoders, encode_submission,
+                            standardized_channels)
 from validation import harness
 from validation.fitconfig import FitConfig, load_fit_config, parse_fit_config
 from validation.generator import SyntheticSubmission, synthetic_set
@@ -162,16 +161,10 @@ def score_demo(row: SyntheticSubmission, data: DemoData) -> ScoredDemo:
     submission = validate_submission(row.record, context.gates,
                                      context.render.canvas_px)
     encoded = encode_submission(submission, context.render, data.encoders)
-    standardized: dict[ChannelName, PoolScores] = {}
-    for name in sorted(active_channels(encoded, ROUTING_TABLE)):
-        if name not in context.weights:
-            continue
-        if name not in context.commonness:
-            raise ValueError(f"channel {name!r} has no commonness table")
-        raw = channel_scores(name, encoded, context.index, context.outline,
-                             context.element, context.placement)
-        standardized[name] = standardize(
-            commonness_correct(raw, context.commonness[name]))
+    # The weighted-subset rule lives in the production path (spec S1
+    # section 14a) - the demo reads the same standardized scores it
+    # renders.
+    standardized = standardized_channels(encoded, context)
     fused = fuse(standardized,
                  {name: context.weights[name] for name in standardized})
     order = np.argsort(-fused, kind="stable")            # (N,) positions

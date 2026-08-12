@@ -344,6 +344,8 @@ core/                      # pure functions only, no I/O
   aggregate.py             # L9
 providers/                 # model access, see §6
 pipeline/                  # imperative shell: wiring, caching, storage, jobs
+service/                   # the trial server shell: store, day lifecycle, HTTP surface (spec S1)
+store/                     # the permanent trial store — play records, not a cache (spec S1 §5)
 pool/                      # offline preparation (curation, extraction, encoding)
 validation/                # V1–V6 harnesses and the synthetic submission generator
 tests/

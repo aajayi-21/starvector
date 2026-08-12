@@ -219,3 +219,6 @@ __marimo__/
 
 # Curation pipeline data root (rebuildable caches and artifacts)
 /data/
+
+# The permanent trial store (spec S1 - play records, backed up, not code)
+/store/

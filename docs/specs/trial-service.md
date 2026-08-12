@@ -380,6 +380,147 @@ tests/service/             # the section 11 suite
 | D7 | Day secret | 256 random bits from the system generator, hex in `day.json` | §22 names the mechanism, not the width. |
 | D8 | The date of a day | The owner machine's local date at open, ISO `YYYY-MM-DD` | One machine, one player. Timezone rules can wait for live players. |
 
+## 14a. Rulings (2026-08-12)
+
+The owner ruled on the §14 decisions before implementation:
+
+- **D1 is overridden: the server builds on FastAPI, with uvicorn as
+  the runner** — two new dependencies. Tests go through
+  `fastapi.testclient` on the httpx dependency the repository has, and
+  the one uvicorn import sits in the `service.server` entry point.
+- **D2 through D8 stand at their proposed defaults.**
+
+The implementation surfaced two contract questions, each ruled by
+the owner on 2026-08-12:
+
+- **The weighted-channel cut.** `score_trial` raised for an active
+  channel with no configured weight, thus a relation-bearing
+  submission could not score with a placement-free config. The
+  ruling: an active channel with no configured weight is cut — the
+  fusion denominator renormalizes without it (architecture §12.3),
+  the rule lives in the shared `standardized_channels` helper, and a
+  weighted channel with a missing commonness table raises as before.
+- **The no-scoreable-atom refusal.** A record can clear each Layer 0
+  gate and read into no weighted channel — stored, it can not score,
+  and the one-write rule (R2) can wedge the day. The ruling: the
+  submission endpoint adds one pre-store refusal (400, cause
+  `no-scoreable-atom`) computed from the assembled atoms and the
+  configured weights — no encoder, nothing target-dependent — and
+  the page disables its send action in the same condition. This is
+  the one sanctioned extension of R1's Layer-0-alone rule.
+
+Resolutions the implementation pinned, recorded here as rulings:
+
+- **The scoring config is `configs/scoring/dev-wit-mixed.json`.**
+  Players send arbitrary mixtures (Rule 5), thus the commonness
+  background must be the mixed mode, with the element table and the
+  outline table stored together. The one-time build before the first
+  live open, named by the R5 refusal:
+  `uv run python -m validation.v2 --config
+  configs/scoring/dev-wit-mixed.json` — a warm run at near zero
+  posts.
+- **The evidence value is the lower chi-squared tail**,
+  `1 - exp(-S) * sum_{k<n} S^k / k!` — small values are the
+  evidence direction (§17), and the architecture §27 example
+  (2S = 10.96 at 24 degrees of freedom gives 0.011) pins it in the
+  tests.
+- **The unbiased skill number requires n >= 2** — `(n - 1) / S` at
+  n = 1 is 0, not an estimate. The history page uses the biased
+  variant at n = 1 and says so.
+- **The server config** is one strict five-field document
+  (`configs/service/dev-wit.json`): player, scoring config, data
+  root, store root, port. The player name is pinned to a
+  file-name-safe shape.
+- **`/api/day` holds** `submitted`, `relation_vocabulary`,
+  `player`, and `canvas_px` with the §9 fields — values with no
+  target dependence, which the one static page needs.
+- **The served day is the latest stored day** by ISO date. An empty
+  store answers each surface with one constant body.
+- **The commitment string** is SHA-256 of `"{target_id}:{secret}"`,
+  and the reveal prints the check command.
+- **The trial row quantizes** its measured values (the trial score
+  and the report columns) through the repository `quantize_measured`
+  rule, thus the R8 byte equality reads on stable digits.
+
+## 14b. Amendments (2026-08-12, owner-requested)
+
+Three changes after the first build, ruled by the owner:
+
+- **The trial code.** Each day gets a player-facing identifier for
+  the hidden target: six random characters, A-Z and 0-9, made at
+  open with no derivation from the image (§22). It sits front and
+  center on the page and in the open and status command output, and
+  `/api/day` serves it in each day status. The §5 trial identifier
+  of a submission stays as bookkeeping - the code names the target,
+  the identifier names the submission.
+- **Dev mode.** `service.server --dev` adds the owner's scoring
+  surfaces, on the development pool alone: `/api/dev` names the
+  day's target, `/api/dev/score` scores a draft record when asked
+  and answers with the trial numbers plus the full fused ordering
+  of the pool with the target marked, and `/image/*` serves each
+  stored pool image. A dev score stores nothing and moves no day
+  status - the one-write submission stays the one committed play,
+  thus the owner iterates freely against the lockout. Without the
+  flag each dev path answers one constant 404, and the R3 tests
+  hold as written. The dev panel also shows the §6 run sequence
+  for a live day.
+- **The page is a development surface.** The intake page is the
+  working interface of this stage, not the production one - a
+  production interface is a stage of its own, and nothing in the
+  wire contract binds to this page's shape.
+
+### More rulings (2026-08-12, after the first live day)
+
+- **The day lifecycle runs from the page.** Three endpoints - open,
+  close, reveal below `/api/day/` - run the same functions the
+  commands use, with the same out-of-sequence refusals (409) and
+  the close answer naming the row count and no score (R3). The page
+  shows buttons that follow the day status. Close from the page is the one live
+  step, thus the server process needs the provider key in its
+  environment for a live config. The controls sit on the page in
+  each mode - a solo localhost server is the owner's own terminal -
+  and the production interface makes its own ruling here.
+- **The migrate command.** The trial-code field landed after the
+  owner's first live day, thus a stored day record without it
+  refuses to read. `service.day migrate` backfills one new random
+  code into each legacy day record, atomically, touching no play
+  data, and is repeatable. The strict reader names the command in
+  its refusal: the reader refuses loudly, and the migrate command
+  moves the store forward one time.
+
+### The single test page (2026-08-12, third ruling)
+
+Development work happens on one page: `GET /dev`, served in dev
+mode alone (one constant 404 without the flag). It holds the trial
+code, the day controls, the target image behind a show-and-hide
+control - hidden at first, thus a blind run works from this page
+too - the intake surface, the draft scorer, and the leaderboard:
+after close or reveal, `GET /api/dev/rankings` scores the stored
+submission through the production path and the page shows the top
+matches across the full pool with the target row marked, plus a
+show-all control for the full ordering. `/api/dev` answers status
+`none` before a day exists, thus the open control works from an
+empty store. The player page at `/` carries none of the dev
+chrome, and the day-control markup sits in the dev panel alone.
+
+### Two pages (2026-08-12, fourth ruling)
+
+The two surfaces divide in full. The player page is the player's
+alone: the trial code, the intake, the submitted view, and a
+reveal view with the score and the report and no target image -
+the images stay on the console. `GET /dev` is the operator console,
+in dev mode alone: the day controls, the target behind its toggle,
+the player's stored submission rendered read-only (the sketch as
+an SVG, the impressions, the groups, the relations, the paste),
+and the scoring view - `/api/dev/rankings` scores the stored
+submission through the production path at each status, a preview
+before close and the trial row's numbers after. The console has no
+sketch input and no send. The open control rolls to the next free
+date - today, or the day after the latest stored day - with one
+active day at a time, thus test days run back to back. The draft
+scorer of the third ruling is out: play comes in from the player
+page alone.
+
 ## 15. Acceptance criteria
 
 1. `core/aggregate.py` lands with the §8 property tests, and the
