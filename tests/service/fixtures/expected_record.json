@@ -1,0 +1,10 @@
+{
+  "impressions": ["tall vertical structure", "cold and exposed"],
+  "canvas_strokes": [
+    {"points": [[0.1, 0.4], [0.3, 0.4], [0.3, 0.6], [0.1, 0.6], [0.1, 0.4]], "group_id": "g1"},
+    {"points": [[0.6, 0.4], [0.9, 0.4], [0.9, 0.6], [0.6, 0.6], [0.6, 0.4]], "group_id": "g2"}
+  ],
+  "groups": [{"id": "g1", "label": "tower"}, {"id": "g2", "label": "sea"}],
+  "relations": [{"relation": "left-of", "of": ["g1", "g2"]}],
+  "pasted_text": null
+}

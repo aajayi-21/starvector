@@ -1,0 +1,94 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>daily trial</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 24px auto;
+         max-width: 720px; padding: 0 16px; color: #1a1c1e; }
+  h1 { font-size: 20px; }
+  .muted { color: #6a7076; font-size: 13px; }
+  .hidden { display: none; }
+  #canvas { border: 1px solid #c6cbce; touch-action: none; cursor: crosshair;
+            display: block; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+  button { font: inherit; padding: 4px 12px; }
+  input, select, textarea { font: inherit; padding: 3px 6px; }
+  ul { padding-left: 20px; }
+  .error { color: #b3261e; }
+  .ok { color: #1b6b3a; }
+  table { border-collapse: collapse; }
+  td, th { border-bottom: 1px solid #e2e5e7; padding: 4px 10px 4px 0;
+           text-align: left; }
+  #commitment { word-break: break-all; }
+</style>
+
+<h1>daily trial <span id="day-label" class="muted"></span></h1>
+<p class="muted">commitment <span id="commitment"></span></p>
+
+<div id="view-loading"><p>loading…</p></div>
+
+<div id="view-noday" class="hidden"><p>No day is open.</p></div>
+
+<div id="view-intake" class="hidden">
+  <h2>Impressions</h2>
+  <div class="row">
+    <input id="impression-input" placeholder="one impression, Enter commits"
+           size="48">
+  </div>
+  <ul id="impression-list"></ul>
+
+  <h2>Sketch</h2>
+  <p class="muted">Draw with the pointer. Click a stroke to select it,
+     then group the selection and label it if you want. Relations need
+     two groups.</p>
+  <canvas id="canvas" width="512" height="512"></canvas>
+  <div class="row">
+    <button id="group-button" type="button">Group selected</button>
+    <input id="group-label" placeholder="optional label" size="20">
+    <button id="clear-button" type="button">Clear sketch</button>
+  </div>
+  <ul id="group-list"></ul>
+  <div class="row">
+    <select id="relation-first"></select>
+    <select id="relation-name"></select>
+    <select id="relation-second"></select>
+    <button id="relation-button" type="button">Add relation</button>
+  </div>
+  <ul id="relation-list"></ul>
+
+  <h2>Paste</h2>
+  <textarea id="paste-input" rows="3" cols="60"
+            placeholder="optional pasted notes"></textarea>
+
+  <div class="row">
+    <button id="send-button" type="button" disabled>Send</button>
+    <span id="send-note" class="muted"></span>
+  </div>
+  <p id="send-error" class="error"></p>
+</div>
+
+<div id="view-submitted" class="hidden">
+  <p class="ok">Submitted. The reveal opens after the day closes.</p>
+  <p class="muted">trial <span id="ack-trial"></span> ·
+     atoms <span id="ack-atoms"></span></p>
+</div>
+
+<div id="view-closed" class="hidden">
+  <p>The day is closed. The reveal is next.</p>
+</div>
+
+<div id="view-reveal" class="hidden">
+  <h2>Reveal</h2>
+  <p><img id="target-image" alt="the target" width="256"></p>
+  <p id="reveal-score"></p>
+  <table id="report-table" class="hidden">
+    <thead><tr><th>atom</th><th>matched element</th><th>weight</th>
+               <th>similarity</th><th>rarity</th></tr></thead>
+    <tbody id="report-body"></tbody>
+  </table>
+  <p class="muted">secret <span id="reveal-secret"></span></p>
+  <p class="muted" id="reveal-check"></p>
+  <p><a href="/history">history</a></p>
+</div>
+
+<script src="/ui/trial.js"></script>
+<script>if (typeof startTrialPage === "function") startTrialPage();</script>

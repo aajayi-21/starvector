@@ -1,0 +1,12 @@
+[
+  {"action": "impression", "text": "tall vertical structure"},
+  {"action": "impression", "text": "cold and exposed"},
+  {"action": "stroke", "points": [[0.1, 0.4], [0.3, 0.4], [0.3, 0.6], [0.1, 0.6], [0.1, 0.4]]},
+  {"action": "stroke", "points": [[0.6, 0.4], [0.9, 0.4], [0.9, 0.6], [0.6, 0.6], [0.6, 0.4]]},
+  {"action": "selectStrokes", "indexes": [0]},
+  {"action": "group", "label": "tower"},
+  {"action": "selectStrokes", "indexes": [1]},
+  {"action": "group", "label": "sea"},
+  {"action": "relation", "relation": "left-of", "first": "g1", "second": "g2"},
+  {"action": "paste", "text": ""}
+]
