@@ -115,7 +115,35 @@ stays:
 - Cost: the colorized renders are new encoder items, batched. The
   monochrome side is warm after a V2 run on the same lineage.
 
-## 7. The revert
+## 7. The gate run (owner runbook)
+
+The gate runs on the current pool first, before rgb lands in the
+dev-wit-2 migration (`pool-curation.md` section 18) — the color
+renders are pool-free bytes, thus their encoder cache moves to the
+new pool with no cost.
+
+1. `uv run python -m pool.preparation --config
+   configs/preparation/dev-wit-photo-inst-rgb.json` — the sibling
+   config differs in `stroke_color` and the tag alone. Each provider
+   cache is warm at the same slot hashes: zero posts, and the run
+   writes `pool/preparations/dev-wit-prep-photo-inst-rgb-a6071f0e.json`
+   (the hash is precomputed — a different filename in the run output
+   means the config drifted, stop and check).
+2. `uv run python -m validation.v2c --config
+   configs/scoring/dev-wit-v2c.json --report` — the committed config
+   names that record. The commonness tables build again at the new
+   key with about zero posts (the colorless background renders the
+   monochrome bytes), the monochrome side is warm after a V2 run on
+   this lineage, and the colorized side costs about 8 to 16 batched
+   embedding posts.
+3. Read the record: the color side must agree with `Uniform(0, 1)`,
+   and the difference numbers say what color does. The verdict is
+   the owner's. With a good verdict, `dev-wit-photo-inst-2.json`
+   takes `"stroke_color": "rgb"`. With a bad one, the migration
+   stays `"mono"`, colors ship in the interface alone, and the
+   ruling lands here.
+
+## 8. The revert
 
 Set `linedraw.stroke_color` to `"mono"` or delete the key — the two
 hash the same. Colors stay in the stored records and strip at

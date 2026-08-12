@@ -50,8 +50,14 @@ pool lineage. That is correct behavior, not an accident — see
   label plus one confidence — the response schema pins the label to the
   requested set, thus an out-of-set answer cannot occur.
   `classify.label_template` must contain `{label}` one time.
-- `providers.encoder` — `"fake"` in this build. A local SigLIP encoder
-  comes on a branch that follows. Switching the encoder changes the config
+- `providers.encoder` — `"openrouter"` or `"fake"` (the U2 change of
+  2026-08-12). An openrouter encoder is an embeddings slot: `model` and
+  `dimension` are required, `instruction_template` stays `null`, and the
+  chat `default_model` does not apply. The fake stays for tests.
+  `dev-wit.json` released the first pool with the fake encoder — s06
+  removed nothing and s07 cut at random — and `dev-wit-2.json` is the
+  re-run with `google/gemini-embedding-2` and the corpus revision pinned
+  to the recorded resolution. Switching the encoder changes the config
   hash and thus starts a new pool lineage.
 - `release.tag` — must start with `dev-` when `dev_only` is `true`,
   and only then. Development pools are not published (R13).
