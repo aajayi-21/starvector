@@ -107,6 +107,8 @@ def create_app(service_config: ServiceConfig,
         Path(record.config_path)).linedraw.canvas_px
     page_bytes = (_UI_ROOT / "index.html").read_bytes()
     script_bytes = (_UI_ROOT / "trial.js").read_bytes()
+    dev_page_bytes = (_UI_ROOT / "dev.html").read_bytes()
+    dev_script_bytes = (_UI_ROOT / "dev.js").read_bytes()
     root = Path(service_config.store_root)
     data_root = Path(service_config.data_root)
     player = service_config.player
@@ -135,7 +137,32 @@ def create_app(service_config: ServiceConfig,
         if not dev_mode:
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
-        return HTMLResponse(content=page_bytes)
+        return HTMLResponse(content=dev_page_bytes)
+
+    @app.get("/ui/dev.js")
+    def dev_script() -> Response:
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        return Response(content=dev_script_bytes,
+                        media_type="text/javascript")
+
+    @app.get("/api/dev/submission")
+    def dev_submission() -> Response:
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        day = store.latest_day(root)
+        if day is None:
+            return Response(content=_NO_DAY, status_code=404,
+                            media_type="application/json")
+        stored = store.read_json_or_none(
+            store.submission_path(root, day, player))
+        if stored is None:
+            return JSONResponse({"cause": "no-submission",
+                                 "detail": "no stored submission this "
+                                           "day"}, status_code=404)
+        return JSONResponse(stored)
 
     @app.get("/api/dev")
     def dev_view() -> Response:
@@ -176,38 +203,6 @@ def create_app(service_config: ServiceConfig,
             value = dev_rankings(stored["record"], record.target_id,
                                  _dev_wired())
         except Exception as error:
-            return JSONResponse({"cause": "dev-score-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse(value)
-
-    @app.post("/api/dev/score")
-    async def dev_score(request: Request) -> Response:
-        if not dev_mode:
-            return Response(content=_DEV_OFF, status_code=404,
-                            media_type="application/json")
-        day = store.latest_day(root)
-        if day is None:
-            return Response(content=_NO_DAY, status_code=404,
-                            media_type="application/json")
-        record = store.read_day_record(root, day)
-        try:
-            wire_record = await request.json()
-        except Exception:
-            return JSONResponse(
-                {"cause": "bad-shape",
-                 "detail": "bad-shape: the body is not JSON"},
-                status_code=400)
-        from service.scoring import dev_rankings
-
-        try:
-            value = dev_rankings(wire_record, record.target_id,
-                                 _dev_wired())
-        except IntakeError as error:
-            return JSONResponse({"cause": error.cause,
-                                 "detail": str(error)}, status_code=400)
-        except Exception as error:
-            # A dev surface answers each failure shaped - a missing
-            # provider key is a RuntimeError, not a ValueError.
             return JSONResponse({"cause": "dev-score-failed",
                                  "detail": str(error)}, status_code=400)
         return JSONResponse(value)
@@ -288,10 +283,28 @@ def create_app(service_config: ServiceConfig,
 
     @app.post("/api/day/open")
     def day_open() -> Response:
+        import datetime
+
         from service.day import open_day
 
+        # The next free date: today, or the day after the latest
+        # stored day - the test flow runs many days back to back
+        # (section 14b). One active day at a time:
+        # an open latest day refuses.
+        latest = store.latest_day(root)
+        date = None
+        if latest is not None:
+            if store.read_day_record(root, latest).status == "open":
+                return JSONResponse(
+                    {"cause": "refused",
+                     "detail": f"day {latest} is open - close it first"},
+                    status_code=409)
+            today = datetime.date.today().isoformat()
+            if latest >= today:
+                date = (datetime.date.fromisoformat(latest)
+                        + datetime.timedelta(days=1)).isoformat()
         try:
-            record = open_day(service_config)
+            record = open_day(service_config, date=date)
         except store.StoreError as error:
             return JSONResponse({"cause": "refused",
                                  "detail": str(error)}, status_code=409)

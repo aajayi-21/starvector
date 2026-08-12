@@ -291,7 +291,6 @@ function startTrialPage() {
     fetch("/api/reveal").then(function (response) {
       if (!response.ok) { show("view-closed"); return; }
       response.json().then(function (body) {
-        byId("target-image").src = "/image/" + body.target_id;
         byId("reveal-secret").textContent = body.secret;
         byId("reveal-check").textContent = body.check;
         if (body.trial) {
@@ -323,172 +322,8 @@ function startTrialPage() {
     });
   }
 
-  var onDevPage = window.location.pathname.indexOf("/dev") === 0;
-
-  function lifecycleAction(path, confirmation) {
-    /* The owner's day controls, on the test page alone: the server
-     * refuses out-of-sequence moves, and close is the one live step
-     * (the server process needs the provider key). */
-    if (confirmation && !window.confirm(confirmation)) { return; }
-    byId("day-control-note").textContent = "working…";
-    fetch(path, {method: "POST"}).then(function (response) {
-      return response.json().then(function (body) {
-        if (response.ok) { window.location.reload(); }
-        else {
-          byId("day-control-note").textContent =
-            body.detail || body.cause || "refused";
-        }
-      });
-    }).catch(function () {
-      byId("day-control-note").textContent = "the server did not answer";
-    });
-  }
-
-  function startDayControls(status) {
-    byId("open-day-button").classList.toggle("hidden",
-                                             status !== "none");
-    byId("close-day-button").classList.toggle("hidden",
-                                              status !== "open");
-    byId("reveal-day-button").classList.toggle("hidden",
-                                               status !== "closed");
-    byId("open-day-button").addEventListener("click", function () {
-      lifecycleAction("/api/day/open", null);
-    });
-    byId("close-day-button").addEventListener("click", function () {
-      lifecycleAction("/api/day/close",
-                      "Close the day? Scoring runs and the window "
-                      + "locks.");
-    });
-    byId("reveal-day-button").addEventListener("click", function () {
-      lifecycleAction("/api/day/reveal", null);
-    });
-  }
-
-  var LEADERBOARD_LIMIT = 25;
-  var lastRankings = null;
-
-  function renderRankings(body, limit) {
-    /* One renderer for the draft score and the stored-submission
-     * leaderboard: the top rows, the target row wherever it sits,
-     * and a show-all control for the full ordering. */
-    lastRankings = body;
-    byId("dev-trial").textContent =
-      "trial score " + body.trial.p.toFixed(4)
-      + " - target at position " + body.target_position
-      + " of " + body.rankings.length
-      + " (rank " + body.trial.target_rank + " of "
-      + (body.trial.decoy_count + 1) + " after the near-duplicate "
-      + "group exits)";
-    var rows = body.rankings;
-    var shown = rows;
-    if (limit && rows.length > limit) {
-      shown = rows.slice(0, limit).concat(
-        rows.slice(limit).filter(function (row) {
-          return row.is_target;
-        }));
-    }
-    var tbody = byId("dev-rankings-body");
-    tbody.innerHTML = "";
-    shown.forEach(function (row) {
-      var line = document.createElement("tr");
-      if (row.is_target) { line.className = "target-row"; }
-      var cell = document.createElement("td");
-      cell.textContent = String(row.position);
-      line.appendChild(cell);
-      var imageCell = document.createElement("td");
-      var thumb = document.createElement("img");
-      thumb.src = "/image/" + row.image_id;
-      thumb.width = 40;
-      thumb.loading = "lazy";
-      imageCell.appendChild(thumb);
-      line.appendChild(imageCell);
-      var idCell = document.createElement("td");
-      idCell.textContent = row.image_id.slice(0, 8)
-        + (row.is_target ? " ← target" : "");
-      line.appendChild(idCell);
-      var fusedCell = document.createElement("td");
-      fusedCell.textContent = row.fused.toFixed(4);
-      line.appendChild(fusedCell);
-      tbody.appendChild(line);
-    });
-    byId("dev-rankings").classList.remove("hidden");
-    byId("show-all-rankings").classList.toggle(
-      "hidden", !limit || rows.length <= limit);
-  }
-
-  function startDevPanel() {
-    /* The single test page (spec S1 section 14b): only /dev shows
-     * it, and only a --dev server answers the probes. Drafts score
-     * without being stored. */
-    if (!onDevPage) { return; }
-    fetch("/api/dev").then(function (response) {
-      if (!response.ok) { return; }
-      response.json().then(function (dev) {
-        byId("dev-panel").classList.remove("hidden");
-        startDayControls(dev.status);
-        byId("show-all-rankings").addEventListener("click", function () {
-          if (lastRankings) { renderRankings(lastRankings, 0); }
-        });
-
-        if (dev.status === "none") { return; }
-        var targetShown = false;
-        byId("target-toggle").addEventListener("click", function () {
-          targetShown = !targetShown;
-          var image = byId("dev-target");
-          if (targetShown && !image.src) {
-            image.src = "/image/" + dev.target_id;
-          }
-          image.classList.toggle("hidden", !targetShown);
-          byId("target-toggle").textContent =
-            targetShown ? "Hide the target" : "Show the target";
-        });
-
-        byId("dev-score-button").addEventListener("click", function () {
-          byId("dev-score-note").textContent = "scoring…";
-          var paste = byId("paste-input").value;
-          state.pastedText = paste.trim() === "" ? null : paste;
-          fetch("/api/dev/score", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(assembleRecord(state)),
-          }).then(function (answer) {
-            return answer.json().then(function (body) {
-              if (!answer.ok) {
-                byId("dev-score-note").textContent =
-                  body.detail || body.cause || "refused";
-                return;
-              }
-              byId("dev-score-note").textContent = "";
-              byId("leaderboard-note").textContent =
-                "the current draft, scored without being stored:";
-              renderRankings(body, LEADERBOARD_LIMIT);
-            });
-          }).catch(function () {
-            byId("dev-score-note").textContent =
-              "the server did not answer";
-          });
-        });
-
-        if (dev.status === "closed" || dev.status === "revealed") {
-          fetch("/api/dev/rankings").then(function (answer) {
-            if (!answer.ok) { return; }
-            answer.json().then(function (body) {
-              byId("leaderboard-note").textContent =
-                "the stored submission's top matches:";
-              renderRankings(body, LEADERBOARD_LIMIT);
-            });
-          }).catch(function () {});
-        }
-      });
-    }).catch(function () {});
-  }
-
   fetch("/api/day").then(function (response) {
-    if (!response.ok) {
-      show("view-noday");
-      startDevPanel();
-      return;
-    }
+    if (!response.ok) { show("view-noday"); return; }
     response.json().then(function (day) {
       byId("day-label").textContent = day.day;
       byId("trial-code").textContent = day.trial_code;
@@ -505,7 +340,6 @@ function startTrialPage() {
       else if (day.submitted) { show("view-submitted"); }
       else if (day.status === "closed") { show("view-closed"); }
       else { show("view-intake"); refreshControls(); }
-      startDevPanel();
     });
   }).catch(function () { show("view-noday"); });
 }

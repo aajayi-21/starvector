@@ -503,6 +503,24 @@ show-all control for the full ordering. `/api/dev` answers status
 empty store. The player page at `/` carries none of the dev
 chrome, and the day-control markup sits in the dev panel alone.
 
+### Two pages (2026-08-12, fourth ruling)
+
+The two surfaces divide in full. The player page is the player's
+alone: the trial code, the intake, the submitted view, and a
+reveal view with the score and the report and no target image -
+the images stay on the console. `GET /dev` is the operator console,
+in dev mode alone: the day controls, the target behind its toggle,
+the player's stored submission rendered read-only (the sketch as
+an SVG, the impressions, the groups, the relations, the paste),
+and the scoring view - `/api/dev/rankings` scores the stored
+submission through the production path at each status, a preview
+before close and the trial row's numbers after. The console has no
+sketch input and no send. The open control rolls to the next free
+date - today, or the day after the latest stored day - with one
+active day at a time, thus test days run back to back. The draft
+scorer of the third ruling is out: play comes in from the player
+page alone.
+
 ## 15. Acceptance criteria
 
 1. `core/aggregate.py` lands with the §8 property tests, and the

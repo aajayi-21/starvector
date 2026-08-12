@@ -183,25 +183,17 @@ def test_the_day_view_carries_the_trial_code_front_and_center(
 def test_dev_surfaces_are_constant_404_without_the_flag(tmp_path) -> None:
     fixture, client = _world(tmp_path)
     record = store.read_day_record(fixture["store"], DAY)
-    for path in ("/api/dev", "/dev", "/api/dev/rankings"):
+    for path in ("/api/dev", "/dev", "/ui/dev.js", "/api/dev/rankings",
+                 "/api/dev/submission"):
         for _ in range(2):
             answer = client.get(path)
             assert answer.status_code == 404, path
             assert answer.content == b'{"detail":"not found"}', path
             assert record.target_id not in answer.text, path
-    score = client.post("/api/dev/score", json=mixed_wire_record())
-    assert score.status_code == 404
-    assert score.content == b'{"detail":"not found"}'
 
 
-def test_dev_mode_shows_the_target_and_scores_without_storing(
+def test_the_console_reads_target_submission_and_preview_rankings(
         tmp_path) -> None:
-    from pathlib import Path
-
-    from pipeline.config import load_scoring_config
-    from service.scoring import wire_for_close
-    from pipeline.score import score_trial
-
     fixture, _ = _world(tmp_path)
     record = store.read_day_record(fixture["store"], DAY)
     dev_client = TestClient(create_app(fixture["service_config"],
@@ -211,34 +203,33 @@ def test_dev_mode_shows_the_target_and_scores_without_storing(
     assert dev_view["target_id"] == record.target_id
     assert dev_view["trial_code"] == record.trial_code
 
-    # The target and each pool image answer in dev mode.
+    # Each pool image answers in dev mode.
     assert dev_client.get(f"/image/{record.target_id}").status_code == 200
     other = [image_id for image_id in fixture["image_ids"]
              if image_id != record.target_id][0]
     assert dev_client.get(f"/image/{other}").status_code == 200
 
-    answer = dev_client.post("/api/dev/score", json=mixed_wire_record())
-    assert answer.status_code == 200
-    body = answer.json()
+    # No submission: the console names it.
+    assert dev_client.get("/api/dev/submission").json()["cause"] \
+        == "no-submission"
+
+    # The player sends on the player page. The console reads it
+    # back and ranks it before close - a preview, with no store
+    # write but the submission, and the day unmoved.
+    ack = dev_client.post("/api/submission", json=mixed_wire_record())
+    assert ack.status_code == 200
+    stored = dev_client.get("/api/dev/submission").json()
+    assert stored["record"] == mixed_wire_record()
+    assert stored["trial_id"] == ack.json()["trial_id"]
+
+    preview = dev_client.get("/api/dev/rankings")
+    assert preview.status_code == 200
+    body = preview.json()
     assert len(body["rankings"]) == len(fixture["image_ids"])
-    assert [row["position"] for row in body["rankings"]] \
-        == list(range(1, len(fixture["image_ids"]) + 1))
-    targets = [row for row in body["rankings"] if row["is_target"]]
-    assert len(targets) == 1
-    assert targets[0]["position"] == body["target_position"]
-
-    # The dev numbers equal the production path on the same record.
-    config = load_scoring_config(Path(fixture["scoring_config_path"]))
-    wired = wire_for_close(config, fixture["scoring_config_path"],
-                           fixture["data"], fixture["providers"])
-    direct = score_trial(mixed_wire_record(), record.target_id,
-                         wired.context, wired.encoders)
-    assert body["trial"]["p"] == pytest.approx(direct.p, abs=1e-6)
-    assert body["trial"]["decoy_count"] == direct.decoy_count
-
-    # Nothing is stored and the day does not move.
-    assert store.list_submissions(fixture["store"], DAY) == ()
+    assert sum(1 for row in body["rankings"] if row["is_target"]) == 1
     assert store.read_day_record(fixture["store"], DAY).status == "open"
+    assert store.read_json_or_none(
+        store.trial_row_path(fixture["store"], DAY, "ade")) is None
 
 
 def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
@@ -269,47 +260,49 @@ def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
     assert 0.0 <= reveal["trial"]["p"] <= 1.0
 
 
-def test_the_test_page_serves_and_drives_a_full_day(tmp_path) -> None:
-    # The single test page (section 14b): /dev serves the page in dev
-    # mode, /api/dev answers status none before a day exists (the
-    # open control needs it), and after close the stored submission's
-    # leaderboard reads from /api/dev/rankings.
+def test_the_console_page_drives_days_back_to_back(tmp_path) -> None:
+    # The fourth 14b ruling: /dev is the operator console - no sketch
+    # input - and open rolls to the next free date, thus test days
+    # run back to back.
     fixture = build_service_fixture(tmp_path)
     dev_client = TestClient(create_app(fixture["service_config"],
                                        dev_mode=True))
 
     page = dev_client.get("/dev")
     assert page.status_code == 200
-    assert page.content == dev_client.get("/").content
-    assert 'id="target-toggle"' in page.text
+    assert "DEV CONSOLE" in page.text
+    assert "<canvas" not in page.text
     assert 'id="day-controls"' in page.text
+    assert 'id="target-toggle"' in page.text
+    # The player page carries no console chrome.
+    main_page = dev_client.get("/").text
+    assert 'id="day-controls"' not in main_page
+    assert "DEV CONSOLE" not in main_page
 
     assert dev_client.get("/api/dev").json() == {"day": None,
                                                  "status": "none"}
-    assert dev_client.get("/api/dev/rankings").status_code == 404
-
-    assert dev_client.post("/api/day/open").status_code == 200
-    assert dev_client.get("/api/dev").json()["status"] == "open"
-    assert dev_client.get("/api/dev/rankings").json()["cause"] \
-        == "no-submission"
+    first = dev_client.post("/api/day/open")
+    assert first.status_code == 200
+    first_day = first.json()["day"]
+    # One active day at a time.
+    assert dev_client.post("/api/day/open").status_code == 409
 
     assert dev_client.post("/api/submission",
                            json=mixed_wire_record()).status_code == 200
     assert dev_client.post("/api/day/close").status_code == 200
 
-    board = dev_client.get("/api/dev/rankings")
-    assert board.status_code == 200
-    body = board.json()
-    assert len(body["rankings"]) == len(fixture["image_ids"])
-    assert sum(1 for row in body["rankings"] if row["is_target"]) == 1
-    assert 0.0 <= body["trial"]["p"] <= 1.0
+    board = dev_client.get("/api/dev/rankings").json()
+    day_row = store.read_json_or_none(
+        store.trial_row_path(fixture["store"], first_day, "ade"))
+    assert board["trial"]["p"] == day_row["p"]
+    assert board["trial"]["target_rank"] == day_row["target_rank"]
 
-    # The leaderboard equals the trial row the close wrote.
-    day = store.latest_day(fixture["store"])
-    row = store.read_json_or_none(
-        store.trial_row_path(fixture["store"], day, "ade"))
-    assert body["trial"]["p"] == row["p"]
-    assert body["trial"]["target_rank"] == row["target_rank"]
+    assert dev_client.post("/api/day/reveal").status_code == 200
+    # Open rolls to the next free date.
+    second = dev_client.post("/api/day/open")
+    assert second.status_code == 200
+    assert second.json()["day"] > first_day
+    assert store.latest_day(fixture["store"]) == second.json()["day"]
 
 
 def test_an_empty_store_answers_with_constants(tmp_path) -> None:
