@@ -33,15 +33,19 @@ def _png_bytes(seed: int) -> bytes:
     return buffer.getvalue()
 
 
-def build_service_fixture(root: Path, count: int = 40) -> dict:
+def build_service_fixture(root: Path, count: int = 40,
+                          prep_overrides: dict | None = None) -> dict:
     """One warm offline server world below root. Output keys:
     service_config, providers, store, data, scoring_config_path,
-    image_ids.
+    image_ids. prep_overrides reaches the preparation config - the
+    spec C1 tests build an rgb world with
+    {"linedraw.stroke_color": "rgb"}.
     """
     from conftest import (build_direct_prepared_pool, scoring_config_dict,
                           scoring_fakes)
 
-    prepared = build_direct_prepared_pool(root / "pool", count)
+    prepared = build_direct_prepared_pool(root / "pool", count,
+                                          overrides=prep_overrides)
     data = prepared["data"]
     for position, image_id in enumerate(prepared["image_ids"]):
         write_bytes_atomic(image_path(data, image_id), _png_bytes(position))
@@ -91,6 +95,14 @@ def build_service_fixture(root: Path, count: int = 40) -> dict:
         "scoring_config_path": str(scoring_config_path),
         "image_ids": prepared["image_ids"],
     }
+
+
+def colored_wire_record() -> dict:
+    """The mixed record with a color on each stroke (spec C1)."""
+    record = mixed_wire_record()
+    record["canvas_strokes"][0]["color"] = "#1a73e8"
+    record["canvas_strokes"][1]["color"] = "#c5221f"
+    return record
 
 
 def mixed_wire_record() -> dict:

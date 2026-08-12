@@ -117,3 +117,32 @@ def test_an_open_day_is_skipped_with_a_count(tmp_path) -> None:
                           providers=fixture["providers"])
     assert counts["skipped_open"] == 1
     assert counts["days"] == 0
+
+
+def test_a_colored_day_in_an_rgb_world_rescores_byte_equal(
+        tmp_path) -> None:
+    # The spec C1 rescore invariant: the promotion render is a pure
+    # function of the stored record, thus a day with color strokes
+    # reproduces byte-for-byte with the pinned config.
+    from svc_fixture import colored_wire_record
+
+    fixture = build_service_fixture(
+        tmp_path, prep_overrides={"linedraw.stroke_color": "rgb"})
+    open_day(fixture["service_config"], date=DAY,
+             clock=lambda: FIXED_CLOCK, pick_seed="a" * 32,
+             secret="b" * 64)
+    store.write_once_json(
+        store.submission_path(fixture["store"], DAY, "ade"),
+        {"day": DAY, "player": "ade", "trial_id": "f" * 32,
+         "received_at": FIXED_CLOCK, "record": colored_wire_record()})
+    close_day(fixture["service_config"], providers=fixture["providers"],
+              clock=lambda: FIXED_CLOCK)
+    reveal_day(fixture["service_config"], clock=lambda: FIXED_CLOCK)
+    before = _snapshot(fixture["store"])
+    counts = rescore_days(fixture["service_config"],
+                          config_path=fixture["scoring_config_path"],
+                          providers=fixture["providers"])
+    assert counts["compared"] == 1
+    assert counts["equal"] == 1
+    assert counts["written"] == 0
+    assert _snapshot(fixture["store"]) == before

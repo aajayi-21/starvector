@@ -540,12 +540,15 @@ def clone_preparation(prepared: dict, destination: Path) -> dict:
 
 
 def build_direct_prepared_pool(root: Path, count: int,
-                               dimension: int = 32, seed: int = 11) -> dict:
+                               dimension: int = 32, seed: int = 11,
+                               overrides: dict | None = None) -> dict:
     """Hand-build one prepared pool: artifacts, record, config file.
 
     The fast fixture for statistical tests — no pipeline run. Seeded
     unit vectors, singleton near-duplicate groups, and a record with
     the measured digest of each written file in its inventory.
+    overrides merges more prep_config_dict entries — the spec C1
+    tests build an rgb world with {"linedraw.stroke_color": "rgb"}.
     """
     import numpy as np
 
@@ -568,7 +571,8 @@ def build_direct_prepared_pool(root: Path, count: int,
             "instruction_template": None, "dimension": dimension},
            "providers.image_encoder": {
             "provider": "fake", "model": None,
-            "instruction_template": None, "dimension": dimension}})
+            "instruction_template": None, "dimension": dimension},
+           **(overrides or {})})
     config_path = root / "prep-config.json"
     config_path.write_text(canonical_json_pretty(document) + "\n",
                            encoding="utf-8")
