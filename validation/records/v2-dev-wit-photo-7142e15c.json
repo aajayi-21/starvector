@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "82b0fcf7db10be4c1b9d13d628536c840c0e8ca6c8e7bfff8b74b55e37909598",
+  "created_at": "2026-08-12T05:22:39.822277+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-11",
+  "decoy_count_max": 224,
+  "decoy_count_min": 224,
+  "dev_only": true,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2",
+  "harness_config_hash": "7142e15ca1f29ccd06c64b04b6ee24c17628568d9c010eac2ba71e1d0d4dc27d",
+  "index_id": "5b0ee330172a203c63c543876816c32f91a9c9334289ee84a145bf69701926e6",
+  "ks_significance": 0.416273,
+  "ks_statistic": 0.0395,
+  "mean_p_at_max_decoy_count": 0.517134,
+  "mean_p_at_min_decoy_count": 0.517134,
+  "notes": "KS 0.0395 at significance 0.416 over 500 trials - uniform, passes. Decoy count 224 in all 500 trials: photograph-embedding space groups nothing at 0.95 (largest p08 component 1 of 225 against 6 in the control), so the conditional row is degenerate by health, not by accident. Mean p 0.5171 (z 1.33, within noise; same seeded pairs as the sibling photo conditions). Commonness leak Spearman +0.4533 against the control's +0.4722 - the standing structural finding persists off-bridge and still awaits the Phase 4 source-B commonness rebuild.",
+  "preparation_version_id": "5b0ee330172a203c63c543876816c32f91a9c9334289ee84a145bf69701926e6",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 2000,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "f3e602794adf3e1f3fa77c24daf62f1e57b0e2ba1502bebbc6c2c165c2c6039e",
+  "tag": "dev-wit-photo",
+  "trial_count": 500,
+  "verdict": "pass"
+}

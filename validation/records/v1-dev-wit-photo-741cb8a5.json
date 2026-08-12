@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "82b0fcf7db10be4c1b9d13d628536c840c0e8ca6c8e7bfff8b74b55e37909598",
+  "created_at": "2026-08-12T04:23:29.204021+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-11",
+  "dev_only": true,
+  "first_rank_fraction": 0.555,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "741cb8a5fd8e1ff4a68f2661671d06d2085736a42e4bd6c7167a46f44e88e246",
+  "index_id": "c100fb451e76a2d36bc7bd23c52be40f2c367aae68614199c26617de1bcbb5d7",
+  "mean_trial_score": 0.992406,
+  "median_rank": 1.0,
+  "notes": "P2c photo condition, the bridge removed. First-rank 40.5% to 55.5%, top-ten 73.5% to 93.5%, median rank 2 to 1, buried tail (rank above 50) 19 to 3 of 200 against the control v1-dev-wit-99c8b508 on identical pairs. Paired: 94 better / 43 worse (sign test p 1.6e-5), 53 first-rank gains / 23 losses (McNemar p 7.6e-4). The section 11 bridge claim does not hold for gemini-embedding-2: the raw photograph path wins decisively. Union decoy counts uniform at 424 - no drawing-space grouping. Element side fully cached; fusion weights equal and unfitted (I6). Full analysis: the P2c ladder report, 2026-08-11.",
+  "pair_count": 200,
+  "preparation_version_id": "5b0ee330172a203c63c543876816c32f91a9c9334289ee84a145bf69701926e6",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 40
+    },
+    "sketch_encoder": {
+      "cache_hits": 1600,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 747,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002353,
+  "reference_top_ten": 0.023529,
+  "reviewer": "ade",
+  "scoring_config_hash": "f3e602794adf3e1f3fa77c24daf62f1e57b0e2ba1502bebbc6c2c165c2c6039e",
+  "tag": "dev-wit-photo",
+  "top_ten_fraction": 0.935,
+  "verdict": "pass"
+}

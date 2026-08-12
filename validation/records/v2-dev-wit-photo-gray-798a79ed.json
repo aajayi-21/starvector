@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "82b0fcf7db10be4c1b9d13d628536c840c0e8ca6c8e7bfff8b74b55e37909598",
+  "created_at": "2026-08-12T05:31:47.767861+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-11",
+  "decoy_count_max": 224,
+  "decoy_count_min": 224,
+  "dev_only": true,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2",
+  "harness_config_hash": "798a79ed43d045c9e8ce635e25955b40a883b4c1538636e2dd6ef33bb31981fe",
+  "index_id": "09d1d4cd892972490ad889da9889c216ea4fd624a4f40c890a3c7244613f8d56",
+  "ks_significance": 0.122339,
+  "ks_statistic": 0.052857,
+  "mean_p_at_max_decoy_count": 0.517,
+  "mean_p_at_min_decoy_count": 0.517,
+  "notes": "KS 0.0529 at significance 0.122 over 500 trials - passes. Decoy count uniform at 224, largest p08 component 1 of 225. Mean p 0.5170 (z 1.32). Commonness leak Spearman +0.4137.",
+  "preparation_version_id": "09d1d4cd892972490ad889da9889c216ea4fd624a4f40c890a3c7244613f8d56",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 2000,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "57854583c337878daecb924b1e92466ef399b7230306f7539717ad9ba5950195",
+  "tag": "dev-wit-photo-gray",
+  "trial_count": 500,
+  "verdict": "pass"
+}

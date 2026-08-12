@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "a2133ad06986c372e8bb1ca869c7f13b319bfed3febcf84e3430eac75a7fd4cd",
+  "created_at": "2026-08-12T05:46:18.314526+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-11",
+  "decoy_count_max": 224,
+  "decoy_count_min": 224,
+  "dev_only": true,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2",
+  "harness_config_hash": "36a7ce7e0107110cf1b211e2b0acbaa2aa06456c1811dffbd14fb0ae663b9801",
+  "index_id": "d67a70c33aaa30a7e9460180cc5b721965a70a30b6cecc50c667cd2cecdac4ce",
+  "ks_significance": 0.481679,
+  "ks_statistic": 0.037536,
+  "mean_p_at_max_decoy_count": 0.507589,
+  "mean_p_at_min_decoy_count": 0.507589,
+  "notes": "KS 0.0375 at significance 0.482 over 500 trials - the best fit of the five conditions, control included. Mean p 0.5076 (z 0.59). Commonness leak Spearman +0.3440, the lowest measured; the leak shrinks down the ladder but persists, and the source-B rebuild remains the fix.",
+  "preparation_version_id": "d67a70c33aaa30a7e9460180cc5b721965a70a30b6cecc50c667cd2cecdac4ce",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 1500,
+      "posts": 8
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "9213cce5d56c411d94b127d60aa38173ec991daa2785f28159488e36fcf028c1",
+  "tag": "dev-wit-photo-inst-sym",
+  "trial_count": 500,
+  "verdict": "pass"
+}

@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "a2133ad06986c372e8bb1ca869c7f13b319bfed3febcf84e3430eac75a7fd4cd",
+  "created_at": "2026-08-12T05:44:05.834350+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-11",
+  "dev_only": true,
+  "first_rank_fraction": 0.69,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "7553fcc513c3f381d22c584c57f2d0178c09a3a871064b6dfad7358230249a33",
+  "index_id": "4ec8bb2d8bf6275fa1125f023dea713e849713c9e06714839aa909da6737afcf",
+  "mean_trial_score": 0.996969,
+  "median_rank": 1.0,
+  "notes": "P2c photo-instructed-sym condition, the best of the four. First-rank 69.0%, top-ten 97.5%, median rank 1, tail 0 of 200. Against photo-instructed on the shared index and identical pairs - the sketch-side instruction isolated exactly: 62 better / 17 worse (sign p 3.6e-7), 30 first-rank gains / 5 losses (McNemar p 2.2e-5). Against the control: 101 better / 22 worse (p 2.7e-13), 69 first gains / 12 losses (p 7.0e-11); the control's 19 buried pairs land 18 in the top ten, 0 past rank 50. Candidate Phase 4 base pending the two completion cells (photo-sym, gray-sym).",
+  "pair_count": 200,
+  "preparation_version_id": "d67a70c33aaa30a7e9460180cc5b721965a70a30b6cecc50c667cd2cecdac4ce",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 400,
+      "posts": 20
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 747,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002354,
+  "reference_top_ten": 0.023539,
+  "reviewer": "ade",
+  "scoring_config_hash": "9213cce5d56c411d94b127d60aa38173ec991daa2785f28159488e36fcf028c1",
+  "tag": "dev-wit-photo-inst-sym",
+  "top_ten_fraction": 0.975,
+  "verdict": "pass"
+}

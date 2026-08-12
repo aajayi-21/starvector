@@ -1,0 +1,59 @@
+{
+  "artifacts": {
+    "p00-intake/records.jsonl": "8b98c46d90d9efcbd356ec60885f111d258968360b11ea0ea245e8b58272952f",
+    "p01-elements/elements.jsonl": "ab0f4b3ee9cc03c7be7a91233c3b4c8ddc1b34cd4857a353da1d7d0309412096",
+    "p02-normalize/normalized.jsonl": "19e89c705e18ab657f2849e48f9c926fb60a49f2980a2bed945d465aa5f9feea",
+    "p03-cap/capped.jsonl": "19e89c705e18ab657f2849e48f9c926fb60a49f2980a2bed945d465aa5f9feea",
+    "p03-cap/cuts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "p04-vocabulary/element_space_mean.npy": "ea88d10d55e189cd4bd20d7791019faa3032f41838e91e6916a835c149597d71",
+    "p04-vocabulary/incidence.npy": "046878892a31c378fd5587f0baba4987614d88054c915623ae7fadee007a5240",
+    "p04-vocabulary/vocabulary.jsonl": "d5ac84b867c60cf948991d40ef86d8269e8346493bcb0311571c6c2b46c828c6",
+    "p04-vocabulary/vocabulary_vectors.npy": "0256fa79429d76e78f68f4a04467e158cf92ab896537552f8eccfcfcea53d0a5",
+    "p06-outline/outline_space_mean.npy": "030c29f8e58dc7adf9c38078e7d642b60dfc461559b30a84cdd993e0264c3afe",
+    "p06-outline/outline_vectors.npy": "33f7ce43f649b24ddab237ce01530f62e5fc297b17199800b78cef8a1fb47ae8",
+    "p07-boxes/boxes.jsonl": "fd8516a7b4ab6ed919cdb4d16fc35148ffb1db9ed4cf680b31ae8bd69611a873",
+    "p08-neardup/groups.jsonl": "3dce30dab7b94a9b79f62ff09f29d96d898f145d1879b7f685d5f5512c2c09d1"
+  },
+  "code_version": "0d9e97a64b95f67267b842f72bf1948f5d39c7e7",
+  "config_path": "configs/preparation/dev-wit-photo-gray.json",
+  "created_at": "2026-08-12T05:24:54.458992+00:00",
+  "dev_only": true,
+  "image_count": 225,
+  "label": "dev-wit-prep-photo-gray-09d1d4cd",
+  "pool": {
+    "label": "dev-wit-001-b89d8614",
+    "pool_version_id": "b89d86147c9f954014099552f56bd72718aa98ac92d3aef32ea130d27b87f9f7",
+    "release_record_path": "pool/releases/dev-wit-001-b89d8614.json"
+  },
+  "preparation_config_hash": "731817a49d3b59f162e32b2ff4d0bc1ffe60a79d86ce96399d24839b96690de6",
+  "preparation_version_id": "09d1d4cd892972490ad889da9889c216ea4fd624a4f40c890a3c7244613f8d56",
+  "provider_config_hashes": {
+    "describer": "bf6ee1e062d8fa57875c087eb3734ebb2ef8d23a1b91bb461e29f4c2d2920c76",
+    "element_boxes": "a524c2ad2f36202f65be818f806bc62d31571a98934d117cbc19b417a73ca3c6",
+    "image_encoder": "8e4545d0b29de2112cca9152991130bf7c93c98b464a3832088f280f2a9a3efe",
+    "line_drawer": "6a5e726bb0c12bca576ee0dedec635b7c36a3e587fa35589b0ca18a571fc88a3",
+    "text_encoder": "b148f8c38a564564f46891186b2e7e53a1779a472ec5967eb815ddb1f00304c1"
+  },
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 225,
+      "posts": 0
+    },
+    "element_boxes": {
+      "cache_hits": 225,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 22
+    },
+    "line_drawer": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 1527,
+      "posts": 0
+    }
+  }
+}

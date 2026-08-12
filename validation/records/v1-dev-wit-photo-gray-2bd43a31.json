@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "82b0fcf7db10be4c1b9d13d628536c840c0e8ca6c8e7bfff8b74b55e37909598",
+  "created_at": "2026-08-12T05:29:55.939663+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-11",
+  "dev_only": true,
+  "first_rank_fraction": 0.615,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "2bd43a31522bc3fa803df7145506d882c3124ddd356882864b53b8ae75847f85",
+  "index_id": "4513ae1022c3c2c375fb5c264f1bbde1bbe81e034209508e529f6b348a76cb74",
+  "mean_trial_score": 0.993644,
+  "median_rank": 1.0,
+  "notes": "P2c photo-gray condition. First-rank 61.5%, top-ten 93.0%, tail 2 of 200. Against photo on identical pairs: first-rank 21 gains / 9 losses (McNemar p 0.043, uncorrected - suggestive), overall rank movement 45 better / 32 worse (sign test p 0.17, not significant). Recorded as a candidate refinement, not an established gain; the gray-sym completion cell resolves whether it stacks with the sketch-instruction effect.",
+  "pair_count": 200,
+  "preparation_version_id": "09d1d4cd892972490ad889da9889c216ea4fd624a4f40c890a3c7244613f8d56",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 20
+    },
+    "sketch_encoder": {
+      "cache_hits": 1600,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 747,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002353,
+  "reference_top_ten": 0.02353,
+  "reviewer": "ade",
+  "scoring_config_hash": "57854583c337878daecb924b1e92466ef399b7230306f7539717ad9ba5950195",
+  "tag": "dev-wit-photo-gray",
+  "top_ten_fraction": 0.93,
+  "verdict": "pass"
+}
