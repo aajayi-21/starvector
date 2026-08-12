@@ -19,7 +19,9 @@ SLOT_NAMES: tuple[str, ...] = ("text_coverage", "classifier", "object_size", "en
 HASH_SLOT_NAMES: tuple[str, ...] = ("corpus",) + SLOT_NAMES
 CORPUS_PROVIDERS: tuple[str, ...] = ("huggingface", "fake")
 MODEL_SLOT_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
-ENCODER_SLOT_PROVIDERS: tuple[str, ...] = ("fake",)  # a local encoder comes in a build after this one (U2)
+# The U2 change (owner ruling 2026-08-12, spec section 8a): the
+# OpenRouter embeddings endpoint serves the encoder slot.
+ENCODER_SLOT_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
 MATERIALIZATION_MODES: tuple[str, ...] = ("wikimedia-thumbnail", "fake")
 RESPONSE_FORMAT_MODES: tuple[str, ...] = ("json_schema", "json_object")
 
@@ -338,10 +340,19 @@ def _parse_slot(node: _Node, slot: str) -> SlotSection:
     )
     node.finish()
     path = f"providers.{slot}"
-    if section.provider == "openrouter" and section.instruction_template is None:
+    # The instruction rule holds for the chat slots. An embedding
+    # encoder's instruction is optional, and the curation encoder
+    # runs with none.
+    if (section.provider == "openrouter" and slot != "encoder"
+            and section.instruction_template is None):
         raise ConfigError(f"{path}.instruction_template: required for the openrouter provider")
-    if slot == "encoder" and section.provider == "fake" and section.dimension is None:
-        raise ConfigError(f"{path}.dimension: required for the fake encoder")
+    if slot == "encoder" and section.dimension is None:
+        raise ConfigError(f"{path}.dimension: required for the encoder slot")
+    if (slot == "encoder" and section.provider == "openrouter"
+            and section.model is None):
+        # The chat default_model must not leak into an embeddings
+        # slot - a silent fallback fails at the endpoint alone.
+        raise ConfigError(f"{path}.model: required for the openrouter encoder")
     return section
 
 
