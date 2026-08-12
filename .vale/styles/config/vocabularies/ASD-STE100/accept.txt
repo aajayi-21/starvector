@@ -275,6 +275,7 @@ erase
 erosion
 European Aviation Safety Agency \(EASA\)
 evacuation
+[Ee]vidence
 exhaust
 EXIT sign
 explain
@@ -605,6 +606,7 @@ retread
 retrim
 reverse mode
 reverse position
+[Rr]eveal
 [Rr]eview
 revision
 rigging pin
