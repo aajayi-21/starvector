@@ -225,6 +225,87 @@ def soft_match(similarity: FloatArray, config: ElementConfig) -> np.ndarray:
     return sinkhorn_plan(similarity, config)[:atom_count, :element_count]
 
 
+def shortlist_groups(shortlist: np.ndarray, incidence: Incidence,
+                     ) -> tuple[tuple[np.ndarray, np.ndarray], ...]:
+    """Split one shortlist by element count (P5 item B3).
+
+    One group holds the shortlist positions with an equal element
+    count k, in shortlist sequence, with their (S, k) column table -
+    the row-sequence selection reproduces image_elements row by row,
+    internal padding included. Equal counts make the batched
+    computation padding-free, which is what keeps the batch
+    byte-equal to the one-image path.
+    """
+    counts = (incidence[shortlist] >= 0).sum(axis=1)             # (S,)
+    groups: list[tuple[np.ndarray, np.ndarray]] = []
+    for count in np.unique(counts):
+        if int(count) == 0:
+            position = int(shortlist[counts == 0][0])
+            raise ValueError(f"image at position {position} has no element")
+        positions = shortlist[counts == count]                   # (S_k,)
+        rows = incidence[positions]                              # (S_k, w)
+        columns = rows[rows >= 0].reshape(len(positions), int(count))
+        groups.append((positions, columns))
+    return tuple(groups)
+
+
+def sinkhorn_plans(tables: np.ndarray,
+                   config: ElementConfig) -> np.ndarray:
+    """The batched D3 plans, shape (S, m+1, k+1) float64.
+
+    One stacked computation with the sinkhorn_plan steps: the same
+    kernel construction, the same alternating rescalings through
+    the matvec and vecmat forms, the same multiplication sequence.
+    The output must equal sinkhorn_plan slice for slice
+    byte-for-byte - the rescore rule (spec S1 R8) rides
+    on it, and the equality test in
+    tests/unit/test_element_batch.py is the standing gate on each
+    machine the suite runs on.
+    """
+    if tables.ndim != 3:
+        raise ValueError(f"tables must be 3-D, got {tables.shape}")
+    batch, atom_count, element_count = tables.shape
+    if batch == 0 or atom_count == 0 or element_count == 0:
+        raise ValueError(f"tables must not be empty, got {tables.shape}")
+    if not np.isfinite(tables).all():
+        raise ValueError("tables holds a non-finite value")
+
+    augmented = np.zeros((batch, atom_count + 1, element_count + 1),
+                         dtype=np.float64)
+    augmented[:, :atom_count, :element_count] = tables
+    kernel = np.exp(augmented / config.epsilon)   # (S, m+1, k+1)
+
+    row_total = np.ones(atom_count + 1, dtype=np.float64)
+    row_total[atom_count] = float(element_count)
+    column_total = np.ones(element_count + 1, dtype=np.float64)
+    column_total[element_count] = float(atom_count)
+
+    row_scale = np.ones((batch, atom_count + 1), dtype=np.float64)
+    column_scale = np.ones((batch, element_count + 1), dtype=np.float64)
+    for _ in range(config.sinkhorn_iterations):
+        column_scale = column_total / np.vecmat(row_scale, kernel)
+        row_scale = row_total / np.matvec(kernel, column_scale)
+    return row_scale[:, :, None] * kernel * column_scale[:, None, :]
+
+
+def soft_matches(tables: np.ndarray, config: ElementConfig) -> np.ndarray:
+    """The atom-by-element regions of the batched plans, (S, m, k)."""
+    batch, atom_count, element_count = tables.shape
+    return sinkhorn_plans(tables, config)[:, :atom_count, :element_count]
+
+
+def matched_scores(tables: np.ndarray, plans: np.ndarray,
+                   rarity: FloatArray) -> np.ndarray:
+    """The batched R4 scores, shape (S,) float64.
+
+    The matched_score expression with the same association, and a
+    row reduction that equals the flat sum byte-for-byte - the
+    equality test is the gate.
+    """
+    product = plans * tables * rarity[None, :, None]             # (S, m, k)
+    return product.reshape(product.shape[0], -1).sum(axis=1)     # (S,)
+
+
 def matched_score(similarity: FloatArray, plan: np.ndarray,
                   rarity: FloatArray) -> float:
     """The channel score of one image (R4).
