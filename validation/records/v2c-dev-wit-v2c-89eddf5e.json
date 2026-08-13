@@ -5,7 +5,7 @@
   "commonness_config_hash": "544c62d58117c46b4ab9b9431fdebb8ae735b9afff9aefccf5eabcc2947a49c2",
   "created_at": "2026-08-12T22:37:44.011770+00:00",
   "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
-  "date": "",
+  "date": "2026-08-12",
   "dev_only": true,
   "fit_record": null,
   "fusion_weights": {
@@ -33,9 +33,9 @@
       "posts": 0
     }
   },
-  "reviewer": "",
+  "reviewer": "ade",
   "scoring_config_hash": "6c5a2292cbfb4c3e6b502cdc0b87fac52c76b84d4d77ad841d3dcf2bfb8c31ee",
   "tag": "dev-wit-v2c",
   "trial_count": 500,
-  "verdict": "pending"
+  "verdict": "pass"
 }
