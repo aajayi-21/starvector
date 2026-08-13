@@ -435,10 +435,10 @@ Converts whatever the client sent into a canonical, validated form. Deterministi
 ### Strokes are accepted as coordinates, not as images
 
 ```
-Stroke := { points: [(x, y, time?, pressure?)], group_id? }
+Stroke := { points: [(x, y, time?, pressure?)], group_id?, color? }
 ```
 
-The server renders them at a fixed resolution, fixed line width, fixed background colour, and fixed anti-aliasing setting.
+The server renders them at a fixed resolution, fixed line width, fixed background colour, and fixed anti-aliasing setting. `color` is an optional lowercase `#rrggbb` value (owner ruling 2026-08-12, `docs/specs/color-sketches.md`). A stroke without it renders as ink.
 
 **Reason 1 — re-renderability.** This is the decisive one, and it follows from Rule 4. When you swap the image encoder, the new one may want a different input resolution or line weight. From coordinates you re-render natively at whatever the new encoder wants. From a stored image you can only resample, which loses exactly the detail the encoder is sensitive to. Storing coordinates is what makes historical rescoring faithful rather than approximate.
 

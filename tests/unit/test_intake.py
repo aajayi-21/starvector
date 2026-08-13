@@ -180,3 +180,47 @@ def test_the_text_gate_covers_relation_names_and_group_ids() -> None:
     record = _record(groups=[{"id": "g" * 9, "label": ""}])
     with pytest.raises(IntakeError, match="text-length"):
         validate_submission(record, tight, CANVAS)
+
+
+def test_a_stroke_color_is_accepted_and_optional() -> None:
+    record = _record(canvas_strokes=[
+        {"points": [[0.0, 0.4], [1.0, 0.4]], "group_id": None,
+         "color": "#c5221f"},
+        {"points": [[0.0, 0.6], [1.0, 0.6]], "group_id": None},
+    ])
+    submission = validate_submission(record, LOOSE, CANVAS)
+    drawing = [atom for atom in submission.atoms
+               if atom.type == "WHOLE-DRAWING"][0]
+    assert drawing.stroke_colors == ("#c5221f", None)
+
+
+def test_bad_stroke_colors_are_bad_shape() -> None:
+    for value in ("#C5221F", "#c5221", "c5221f0", "#c5221f0a",
+                  "red", 7, None, ""):
+        record = _record(canvas_strokes=[
+            {"points": [[0.0, 0.5], [1.0, 0.5]], "group_id": None,
+             "color": value}])
+        with pytest.raises(IntakeError, match="bad-shape"):
+            validate_submission(record, LOOSE, CANVAS)
+
+
+def test_an_unknown_stroke_key_is_still_bad_shape() -> None:
+    record = _record(canvas_strokes=[
+        {"points": [[0.0, 0.5], [1.0, 0.5]], "group_id": None,
+         "width": 5}])
+    with pytest.raises(IntakeError, match="bad-shape"):
+        validate_submission(record, LOOSE, CANVAS)
+
+
+def test_groups_and_relations_still_reject_extra_keys() -> None:
+    with pytest.raises(IntakeError, match="bad-shape"):
+        validate_submission(
+            _record(groups=[{"id": "g1", "label": "", "color": "#c5221f"}]),
+            LOOSE, CANVAS)
+    with pytest.raises(IntakeError, match="bad-shape"):
+        validate_submission(
+            _record(groups=[{"id": "g1", "label": ""},
+                            {"id": "g2", "label": ""}],
+                    relations=[{"relation": "left-of", "of": ["g1", "g2"],
+                                "color": "#c5221f"}]),
+            LOOSE, CANVAS)

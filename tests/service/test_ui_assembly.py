@@ -49,3 +49,34 @@ def test_the_page_core_assembles_the_pinned_record() -> None:
         capture_output=True, text=True, timeout=30)
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == _expected()
+
+
+def _colored() -> dict:
+    return json.loads((_FIXTURES / "colored_record.json").read_text())
+
+
+def test_the_colored_pin_clears_layer_zero() -> None:
+    gates = IntakeGates(min_ink_pixels=100, min_strokes_whole_drawing=2,
+                        max_text_length=200, max_atoms=64)
+    submission = validate_submission(_colored(), gates, 512)
+    drawing = [a for a in submission.atoms if a.type == "WHOLE-DRAWING"][0]
+    assert drawing.stroke_colors == ("#1a73e8", None)
+
+
+def test_the_ink_stroke_in_the_colored_pin_has_no_color_key() -> None:
+    # The spec C1 interface rule: ink emits no key, thus a plain
+    # sketch stays byte-for-byte equal to one from before the ruling.
+    strokes = _colored()["canvas_strokes"]
+    assert "color" in strokes[0]
+    assert "color" not in strokes[1]
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node is not installed")
+def test_the_page_core_assembles_the_colored_pin() -> None:
+    completed = subprocess.run(
+        ["node", str(_FIXTURES / "run_assemble.js"),
+         str(_FIXTURES / "colored_script.json")],
+        capture_output=True, text=True, timeout=30)
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == _colored()

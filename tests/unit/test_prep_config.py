@@ -352,3 +352,36 @@ def test_detect_resolution_below_the_minimum_raises() -> None:
     raw["linedraw"]["detect_resolution_px"] = 32
     with pytest.raises(ConfigError, match=r"detect_resolution_px"):
         parse_preparation_config(raw)
+
+def test_stroke_color_absent_null_and_mono_agree() -> None:
+    # The spec C1 omission rule: a config released before the field
+    # keeps its document and thus its hash.
+    hashes = {name: "a" * 64 for name in SLOT_NAMES}
+    absent = parse_preparation_config(_base_raw())
+    raw = _base_raw()
+    raw["linedraw"]["stroke_color"] = "mono"
+    explicit = parse_preparation_config(raw)
+    assert absent.linedraw.stroke_color == "mono"
+    assert explicit.linedraw.stroke_color == "mono"
+    assert preparation_config_hash(absent, hashes) \
+        == preparation_config_hash(explicit, hashes)
+    assert "stroke_color" not in config_to_json_value(absent)["linedraw"]
+
+
+def test_stroke_color_rgb_moves_the_hash() -> None:
+    hashes = {name: "a" * 64 for name in SLOT_NAMES}
+    base = parse_preparation_config(_base_raw())
+    raw = _base_raw()
+    raw["linedraw"]["stroke_color"] = "rgb"
+    moved = parse_preparation_config(raw)
+    assert moved.linedraw.stroke_color == "rgb"
+    assert preparation_config_hash(moved, hashes) \
+        != preparation_config_hash(base, hashes)
+    assert config_to_json_value(moved)["linedraw"]["stroke_color"] == "rgb"
+
+
+def test_a_bad_stroke_color_names_the_path() -> None:
+    raw = _base_raw()
+    raw["linedraw"]["stroke_color"] = "sepia"
+    with pytest.raises(ConfigError, match="stroke_color"):
+        parse_preparation_config(raw)

@@ -13,8 +13,8 @@
 function emptyState() {
   return {
     impressions: [],
-    strokes: [],        /* {points: [[x, y], ...], groupId: null|string,
-                            selected: bool} */
+    strokes: [],        /* {points: [[x, y], ...], color: null|"#rrggbb",
+                            groupId: null|string, selected: bool} */
     groups: [],         /* {id, label} in creation order */
     relations: [],      /* {relation, of: [id, id]} */
     pastedText: null,
@@ -25,12 +25,16 @@ function assembleRecord(state) {
   return {
     impressions: state.impressions.slice(),
     canvas_strokes: state.strokes.map(function (stroke) {
-      return {
+      var row = {
         points: stroke.points.map(function (point) {
           return [point[0], point[1]];
         }),
         group_id: stroke.groupId === undefined ? null : stroke.groupId,
       };
+      /* The ink default emits no key (spec C1): a plain sketch is
+       * byte-identical to one from before the color ruling. */
+      if (stroke.color) { row.color = stroke.color; }
+      return row;
     }),
     groups: state.groups.map(function (group) {
       return {id: group.id, label: group.label};
@@ -63,8 +67,9 @@ function applyScript(script) {
     if (action.action === "impression") {
       state.impressions.push(action.text);
     } else if (action.action === "stroke") {
-      state.strokes.push({points: action.points, groupId: null,
-                          selected: false});
+      state.strokes.push({points: action.points,
+                          color: action.color || null,
+                          groupId: null, selected: false});
     } else if (action.action === "selectStrokes") {
       action.indexes.forEach(function (index) {
         state.strokes[index].selected = true;
@@ -99,6 +104,18 @@ function startTrialPage() {
   var CANVAS = 512;
   var INK = "#1a1c1e";
   var SELECTED = "#b3261e";
+  /* The fixed palette (spec C1 section 5). Ink emits no color key. */
+  var PALETTE = [
+    {name: "ink", value: null},
+    {name: "red", value: "#c5221f"},
+    {name: "orange", value: "#e8710a"},
+    {name: "yellow", value: "#f0b429"},
+    {name: "green", value: "#1b6b3a"},
+    {name: "blue", value: "#1a73e8"},
+    {name: "purple", value: "#7a4ec9"},
+    {name: "brown", value: "#795548"},
+  ];
+  var currentColor = null;
   /* One color for each group, in creation order, thus a stroke's
    * color on the canvas matches its group's swatch in the list. */
   var GROUP_COLORS = ["#1b6b3a", "#7a4ec9", "#0e7a8a", "#b3611e",
@@ -135,22 +152,53 @@ function startTrialPage() {
     });
   }
 
+  function drawPath(points, color, width) {
+    context.beginPath();
+    context.lineWidth = width;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = color;
+    points.forEach(function (point, index) {
+      var x = point[0] * CANVAS;
+      var y = point[1] * CANVAS;
+      if (index === 0) { context.moveTo(x, y); }
+      else { context.lineTo(x, y); }
+    });
+    context.stroke();
+  }
+
   function redraw() {
+    /* Selection and group membership are halos behind the stroke -
+     * the stroke keeps its own color, thus the sketch on screen is
+     * what the model sees, up to the halo. */
     context.clearRect(0, 0, CANVAS, CANVAS);
     state.strokes.forEach(function (stroke) {
-      context.beginPath();
-      context.lineWidth = 3;
-      context.lineCap = "round";
-      context.lineJoin = "round";
-      context.strokeStyle = stroke.selected ? SELECTED
-        : (stroke.groupId ? groupColor(stroke.groupId) : INK);
-      stroke.points.forEach(function (point, index) {
-        var x = point[0] * CANVAS;
-        var y = point[1] * CANVAS;
-        if (index === 0) { context.moveTo(x, y); }
-        else { context.lineTo(x, y); }
+      var halo = stroke.selected ? SELECTED
+        : (stroke.groupId ? groupColor(stroke.groupId) : null);
+      if (halo) { drawPath(stroke.points, halo, 9); }
+      drawPath(stroke.points, stroke.color || INK, 3);
+    });
+  }
+
+  function startPalette() {
+    var row = byId("palette");
+    PALETTE.forEach(function (entry) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "swatch-button";
+      button.title = entry.name;
+      button.style.background = entry.value || INK;
+      if (entry.value === currentColor) {
+        button.classList.add("current");
+      }
+      button.addEventListener("click", function () {
+        currentColor = entry.value;
+        row.querySelectorAll(".swatch-button").forEach(function (b) {
+          b.classList.remove("current");
+        });
+        button.classList.add("current");
       });
-      context.stroke();
+      row.appendChild(button);
     });
   }
 
@@ -191,22 +239,13 @@ function startTrialPage() {
     drawing.moved = true;
     context.clearRect(0, 0, CANVAS, CANVAS);
     redraw();
-    context.beginPath();
-    context.lineWidth = 3;
-    context.strokeStyle = INK;
-    drawing.points.forEach(function (point, index) {
-      var x = point[0] * CANVAS;
-      var y = point[1] * CANVAS;
-      if (index === 0) { context.moveTo(x, y); }
-      else { context.lineTo(x, y); }
-    });
-    context.stroke();
+    drawPath(drawing.points, currentColor || INK, 3);
   });
   canvas.addEventListener("pointerup", function (event) {
     if (!drawing) { return; }
     if (drawing.moved && drawing.points.length > 1) {
-      state.strokes.push({points: drawing.points, groupId: null,
-                          selected: false});
+      state.strokes.push({points: drawing.points, color: currentColor,
+                          groupId: null, selected: false});
     } else {
       var hit = nearestStroke(pointOf(event));
       if (hit >= 0) {
@@ -297,7 +336,7 @@ function startTrialPage() {
         + " selected - name the group below, then Make a group.";
     } else {
       byId("sketch-hint").textContent =
-        "Click a stroke to select it - it turns red.";
+        "Click a stroke to select it - it gets a red halo.";
     }
     return selected;
   }
@@ -444,7 +483,7 @@ function startTrialPage() {
       if (day.status === "revealed") { renderReveal(); }
       else if (day.submitted) { show("view-submitted"); }
       else if (day.status === "closed") { show("view-closed"); }
-      else { show("view-intake"); refreshControls(); }
+      else { show("view-intake"); startPalette(); refreshControls(); }
     });
   }).catch(function () { show("view-noday"); });
 }

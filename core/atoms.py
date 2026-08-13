@@ -50,6 +50,17 @@ def _stroke_path(raw_stroke: JsonValue) -> StrokePath:
     return tuple((float(point[0]), float(point[1])) for point in points)
 
 
+def _stroke_colors(raw_strokes: list) -> tuple[str | None, ...] | None:
+    """The color of each stroke, or None when no stroke has one.
+
+    The None fallback keeps a colorless record's atom set equal to
+    what it assembled to before the color ruling (2026-08-12,
+    docs/specs/color-sketches.md).
+    """
+    colors = tuple(stroke.get("color") for stroke in raw_strokes)
+    return colors if any(color is not None for color in colors) else None
+
+
 def assemble_atoms(record: JsonValue) -> Submission:
     """Assemble the atom set from one checked submission record.
 
@@ -69,7 +80,9 @@ def assemble_atoms(record: JsonValue) -> Submission:
        step 3.
 
     subtype is None on each atom — the frozen wire shape has no
-    subtype field (agreed 2026-08-08).
+    subtype field (agreed 2026-08-08). The atoms of steps 3 and 4
+    hold stroke_colors aligned with their strokes, None when no
+    member stroke has a color (docs/specs/color-sketches.md).
     """
     atoms: list[Atom] = []
 
@@ -91,21 +104,24 @@ def assemble_atoms(record: JsonValue) -> Submission:
     raw_strokes = record["canvas_strokes"]
     atom_id_by_group: dict[str, str] = {}
     for group in record["groups"]:
-        members = tuple(_stroke_path(stroke) for stroke in raw_strokes
-                        if stroke["group_id"] == group["id"])
+        member_rows = [stroke for stroke in raw_strokes
+                       if stroke["group_id"] == group["id"]]
+        members = tuple(_stroke_path(stroke) for stroke in member_rows)
         label = group["label"]
         atom_id = next_id()
         atom_id_by_group[group["id"]] = atom_id
         atoms.append(Atom(id=atom_id, type="DESCRIPTION", subtype=None,
                           text=label if label else None,
                           strokes=members if members else None,
-                          refers_to=None, relation=None))
+                          refers_to=None, relation=None,
+                          stroke_colors=_stroke_colors(member_rows)))
 
     if raw_strokes:
         all_strokes = tuple(_stroke_path(stroke) for stroke in raw_strokes)
         atoms.append(Atom(id=next_id(), type="WHOLE-DRAWING", subtype=None,
                           text=None, strokes=all_strokes, refers_to=None,
-                          relation=None))
+                          relation=None,
+                          stroke_colors=_stroke_colors(raw_strokes)))
 
     for row in record["relations"]:
         first, second = row["of"]

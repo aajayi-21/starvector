@@ -14,7 +14,9 @@ from typing import NamedTuple
 
 import httpx
 
-from providers.openrouter.errors import OpenRouterRequestError, OpenRouterResponseError
+from providers.openrouter.errors import (OpenRouterRequestError,
+                                         OpenRouterResponseError,
+                                         OpenRouterTimeoutError)
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 _BACKOFF_BASE_SECONDS = 1.0
@@ -158,6 +160,7 @@ class OpenRouterClient:
         """
         delay = 0.0
         detail = "no tries made"
+        timed_out = False
         tries = self._config.retry_limit + 1
         for attempt_index in range(tries):
             if attempt_index > 0 and delay > 0.0:
@@ -169,12 +172,14 @@ class OpenRouterClient:
                 response = self._http.post(path, json=dict(body))
             except httpx.TimeoutException as error:
                 detail = f"timeout: {error!r}"
+                timed_out = True
                 delay = _BACKOFF_BASE_SECONDS * (2.0 ** attempt_index)
                 continue
             except httpx.HTTPError as error:
                 raise OpenRouterRequestError(
                     f"OpenRouter POST transport failure: {error!r}"
                 ) from error
+            timed_out = False
             status = response.status_code
             if status == 429 or status >= 500:
                 detail = f"status {status}"
@@ -211,7 +216,9 @@ class OpenRouterClient:
                     f"(code {code}): {message[:300]}"
                 )
             return parsed
-        raise OpenRouterRequestError(
+        error_type = OpenRouterTimeoutError if timed_out \
+            else OpenRouterRequestError
+        raise error_type(
             f"OpenRouter POST did not succeed after {tries} tries ({detail}). "
             "Examine the rate limit and the retry limit in the client config."
         )

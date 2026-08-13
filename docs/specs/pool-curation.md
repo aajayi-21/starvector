@@ -118,9 +118,11 @@ the same weight.
   pipeline must report bytes retrieved, and must stop fetching — with
   explicit accounting — when the budget is reached.
 - **U2 — OpenRouter for the image model.** The image-understanding model
-  runs through OpenRouter (§8a). OpenRouter serves chat and vision-language
-  models, not image-embedding encoders, thus the `ImageEncoder` slot for
-  s06 and s07 always runs locally.
+  runs through OpenRouter (§8a). *Changed by owner ruling 2026-08-12:*
+  the OpenRouter embeddings endpoint serves image-embedding encoders
+  (checked live 2026-08-07, `configs/preparation/README.md`), thus the
+  `ImageEncoder` slot for s06 and s07 can run through OpenRouter or
+  through the fake for tests. The "local only" clause is withdrawn.
 
 ## 5. Pipeline overview
 
@@ -355,7 +357,7 @@ implementations are required for the test suite.
 
 | Protocol | Contract (shape) | Used by | OpenRouter? |
 |---|---|---|---|
-| `ImageEncoder` | `Sequence[bytes] -> Vectors` — unit-norm, `(B, d)` | s06, s07 | No — local only (U2) |
+| `ImageEncoder` | `Sequence[bytes] -> Vectors` — unit-norm, `(B, d)` | s06, s07 | Yes — the U2 change of 2026-08-12 |
 | `ZeroShotImageClassifier` | `(Sequence[bytes], labels) -> FloatArray (B, L)` — probability values on the closed label set | s04 | Yes |
 | `TextCoverageEstimator` | `Sequence[bytes] -> FloatArray (B,)` — fraction of image area that text covers, in [0, 1] | s03 | Yes |
 | `SalientObjectEstimator` | `Sequence[bytes] -> FloatArray (B,)` — fraction of image area that the largest object covers, in [0, 1] | s05 | Yes |
@@ -736,7 +738,7 @@ proposed default.
 |---|---|---|---|
 | D1 | Zero-shot decision rule for R5 | Keep only when `photograph` is the argmax on the closed label set | The architecture gives the labels, not the rule. Argmax is what the words of R5 say. |
 | D2 | Zero-shot prompt template | `"a {label}"` | Template text changes results and is part of the config hash. |
-| D3 | Curation encoder (local) | A SigLIP checkpoint | Matches the L2 suggestion in §10 of the architecture. OpenRouter has no image-embedding encoders (U2), thus this slot is local in each configuration. |
+| D3 | Curation encoder | *Ruled 2026-08-12:* `google/gemini-embedding-2` through OpenRouter, dimension 3072, no instruction | The first release ran this slot on the fake encoder — s06 removed nothing and s07 cut at random. The U2 change opens the slot to the OpenRouter embeddings endpoint. `configs/curation/dev-wit-2.json` is the re-run configuration, with the corpus revision pinned to the recorded resolution, thus the one change against the first release is the working encoder. A local SigLIP checkpoint stays an applicable slot filler in a build that follows. |
 | D4 | VLM for the OpenRouter slots, and its instruction templates | One vision model for `ZeroShotImageClassifier`, `TextCoverageEstimator`, and `SalientObjectEstimator` — proposed `google/gemini-2.5-flash`, temperature 0, fixed JSON output | U2. A VLM-estimated fraction replaces a box-based local detector for s03 and s05 — a change of measurement method for §4 steps 3 and 5. Box-based local implementations of the estimator slots stay applicable. Check the fraction quality at the s08 spot-check. |
 | D5 | Near-duplicate keep rule | Greedy, best first: pixel area, largest first, then ascending `image_id` | The architecture gives only the 0.95 threshold. |
 | D6 | Clustering method and granularity for R8 | k-means, `k = ceil(n / 50)`, seeded, CPU | "Cluster" is unspecified. Granularity changes which images the cap removes. |
@@ -765,3 +767,48 @@ proposed default.
 8. The development run retrieves at most `budget_bytes` (U1, default
    5 GB) for the corpus, and the funnel report shows byte totals for
    each stage.
+
+## 18. The dev-wit-2 re-run (owner runbook, ruled 2026-08-12)
+
+The first release ran s06 and s07 on the fake encoder: s06 removed 0
+of 728, and s07's cut of 728 to 225 was 15 clusters times cap 15 on
+seeded random vectors — a random subsample, with no working
+near-duplicate removal and no working diversity cap. The ranking-time
+near-duplicate rule (I3) was not touched: the decoy groups come from
+preparation p08 on the working gemini vectors. The re-run puts a
+working encoder in the slot with each other input pinned.
+
+The owner runs each command, with the key in the environment.
+
+1. `uv run python -m pool.curation --config
+   configs/curation/dev-wit-2.json` — a new artifact tree below
+   `data/curation/f655d713/`. What to look for: s00 scans about
+   100 MB of metadata. s02 fetches about 400 MB — the fetch
+   sequence is salt-seeded, and small drift from transient fetch
+   errors is expected and recorded. s03 through s05 make about zero
+   posts (response caches key by image id and slot hash). s06 makes
+   about 12 to 60 embedding posts for 728 images (batched) and
+   removes a nonzero count this time. s07 makes zero posts. The run
+   stops at the s08 review gate with exit code 3.
+2. Review `s08-review/contact_sheet.html` in the new tree, then
+   write `review.json` there with the verdict.
+3. The same command again — s09 writes
+   `pool/releases/dev-wit-002-<hash8>.json`. The release count lands
+   near 130 to 210: with the divisor 50 rule, fewer than 701
+   survivors give at most 14 clusters, and clusters of the working
+   encoder do not all overflow the cap. A count below about 150 goes against acceptance
+   criterion 5 — a D8 adjustment is an owner ruling and a new
+   lineage, not an inline tune.
+4. Preparation: a new config
+   `configs/preparation/dev-wit-photo-inst-2.json` names the new
+   release record, plus `linedraw.stroke_color` from the spec C1
+   gate verdict. `uv run python -m pool.preparation --config
+   configs/preparation/dev-wit-photo-inst-2.json`. Cold cost is the
+   newly admitted images alone: about one describer post and one box
+   post for each new image, the image encoder at six rows for each
+   new image (batched), and a small element text-encoder tail.
+5. Migration and gates: re-point the scoring configs and
+   `configs/service/dev-wit.json` at the new preparation record, run
+   V1 and V2 (about 30 posts), record the verdicts, and start the
+   trial server again. Stored days keep their pinned configs — rescore, do not
+   migrate (architecture section 21).

@@ -2,14 +2,17 @@
 
 Implements docs/ARCHITECTURE.md section 8 through
 docs/specs/scoring-path.md section 10. Frozen tier (R6). The wire
-record shape checked here is permanent. Validation is at the boundary:
-code after this module assumes checked input (CLAUDE.md section 3).
-The render shares the pixel semantics of the pool line drawings
-through core/lineart.py (R2) — the same dilation, background, and
-0/255 pixel values.
+record shape checked here is permanent, with one recorded change:
+a stroke can have an optional color key (owner ruling 2026-08-12,
+docs/specs/color-sketches.md). Validation is at the boundary: code
+after this module assumes checked input (CLAUDE.md section 3). The
+render shares the pixel semantics of the pool line drawings through
+core/lineart.py (R2) — the same dilation, background, and 0/255
+pixel values.
 """
 
 import math
+import re
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,13 +20,22 @@ from numpy.typing import NDArray
 from core import lineart
 from core.atoms import assemble_atoms, split_pasted_text
 from core.canonical import JsonValue
-from core.types import INTAKE_CAUSES, IntakeGates, StrokePath, Submission
+from core.types import (INTAKE_CAUSES, IntakeGates, RenderParams, StrokePath,
+                        Submission)
 
 _RECORD_KEYS = ("impressions", "canvas_strokes", "groups", "relations",
                 "pasted_text")
 _STROKE_KEYS = ("points", "group_id")
+# The one recorded change to the frozen shape: an optional stroke
+# color (owner ruling 2026-08-12). The value format is fixed here.
+# The palette belongs to the interface and does not touch this tier.
+_STROKE_OPTIONAL_KEYS = ("color",)
 _GROUP_KEYS = ("id", "label")
 _RELATION_KEYS = ("relation", "of")
+
+# Lowercase alone — one canonical spelling, thus one render byte
+# stream and one cache key for equal drawings.
+_COLOR_RULE = re.compile(r"#[0-9a-f]{6}")
 
 # One point is [x, y] plus the optional entries (time, pressure).
 # The optional entries stay in the raw record and are not read by
@@ -74,12 +86,30 @@ def _checked_coordinate(value: object, where: str) -> float:
     return number
 
 
-def _checked_object(value: object, keys: tuple[str, ...], where: str) -> dict:
+def _checked_object(value: object, keys: tuple[str, ...], where: str,
+                    optional: tuple[str, ...] = ()) -> dict:
+    """One wire object: the required keys, plus optional ones alone.
+
+    With no optional keys the check is strict set equality — the
+    frozen-shape rule. An optional key can be there or not, and no
+    other key is permitted.
+    """
     if not isinstance(value, dict):
         raise _bad_shape(f"{where} must be an object")
-    if set(value) != set(keys):
-        raise _bad_shape(f"{where} must have the keys {sorted(keys)}, "
-                         f"got {sorted(value)}")
+    present = set(value)
+    if not (set(keys) <= present <= set(keys) | set(optional)):
+        detail = f"{where} must have the keys {sorted(keys)}"
+        if optional:
+            detail += f" plus none or some of {sorted(optional)}"
+        raise _bad_shape(f"{detail}, got {sorted(present)}")
+    return value
+
+
+def _checked_stroke_color(value: object, where: str) -> str:
+    """One stroke color: a lowercase #rrggbb string."""
+    if not isinstance(value, str) or not _COLOR_RULE.fullmatch(value):
+        raise _bad_shape(
+            f"{where} must be a lowercase '#rrggbb' color string")
     return value
 
 
@@ -128,10 +158,13 @@ def _checked_record(record: JsonValue) -> dict:
         raise _bad_shape("record.canvas_strokes must be an array")
     for position, row in enumerate(strokes):
         where = f"record.canvas_strokes[{position}]"
-        stroke = _checked_object(row, _STROKE_KEYS, where)
+        stroke = _checked_object(row, _STROKE_KEYS, where,
+                                 optional=_STROKE_OPTIONAL_KEYS)
         _checked_stroke_path(stroke["points"], where)
         if stroke["group_id"] is not None:
             _checked_string(stroke["group_id"], f"{where}.group_id")
+        if "color" in stroke:
+            _checked_stroke_color(stroke["color"], f"{where}.color")
 
     groups = top["groups"]
     if not isinstance(groups, list):
@@ -256,6 +289,49 @@ def render_strokes(strokes: tuple[StrokePath, ...] | list[StrokePath],
     """
     mask = strokes_line_mask(strokes, canvas_px)
     return lineart.render_canonical(mask, canvas_px, line_width_px)
+
+
+def _color_rgb(color: str) -> tuple[int, int, int]:
+    """One checked '#rrggbb' string to its RGB triple."""
+    return (int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16))
+
+
+def render_strokes_rgb(strokes: tuple[StrokePath, ...] | list[StrokePath],
+                       colors: tuple[str | None, ...],
+                       canvas_px: int, line_width_px: int) -> bytes:
+    """Render one color strokes payload as canonical RGB PNG bytes.
+
+    colors aligns with strokes entry for entry. A None entry paints
+    as ink (black). With no color entry at all the output falls back
+    to render_strokes - the byte rule of spec C1 section 2 holds
+    without regard to how the caller got here.
+    """
+    if all(color is None for color in colors):
+        return render_strokes(strokes, canvas_px, line_width_px)
+    layers = [(strokes_line_mask([stroke], canvas_px),
+               _color_rgb(color) if color is not None else (0, 0, 0))
+              for stroke, color in zip(strokes, colors, strict=True)]
+    return lineart.render_canonical_rgb(layers, canvas_px, line_width_px)
+
+
+def render_submission_strokes(strokes: tuple[StrokePath, ...],
+                              colors: tuple[str | None, ...] | None,
+                              render: RenderParams) -> bytes:
+    """The spec C1 promotion rule: one render for one drawing.
+
+    "mono" strips colors and gives the render_strokes bytes. "rgb"
+    gives the same bytes when colors is None - the byte-stable half
+    of the rule that keeps colorless records and the background
+    caches warm - and the RGB render when a stroke has a color.
+    """
+    if render.stroke_color == "mono" or colors is None:
+        return render_strokes(strokes, render.canvas_px,
+                              render.line_width_px)
+    if render.stroke_color != "rgb":
+        raise ValueError(
+            f"unknown stroke_color rule: {render.stroke_color!r}")
+    return render_strokes_rgb(strokes, colors, render.canvas_px,
+                              render.line_width_px)
 
 
 def validate_submission(record: JsonValue, gates: IntakeGates,

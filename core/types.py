@@ -75,10 +75,17 @@ class IntakeGates(NamedTuple):
 
 
 class RenderParams(NamedTuple):
-    """Canonical render values, read from the preparation config (R2)."""
+    """Canonical render values, read from the preparation config (R2).
+
+    stroke_color selects the spec C1 render rule: "mono" strips
+    submission stroke colors, "rgb" promotes a drawing with one or
+    more color strokes to an RGB render. The default keeps the
+    two-field constructions from before the color ruling equal.
+    """
 
     canvas_px: int
     line_width_px: int
+    stroke_color: str = "mono"
 
 
 class OutlineConfig(NamedTuple):
@@ -127,6 +134,11 @@ class Atom:
     subtype is recorded, not acted on, and is None in this phase: the
     frozen wire shape carries no subtype field (agreed 2026-08-08).
     refers_to and relation are filled on RELATION atoms only.
+    stroke_colors aligns with strokes entry for entry and is None when
+    no member stroke has a color — a colorless record assembles to
+    the same atoms as before the color ruling (2026-08-12,
+    docs/specs/color-sketches.md). The canonical render alone reads
+    it. Placement and the element channel do not.
     """
 
     id: str
@@ -136,6 +148,7 @@ class Atom:
     strokes: tuple[StrokePath, ...] | None
     refers_to: tuple[str, str] | None
     relation: str | None
+    stroke_colors: tuple[str | None, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

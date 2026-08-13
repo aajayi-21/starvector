@@ -236,3 +236,24 @@ def test_a_gate_violation_names_its_cause(scoring_preparation) -> None:
     del record["pasted_text"]
     with pytest.raises(IntakeError, match="bad-shape"):
         score_trial(record, loaded.index.image_ids[0], context, _encoders())
+
+
+def test_a_colorless_record_scores_the_same_under_mono_and_rgb(
+        tmp_path) -> None:
+    # The spec C1 byte-stable half above the byte level: with no
+    # color key the promotion render gives the plain bytes, thus the
+    # trial score is equal in the two worlds.
+    from conftest import build_direct_prepared_pool
+
+    mono_world = build_direct_prepared_pool(tmp_path / "mono", 12)
+    rgb_world = build_direct_prepared_pool(
+        tmp_path / "rgb", 12,
+        overrides={"linedraw.stroke_color": "rgb"})
+    record = _sketch_record(5)
+    scores = []
+    for prepared in (mono_world, rgb_world):
+        loaded, context = _context(prepared)
+        target = loaded.index.image_ids[3]
+        scores.append(score_trial(record, target, context, _encoders()))
+    assert scores[0] == scores[1]
+    assert mono_world["prep_record_path"] != rgb_world["prep_record_path"]

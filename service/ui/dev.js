@@ -177,8 +177,8 @@ function startDevConsole() {
           + (point[1] * 100).toFixed(2);
       }).join(" "));
       line.setAttribute("fill", "none");
-      line.setAttribute("stroke",
-                        stroke.group_id ? "#1b6b3a" : "#1a1c1e");
+      line.setAttribute("stroke", stroke.color
+                        || (stroke.group_id ? "#1b6b3a" : "#1a1c1e"));
       line.setAttribute("stroke-width", "1");
       sketch.appendChild(line);
     });

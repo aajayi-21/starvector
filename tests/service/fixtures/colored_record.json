@@ -1,0 +1,10 @@
+{
+  "impressions": ["tall vertical structure"],
+  "canvas_strokes": [
+    {"points": [[0.1, 0.4], [0.3, 0.4], [0.3, 0.6], [0.1, 0.6], [0.1, 0.4]], "group_id": "g1", "color": "#1a73e8"},
+    {"points": [[0.6, 0.4], [0.9, 0.4], [0.9, 0.6], [0.6, 0.6], [0.6, 0.4]], "group_id": null}
+  ],
+  "groups": [{"id": "g1", "label": "sea"}],
+  "relations": [],
+  "pasted_text": null
+}

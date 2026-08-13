@@ -72,3 +72,23 @@ def test_the_encoder_dimension_moves_the_two_hashes() -> None:
         **{"providers.sketch_encoder.dimension": 64})
     assert scoring != base_scoring
     assert commonness != base_commonness
+
+
+def test_stroke_color_rgb_moves_the_table_key_and_mono_does_not() -> None:
+    # The spec C1 rules: the legacy two-field RenderParams, an
+    # explicit "mono", and the default all give one hash - each
+    # commonness key from before the color ruling stays byte-stable -
+    # and "rgb" forks the tables.
+    config = make_scoring_config(RECORD)
+    slots = scoring_provider_hashes(config)
+
+    def table_key(render: RenderParams) -> str:
+        return commonness_config_hash(
+            config, render, slots["sketch_encoder"], slots["text_encoder"],
+            slots["sketch_pairs"], None)
+
+    legacy = table_key(RenderParams(canvas_px=512, line_width_px=3))
+    mono = table_key(RenderParams(512, 3, "mono"))
+    rgb = table_key(RenderParams(512, 3, "rgb"))
+    assert legacy == mono
+    assert rgb != mono
