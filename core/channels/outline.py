@@ -15,6 +15,24 @@ from core.types import (EncodedSubmission, FloatArray, OutlineConfig,
 COMPARISON_RULES: tuple[str, ...] = ("center-cosine-v1",)
 
 
+def outline_pool_cache(outline_vectors: FloatArray,
+                       outline_space_mean: FloatArray,
+                       ) -> tuple[FloatArray, FloatArray]:
+    """Center the pool matrix and get its norms, one time (P5 R2).
+
+    The same expressions the channel runs, calculated at index build
+    - the values are byte-equal by construction, and at a 20,000
+    image pool the cache removes about one second from each channel
+    step. The cache doubles the resident outline storage. The
+    zero-norm check stays with the channel (R14): an index with an
+    outline side that does not score must build, as before the
+    cache.
+    """
+    centered = outline_vectors - outline_space_mean          # (N, 6, d)
+    norms = np.linalg.norm(centered, axis=2)                 # (N, 6)
+    return centered, norms
+
+
 def outline_scores(sketch_vector: FloatArray, index: PoolIndex,
                    config: OutlineConfig) -> PoolScores:
     """Score one sketch vector against each pool image.
@@ -40,9 +58,13 @@ def outline_scores(sketch_vector: FloatArray, index: PoolIndex,
         raise ValueError("sketch_vector holds a non-finite value")
 
     centered_sketch = sketch_vector - index.outline_space_mean   # (d,)
-    centered_pool = vectors - index.outline_space_mean           # (N, 6, d)
+    if index.outline_centered is None or index.outline_norms is None:
+        centered_pool = vectors - index.outline_space_mean       # (N, 6, d)
+        pool_norms = np.linalg.norm(centered_pool, axis=2)       # (N, 6)
+    else:
+        centered_pool = index.outline_centered
+        pool_norms = index.outline_norms
     sketch_norm = float(np.linalg.norm(centered_sketch))
-    pool_norms = np.linalg.norm(centered_pool, axis=2)           # (N, 6)
     if sketch_norm == 0.0 or bool((pool_norms == 0.0).any()):
         # A zero norm after centering means a vector equal to the pool
         # mean. A silent zero or NaN here makes plausible numbers that

@@ -19,6 +19,7 @@ from typing import NamedTuple
 import numpy as np
 
 from core.canonical import sha256_hex
+from core.channels.outline import outline_pool_cache
 from core.types import (ChannelName, ElementConfig, IntakeGates, OutlineConfig,
                         PlacementConfig, PoolIndex, PoolScores, RenderParams,
                         ScoringContext, Weights)
@@ -361,11 +362,17 @@ def build_pool_index(index_id: str, image_ids: tuple[str, ...],
                 f"group {row.group_id}: member_count {row.member_count} does "
                 f"not agree with the tally {len(group_members)}")
     _checked_element_side(elements, count)
+    # The P5 R2 residency cache: each loaded index - the plain pool
+    # and the V1 union - holds the centered outline matrix.
+    outline_centered, outline_norms = outline_pool_cache(
+        outline_vectors, outline_space_mean)
     return PoolIndex(
         index_id=index_id,
         image_ids=image_ids,
         outline_vectors=outline_vectors,
         outline_space_mean=outline_space_mean,
+        outline_centered=outline_centered,
+        outline_norms=outline_norms,
         group_ids=tuple(row.group_id for row in group_rows),
         pool_image_count=elements.pool_image_count,
         vocabulary=elements.vocabulary,

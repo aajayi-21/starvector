@@ -257,3 +257,14 @@ def test_a_colorless_record_scores_the_same_under_mono_and_rgb(
         scores.append(score_trial(record, target, context, _encoders()))
     assert scores[0] == scores[1]
     assert mono_world["prep_record_path"] != rgb_world["prep_record_path"]
+
+
+def test_a_loaded_index_holds_the_outline_cache(scoring_preparation) -> None:
+    # The P5 R2 rule: each loaded index carries the centered outline
+    # matrix, and the values equal the scoring-time expressions.
+    loaded, _ = _context(scoring_preparation)
+    index = loaded.index
+    assert index.outline_centered is not None
+    assert index.outline_norms is not None
+    assert index.outline_centered.tobytes() == (
+        index.outline_vectors - index.outline_space_mean).tobytes()
