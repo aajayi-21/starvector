@@ -99,13 +99,18 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
 
 def close_day(service_config: ServiceConfig, *, date: str | None = None,
               providers: Mapping[str, object] | None = None,
-              clock: Callable[[], str] | None = None) -> int:
+              clock: Callable[[], str] | None = None,
+              wired: scoring.WiredScoring | None = None) -> int:
     """Close one day: score each stored submission, flip the status.
 
     Repeatable after a stop: a stored trial row that equals the
     recomputation is kept, a different one raises, and the status
     flip is the completeness marker. The output is the count of
-    trial rows.
+    trial rows. A caller with a resident context hands it in through
+    wired (P5 R1) - the day record's hash guard runs the same, thus
+    a context that does not match the pinned config refuses loudly.
+    With no wired context the wiring comes from the day record's
+    pinned config path, as before.
     """
     clock = clock or harness.default_clock
     root = Path(service_config.store_root)
@@ -114,16 +119,22 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
     if record.status != "open":
         raise store.StoreError(
             f"day {day} has status {record.status!r} - close needs 'open'")
-    config = load_scoring_config(Path(record.scoring_config_path))
-    wired = scoring.wire_for_close(config, record.scoring_config_path,
-                                   Path(service_config.data_root), providers)
+    if wired is None:
+        config = load_scoring_config(Path(record.scoring_config_path))
+        wired = scoring.wire_for_close(config, record.scoring_config_path,
+                                       Path(service_config.data_root),
+                                       providers)
     if wired.scoring_hash != record.scoring_config_hash:
         raise store.StoreError(
             f"the scoring config hash moved since open "
             f"({wired.scoring_hash[:8]} against "
             f"{record.scoring_config_hash[:8]}) - the config file changed "
             "after the day opened")
-    count = 0
+    # Read and check each submission first, then one batched encode
+    # across the day (P5 R7): each cold atom rides a shared batch.
+    # A submission that does not parse stops the close before a row
+    # write.
+    stored_by_player: dict[str, dict] = {}
     for player in store.list_submissions(root, day):
         stored = store.read_json_or_none(
             store.submission_path(root, day, player))
@@ -131,6 +142,12 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
                 or "trial_id" not in stored:
             raise store.StoreError(
                 f"day {day}: the submission of {player} does not parse")
+        stored_by_player[player] = stored
+    harness.prewarm_records(
+        [stored["record"] for stored in stored_by_player.values()],
+        wired.context.gates, wired.context.render, wired.encoders)
+    count = 0
+    for player, stored in stored_by_player.items():
         trial, report = scoring.score_stored_submission(
             stored["record"], record.target_id, wired)
         value = scoring.trial_row_value(day, player, str(stored["trial_id"]),

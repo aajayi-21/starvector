@@ -11,6 +11,7 @@ import argparse
 import math
 import secrets
 import sys
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -115,22 +116,26 @@ def create_app(service_config: ServiceConfig,
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
 
-    # The dev-mode scoring context wires lazily on the first dev
-    # score and is kept for the process - a new start re-reads
-    # config.
-    dev_state: dict[str, object] = {}
+    # The resident scoring context (P5 R1): wired lazily one time
+    # for each process from the server's config, read by the close
+    # endpoint, the dev surfaces, and practice. The lock stops a
+    # double wire when two threadpool handlers race the first use.
+    # A new start re-reads config. This supersedes the fifth 14b
+    # ruling's wording: the dev surfaces score with the config the
+    # server names, not the one the latest day names - the two are
+    # the same file in usual operation.
+    resident_state: dict[str, object] = {}
+    resident_lock = threading.Lock()
 
-    def _dev_wired():
-        from pipeline.config import load_scoring_config as load_scoring
+    def _resident():
         from service.scoring import wire_for_close
 
-        if "wired" not in dev_state:
-            day = store.latest_day(root)
-            record = store.read_day_record(root, day)
-            named = load_scoring(Path(record.scoring_config_path))
-            dev_state["wired"] = wire_for_close(
-                named, record.scoring_config_path, data_root)
-        return dev_state["wired"]
+        with resident_lock:
+            if "wired" not in resident_state:
+                resident_state["wired"] = wire_for_close(
+                    scoring_config, service_config.scoring_config,
+                    data_root)
+            return resident_state["wired"]
 
     @app.get("/dev")
     def dev_page() -> Response:
@@ -231,11 +236,12 @@ def create_app(service_config: ServiceConfig,
         from service.scoring import dev_rankings
 
         try:
-            # An earlier day scores with the config the latest
-            # day names - a drifted config gives the browser
-            # numbers different from the stored trial row.
+            # An earlier day scores with the resident context - a
+            # drifted config gives the browser numbers different
+            # from the stored trial row, and the stored row stays
+            # the record.
             value = dev_rankings(stored["record"], record.target_id,
-                                 _dev_wired())
+                                 _resident())
         except Exception as error:
             return JSONResponse({"cause": "dev-score-failed",
                                  "detail": str(error)}, status_code=400)
@@ -355,9 +361,20 @@ def create_app(service_config: ServiceConfig,
 
         # The one live step (R5): the server process needs the
         # provider key in its environment for a live config. The
-        # answer names the row count and no score (R3).
+        # answer names the row count and no score (R3). The resident
+        # context serves the close when the day's pinned config path
+        # is the server's own - a day opened with a different config
+        # wires anew from its pinned path (P5 R1).
         try:
-            count = close_day(service_config)
+            wired = None
+            day = store.latest_day(root)
+            if day is not None:
+                record = store.read_day_record(root, day)
+                if record.status == "open" \
+                        and record.scoring_config_path \
+                        == service_config.scoring_config:
+                    wired = _resident()
+            count = close_day(service_config, wired=wired)
         except store.StoreError as error:
             return JSONResponse({"cause": "refused",
                                  "detail": str(error)}, status_code=409)
