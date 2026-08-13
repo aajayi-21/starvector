@@ -146,6 +146,94 @@ def score_stored_submission(record: JsonValue, target_id: TargetId,
     return trial, report
 
 
+class DayPrecompute(NamedTuple):
+    """The section 18 day-start values for one target (P5 item B4)."""
+
+    decoys: "np.ndarray"
+    decoy_count: int
+    group_id: str
+
+
+def day_precompute(context: ScoringContext,
+                   target_id: TargetId) -> DayPrecompute:
+    """The decoy set, its count, and the target's group, one time.
+
+    Pure. A caller on the interactive draft path keeps the output
+    for the day - the values are functions of the index and the
+    target alone.
+    """
+    from core.ranking import decoy_set
+
+    decoys = decoy_set(context.index, target_id)
+    position = context.index.image_ids.index(target_id)
+    return DayPrecompute(decoys=decoys, decoy_count=int(decoys.sum()),
+                        group_id=context.index.group_ids[position])
+
+
+class DraftScore(NamedTuple):
+    """One draft's score: the pieces the read surfaces shape."""
+
+    trial: TrialScore
+    fused: "np.ndarray"
+    standardized: dict
+    report: tuple[MatchRow, ...]
+    order: "np.ndarray"
+
+
+def _scored_draft(record: JsonValue, target_id: TargetId,
+                  wired: WiredScoring,
+                  precomputed: DayPrecompute | None = None) -> DraftScore:
+    """The shared draft computation: validate, encode, score, sort.
+
+    The production path with nothing stored - the dev console and
+    practice shape their answers from this one result. One encode
+    serves the channels and the report.
+    """
+    import numpy as np
+
+    from core.fusion import fuse
+    from core.ranking import decoy_set, rank
+    from pipeline.score import standardized_channels
+
+    context = wired.context
+    submission = validate_submission(record, context.gates,
+                                     context.render.canvas_px)
+    encoded = encode_submission(submission, context.render, wired.encoders)
+    standardized = standardized_channels(encoded, context)
+    fused = fuse(standardized, context.weights)
+    decoys = precomputed.decoys if precomputed is not None \
+        else decoy_set(context.index, target_id)
+    trial = rank(fused, target_id, decoys, context.index)
+    report = match_report(encoded, context.index,
+                          context.index.image_ids.index(target_id),
+                          context.element)
+    order = np.argsort(-fused, kind="stable")            # (N,) positions
+    return DraftScore(trial=trial, fused=fused,
+                      standardized=dict(standardized), report=report,
+                      order=order)
+
+
+def _trial_value(trial: TrialScore) -> dict[str, JsonValue]:
+    """The five trial numbers, one shape for each surface (R8)."""
+    return {"p": harness.quantized(trial.p),
+            "decoy_count": trial.decoy_count,
+            "beaten": trial.beaten, "tied": trial.tied,
+            "target_rank": trial.decoy_count - trial.beaten
+            - trial.tied + 1}
+
+
+def _report_rows(report: tuple[MatchRow, ...]) -> list[JsonValue]:
+    """The atom-by-atom rows, one shape for each surface (R8)."""
+    return [
+        {"atom_id": row.atom_id, "atom_text": row.atom_text,
+         "element": row.element,
+         "weight": harness.quantized(row.weight),
+         "similarity": harness.quantized(row.similarity),
+         "rarity": harness.quantized(row.rarity)}
+        for row in report
+    ]
+
+
 def dev_rankings(record: JsonValue, target_id: TargetId,
                  wired: WiredScoring) -> dict[str, JsonValue]:
     """Score one draft against the full pool, storing nothing.
@@ -160,57 +248,31 @@ def dev_rankings(record: JsonValue, target_id: TargetId,
     ruling: the console shows which channel drove a position - and
     the answer holds the atom-by-atom report of the trial row.
     """
-    import numpy as np
-
-    from core.fusion import fuse
-    from core.ranking import decoy_set, rank
-    from pipeline.score import standardized_channels
-
     context = wired.context
-    submission = validate_submission(record, context.gates,
-                                     context.render.canvas_px)
-    encoded = encode_submission(submission, context.render, wired.encoders)
-    standardized = standardized_channels(encoded, context)
-    fused = fuse(standardized, context.weights)
-    trial = rank(fused, target_id, decoy_set(context.index, target_id),
-                 context.index)
-    channel_names = sorted(standardized)
-    order = np.argsort(-fused, kind="stable")            # (N,) positions
+    scored = _scored_draft(record, target_id, wired)
+    channel_names = sorted(scored.standardized)
     rankings: list[JsonValue] = []
     target_position = 0
-    for position, index in enumerate(order, start=1):
+    for position, index in enumerate(scored.order, start=1):
         image_id = context.index.image_ids[int(index)]
         if image_id == target_id:
             target_position = position
         rankings.append({
             "position": position,
             "image_id": image_id,
-            "fused": harness.quantized(float(fused[int(index)])),
+            "fused": harness.quantized(float(scored.fused[int(index)])),
             "channels": {
-                name: harness.quantized(float(standardized[name][int(index)]))
+                name: harness.quantized(
+                    float(scored.standardized[name][int(index)]))
                 for name in channel_names},
             "is_target": image_id == target_id,
         })
-    report = match_report(encoded, context.index,
-                          context.index.image_ids.index(target_id),
-                          context.element)
     return {
-        "trial": {"p": harness.quantized(trial.p),
-                  "decoy_count": trial.decoy_count,
-                  "beaten": trial.beaten, "tied": trial.tied,
-                  "target_rank": trial.decoy_count - trial.beaten
-                  - trial.tied + 1},
+        "trial": _trial_value(scored.trial),
         "target_position": target_position,
         "channel_names": channel_names,
         "rankings": rankings,
-        "report": [
-            {"atom_id": row.atom_id, "atom_text": row.atom_text,
-             "element": row.element,
-             "weight": harness.quantized(row.weight),
-             "similarity": harness.quantized(row.similarity),
-             "rarity": harness.quantized(row.rarity)}
-            for row in report
-        ],
+        "report": _report_rows(scored.report),
     }
 
 
@@ -227,19 +289,8 @@ def trial_row_value(day: str, player: str, trial_id: str,
         "day": day,
         "player": player,
         "trial_id": trial_id,
-        "p": harness.quantized(trial.p),
-        "decoy_count": trial.decoy_count,
-        "beaten": trial.beaten,
-        "tied": trial.tied,
-        "target_rank": trial.decoy_count - trial.beaten - trial.tied + 1,
-        "report": [
-            {"atom_id": row.atom_id, "atom_text": row.atom_text,
-             "element": row.element,
-             "weight": harness.quantized(row.weight),
-             "similarity": harness.quantized(row.similarity),
-             "rarity": harness.quantized(row.rarity)}
-            for row in report
-        ],
+        **_trial_value(trial),
+        "report": _report_rows(report),
         "scoring_config_hash": wired.scoring_hash,
         "commonness_config_hash": wired.commonness_hash,
         "preparation_version_id": wired.preparation_version_id,
