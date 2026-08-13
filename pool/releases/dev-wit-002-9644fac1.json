@@ -1,0 +1,92 @@
+{
+  "code_version": "19e6c089726590345e510f6ee0567e97ff4854b0",
+  "config_path": "configs/curation/dev-wit-2.json",
+  "corpus_id": "f655d7130d31e57940771ed8faa541a2f52cfd5fa02a8b4b6675b89d9e647c22",
+  "corpus_identity": {
+    "config_name": null,
+    "provider": "huggingface",
+    "repo_id": "wikimedia/wit_base",
+    "revision": "ff6d4fb32fd566d3a1fa20e946cba3234179465e",
+    "split": "train"
+  },
+  "created_at": "2026-08-13T05:14:51.212227+00:00",
+  "curation_config_hash": "dea9c1925da9d8575b15900d230b72d19dd365f2632d0b4766926f5e5825e668",
+  "dev_only": true,
+  "funnel": {
+    "s00-snapshot": {
+      "input": 2409,
+      "rejections": {},
+      "survivors": 2409
+    },
+    "s01-screen": {
+      "input": 2409,
+      "rejections": {
+        "aspect-metadata": 94,
+        "resolution-metadata": 484
+      },
+      "survivors": 1831
+    },
+    "s02-materialize": {
+      "input": 1831,
+      "rejections": {
+        "extraction-budget": 615,
+        "fetch-error": 128,
+        "resolution": 2,
+        "unsupported-media-type": 50
+      },
+      "survivors": 1036
+    },
+    "s03-text": {
+      "input": 1036,
+      "rejections": {
+        "text-coverage": 102
+      },
+      "survivors": 934
+    },
+    "s04-class": {
+      "input": 934,
+      "rejections": {
+        "class-chart": 3,
+        "class-coat-of-arms": 5,
+        "class-diagram": 11,
+        "class-line-drawing": 28,
+        "class-logo": 3,
+        "class-map": 30
+      },
+      "survivors": 854
+    },
+    "s05-object": {
+      "input": 854,
+      "rejections": {
+        "object-size": 127
+      },
+      "survivors": 727
+    },
+    "s06-neardup": {
+      "input": 727,
+      "rejections": {},
+      "survivors": 727
+    },
+    "s07-diversity": {
+      "input": 727,
+      "rejections": {
+        "diversity-cap": 523
+      },
+      "survivors": 204
+    },
+    "s08-review": {
+      "input": 204,
+      "rejections": {},
+      "survivors": 204
+    }
+  },
+  "image_count": 204,
+  "label": "dev-wit-002-9644fac1",
+  "pool_version_id": "9644fac1994e733ce865c2aec68b24013b7094465f862c90b1762387360e1fea",
+  "review": {
+    "date": "2026-08-12",
+    "notes": "",
+    "reviewer": "ade",
+    "verdict": "pass"
+  }
+}
