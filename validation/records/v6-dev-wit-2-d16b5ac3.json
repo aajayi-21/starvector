@@ -1,0 +1,33 @@
+{
+  "code_version": "dev",
+  "created_at": "2026-08-13T22:25:50.613120+00:00",
+  "date": "2026-08-13",
+  "dev_only": true,
+  "fit_config_hash": "760560981c4bf2f347fe46dce637b524ddd6a6415978c0a2ee399f5599f056b5",
+  "generator_config_hash": "fe788a3383f4d3c431fb8fa093e6c7aaf392cc24548b24b042e3bc5a4c8ec753",
+  "harness": "v6",
+  "harness_config_hash": "d16b5ac3d655ae5cff00c7fab4ef622798eb6592157f648c7f06a72a1a4185df",
+  "index_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "levels": [
+    0,
+    1
+  ],
+  "notes": "",
+  "preparation_version_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "reviewer": "ade",
+  "scoring_config_hash": "0341ee0114125c9ddc4e55a0ec7f7394157b4a3d77ff0b6632fa98914afe3e1e",
+  "synthetic_count": 200,
+  "synthetic_seed": 20260812,
+  "tag": "dev-wit-2",
+  "tier1_recall": {
+    "10": 1.0,
+    "25": 1.0,
+    "50": 1.0
+  },
+  "tier2_recall": {
+    "10": 1.0,
+    "5": 0.9975
+  },
+  "trial_count": 400,
+  "verdict": "pass"
+}

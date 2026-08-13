@@ -1,0 +1,73 @@
+{
+  "bootstrap_count": 2000,
+  "bootstrap_interval": 0.95,
+  "code_version": "dev",
+  "commonness_config_hash": "92f7986872b961829a57820e82e2f434065f4a51d1672587fc4cfb5f0246c137",
+  "commonness_contributors": {
+    "element": 1000,
+    "outline": 736,
+    "placement": 236
+  },
+  "control_at_half": false,
+  "created_at": "2026-08-13T22:17:36.327266+00:00",
+  "date": "2026-08-13",
+  "dev_only": true,
+  "fit_config_hash": "760560981c4bf2f347fe46dce637b524ddd6a6415978c0a2ee399f5599f056b5",
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0,
+    "placement": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "generator_config_hash": "fe788a3383f4d3c431fb8fa093e6c7aaf392cc24548b24b042e3bc5a4c8ec753",
+  "harness": "v3",
+  "harness_config_hash": "9071d5006db880a3b7d2294dcae03e7cf91143bba96582a19e3424d336526dde",
+  "index_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "levels": [
+    {
+      "high": 1.0,
+      "level": 0,
+      "low": 1.0,
+      "mean_p": 1.0,
+      "trial_count": 200
+    },
+    {
+      "high": 0.999901,
+      "level": 1,
+      "low": 0.999212,
+      "mean_p": 0.999631,
+      "trial_count": 200
+    },
+    {
+      "high": 0.982389,
+      "level": 2,
+      "low": 0.957241,
+      "mean_p": 0.971034,
+      "trial_count": 200
+    },
+    {
+      "high": 0.863079,
+      "level": 3,
+      "low": 0.798793,
+      "mean_p": 0.832168,
+      "trial_count": 200
+    },
+    {
+      "high": 0.427808,
+      "level": 4,
+      "low": 0.355098,
+      "mean_p": 0.390566,
+      "trial_count": 200
+    }
+  ],
+  "monotone": true,
+  "notes": "Ruling on the control (2026-08-13): monotone clears decisively (1.000/0.9996/0.971/0.832/0.391, tight intervals). control_at_half measures an anti-informative control, not a no-information one - the generator's noise entries exclude the target's own elements by construction ('the thing is not there'), thus a correct scorer lands level 4 below 0.5. The spec line 'must land near 0.5' (fuse-and-validate section 10) contradicts the generator design. The no-information baseline claim is covered by the V2 passes on this lineage (KS 0.0428 at significance 0.318, mixed 0.0432 at 0.309). Standing item: a level-4 redesign (independent targets, or noise at natural rates) moves the generator and commonness hashes and waits for the next generator revision.",
+  "preparation_version_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "reviewer": "ade",
+  "scoring_config_hash": "0341ee0114125c9ddc4e55a0ec7f7394157b4a3d77ff0b6632fa98914afe3e1e",
+  "synthetic_count": 200,
+  "synthetic_seed": 20260811,
+  "tag": "dev-wit-2",
+  "verdict": "pass"
+}
