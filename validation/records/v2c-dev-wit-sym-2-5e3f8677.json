@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "color_ks_significance": 0.241038,
+  "color_ks_statistic": 0.04598,
+  "commonness_config_hash": "544c62d58117c46b4ab9b9431fdebb8ae735b9afff9aefccf5eabcc2947a49c2",
+  "created_at": "2026-08-13T17:27:02.216356+00:00",
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-08-13",
+  "dev_only": true,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2c",
+  "harness_config_hash": "5e3f8677f6e6eb1a0234a24197810341488a6a2391dfcb586edb7d8537341f08",
+  "index_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "max_abs_delta_p": 0.724138,
+  "mean_abs_delta_p": 0.13597,
+  "mean_delta_p": 0.004759,
+  "mono_ks_significance": 0.317915,
+  "mono_ks_statistic": 0.042837,
+  "notes": "",
+  "preparation_version_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 2000,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "a926f1fab7df06dd85a7e75ca59238dd0158b4bbd2bb4834647b297592aa5359",
+  "tag": "dev-wit-sym-2",
+  "trial_count": 500,
+  "verdict": "pass"
+}
