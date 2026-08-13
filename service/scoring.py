@@ -234,6 +234,49 @@ def _report_rows(report: tuple[MatchRow, ...]) -> list[JsonValue]:
     ]
 
 
+# The practice ranking head length - a P5 build ruling: a
+# sufficient neighborhood to read the result, each row anonymous.
+PRACTICE_HEAD_COUNT = 10
+
+
+def practice_score(record: JsonValue, target_id: TargetId,
+                   wired: WiredScoring,
+                   precomputed: DayPrecompute | None = None,
+                   ) -> dict[str, JsonValue]:
+    """Score one practice draft, storing nothing (P5 item B5).
+
+    The section 22 rule this shape holds: a practice answer names no
+    image but the practiced revealed target - each other pool image
+    appears at most as an anonymous (position, fused, is_target)
+    row, thus the player side cannot count through the pool's
+    composition. The report ships in full: the practiced target is
+    revealed, and its element strings are as public as the daily
+    reveal's. No channel columns - those are dev diagnostics.
+    """
+    context = wired.context
+    scored = _scored_draft(record, target_id, wired, precomputed)
+    head: list[JsonValue] = []
+    target_position = 0
+    for position, index in enumerate(scored.order, start=1):
+        image_id = context.index.image_ids[int(index)]
+        is_target = image_id == target_id
+        if is_target:
+            target_position = position
+        if position <= PRACTICE_HEAD_COUNT:
+            head.append({
+                "position": position,
+                "fused": harness.quantized(float(scored.fused[int(index)])),
+                "is_target": is_target,
+            })
+    return {
+        "target_id": target_id,
+        "trial": _trial_value(scored.trial),
+        "target_position": target_position,
+        "ranking_head": head,
+        "report": _report_rows(scored.report),
+    }
+
+
 def dev_rankings(record: JsonValue, target_id: TargetId,
                  wired: WiredScoring) -> dict[str, JsonValue]:
     """Score one draft against the full pool, storing nothing.

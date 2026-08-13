@@ -91,7 +91,7 @@ def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
     def walk() -> dict[str, bytes]:
         return {path: client.get(path).content
                 for path in ("/", "/ui/trial.js", "/api/day",
-                             "/api/reveal",
+                             "/api/reveal", "/api/practice",
                              f"/image/{record.target_id}", "/history")}
 
     while_open = walk()
