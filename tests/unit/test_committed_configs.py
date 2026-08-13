@@ -61,3 +61,20 @@ def test_the_frozen_configs_hold_the_fit_winner() -> None:
         assert config.fusion.fit_record \
             == "validation/records/fit-dev-wit-2-76056098.json"
         assert config.input.preparation_record.endswith("40f06be1.json")
+
+
+def test_the_stitched_boundary_config_forks_on_two_fields() -> None:
+    # The P5 item B8 variant: tier2_count below the dev pool count,
+    # thus the tier boundary cuts on data before production. Each
+    # other field stays byte-equal with the source-B config.
+    config = load_scoring_config(Path("configs/scoring/dev-wit-b-2-t25.json"))
+    assert config.channels.element.tier2_count == 25
+    assert config.validation.tag == "dev-wit-b-2-t25"
+    base = json.loads(Path("configs/scoring/dev-wit-b-2.json").read_text())
+    variant = json.loads(
+        Path("configs/scoring/dev-wit-b-2-t25.json").read_text())
+    base["channels"]["element"].pop("tier2_count")
+    variant["channels"]["element"].pop("tier2_count")
+    base["validation"].pop("tag")
+    variant["validation"].pop("tag")
+    assert base == variant
