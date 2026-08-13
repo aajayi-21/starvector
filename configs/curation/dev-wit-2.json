@@ -113,7 +113,8 @@
       "model": "google/gemini-embedding-2",
       "instruction_template": null,
       "dimension": 3072,
-      "probability_sum_tolerance": null
+      "probability_sum_tolerance": null,
+      "input_canvas_px": 512
     }
   },
   "seeds": {

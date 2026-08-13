@@ -57,7 +57,12 @@ pool lineage. That is correct behavior, not an accident — see
   `dev-wit.json` released the first pool with the fake encoder — s06
   removed nothing and s07 cut at random — and `dev-wit-2.json` is the
   re-run with `google/gemini-embedding-2` and the corpus revision pinned
-  to the recorded resolution. Switching the encoder changes the config
-  hash and thus starts a new pool lineage.
+  to the recorded resolution. `input_canvas_px` (encoder alone, can be
+  missing) scales each image to the canonical render — long side equal
+  to the value — before the embedding POST: raw Wikimedia thumbnails at
+  1280 pixels ran through the endpoint timeout, and the 512 canonical
+  render is the proven preparation path. Switching the encoder or the
+  input rule changes the config hash and thus starts a new pool
+  lineage.
 - `release.tag` — must start with `dev-` when `dev_only` is `true`,
   and only then. Development pools are not published (R13).
