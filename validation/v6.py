@@ -2,10 +2,10 @@
 
 Spec P4 §11 (R7, D10). On labeled synthetic submissions, the fraction
 of known targets in the element channel's tier-1 shortlist and in the
-accurate tier-2 head, at the ruled widths. The dev pool has 225
-images, thus the production thresholds (500 / 25) are trivial here —
-these are dev-only numbers that make the tier interface earn its
-keep, and the production line waits for Phase 5.
+accurate tier-2 head, at the ruled widths. A dev pool has some
+hundreds of images, thus the production thresholds (500 / 25) are
+trivial here — these are dev-only numbers that make the tier
+interface earn its keep, and the production line waits for Phase 5.
 """
 
 import argparse
