@@ -122,3 +122,67 @@ def test_a_shortlist_image_with_no_element_raises() -> None:
     incidence = np.array([[1, 2], [-1, -1]], dtype=np.int32)
     with pytest.raises(ValueError, match="no element"):
         shortlist_groups(np.array([0, 1]), incidence)
+
+
+def test_the_channel_equals_the_one_image_reference_loop() -> None:
+    # The channel-level pin: element_channel after the switch equals
+    # a reference that reruns tier 1 plus the one-image loop - the
+    # reference IS the code from before the change, thus this test
+    # proves before-and-after byte equality with no stored golden
+    # file.
+    from core.channels.element import (element_atoms, element_channel,
+                                       rarity_weights, similarity_table,
+                                       tier1_scores)
+    from core.types import Atom, EncodedSubmission, PoolIndex
+
+    rng = np.random.default_rng(23)
+    image_count, width, vocabulary_count, dimension = 30, 6, 60, 12
+    incidence = np.full((image_count, width), -1, dtype=np.int32)
+    for row in range(image_count):
+        count = int(rng.integers(1, width + 1))
+        incidence[row, :count] = rng.choice(vocabulary_count, size=count,
+                                            replace=False)
+    vocabulary_vectors = rng.standard_normal(
+        (vocabulary_count, dimension)).astype(np.float32)
+    mean = rng.standard_normal(dimension).astype(np.float32) * 0.1
+    index = PoolIndex(
+        index_id="e" * 64,
+        image_ids=tuple(f"{i:064x}" for i in range(image_count)),
+        outline_vectors=np.ones((image_count, 6, dimension),
+                                dtype=np.float32),
+        outline_space_mean=np.zeros(dimension, dtype=np.float32),
+        group_ids=tuple(f"{i:064x}" for i in range(image_count)),
+        pool_image_count=image_count,
+        vocabulary=tuple(f"element {i}" for i in range(vocabulary_count)),
+        pool_frequency=tuple(int(v) for v in
+                             rng.integers(1, image_count,
+                                          size=vocabulary_count)),
+        vocabulary_vectors=vocabulary_vectors,
+        incidence=incidence,
+        element_space_mean=mean,
+        box_table=np.zeros((image_count, width, 4), dtype=np.float32),
+        box_mask=np.zeros((image_count, width), dtype=bool),
+    )
+    atoms = tuple(
+        Atom(id=f"a{n}", type="DESCRIPTION", subtype=None,
+             text=f"atom {n}", strokes=None, refers_to=None, relation=None)
+        for n in range(1, 4))
+    vectors = {atom.id: rng.standard_normal(dimension).astype(np.float32)
+               for atom in atoms}
+    submission = EncodedSubmission(atoms=atoms, vectors=vectors)
+    config = _config()
+
+    channel = element_channel(submission, index, config)
+
+    atom_vectors = np.stack([vectors[a.id] for a in element_atoms(submission)])
+    similarity = similarity_table(atom_vectors, vocabulary_vectors, mean)
+    rarity = rarity_weights(similarity, index.pool_frequency, image_count)
+    reference = tier1_scores(similarity, rarity, incidence)
+    shortlist = np.argsort(-reference, kind="stable")[:config.tier2_count]
+    for position in shortlist:
+        columns = image_elements(incidence, int(position))
+        table = similarity[:, columns]
+        plan = soft_match(table, config)
+        reference[position] = matched_score(table, plan, rarity)
+
+    assert channel.tobytes() == reference.astype(np.float32).tobytes()

@@ -350,11 +350,12 @@ def element_channel(submission: EncodedSubmission, index: PoolIndex,
     # written rule, because the shortlist boundary must not follow from
     # the sort implementation.
     shortlist = np.argsort(-scores, kind="stable")[:config.tier2_count]
-    for position in shortlist:
-        columns = image_elements(index.incidence, int(position))
-        table = similarity[:, columns]                          # (m, k)
-        plan = soft_match(table, config)                        # (m, k)
-        scores[position] = matched_score(table, plan, rarity)
+    # The grouped batch (P5 item B3): byte-equal to the one-image
+    # loop by the standing gate in tests/unit/test_element_batch.py.
+    for positions, columns in shortlist_groups(shortlist, index.incidence):
+        tables = similarity[:, columns].transpose(1, 0, 2)      # (S, m, k)
+        plans = soft_matches(tables, config)                    # (S, m, k)
+        scores[positions] = matched_scores(tables, plans, rarity)
     return scores.astype(np.float32)                            # (N,)
 
 
