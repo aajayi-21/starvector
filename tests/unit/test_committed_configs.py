@@ -48,3 +48,16 @@ def test_the_service_lineage_configs_parse() -> None:
     for name in ("dev-wit-mixed-2", "dev-wit-photo-inst-sym-2"):
         config = load_scoring_config(Path(f"configs/scoring/{name}.json"))
         assert config.input.preparation_record.endswith("40f06be1.json")
+
+
+def test_the_frozen_configs_hold_the_fit_winner() -> None:
+    # The F1 freeze (B4): the winning table without the cut placement
+    # channel, plus the fit-record label - provenance, out of the
+    # scoring hash by P4 review ruling 8.
+    for name in ("dev-wit-mixed-3", "dev-wit-photo-inst-sym-3"):
+        config = load_scoring_config(Path(f"configs/scoring/{name}.json"))
+        assert dict(config.fusion.weights) == {"element": 0.45,
+                                               "outline": 0.55}
+        assert config.fusion.fit_record \
+            == "validation/records/fit-dev-wit-2-76056098.json"
+        assert config.input.preparation_record.endswith("40f06be1.json")
