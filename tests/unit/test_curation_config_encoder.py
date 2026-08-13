@@ -76,3 +76,39 @@ def test_the_encoder_model_and_dimension_move_the_config_hash() -> None:
     assert curation_config_hash(
         make_config(**{"providers.encoder": moved_dimension}),
         hashes) != base
+
+
+def test_input_canvas_px_parses_on_the_encoder_alone() -> None:
+    slot = dict(OPENROUTER_ENCODER)
+    slot["input_canvas_px"] = 512
+    config = make_config(**{"providers.encoder": slot})
+    assert config.providers.encoder.input_canvas_px == 512
+    chat = {
+        "provider": "fake", "model": None, "instruction_template": None,
+        "dimension": None, "probability_sum_tolerance": None,
+        "input_canvas_px": 512,
+    }
+    with pytest.raises(ConfigError, match="input_canvas_px"):
+        make_config(**{"providers.classifier": chat})
+
+
+def test_input_canvas_px_is_absent_from_the_document_at_none() -> None:
+    # The omission rule: a config released before the field keeps
+    # its document and thus its hash.
+    from pool.curation.config import config_to_json_value
+
+    base = make_config()
+    assert base.providers.encoder.input_canvas_px is None
+    document = config_to_json_value(base)
+    assert "input_canvas_px" not in document["providers"]["encoder"]
+    hashes = {name: "a" * 64
+              for name in ("corpus", "text_coverage", "classifier",
+                           "object_size", "encoder")}
+    slot = dict(OPENROUTER_ENCODER)
+    plain = curation_config_hash(
+        make_config(**{"providers.encoder": slot}), hashes)
+    sized = dict(OPENROUTER_ENCODER)
+    sized["input_canvas_px"] = 512
+    moved = curation_config_hash(
+        make_config(**{"providers.encoder": sized}), hashes)
+    assert moved != plain

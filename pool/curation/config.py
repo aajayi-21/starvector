@@ -132,9 +132,10 @@ class OpenRouterSection:
 class SlotSection:
     provider: str
     model: str | None                       # slot-level override of default_model
-    instruction_template: str | None        # required for openrouter slots
-    dimension: int | None                   # required for the fake encoder
+    instruction_template: str | None        # required for openrouter chat slots
+    dimension: int | None                   # required for the encoder slot
     probability_sum_tolerance: float | None  # required for the openrouter classifier
+    input_canvas_px: int | None             # encoder alone: canonical input long side
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +219,17 @@ class _Node:
         if minimum is not None and value < minimum:
             raise ConfigError(f"{self._path}.{key}: must be at least {minimum}")
         return value
+
+    def absent_or_int(self, key: str,
+                      minimum: int | None = None) -> int | None:
+        """An int field that can be missing from the document.
+
+        Missing and null read the same, thus a config released
+        before the field keeps its document and its hash.
+        """
+        if key not in self._raw:
+            return None
+        return self.opt_int(key, minimum)
 
     def opt_int(self, key: str, minimum: int | None = None) -> int | None:
         if self._raw.get(key) is None and key in self._raw:
@@ -337,6 +349,7 @@ def _parse_slot(node: _Node, slot: str) -> SlotSection:
         probability_sum_tolerance=node.opt_float(
             "probability_sum_tolerance", low=0.0, high=1.0, low_open=True
         ),
+        input_canvas_px=node.absent_or_int("input_canvas_px", minimum=1),
     )
     node.finish()
     path = f"providers.{slot}"
@@ -353,6 +366,10 @@ def _parse_slot(node: _Node, slot: str) -> SlotSection:
         # The chat default_model must not leak into an embeddings
         # slot - a silent fallback fails at the endpoint alone.
         raise ConfigError(f"{path}.model: required for the openrouter encoder")
+    if slot != "encoder" and section.input_canvas_px is not None:
+        raise ConfigError(
+            f"{path}.input_canvas_px: the encoder slot alone reads a "
+            "canonical input size")
     return section
 
 
@@ -484,13 +501,18 @@ def load_curation_config(path: Path) -> CurationConfig:
 
 
 def _slot_to_json(slot: SlotSection) -> dict[str, JsonValue]:
-    return {
+    document: dict[str, JsonValue] = {
         "provider": slot.provider,
         "model": slot.model,
         "instruction_template": slot.instruction_template,
         "dimension": slot.dimension,
         "probability_sum_tolerance": slot.probability_sum_tolerance,
     }
+    # Omitted at None: a config released before the field keeps its
+    # document and thus its hash.
+    if slot.input_canvas_px is not None:
+        document["input_canvas_px"] = slot.input_canvas_px
+    return document
 
 
 def config_to_json_value(config: CurationConfig) -> dict[str, JsonValue]:

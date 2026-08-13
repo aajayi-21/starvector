@@ -86,3 +86,51 @@ def test_s06_and_s07_run_through_the_patched_boundary(
                          through="s07-diversity")
     assert again.halted_at is None
     assert calls == []
+
+
+def test_the_canonical_input_rule_bounds_and_forks_the_vectors(
+        tmp_path, monkeypatch) -> None:
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    from providers.openrouter.client import OpenRouterClient
+    from pool.curation.run import _vector_space_hash
+
+    sides: list[int] = []
+
+    def measuring_post(self, body):
+        for item in body["input"]:
+            url = item["content"][-1]["image_url"]["url"]
+            png = base64.b64decode(url.split(",", 1)[1])
+            with Image.open(BytesIO(png)) as image:
+                sides.append(max(image.size))
+        rows = []
+        for index, item in enumerate(body["input"]):
+            seed = int(sha256_hex(canonical_json(item))[:8], 16)
+            values = np.random.default_rng(seed).normal(size=DIMENSION)
+            rows.append({"index": index, "embedding": values.tolist()})
+        return {"data": rows}
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-test-key")
+    monkeypatch.setattr(OpenRouterClient, "post_embeddings",
+                        measuring_post)
+    slot = dict(ENCODER_SLOT)
+    slot["input_canvas_px"] = 64
+    config = make_config(**{"providers.encoder": slot})
+    report = run_pipeline(config, tmp_path / "data", tmp_path / "releases",
+                          through="s07-diversity")
+    assert report.halted_at is None
+    # Each encoder input is the canonical render: long side 64.
+    assert sides and all(side == 64 for side in sides)
+    # The vector cache forks by the combined vector-space hash.
+    embedding_hash = embedding_config_hash(EmbeddingSlotConfig(
+        slot="encoder", model="test/embed", dimension=DIMENSION,
+        encoding_format="float", instruction=None))
+    combined = _vector_space_hash(embedding_hash, 64)
+    assert combined != embedding_hash
+    assert (tmp_path / "data" / "cache" / "vectors"
+            / combined[:8]).exists()
+    assert not (tmp_path / "data" / "cache" / "vectors"
+                / embedding_hash[:8]).exists()

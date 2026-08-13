@@ -659,11 +659,32 @@ def run_s05_object(
     )
 
 
+def _vector_space_hash(encoder_hash: str,
+                       input_canvas_px: int | None) -> str:
+    """The identity of one vector space: encoder plus input rule.
+
+    With a canonical input rule the cache tree forks - vectors of
+    raw bytes and vectors of the canonical render must not mix.
+    """
+    if input_canvas_px is None:
+        return encoder_hash
+    from pool.preparation.stages.outline import photo_source_token
+
+    return sha256_hex(f"{encoder_hash}:{photo_source_token(input_canvas_px)}")
+
+
 def _vectors_for(
-    tree: ArtifactTree, encoder: ImageEncoder, image_ids: Sequence[str]
+    tree: ArtifactTree, encoder: ImageEncoder, image_ids: Sequence[str],
+    input_canvas_px: int | None = None,
 ) -> np.ndarray:
-    """Encoder vectors for the given ids, through the .npy cache."""
-    encoder_hash = encoder.config_hash
+    """Encoder vectors for the given ids, through the .npy cache.
+
+    With input_canvas_px each image goes through the canonical
+    photograph render first - long side scaled to the given value -
+    thus one bounded encoder POST group for each chunk, and the
+    .npy cache keys by the combined vector-space hash.
+    """
+    encoder_hash = _vector_space_hash(encoder.config_hash, input_canvas_px)
     vectors: dict[str, np.ndarray] = {}
     missing: list[str] = []
     for image_id in image_ids:
@@ -674,7 +695,13 @@ def _vectors_for(
             missing.append(image_id)
     for start in range(0, len(missing), _BYTE_SLICE):
         chunk = missing[start : start + _BYTE_SLICE]
-        encoded = encoder.encode_images(_load_bytes(tree.data_root, chunk))
+        loaded = _load_bytes(tree.data_root, chunk)
+        if input_canvas_px is not None:
+            from pool.preparation.stages.outline import photo_canonical
+
+            loaded = [photo_canonical(item, input_canvas_px)
+                      for item in loaded]
+        encoded = encoder.encode_images(loaded)
         for image_id, vector in zip(chunk, encoded):
             path = mf.vector_path(tree.data_root, encoder_hash, image_id)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -695,7 +722,8 @@ def run_s06_neardup(
     areas = [records[i].width * records[i].height for i in ids]
     posts_before = int(getattr(encoder, "post_count", 0))
     vectors = (
-        _vectors_for(tree, encoder, ids)
+        _vectors_for(tree, encoder, ids,
+                     config.providers.encoder.input_canvas_px)
         if ids
         else np.zeros((0, 1), dtype=np.float32)
     )
@@ -709,7 +737,10 @@ def run_s06_neardup(
         input_count=len(ids),
         survivors=len(result.survivors),
         rejections=result.rejections,
-        config_echo={"similarity_threshold": config.neardup.similarity_threshold},
+        config_echo={
+            "similarity_threshold": config.neardup.similarity_threshold,
+            "input_canvas_px": config.providers.encoder.input_canvas_px,
+        },
         provider_hashes={"encoder": encoder.config_hash},
         counters={},
         bytes_retrieved=0,
@@ -733,7 +764,8 @@ def run_s07_diversity(
     id_to_source = _id_to_source(tree, "s06-neardup")
     posts_before = int(getattr(encoder, "post_count", 0))
     vectors = (
-        _vectors_for(tree, encoder, ids)
+        _vectors_for(tree, encoder, ids,
+                     config.providers.encoder.input_canvas_px)
         if ids
         else np.zeros((0, 1), dtype=np.float32)
     )
@@ -757,6 +789,7 @@ def run_s07_diversity(
             "cluster_cap": config.diversity.cluster_cap,
             "kmeans_max_iterations": config.diversity.kmeans_max_iterations,
             "cluster_seed": config.seeds.cluster_seed,
+            "input_canvas_px": config.providers.encoder.input_canvas_px,
         },
         provider_hashes={"encoder": encoder.config_hash},
         counters={},

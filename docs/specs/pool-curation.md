@@ -786,10 +786,13 @@ The owner runs each command, with the key in the environment.
    100 MB of metadata. s02 fetches about 400 MB — the fetch
    sequence is salt-seeded, and small drift from transient fetch
    errors is expected and recorded. s03 through s05 make about zero
-   posts (response caches key by image id and slot hash). s06 makes
-   about 12 to 60 embedding posts for 728 images (batched) and
-   removes a nonzero count this time. s07 makes zero posts. The run
-   stops at the s08 review gate with exit code 3.
+   posts (response caches key by image id and slot hash). s06 scales
+   each image to the 512 canonical render first (the
+   `input_canvas_px` rule — raw 1280-pixel thumbnails ran through
+   the endpoint timeout), makes about 15 to 30 embedding posts for 728
+   images (batched), and removes a nonzero count this time. s07
+   makes zero posts. The run stops at the s08 review gate with exit
+   code 3.
 2. Review `s08-review/contact_sheet.html` in the new tree, then
    write `review.json` there with the verdict.
 3. The same command again — s09 writes
