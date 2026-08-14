@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Api, DayApi, PracticeApi } from "../../src/api/client";
+import type { Api } from "../../src/api/client";
 import { composeApi } from "../../src/api/client";
 import { ApiError, friendlyMessage } from "../../src/api/types";
 
@@ -8,72 +8,44 @@ function spy(name: string): (...args: unknown[]) => Promise<string> {
   return () => Promise.resolve(name);
 }
 
-const live = {
-  getDay: spy("live:getDay"),
-  submit: spy("live:submit"),
-  getReveal: (day?: string) =>
-    Promise.resolve(day === undefined ? "live:getReveal" : "live:byDay"),
-  imageUrl: () => "live:imageUrl",
-  getPracticeDays: spy("live:getPracticeDays"),
-  scorePractice: spy("live:scorePractice"),
-} as unknown as DayApi & PracticeApi;
+function adapter(prefix: string): Api {
+  return {
+    getDay: spy(`${prefix}:getDay`),
+    submit: spy(`${prefix}:submit`),
+    getReveal: (day?: string) =>
+      Promise.resolve(
+        day === undefined ? `${prefix}:getReveal` : `${prefix}:byDay`,
+      ),
+    imageUrl: () => `${prefix}:imageUrl`,
+    getPracticeDays: spy(`${prefix}:getPracticeDays`),
+    scorePractice: spy(`${prefix}:scorePractice`),
+    getHistory: spy(`${prefix}:getHistory`),
+    getLeaderboard: spy(`${prefix}:getLeaderboard`),
+    getSubmission: spy(`${prefix}:getSubmission`),
+    getMe: spy(`${prefix}:getMe`),
+  } as unknown as Api;
+}
 
-const mock = {
-  getDay: spy("mock:getDay"),
-  submit: spy("mock:submit"),
-  getReveal: (day?: string) =>
-    Promise.resolve(day === undefined ? "mock:getReveal" : "mock:byDay"),
-  imageUrl: () => "mock:imageUrl",
-  getPracticeDays: spy("mock:getPracticeDays"),
-  scorePractice: spy("mock:scorePractice"),
-  getHistory: spy("mock:getHistory"),
-  getLeaderboard: spy("mock:getLeaderboard"),
-  getSubmission: spy("mock:getSubmission"),
-  getMe: spy("mock:getMe"),
-} as unknown as Api;
+const live = adapter("live");
+const mock = adapter("mock");
 
 describe("the composite client", () => {
-  const api = composeApi(live, mock, "composite");
-
-  it("routes live surfaces to the live adapter", async () => {
+  it("serves every surface live (spec S2 made the contract real)", async () => {
+    const api = composeApi(live, mock, "composite");
     expect(await api.getDay()).toBe("live:getDay");
-    expect(
-      await api.submit({
-        impressions: [],
-        canvas_strokes: [],
-        groups: [],
-        relations: [],
-        pasted_text: null,
-      }),
-    ).toBe("live:submit");
-    expect(await api.getPracticeDays()).toBe("live:getPracticeDays");
-    expect(api.imageUrl("x")).toBe("live:imageUrl");
-  });
-
-  it("routes contract surfaces to the mock adapter", async () => {
-    expect(await api.getHistory()).toBe("mock:getHistory");
-    expect(await api.getLeaderboard("2026-08-01")).toBe("mock:getLeaderboard");
-    expect(await api.getMe()).toBe("mock:getMe");
-  });
-
-  it("answers the constant 404 for stored submissions", async () => {
-    // The mock's fabricated record must never displace the genuine
-    // sent copy on the reveal screen — the composite refuses until
-    // the backend phase serves GET /api/submission.
-    await expect(api.getSubmission("2026-08-01")).rejects.toMatchObject({
-      status: 404,
-    });
-  });
-
-  it("splits getReveal on the day argument", async () => {
+    expect(await api.getHistory()).toBe("live:getHistory");
+    expect(await api.getLeaderboard("2026-08-01")).toBe("live:getLeaderboard");
+    expect(await api.getSubmission("2026-08-01")).toBe("live:getSubmission");
+    expect(await api.getMe()).toBe("live:getMe");
     expect(await api.getReveal()).toBe("live:getReveal");
-    expect(await api.getReveal("2026-08-01")).toBe("mock:byDay");
+    expect(await api.getReveal("2026-08-01")).toBe("live:byDay");
   });
 
   it("serves everything from the mock in full-mock mode", async () => {
     const full = composeApi(live, mock, "mock");
     expect(await full.getDay()).toBe("mock:getDay");
-    expect(await full.getReveal()).toBe("mock:getReveal");
+    expect(await full.getHistory()).toBe("mock:getHistory");
+    expect(await full.getReveal("2026-08-01")).toBe("mock:byDay");
   });
 });
 
