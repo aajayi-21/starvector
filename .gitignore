@@ -222,3 +222,11 @@ __marimo__/
 
 # The permanent trial store (spec S1 - play records, backed up, not code)
 /store/
+
+# web/ toolchain (spec W1)
+web/node_modules/
+web/.vite/
+web/test-results/
+web/playwright-report/
+web/dev-dist/
+*.tsbuildinfo
