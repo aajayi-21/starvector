@@ -164,3 +164,14 @@ def test_the_port_range_is_checked() -> None:
         parse_service_config(_config_value(port=0), "test")
     with pytest.raises(ServiceConfigError, match="port"):
         parse_service_config(_config_value(port=True), "test")
+
+
+def test_closes_at_utc_is_optional_and_strict() -> None:
+    absent = parse_service_config(_config_value(), "test")
+    assert absent.closes_at_utc is None
+    given = parse_service_config(
+        _config_value(closes_at_utc="22:00"), "test")
+    assert given.closes_at_utc == "22:00"
+    for bad in ("24:00", "9:00", "22:60", "2200", 2200, ""):
+        with pytest.raises(ServiceConfigError, match="closes_at_utc"):
+            parse_service_config(_config_value(closes_at_utc=bad), "test")

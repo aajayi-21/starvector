@@ -348,6 +348,14 @@ def create_app(service_config: ServiceConfig,
             return Response(content=_NO_DAY, status_code=404,
                             media_type="application/json")
         record = store.read_day_record(root, day)
+        # closes_at is display-only (spec S2 ruling 3): a pure
+        # function of the day string and the config, with no target
+        # dependence, thus R3 holds by construction.
+        closes_at = None
+        if (record.status == "open"
+                and service_config.closes_at_utc is not None):
+            closes_at = (f"{record.day}T"
+                         f"{service_config.closes_at_utc}:00+00:00")
         value = {
             "day": record.day,
             "trial_code": record.trial_code,
@@ -357,6 +365,7 @@ def create_app(service_config: ServiceConfig,
             "submitted": player in store.list_submissions(root, day),
             "relation_vocabulary": relation_vocabulary,
             "canvas_px": canvas_px,
+            "closes_at": closes_at,
         }
         if record.status == "revealed":
             value["target_id"] = record.target_id
