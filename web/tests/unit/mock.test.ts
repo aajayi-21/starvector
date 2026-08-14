@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { makeMockApi } from "../../src/api/mock";
-import { ApiError } from "../../src/api/types";
 
 const TODAY = "2026-08-14";
 

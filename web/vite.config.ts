@@ -1,9 +1,12 @@
+import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { defineConfig } from "vitest/config";
 
+const here = path.dirname(fileURLToPath(import.meta.url));
 const proxyTarget = process.env.VITE_PROXY_TARGET ?? "http://127.0.0.1:8000";
 const proxy = {
   "/api": { target: proxyTarget },
@@ -54,6 +57,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,woff2,png,webmanifest}"],
+        // The operator console (spec S2 ruling 4) stays out of the
+        // worker: not precached, not fallback-served.
+        globIgnores: ["dev.html", "assets/dev-*"],
         navigateFallback: "index.html",
         navigateFallbackDenylist: [
           /^\/api\//,
@@ -65,6 +71,14 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(here, "index.html"),
+        dev: path.resolve(here, "dev.html"),
+      },
+    },
+  },
   server: { proxy },
   preview: { proxy },
   test: {

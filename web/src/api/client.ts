@@ -17,7 +17,6 @@ import type {
   SubmissionAck,
   WireRecord,
 } from "./types";
-import { ApiError } from "./types";
 
 export interface DayApi {
   getDay(): Promise<DayView>;
