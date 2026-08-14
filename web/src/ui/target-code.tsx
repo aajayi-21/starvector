@@ -14,24 +14,13 @@ export function TargetCode(props: { code: string }): React.JSX.Element {
       >
         Today's target
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="target-code-row">
         {[...props.code].map((cell, index) => (
           <span
             // The code is positional; the index is the identity.
             // biome-ignore lint/suspicious/noArrayIndexKey: positional cells
             key={index}
-            style={{
-              width: 58,
-              height: 74,
-              display: "grid",
-              placeItems: "center",
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-divider)",
-              borderRadius: 8,
-              fontSize: 36,
-              fontWeight: 500,
-              fontVariantNumeric: "tabular-nums",
-            }}
+            className="target-code-cell"
           >
             {cell}
           </span>

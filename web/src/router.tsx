@@ -16,6 +16,7 @@ import { HistoryScreen } from "./screens/history";
 import { PracticeScreen } from "./screens/practice";
 import { RevealScreen } from "./screens/reveal";
 import { TodayScreen } from "./screens/today";
+import { InstallHint } from "./ui/install-hint";
 import { Nav } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
 
@@ -23,6 +24,7 @@ function Shell(): React.JSX.Element {
   return (
     <>
       <OfflineBanner />
+      <InstallHint />
       <Nav />
       <Outlet />
     </>

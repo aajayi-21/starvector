@@ -33,3 +33,46 @@
   padding: 24px 28px 28px;
   align-items: start;
 }
+
+/* The target code row (mock 1a / 1f). */
+.target-code-row {
+  display: flex;
+  gap: 8px;
+}
+.target-code-cell {
+  flex: 1 1 0;
+  max-width: 58px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 8px;
+  font-size: 36px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The 390 px pass (spec W1 B10, mock 1f). */
+@media (max-width: 720px) {
+  .today-columns,
+  .reveal-columns,
+  .reveal-tables,
+  .history-columns {
+    grid-template-columns: 1fr;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .nav {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+  .target-code-cell {
+    max-width: none;
+    height: 56px;
+    font-size: 26px;
+  }
+  .btn {
+    min-height: 44px;
+  }
+}
