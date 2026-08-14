@@ -25,3 +25,11 @@
   padding: 0 28px 28px;
   align-items: start;
 }
+
+.history-columns {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  padding: 24px 28px 28px;
+  align-items: start;
+}
