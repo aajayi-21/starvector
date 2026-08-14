@@ -491,19 +491,9 @@ def create_app(service_config: ServiceConfig,
                                  "detail": str(error)}, status_code=400)
         return JSONResponse({"day": record.day})
 
-    @app.get("/api/reveal")
-    def reveal_view() -> Response:
-        day = store.latest_day(root)
-        if day is None:
-            return Response(content=_NOT_REVEALED, status_code=404,
-                            media_type="application/json")
-        record = store.read_day_record(root, day)
-        if record.status != "revealed":
-            return Response(content=_NOT_REVEALED, status_code=404,
-                            media_type="application/json")
-        row = store.read_json_or_none(
-            store.trial_row_path(root, day, player))
-        value = {
+    def _reveal_value(record: store.DayRecord, row: dict | None) -> dict:
+        """The reveal document for one revealed day (spec S2 B2)."""
+        return {
             "day": record.day,
             "target_id": record.target_id,
             "secret": record.secret,
@@ -515,7 +505,24 @@ def create_app(service_config: ServiceConfig,
                 "target_rank": row["target_rank"]},
             "report": [] if row is None else row["report"],
         }
-        return JSONResponse(value)
+
+    @app.get("/api/reveal")
+    def reveal_view(day: str | None = None) -> Response:
+        # No argument names the latest day. A named day serves only
+        # when that day is revealed - one constant refusal for the
+        # unknown, open, and closed-unrevealed conditions (R3).
+        if day is None:
+            day = store.latest_day(root)
+        if day is None or day not in store.list_days(root):
+            return Response(content=_NOT_REVEALED, status_code=404,
+                            media_type="application/json")
+        record = store.read_day_record(root, day)
+        if record.status != "revealed":
+            return Response(content=_NOT_REVEALED, status_code=404,
+                            media_type="application/json")
+        row = store.read_json_or_none(
+            store.trial_row_path(root, day, player))
+        return JSONResponse(_reveal_value(record, row))
 
     @app.get("/image/{image_id}")
     def image(image_id: str) -> Response:
