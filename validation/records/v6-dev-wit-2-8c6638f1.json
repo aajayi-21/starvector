@@ -1,0 +1,33 @@
+{
+  "code_version": "dev",
+  "created_at": "2026-08-14T00:24:24.120924+00:00",
+  "date": "",
+  "dev_only": true,
+  "fit_config_hash": "760560981c4bf2f347fe46dce637b524ddd6a6415978c0a2ee399f5599f056b5",
+  "generator_config_hash": "fe788a3383f4d3c431fb8fa093e6c7aaf392cc24548b24b042e3bc5a4c8ec753",
+  "harness": "v6",
+  "harness_config_hash": "8c6638f1de6454599314967427227975fec936963392d45a9995bb8d3af9b57d",
+  "index_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "levels": [
+    0,
+    1
+  ],
+  "notes": "",
+  "preparation_version_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "reviewer": "",
+  "scoring_config_hash": "d084e52961db9a2367862854faa9eff629ebab14849d4e5a184bab28ddc4d32a",
+  "synthetic_count": 200,
+  "synthetic_seed": 20260812,
+  "tag": "dev-wit-2",
+  "tier1_recall": {
+    "10": 1.0,
+    "25": 1.0,
+    "50": 1.0
+  },
+  "tier2_recall": {
+    "10": 0.9925,
+    "5": 0.9925
+  },
+  "trial_count": 400,
+  "verdict": "pending"
+}
