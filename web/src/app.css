@@ -9,3 +9,19 @@
   flex: 1;
   align-items: start;
 }
+
+.reveal-columns {
+  display: grid;
+  grid-template-columns: 1fr 340px 300px;
+  gap: 20px;
+  padding: 12px 28px 20px;
+  align-items: start;
+}
+
+.reveal-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 0 28px 28px;
+  align-items: start;
+}
