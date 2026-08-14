@@ -12,6 +12,7 @@ import math
 import secrets
 import sys
 import threading
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -37,11 +38,58 @@ POPULATION_SPREAD = 0.15
 # path, with no target-dependent work before it.
 _NOT_REVEALED = b'{"detail":"not revealed"}'
 _NO_DAY = b'{"detail":"no day open"}'
+_NO_SUBMISSION = b'{"detail":"no submission"}'
 _DEV_OFF = b'{"detail":"not found"}'
 _NO_PRACTICE = b'{"detail":"no revealed day"}'
 _NOT_PRACTICE = b'{"detail":"not a practice day"}'
 
 _UI_ROOT = Path(__file__).parent / "ui"
+
+
+def _skill_value(ps: list[float]) -> dict | None:
+    """The history skill values, or None (spec S2 section 3).
+
+    None is a defined wire value for two conditions: no revealed
+    trial with a stored row, and each stored p equal to 1.0 - the
+    aggregation refuses an S statistic of zero there. The numbers
+    are the /history page's, computed with the same functions.
+    """
+    if not ps or all(p == 1.0 for p in ps):
+        return None
+    summary = skill_summary(ps, unbiased=(len(ps) >= 2))
+    shrunk = shrunk_log_theta(summary.log_theta, summary.n,
+                              POPULATION_MEAN, POPULATION_SPREAD)
+    return {
+        "theta": summary.theta,
+        "shrunk": math.exp(shrunk),
+        "evidence_p": summary.evidence_p,
+        "n": summary.n,
+    }
+
+
+def _streak(root: Path, player: str) -> int:
+    """Spec S2 section 3: the count of calendar days in an unbroken
+    run that ends on the newest revealed day, each day holding the
+    player's stored submission. Zero without a revealed day or when
+    the newest revealed day holds none. The open day cannot enter -
+    it lies after the run's last day, thus the value is a function
+    of revealed days and the player's own records alone (R4).
+    """
+    newest = None
+    for day in reversed(store.list_days(root)):
+        if store.read_day_record(root, day).status == "revealed":
+            newest = day
+            break
+    if newest is None:
+        return 0
+    count = 0
+    cursor = date.fromisoformat(newest)
+    while store.submission_path(
+            root, cursor.isoformat(), player).is_file():
+        count += 1
+        cursor -= timedelta(days=1)
+    return count
+
 
 
 def _activates_weighted_channel(submission: Submission,
@@ -523,6 +571,82 @@ def create_app(service_config: ServiceConfig,
         row = store.read_json_or_none(
             store.trial_row_path(root, day, player))
         return JSONResponse(_reveal_value(record, row))
+
+    @app.get("/api/history")
+    def history_view() -> Response:
+        # Revealed days that hold the player's trial row, newest
+        # first (spec S2 B3). Read-only against the store.
+        days = []
+        ps: list[float] = []
+        for day in reversed(store.list_days(root)):
+            record = store.read_day_record(root, day)
+            if record.status != "revealed":
+                continue
+            row = store.read_json_or_none(
+                store.trial_row_path(root, day, player))
+            if row is None:
+                continue
+            ps.append(float(row["p"]))
+            days.append({
+                "day": day,
+                "trial_code": record.trial_code,
+                "p": row["p"],
+                "target_rank": row["target_rank"],
+                "decoy_count": row["decoy_count"],
+            })
+        return JSONResponse({"days": days, "skill": _skill_value(ps)})
+
+    @app.get("/api/submission")
+    def submission_view(day: str | None = None) -> Response:
+        # The player's own stored record - an echo of their input
+        # with no target information and no score. The player name
+        # comes from the config alone. The day membership check
+        # keeps the query string out of the path arithmetic.
+        if day is None:
+            day = store.latest_day(root)
+        if day is None or day not in store.list_days(root):
+            return Response(content=_NO_SUBMISSION, status_code=404,
+                            media_type="application/json")
+        stored = store.read_json_or_none(
+            store.submission_path(root, day, player))
+        if stored is None:
+            return Response(content=_NO_SUBMISSION, status_code=404,
+                            media_type="application/json")
+        return JSONResponse({"trial_id": stored["trial_id"],
+                             "record": stored["record"]})
+
+    @app.get("/api/leaderboard")
+    def leaderboard_view(day: str | None = None) -> Response:
+        # Revealed days alone (spec S2 B3): the one configured
+        # player's row from the stored trial row, or no rows.
+        if day is None or day not in store.list_days(root):
+            return Response(content=_NOT_REVEALED, status_code=404,
+                            media_type="application/json")
+        record = store.read_day_record(root, day)
+        if record.status != "revealed":
+            return Response(content=_NOT_REVEALED, status_code=404,
+                            media_type="application/json")
+        row = store.read_json_or_none(
+            store.trial_row_path(root, day, player))
+        rows = [] if row is None else [{
+            "player": player,
+            "p": row["p"],
+            "target_rank": row["target_rank"],
+            "decoy_count": row["decoy_count"],
+            "streak": _streak(root, player),
+        }]
+        return JSONResponse({"day": day, "rows": rows})
+
+    @app.get("/api/me")
+    def me_view() -> Response:
+        # The reminder and public flags have no storage at this
+        # time (spec S2 section 3).
+        return JSONResponse({
+            "player": player,
+            "streak": _streak(root, player),
+            "reminder": False,
+            "public": False,
+        })
 
     @app.get("/image/{image_id}")
     def image(image_id: str) -> Response:
