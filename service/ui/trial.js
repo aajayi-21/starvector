@@ -464,6 +464,19 @@ function startTrialPage() {
     byId(slotId).appendChild(byId("intake-surface"));
   }
 
+  function swapState(next, slotId) {
+    /* The paste textarea is live DOM inside the moved surface -
+     * snapshot it into the outgoing state and restore the incoming
+     * one, or practice notes ride into the permanent daily record. */
+    var paste = byId("paste-input");
+    state.pastedText = paste.value.trim() === "" ? null : paste.value;
+    state = next;
+    paste.value = state.pastedText || "";
+    moveIntakeSurface(slotId);
+    redraw();
+    refreshControls();
+  }
+
   function enterPractice() {
     fetch("/api/practice").then(function (response) {
       if (!response.ok) {
@@ -484,10 +497,7 @@ function startTrialPage() {
         });
         byId("practice-empty").classList.add("hidden");
         startPalette();
-        moveIntakeSurface("practice-intake-slot");
-        state = practiceState;
-        redraw();
-        refreshControls();
+        swapState(practiceState, "practice-intake-slot");
         byId("practice-result").classList.add("hidden");
         show("view-practice");
       });
@@ -497,10 +507,7 @@ function startTrialPage() {
   }
 
   function leavePractice() {
-    moveIntakeSurface("day-intake-slot");
-    state = dayState;
-    redraw();
-    refreshControls();
+    swapState(dayState, "day-intake-slot");
     show(dayView);
   }
 
@@ -509,6 +516,7 @@ function startTrialPage() {
     if (!day) { return; }
     var paste = byId("paste-input").value;
     state.pastedText = paste.trim() === "" ? null : paste;
+    byId("practice-score-button").disabled = true;
     byId("practice-note").textContent = "scoring…";
     byId("practice-error").textContent = "";
     fetch("/api/practice/score", {
@@ -517,6 +525,7 @@ function startTrialPage() {
       body: JSON.stringify({day: day, record: assembleRecord(state)}),
     }).then(function (response) {
       return response.json().then(function (body) {
+        byId("practice-score-button").disabled = false;
         byId("practice-note").textContent = "";
         if (!response.ok) {
           byId("practice-error").textContent =
@@ -553,6 +562,7 @@ function startTrialPage() {
         byId("practice-result").classList.remove("hidden");
       });
     }).catch(function () {
+      byId("practice-score-button").disabled = false;
       byId("practice-note").textContent = "the server did not answer";
     });
   }

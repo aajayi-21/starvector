@@ -15,7 +15,7 @@ def test_the_record_holds_the_stage_numbers() -> None:
                        clock=lambda: "2026-08-13T00:00:00+00:00")
     assert record["count"] == 16
     assert record["budget_ms"] == 50.0
-    assert record["encoders"] == "fake"
+    assert record["vectors"] == "synthetic"
     assert record["created_at"] == "2026-08-13T00:00:00+00:00"
     stages = {"render", "similarity_table", "tier1", "tier2",
               "element_total", "outline", "normalize", "fuse", "rank",

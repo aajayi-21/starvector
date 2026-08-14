@@ -515,3 +515,31 @@ def test_a_plain_failure_does_not_split(tmp_path: Path) -> None:
         encoder.encode_texts(["a", "b", "c"])
     assert not isinstance(caught.value, OpenRouterTimeoutError)
     assert calls == [3]
+
+
+def test_concurrent_same_key_cache_writes_hold(tmp_path: Path) -> None:
+    # Two writers of one key - two practice scores of one sketch -
+    # each rename their own sibling file. The entry stays readable.
+    import threading
+
+    from providers.openrouter.cache import (load_cached_response,
+                                            store_response)
+
+    path = tmp_path / "aa" / "key.json"
+    entry = {"key": "key", "embedding": [1.0, 2.0]}
+    failures: list[Exception] = []
+
+    def write():
+        try:
+            for _ in range(50):
+                store_response(path, dict(entry))
+        except Exception as error:  # noqa: BLE001 - the race at test
+            failures.append(error)
+
+    threads = [threading.Thread(target=write) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert failures == []
+    assert load_cached_response(path) == entry

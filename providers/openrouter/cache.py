@@ -8,6 +8,7 @@ read the cache and get the same bytes.
 
 import json
 import os
+import threading
 from pathlib import Path
 
 from core.canonical import JsonValue, canonical_json_pretty
@@ -21,10 +22,15 @@ def response_cache_path(cache_root: Path, config_hash: str, key: str) -> Path:
 def _write_bytes_atomic(path: Path, data: bytes) -> None:
     """Write bytes through a temporary sibling file, then rename.
 
-    This helper stays local because providers do not import pool code.
+    This helper stays local because providers do not import pool
+    code. The sibling name is one-writer-unique: two concurrent
+    writes of one key - two practice scores of one sketch, or two
+    players with one drawing - each rename their own file, and the
+    last writer wins with equal content.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(
+        f"{path.name}.tmp.{os.getpid()}.{threading.get_ident()}")
     tmp.write_bytes(data)
     os.replace(tmp, path)
 

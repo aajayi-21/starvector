@@ -1,10 +1,12 @@
 """The P5 bench tool: local-stage timings on a synthetic pool.
 
 Spec P5 item B7 (R6: measured, not asserted). Builds a synthetic
-pool index at a given count and dimension, one section 18 submission
-shape (8 text atoms plus one drawing), warm fake encoders, and times
-each local stage - render, encode, the channels, normalization,
-fusion, ranking - at the median across passes. The numbers land in a
+pool index at a given count and dimension and one section 18
+submission shape (8 text atoms plus one drawing) with synthesized
+unit vectors - no encoder runs, because the embedding POST sits out
+of the local budget (ruling 3) - and times each local stage:
+render, the channels, normalization, fusion, ranking, at the median
+across passes. The numbers land in a
 committed record with the machine noted, and the ruling-3 verdict on
 the 50 ms line is the owner's: a shortfall on this machine is a
 recorded result and a standing item for the production phase, not an
@@ -227,7 +229,7 @@ def run_bench(count: int, dimension: int, vocabulary_count: int,
         "repeat": repeat,
         "seed": seed,
         "weights": dict(WEIGHTS),
-        "encoders": "fake",
+        "vectors": "synthetic",
         "stage_ms": {name: quantized(value)
                      for name, value in stage_ms.items()},
         "budget_ms": BUDGET_MS,
