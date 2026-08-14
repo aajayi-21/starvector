@@ -1,0 +1,16 @@
+# Daily offsite backup of the permanent store (spec S2 section 4).
+# The store is the one irreplaceable artifact (CLAUDE.md I4).
+
+[Unit]
+Description=Starvector restic backup
+
+[Service]
+Type=oneshot
+# restic-env holds RESTIC_REPOSITORY, RESTIC_PASSWORD, and a
+# remote credential that cannot delete (append-only shape).
+EnvironmentFile=/etc/starvector/restic-env
+ExecStart=/usr/bin/restic backup \
+    /srv/starvector/app/store \
+    /srv/starvector/app/data \
+    /etc/starvector
+ExecStartPost=/usr/bin/restic check --read-data-subset=5%%

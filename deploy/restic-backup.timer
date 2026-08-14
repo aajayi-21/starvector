@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Starvector backup
+
+[Timer]
+# Out of the game window; adjust with the close time.
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,8 @@
+# /etc/starvector/restic-env  (root:root, chmod 600)
+# Use a remote credential that CANNOT delete - for Backblaze B2,
+# an application key created without deleteFiles; for rest-server,
+# --append-only. A compromised box then cannot remove the history.
+RESTIC_REPOSITORY=b2:starvector-backup:server
+RESTIC_PASSWORD=replace-me
+B2_ACCOUNT_ID=replace-me
+B2_ACCOUNT_KEY=replace-me
