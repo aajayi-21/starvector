@@ -83,17 +83,42 @@ The interface offers eight fixed swatches. Ink emits no `color` key.
 
 | name | value |
 |---|---|
-| ink | `#1a1c1e` (no key emitted) |
-| red | `#c5221f` |
-| orange | `#e8710a` |
-| yellow | `#f0b429` |
-| green | `#1b6b3a` |
-| blue | `#1a73e8` |
-| purple | `#7a4ec9` |
-| brown | `#795548` |
+| ink | no key emitted — displays as the theme ink |
+| red | `#bf616a` |
+| orange | `#d08770` |
+| yellow | `#ebcb8b` |
+| green | `#a3be8c` |
+| blue | `#81a1c1` |
+| purple | `#b48ead` |
+| teal | `#8fbcbb` |
 
 A palette change is an interface change: Layer 0 accepts the format,
 not the set.
+
+### Amended 2026-08-14 (spec W1 ruling 6)
+
+The set moved to the production theming's family, and the eighth
+slot changed from brown to teal `#8fbcbb`. The 2026-08-12 values
+were: red `#c5221f`, orange `#e8710a`, yellow `#f0b429`, green
+`#1b6b3a`, blue `#1a73e8`, purple `#7a4ec9`, brown `#795548`, with
+ink shown dark (`#1a1c1e`) on the light dev canvas. The effects,
+recorded:
+
+- Stored records keep the hex they hold. The format rule is
+  unchanged, rescoring stays byte-equal, and the change reaches
+  new submissions alone.
+- The v2c gate re-runs on the new values before the first day
+  played in color on the production app. The encoder reads color — the runs of
+  2026-08-12 and 2026-08-13 measured mean absolute delta-p near
+  0.12–0.14 on the earlier, higher-chroma set — and the new set
+  is lower-chroma, thus the measurement does not hold for it.
+  `validation/colorize.py` holds the seven non-ink values and
+  updates with this table. The new record notes the palette
+  revision.
+- The dev page (`service/ui/trial.js`) keeps the 2026-08-12
+  swatches until the backend phase retires it — a recorded
+  difference, not drift. Records it sends stay correct: intake
+  checks the format, not the set.
 
 ## 6. The soundness gate (V2c)
 

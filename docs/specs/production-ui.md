@@ -4,10 +4,12 @@
 **Phase:** the frontend phase. The production player app is built
 against the dev server as it stands. The backend phase follows with
 its own spec. §7 of this document holds that phase's work items.
-**Mockup source:** the `claude.ai/design` project "Starvector
-frontend mockups" (`3b93c3db-289b-44cb-a38a-da72fa45407e`), file
-`StarVector Production UI.dc.html` with `nocturne.css` — screens
-`1a`–`1f`.
+**Mockup source:** the `claude.ai/design` project "Starvector Logo"
+(`3bee2c8f-9607-4d0a-8a9b-423c1418365b`, superseding
+`3b93c3db-289b-44cb-a38a-da72fa45407e`): screens `1a`–`1f` of
+`StarVector Production UI.dc.html` with `nocturne.css` (the
+2026-08-14 retune), the logo docs `Starvector Logo v2.dc.html`
+(adopted) and `Starvector Logo.dc.html`, and seven SVG assets (§3).
 **Architecture sections:** §22 (integrity), §18 (latency), §15 (what
 stays out of the interactive path).
 **Working agreement:** `CLAUDE.md` §2 (I4, I7), §7, §10.
@@ -49,14 +51,41 @@ backend file changes in this phase.
    mock elsewhere. §7 is the written contract the backend phase
    implements.
 
+A second set of rulings, same day — theming and the logo:
+
+5. **The `Nocturne` retune is the look.** The tokens moved to the
+   Nord family: ground `#2e3440`, surface `#3b4252`, text
+   `#eceff4`, frost accent `#88c0d0`, second accent `#81a1c1`,
+   with regenerated ramps, section colors, and shadows. Token
+   values alone — the component classes are byte-equal, thus
+   the vendored-copy refresh is a token diff.
+6. **The Nord sketch palette is the C1 palette.** Wire and display
+   use the new values, and the eighth slot changes brown → teal.
+   C1 §5 carries the dated change (its own rule: a palette
+   change is an interface change), and the v2c gate re-runs on the
+   new values. §3 holds the details.
+7. **Logo v2 is the mark, v1 stays on hand.** The nav takes
+   `starvector-logo-v2-nav.svg` — the v2 doc's offer ("put v2 in
+   the production navs") is taken. v1 is vendored, on hand.
+   The favicon keeps the rayless reduction.
+
 ## 3. The mockup source of truth
 
 The mockup project is canonical for the look: `nocturne.css` (the
-tokens and component classes) and the six screens of
-`StarVector Production UI.dc.html`. This spec does not restate
-pixel values — read them there. What the repo holds is a vendored
-copy of `nocturne.css` (see §5). When the mockup project changes,
-the copy is refreshed by hand and the change is reviewed like code.
+tokens and component classes), the six screens of
+`StarVector Production UI.dc.html`, and the logo docs with their
+SVG assets. This spec does not restate pixel values — read them
+there. What the repo holds are vendored copies (see §5). When the
+mockup project changes, the copies are refreshed by hand and the
+change is reviewed like code.
+
+**The 2026-08-14 retune (ruling 5).** The tokens moved from the
+blurple family to Nord, the component layer stayed byte-equal,
+and the sample chrome across the screens follows (canvas ground
+`#272c37`, group chips from the sketch palette). One note for the
+vendored copy: the accent's explanatory comment in `nocturne.css`
+describes the earlier blurple move — stale prose in the mockup
+source, not a value error.
 
 The `.dc.html` scaffolding (`x-dc`, `sc-for`, `{{ }}` bindings,
 `DCLogic`, `support.js`) is the mock player's runtime, not part of
@@ -75,12 +104,30 @@ client does not invent a number the row does not hold.
 **Mock-fidelity rulings** (deltas between the mock and the system
 of record, resolved here):
 
-- **Purple.** The mock's purple swatch is `#9184d9` (the `Nocturne`
-  accent), but spec C1 §5 fixes purple at `#7a4ec9`, and the mock's
-  own caption says the spec colors hold. Ruling: wire and display
-  use the C1 values. Ink displays as `#e9e9ed` on the dark ground
-  and sends no `color` key (C1's promotion rule is untouched: an
-  all-ink sketch stays on the mono path).
+- **The sketch palette (ruling 6).** The mock recolors the eight
+  swatches to the Nord family and renames the eighth slot brown →
+  teal — despite its own stale caption ("keeps the fixed spec
+  colors"). Ruling: adopted. Wire and display use the amended C1
+  §5 values. Ink displays `#eceff4` and sends no `color` key, so
+  the promotion rule is untouched: an all-ink sketch stays on the
+  mono path. Stored records keep their stored hexes and rescore
+  byte-identically. The v2c gate re-runs on the new values before
+  the first day played in color here — the encoder reads color
+  (mean absolute delta-p near 0.12–0.14 on the earlier set) and
+  the new set is lower-chroma, thus that measurement does not
+  hold for it.
+- **The brand (ruling 7).** Logo v2 — the halo of seven vector
+  rays with the serpent leaving through the open segment at the
+  bottom — is the adopted mark. v1 (fifteen plain rays) is
+  vendored, on hand. The nav takes `starvector-logo-v2-nav.svg`
+  at 18 px (16 px mobile). The screens continue to inline v1's
+  plain-ray nav mark, which ruling 7 supersedes. Below nav scale the icon set keeps v1's reduction
+  ("rays drop first, then the head"): `starvector-favicon.svg` is
+  the rayless halo and serpent, `starvector-appicon.svg` the
+  five-ray mini on the night gradient. Snow and night monochrome
+  variants ship for light and print grounds. If the arrowheads
+  close up at nav scale on device, the fallback is v1's nav mark
+  (the v2 doc's own caption).
 - **Countdown.** "closes in 6h 24m" requires `closes_at`, which
   `GET /api/day` does not hold. Contract item (§7). Until it
   lands, the status row shows the `Open` tag alone.
@@ -172,6 +219,7 @@ web/
     main.tsx
     app.tsx               # shell: nav, router, query provider
     nocturne.css          # vendored tokens + classes (see 3, adaptations)
+    brand/                # the seven vendored SVG assets (logo v2 + variants, v1, icons)
     fonts/                # Inter woff2
     api/
       types.ts            # wire types mirroring 6 and 7
@@ -324,8 +372,8 @@ record.
 | minimum point distance | 0.5 CSS px between kept points |
 | select tolerance, mouse/pen | `max(strokeWidth / 2 + 4 px, 8 px)` |
 | select tolerance, touch | 12 px |
-| palette (wire) | C1 §5 — ink sends no key. Colors `#c5221f`, `#e8710a`, `#f0b429`, `#1b6b3a`, `#1a73e8`, `#7a4ec9`, `#795548` |
-| palette (display) | the wire values — ink displays `#e9e9ed` |
+| palette (wire) | C1 §5 as amended 2026-08-14 — ink sends no key. Colors `#bf616a`, `#d08770`, `#ebcb8b`, `#a3be8c`, `#81a1c1`, `#b48ead`, `#8fbcbb` |
+| palette (display) | the wire values — ink displays `#eceff4` |
 
 **The adapter (`sketch/canvas.tsx`)** attaches the core one time in
 a ref effect. Committed documents alone touch `React` — points in
@@ -377,9 +425,10 @@ Each item lands green (`tsc --noEmit`, `biome ci`, `vitest`) and
 Vale-clean before the next starts.
 
 - **B1 — scaffold.** `web/` with the §4 toolchain, vendored
-  `nocturne.css` with self-hosted `Inter`, a token smoke page.
-  Acceptance: `pnpm build` emits `web/dist`, and the toolchain
-  gates run green offline.
+  `nocturne.css` (the retuned tokens) with self-hosted `Inter`,
+  the seven brand SVG files, a token smoke page. Acceptance:
+  `pnpm build` emits `web/dist`, and the toolchain gates run
+  green offline.
 - **B2 — the API layer.** `types.ts`, the `Api` interface, the
   live adapter (fails loudly, no retries that hide errors), the
   mock adapter (deterministic, seeded from the day string), the
@@ -412,9 +461,10 @@ Vale-clean before the next starts.
   `/api/history` shape (mock until the backend phase).
 - **B10 — mobile and PWA.** The `1f` layout at 390 px, the
   manifest (standalone, dark theme color from the tokens,
-  maskable icons), the app-shell worker (§8), the install hint
-  (manual on iOS, `beforeinstallprompt` elsewhere), the offline
-  banner.
+  maskable icons rasterized from `starvector-appicon.svg`, the
+  page icon from `starvector-favicon.svg`), the app-shell worker
+  (§8), the install hint (manual on iOS, `beforeinstallprompt`
+  elsewhere), the offline banner.
 - **B11 — end-to-end and polish.** `Playwright` runs the built
   app (preview server proxying to a live server instance on fake
   providers, tmp store): open day → sketch and impressions →
@@ -470,3 +520,8 @@ pnpm exec playwright test   # e2e (starts its own service instance)
 
 The server side stays as today: `uvicorn` on `:8000` with the dev
 store. Nothing in this phase changes what the operator runs.
+
+One scoring-side gate rides on ruling 6: before the first day
+played in color on this app, the owner re-runs v2c on the amended
+palette (`validation/colorize.py` updates with C1 §5 — about 9–16
+posts cold, fewer warm) and records the verdict.
