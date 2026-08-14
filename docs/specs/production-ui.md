@@ -149,8 +149,13 @@ of record, resolved here):
 
 **Adaptations.** The vendored `nocturne.css` drops its Google Fonts
 `@import`. `Inter` (400/500/600/700, `woff2`) is self-hosted so dev
-and tests run offline. Icons come from `@phosphor-icons/react`,
-tree-shaken, as the `Nocturne` readme says.
+and tests run offline — the pinned `@fontsource/inter` packages
+supply the files and the build hashes them into `web/dist`
+(recorded 2026-08-14: this stands in for a hand-vendored
+`src/fonts/` directory — the same served bytes, with no font
+files checked into the repo). Icons come from
+`@phosphor-icons/react`, tree-shaken, as the `Nocturne` readme
+says.
 
 ## 4. The stack
 
@@ -220,7 +225,6 @@ web/
     app.tsx               # shell: nav, router, query provider
     nocturne.css          # vendored tokens + classes (see 3, adaptations)
     brand/                # the seven vendored SVG assets (logo v2 + variants, v1, icons)
-    fonts/                # Inter woff2
     api/
       types.ts            # wire types mirroring 6 and 7
       client.ts           # the Api interface
@@ -298,6 +302,12 @@ changes a stored artifact or a frozen tier.
 - **`GET /api/submission?day=`** → the player's own stored wire
   record with `trial_id`, or 404. Own data, no target
   information. Serves the reveal screen's sketch replay.
+- **`GET /api/reveal?day=`** → the reveal document for one
+  revealed day (the latest-day shape stays as it is). Serves the
+  history table's report links. Constant 404 for a day that is
+  not revealed. (Recorded 2026-08-14 — a hole found while the
+  frontend build started: report rows for days before the latest
+  are on disk but not servable.)
 - **`GET /api/me`** → `{player, streak, reminder, public}`.
 - **Streak, defined.** The count of days in an unbroken run that
   ends at the newest revealed day, each with a stored submission
