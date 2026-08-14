@@ -17,6 +17,13 @@ test("the daily flow: draw, group, send, lock", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".target-code-cell")).toHaveCount(6);
 
+  // The fixture config sets the close time — the day view carries
+  // the computed timestamp while open (spec S2 B1).
+  const dayView = await (
+    await page.request.get("http://127.0.0.1:8199/api/day")
+  ).json();
+  expect(dayView.closes_at).toBe(`${dayView.day}T22:00:00+00:00`);
+
   // Two strokes: a vertical mast and a second line beside it.
   await drawStroke(page, [0.2, 0.7], [0.25, 0.2]);
   await drawStroke(page, [0.35, 0.7], [0.33, 0.25]);

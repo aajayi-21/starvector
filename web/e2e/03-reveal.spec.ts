@@ -36,6 +36,14 @@ test("close and reveal over HTTP, then the report renders", async ({
     page.getByText("printf '%s:%s' TARGET SECRET | sha256sum"),
   ).toBeVisible();
   await expect(page.getByText("What matched")).toBeVisible();
-  // The leaderboard card is mock-served for this day.
+  // The live leaderboard serves the one honest row (spec S2 B3).
   await expect(page.getByText("Today's leaderboard")).toBeVisible();
+  const board = page.locator(".card").filter({
+    hasText: "Today's leaderboard",
+  });
+  await expect(board.locator("tbody tr")).toHaveCount(1);
+  await expect(board.getByText("you")).toBeVisible();
+  // The sketch replays from the live stored submission.
+  await expect(page.getByText("Your sketch")).toBeVisible();
+  await expect(page.getByText(/No stored sketch/)).toBeHidden();
 });
