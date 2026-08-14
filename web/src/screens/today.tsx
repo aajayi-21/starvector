@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
 import type { SubmissionAck, WireRecord } from "../api/types";
-import { ApiError, friendlyMessage } from "../api/types";
+import { ApiError, friendlyMessage, isRefusal } from "../api/types";
 import { SketchCanvas } from "../sketch/canvas";
 import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
@@ -119,6 +119,15 @@ export function TodayScreen(): React.JSX.Element {
     return <CenteredCard kicker="Today">Loading…</CenteredCard>;
   }
   if (day.isError || day.data === undefined) {
+    if (!isRefusal(day.error)) {
+      return (
+        <CenteredCard kicker="Today">
+          <p className="text-muted" role="alert">
+            {friendlyMessage(day.error)}
+          </p>
+        </CenteredCard>
+      );
+    }
     return (
       <CenteredCard kicker="No day">
         <p className="text-muted">
@@ -208,20 +217,9 @@ function OpenWorkspace(props: {
   const doc = current(history);
   const commit = (next: SketchDoc) => setHistory((h) => pushDoc(h, next));
 
-  // Debounced draft autosave, cleared on send (§8).
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      writeStorage(draftKey(view.day), {
-        doc,
-        impressions,
-        pastedText,
-        nextStrokeId: nextStrokeId.current,
-      } satisfies Draft);
-      setDraftSaved(true);
-    }, DRAFT_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [doc, impressions, pastedText, view.day]);
-
+  // isPending flips a task late (the query notify scheduler), so the
+  // double-POST lock lives in a ref the click handler checks first.
+  const sendingRef = useRef(false);
   const send = useMutation({
     mutationFn: (record: WireRecord) => api.submit(record),
     onSuccess: (_ack, record) => {
@@ -232,15 +230,39 @@ function OpenWorkspace(props: {
         // Disposable cache.
       }
     },
+    onSettled: () => {
+      sendingRef.current = false;
+    },
   });
 
-  const alreadySent =
-    send.error instanceof ApiError &&
-    send.error.refusalCause === "already-submitted";
+  const sent =
+    send.isSuccess ||
+    (send.error instanceof ApiError &&
+      send.error.refusalCause === "already-submitted");
+
+  // Debounced draft autosave, cleared on send (§8). The sent gate
+  // keeps a pending timer from writing the draft back after the
+  // send's onSuccess removed it.
+  useEffect(() => {
+    if (sent) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      writeStorage(draftKey(view.day), {
+        doc,
+        impressions,
+        pastedText,
+        nextStrokeId: nextStrokeId.current,
+      } satisfies Draft);
+      setDraftSaved(true);
+    }, DRAFT_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [doc, impressions, pastedText, view.day, sent]);
+
   if (send.isSuccess) {
     return <SubmittedView ack={send.data} />;
   }
-  if (alreadySent) {
+  if (sent) {
     return <SubmittedView ack={null} />;
   }
 
@@ -260,7 +282,11 @@ function OpenWorkspace(props: {
   const onCommitStroke = (points: Point[]) => {
     const id = nextStrokeId.current;
     nextStrokeId.current += 1;
-    commit(addStroke(doc, points, colorIndex, id));
+    // Build on the freshest snapshot, not the render closure — two
+    // commits in one batch must not erase each other.
+    setHistory((h) =>
+      pushDoc(h, addStroke(current(h), points, colorIndex, id)),
+    );
   };
 
   const onPickStroke = (strokeId: number | null) => {
@@ -289,13 +315,21 @@ function OpenWorkspace(props: {
     setMode("draw");
   };
 
+  const groupExists = (id: string): boolean =>
+    doc.groups.some((group) => group.id === id);
+
   const addRelationNow = () => {
     if (
       relationFirst === "" ||
       relationSecond === "" ||
       relationFirst === relationSecond ||
-      relationName === ""
+      relationName === "" ||
+      !groupExists(relationFirst) ||
+      !groupExists(relationSecond)
     ) {
+      // Undo can rewind a group out from under the selects.
+      setRelationFirst("");
+      setRelationSecond("");
       return;
     }
     commit(addRelation(doc, relationName, [relationFirst, relationSecond]));
@@ -400,6 +434,8 @@ function OpenWorkspace(props: {
               onClick={() => {
                 setHistory((h) => undo(h));
                 setSelection(new Set());
+                setRelationFirst("");
+                setRelationSecond("");
               }}
             >
               Undo
@@ -411,6 +447,8 @@ function OpenWorkspace(props: {
               onClick={() => {
                 setHistory((h) => redo(h));
                 setSelection(new Set());
+                setRelationFirst("");
+                setRelationSecond("");
               }}
             >
               Redo
@@ -422,6 +460,8 @@ function OpenWorkspace(props: {
               onClick={() => {
                 commit(clearSketch(doc));
                 setSelection(new Set());
+                setRelationFirst("");
+                setRelationSecond("");
               }}
             >
               Clear
@@ -450,6 +490,9 @@ function OpenWorkspace(props: {
               value={impressionInput}
               onChange={(event) => setImpressionInput(event.target.value)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) {
+                  return;
+                }
                 if (event.key === "Enter") {
                   event.preventDefault();
                   addImpression();
@@ -637,7 +680,9 @@ function OpenWorkspace(props: {
                   doc.groups.length < 2 ||
                   relationFirst === "" ||
                   relationSecond === "" ||
-                  relationFirst === relationSecond
+                  relationFirst === relationSecond ||
+                  !groupExists(relationFirst) ||
+                  !groupExists(relationSecond)
                 }
                 onClick={addRelationNow}
               >
@@ -701,9 +746,13 @@ function OpenWorkspace(props: {
               className="btn btn-primary btn-block"
               style={{ minHeight: 44 }}
               disabled={!scoreable || send.isPending}
-              onClick={() =>
-                send.mutate(serialize(doc, impressions, pastedText))
-              }
+              onClick={() => {
+                if (sendingRef.current) {
+                  return;
+                }
+                sendingRef.current = true;
+                send.mutate(serialize(doc, impressions, pastedText));
+              }}
             >
               {send.isPending ? "Sending…" : "Send today's trial"}
             </button>
@@ -713,7 +762,7 @@ function OpenWorkspace(props: {
                 : "Add an impression, strokes, or pasted notes first."}
               {draftSaved ? " · draft saved" : ""}
             </div>
-            {send.isError && !alreadySent ? (
+            {send.isError && !sent ? (
               <div style={{ fontSize: 13, color: "#bf616a" }} role="alert">
                 {friendlyMessage(send.error)}
               </div>

@@ -10,7 +10,7 @@ import { useRef, useState } from "react";
 
 import { useApi } from "../api/client";
 import type { PracticeScore } from "../api/types";
-import { friendlyMessage } from "../api/types";
+import { friendlyMessage, isRefusal } from "../api/types";
 import { SketchCanvas } from "../sketch/canvas";
 import type { DocHistory, Point } from "../sketch/core";
 import {
@@ -64,9 +64,15 @@ export function PracticeScreen(): React.JSX.Element {
       <div style={{ padding: 28, maxWidth: 520 }}>
         <div className="card">
           <span className="card-kicker">Practice</span>
-          <p className="text-muted">
-            No revealed day yet — play and reveal a day first.
-          </p>
+          {isRefusal(days.error) ? (
+            <p className="text-muted">
+              No revealed day yet — play and reveal a day first.
+            </p>
+          ) : (
+            <p className="text-muted" role="alert">
+              {friendlyMessage(days.error)}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -89,11 +95,17 @@ function PracticeWorkspace(props: {
 
   const doc = current(history);
 
+  // The same in-flight ref lock as the daily send: isPending flips
+  // a task late, and two score POSTs would double-count the session.
+  const scoringRef = useRef(false);
   const score = useMutation({
     mutationFn: () => api.scorePractice(day, serialize(doc, [], "")),
     onSuccess: (answer) => {
       setResult(answer);
       setRounds((count) => count + 1);
+    },
+    onSettled: () => {
+      scoringRef.current = false;
     },
   });
 
@@ -227,7 +239,13 @@ function PracticeWorkspace(props: {
               disabled={
                 doc.strokes.length === 0 || score.isPending || day === ""
               }
-              onClick={() => score.mutate()}
+              onClick={() => {
+                if (scoringRef.current) {
+                  return;
+                }
+                scoringRef.current = true;
+                score.mutate();
+              }}
             >
               {score.isPending ? "Scoring…" : "Score now"}
             </button>

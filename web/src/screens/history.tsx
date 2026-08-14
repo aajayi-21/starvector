@@ -9,7 +9,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { useApi } from "../api/client";
-import type { HistoryView } from "../api/types";
+import type { HistoryView, MeView } from "../api/types";
+import { friendlyMessage, isRefusal } from "../api/types";
 
 function Kicker(props: { children: React.ReactNode }): React.JSX.Element {
   return (
@@ -55,19 +56,28 @@ export function HistoryScreen(): React.JSX.Element {
       <div style={{ padding: 28, maxWidth: 520 }}>
         <div className="card">
           <span className="card-kicker">History</span>
-          <p className="text-muted">No revealed trial yet. Play a day first.</p>
+          {isRefusal(history.error) ? (
+            <p className="text-muted">
+              No revealed trial yet. Play a day first.
+            </p>
+          ) : (
+            <p className="text-muted" role="alert">
+              {friendlyMessage(history.error)}
+            </p>
+          )}
         </div>
       </div>
     );
   }
-  return <HistoryBody view={history.data} streak={me.data?.streak ?? 0} />;
+  return <HistoryBody view={history.data} me={me.data ?? null} />;
 }
 
 function HistoryBody(props: {
   view: HistoryView;
-  streak: number;
+  me: MeView | null;
 }): React.JSX.Element {
   const { view } = props;
+  const streak = props.me?.streak ?? 0;
   const ps = view.days.map((row) => row.p);
   const best = view.days.reduce(
     (low, row) => (row.target_rank < low ? row.target_rank : low),
@@ -123,7 +133,7 @@ function HistoryBody(props: {
             gap: 14,
           }}
         >
-          <StatCard label="Streak" value={`${props.streak} days`} />
+          <StatCard label="Streak" value={`${streak} days`} />
           <StatCard
             label="Best rank"
             value={Number.isFinite(best) ? `${best} of ${decoys + 1}` : "—"}
@@ -134,6 +144,52 @@ function HistoryBody(props: {
           />
           <StatCard label="Trials sent" value={`${view.days.length}`} />
         </div>
+        {props.me === null ? null : (
+          <div className="card" style={{ gap: 10 }}>
+            <Kicker>Account</Kicker>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  background: "var(--color-neutral-800)",
+                  color: "var(--color-neutral-200)",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}
+              >
+                {props.me.player.slice(0, 2).toUpperCase()}
+              </span>
+              <div>
+                <div style={{ fontSize: 14 }}>{props.me.player}</div>
+                <div
+                  style={{ fontSize: 12, color: "var(--color-neutral-500)" }}
+                >
+                  {props.me.public ? "public on leaderboard" : "not public yet"}
+                </div>
+              </div>
+            </div>
+            <label
+              className="radio"
+              style={{ opacity: 0.6 }}
+              title="Daily reminders arrive with the backend phase."
+            >
+              <input
+                type="checkbox"
+                checked={props.me.reminder}
+                disabled
+                readOnly
+              />
+              <span style={{ fontSize: 13 }}>
+                Daily reminder — not wired yet
+              </span>
+            </label>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

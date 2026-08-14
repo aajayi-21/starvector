@@ -72,6 +72,34 @@ describe("the Today screen", () => {
     expect(screen.getByText(/1 atoms/)).toBeDefined();
   });
 
+  it("fires exactly one POST for a synchronous double-click", async () => {
+    let calls = 0;
+    let release: (value: { trial_id: string; atom_count: number }) => void =
+      () => undefined;
+    const gate = new Promise<{ trial_id: string; atom_count: number }>(
+      (resolve) => {
+        release = resolve;
+      },
+    );
+    const api: Api = {
+      ...makeMockApi({ today: HARNESS_TODAY }),
+      submit: () => {
+        calls += 1;
+        return gate;
+      },
+    };
+    renderAt("/", api);
+    await typeImpression("cold");
+    const send = await screen.findByText("Send today's trial");
+    // isPending flips a task late — the ref guard must catch the
+    // second click of the same task.
+    fireEvent.click(send);
+    fireEvent.click(send);
+    release({ trial_id: "cd".repeat(16), atom_count: 1 });
+    await screen.findByText(/Sent\./);
+    expect(calls).toBe(1);
+  });
+
   it("shows friendly copy for an already-submitted 409, not the token", async () => {
     const api: Api = {
       ...makeMockApi({ today: HARNESS_TODAY }),

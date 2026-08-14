@@ -186,6 +186,11 @@ const CAUSE_COPY: Record<string, string> = {
   "bad-shape": "The sketch could not be encoded. Try again.",
 };
 
+/** True for the server's deliberate constant refusals (404s). */
+export function isRefusal(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
 /**
  * Player-facing copy for a failed call. Known causes map to full
  * sentences; a refusal with its own player-facing detail (the

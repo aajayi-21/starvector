@@ -38,6 +38,15 @@ describe("document reducers", () => {
     expect(doc.groups).toHaveLength(1);
   });
 
+  it("drops a relation naming an unknown group", () => {
+    let doc = addStroke(EMPTY_DOC, LINE, 0, 1);
+    doc = makeGroup(doc, [1], "tower");
+    doc = makeGroup(doc, [], "sea");
+    const unchanged = addRelation(doc, "left-of", ["g3", "g1"]);
+    expect(unchanged.relations).toHaveLength(0);
+    expect(unchanged).toBe(doc);
+  });
+
   it("keeps relations through group operations", () => {
     let doc = addStroke(EMPTY_DOC, LINE, 0, 1);
     doc = makeGroup(doc, [1], "tower");

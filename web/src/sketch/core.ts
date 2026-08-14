@@ -109,6 +109,13 @@ export function addRelation(
   relation: string,
   of: readonly [string, string],
 ): SketchDoc {
+  // Undo can rewind a makeGroup while stale UI state still names its
+  // id — a relation naming an unknown group would serialize into a
+  // record intake refuses, so the reducer drops it here.
+  const known = new Set(doc.groups.map((group) => group.id));
+  if (!known.has(of[0]) || !known.has(of[1])) {
+    return doc;
+  }
   return { ...doc, relations: [...doc.relations, { relation, of }] };
 }
 

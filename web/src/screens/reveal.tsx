@@ -11,6 +11,7 @@ import { useSearch } from "@tanstack/react-router";
 
 import { useApi } from "../api/client";
 import type { RevealView, TrialValue, WireRecord } from "../api/types";
+import { friendlyMessage, isRefusal } from "../api/types";
 import { ReplayCanvas } from "../sketch/canvas";
 
 function Kicker(props: { children: React.ReactNode }): React.JSX.Element {
@@ -53,8 +54,12 @@ export function medianDelta(
   if (priors.length < 2) {
     return null;
   }
-  const middle = priors[Math.floor(priors.length / 2)] ?? 0;
-  return p - middle;
+  const half = Math.floor(priors.length / 2);
+  const median =
+    priors.length % 2 === 1
+      ? (priors[half] ?? 0)
+      : ((priors[half - 1] ?? 0) + (priors[half] ?? 0)) / 2;
+  return p - median;
 }
 
 export function RevealScreen(): React.JSX.Element {
@@ -77,10 +82,16 @@ export function RevealScreen(): React.JSX.Element {
       <div style={{ padding: 28, maxWidth: 520 }}>
         <div className="card">
           <span className="card-kicker">Reveal</span>
-          <p className="text-muted">
-            Not revealed yet. The reveal opens after the day closes and the
-            operator scores it.
-          </p>
+          {isRefusal(reveal.error) ? (
+            <p className="text-muted">
+              Not revealed yet. The reveal opens after the day closes and the
+              operator scores it.
+            </p>
+          ) : (
+            <p className="text-muted" role="alert">
+              {friendlyMessage(reveal.error)}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -136,6 +147,12 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
             <ScoreHero trial={view.trial} delta={delta} />
           )}
           <div className="hr" style={{ margin: "6px 0" }} />
+          <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+            commitment{" "}
+            <span style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>
+              {view.commitment}
+            </span>
+          </div>
           <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
             secret{" "}
             <span style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>

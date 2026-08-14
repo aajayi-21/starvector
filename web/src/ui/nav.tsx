@@ -26,7 +26,7 @@ export function Nav(): React.JSX.Element {
         className="nav-brand"
         style={{ display: "flex", alignItems: "center", gap: 10 }}
       >
-        <img src={navMark} width={18} height={18} alt="" />
+        <img className="nav-mark" src={navMark} width={18} height={18} alt="" />
         Starvector
       </span>
       <Link to="/" activeProps={activeProps} activeOptions={{ exact: true }}>

@@ -88,10 +88,11 @@ function shiftDay(day: string, byDays: number): string {
 }
 
 function trialFor(seed: string): TrialValue {
-  const p = round4(0.01 + 0.98 * draw(`p:${seed}`));
-  const beaten = Math.round(p * DECOY_COUNT);
+  // The system of record pins p = (beaten + 0.5 * tied) / decoy_count
+  // (core/ranking.py); with tied 0 the identity must hold exactly.
+  const beaten = 1 + Math.floor(draw(`p:${seed}`) * (DECOY_COUNT - 1));
   return {
-    p,
+    p: beaten / DECOY_COUNT,
     decoy_count: DECOY_COUNT,
     beaten,
     tied: 0,
@@ -223,8 +224,14 @@ export function makeMockApi(options: MockOptions = {}): Api {
       });
     },
     getReveal(day?: string): Promise<RevealView> {
-      const target = day ?? playedDays[0];
-      if (target === undefined || !playedSet.has(target)) {
+      // A named day is served for the same reason as the
+      // leaderboard; the no-argument (latest) path keeps the
+      // constant refusal when nothing is played.
+      if (day !== undefined) {
+        return Promise.resolve(revealFor(day));
+      }
+      const target = playedDays[0];
+      if (target === undefined) {
         return Promise.reject(new ApiError(404, undefined, "not revealed"));
       }
       return Promise.resolve(revealFor(target));
@@ -289,22 +296,32 @@ export function makeMockApi(options: MockOptions = {}): Api {
       const mean = logOdds.reduce((a, b) => a + b, 0) / logOdds.length;
       const theta = Math.exp(mean);
       const shrunk = Math.exp((days.length / (days.length + 4)) * mean);
-      const sorted = [...days.map((row) => row.p)].sort((a, b) => a - b);
-      const middle = sorted[Math.floor(sorted.length / 2)] ?? 0;
+      // Illustrative proxy with the record's direction: the true
+      // evidence_p (core/aggregate.py) is a tail probability where
+      // SMALL means strong evidence. Chance sits near 0.5 here.
+      const surprise = days
+        .map((row) => -Math.log(row.p))
+        .reduce((a, b) => a + b, 0);
+      const evidence = Math.min(
+        1,
+        0.5 * Math.exp((surprise - days.length) / Math.sqrt(days.length)),
+      );
       return Promise.resolve({
         days,
         skill: {
           theta: round4(theta),
           shrunk: round4(shrunk),
-          evidence_p: round4(middle),
+          evidence_p: round4(evidence),
           n: days.length,
         },
       });
     },
     getLeaderboard(day: string): Promise<LeaderboardView> {
-      if (!playedSet.has(day)) {
-        return Promise.reject(new ApiError(404, undefined, "not revealed"));
-      }
+      // Any requested day is served: in composite mode the caller
+      // holds a day the live server revealed, and the mock cannot
+      // know the live revealed set — a gate here would kill the
+      // card for real days (the backend phase adds the true
+      // revealed-only 404).
       const own = trialFor(day);
       const rows: LeaderboardRow[] = [
         {

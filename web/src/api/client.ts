@@ -5,7 +5,6 @@
  */
 
 import { createContext, useContext } from "react";
-
 import type {
   DayView,
   HistoryView,
@@ -18,6 +17,7 @@ import type {
   SubmissionAck,
   WireRecord,
 } from "./types";
+import { ApiError } from "./types";
 
 export interface DayApi {
   getDay(): Promise<DayView>;
@@ -76,6 +76,14 @@ export function composeApi(
     ...live,
     getReveal(day?: string): Promise<RevealView> {
       return day === undefined ? live.getReveal() : mock.getReveal(day);
+    },
+    // The mock fabricates a stored submission for its own calendar;
+    // on a live day that fabrication would displace the player's
+    // genuine sent copy on the reveal screen. Until the backend
+    // phase serves GET /api/submission, the composite answers the
+    // constant 404 and the screen falls back to the sent copy.
+    getSubmission(): Promise<StoredSubmission> {
+      return Promise.reject(new ApiError(404, undefined, "no submission"));
     },
   };
 }

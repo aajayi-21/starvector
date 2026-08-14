@@ -34,13 +34,15 @@ describe("mock determinism", () => {
 });
 
 describe("history and streak", () => {
-  it("keeps p, beaten, and rank consistent with each other", async () => {
+  it("keeps the record's p = beaten / decoy_count identity", async () => {
     const history = await makeMockApi({ today: TODAY }).getHistory();
     expect(history.days.length).toBeGreaterThan(0);
     for (const row of history.days) {
       expect(row.p).toBeGreaterThan(0);
       expect(row.p).toBeLessThan(1);
-      const beaten = Math.round(row.p * row.decoy_count);
+      // core/ranking.py: p = (beaten + 0.5 * tied) / decoy_count.
+      const beaten = row.p * row.decoy_count;
+      expect(Number.isInteger(beaten)).toBe(true);
       expect(row.target_rank).toBe(row.decoy_count - beaten + 1);
     }
   });
@@ -74,11 +76,17 @@ describe("leaderboard", () => {
     expect(own?.p).toBe(history.days[0]?.p);
   });
 
-  it("refuses a day that is not revealed", async () => {
+  it("serves any named day deterministically", async () => {
+    // In composite mode the caller holds a day the live server
+    // revealed; the mock cannot know that set, thus a named day is
+    // always served (the true revealed-only 404 is the backend
+    // phase's).
     const api = makeMockApi({ today: TODAY });
-    await expect(api.getLeaderboard("1999-01-01")).rejects.toBeInstanceOf(
-      ApiError,
-    );
+    const one = await api.getLeaderboard("1999-01-01");
+    const two = await api.getLeaderboard("1999-01-01");
+    expect(JSON.stringify(one)).toBe(JSON.stringify(two));
+    const reveal = await api.getReveal("1999-01-01");
+    expect(reveal.day).toBe("1999-01-01");
   });
 });
 

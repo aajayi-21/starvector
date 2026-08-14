@@ -2,6 +2,7 @@ import { screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { makeMockApi } from "../../src/api/mock";
+import { ApiError } from "../../src/api/types";
 import { medianDelta } from "../../src/screens/reveal";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
@@ -51,8 +52,15 @@ describe("the Reveal screen", () => {
     expect(screen.queryByText(/No stored sketch/)).toBeNull();
   });
 
-  it("shows the not-revealed state for an unplayed day", async () => {
-    renderAt("/reveal?day=1999-01-01");
+  it("shows the not-revealed state on the constant 404", async () => {
+    // The mock serves any named day, thus the refusal is injected —
+    // matching the live server's constant not-revealed body.
+    const refusing = {
+      ...api(),
+      getReveal: () =>
+        Promise.reject(new ApiError(404, undefined, "not revealed")),
+    };
+    renderAt("/reveal?day=1999-01-01", refusing);
     expect(await screen.findByText(/Not revealed yet/)).toBeDefined();
   });
 });

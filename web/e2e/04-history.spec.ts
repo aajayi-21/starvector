@@ -5,7 +5,8 @@ import { blockExternalHosts } from "./helpers";
 
 test("history renders the pinned mock numbers", async ({ page }) => {
   await blockExternalHosts(page);
-  const expected = await makeMockApi().getHistory();
+  const today = new Date().toISOString().slice(0, 10);
+  const expected = await makeMockApi({ today }).getHistory();
   const theta = expected.skill?.theta.toFixed(3);
   expect(theta).toBeDefined();
 

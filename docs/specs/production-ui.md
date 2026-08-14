@@ -317,7 +317,11 @@ changes a stored artifact or a frozen tier.
   `FastAPI` ≥ 0.138 `app.frontend()`, or the classic
   `StaticFiles` setup with a guarded catch-all (404 for missing
   asset-like paths, `index.html` for screen paths). `/api`
-  registers first. The dev console keeps its path.
+  registers first. The dev console keeps its path. One path
+  collision to resolve at the changeover (recorded 2026-08-14): the
+  server's dev-only `/history` page and the app's history screen
+  claim the same path — the app's screen takes it, and the
+  operator page moves behind the dev surface.
 - **Daily reminder (deferred).** Web Push with VAPID keys and
   `pywebpush`, declarative payloads with a worker fallback,
   subscription rows keyed to the player. iOS receives push only
@@ -379,7 +383,7 @@ record.
 | Constant | Value |
 | --- | --- |
 | coordinates, rounded | to 4 decimal places at serialization |
-| minimum point distance | 0.5 CSS px between kept points |
+| minimum point distance | 0.5 CSS px between kept points — the last point is always kept, so the stroke ends where the pointer ended |
 | select tolerance, mouse/pen | `max(strokeWidth / 2 + 4 px, 8 px)` |
 | select tolerance, touch | 12 px |
 | palette (wire) | C1 §5 as amended 2026-08-14 — ink sends no key. Colors `#bf616a`, `#d08770`, `#ebcb8b`, `#a3be8c`, `#81a1c1`, `#b48ead`, `#8fbcbb` |

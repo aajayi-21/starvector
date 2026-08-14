@@ -53,8 +53,16 @@ describe("the composite client", () => {
   it("routes contract surfaces to the mock adapter", async () => {
     expect(await api.getHistory()).toBe("mock:getHistory");
     expect(await api.getLeaderboard("2026-08-01")).toBe("mock:getLeaderboard");
-    expect(await api.getSubmission("2026-08-01")).toBe("mock:getSubmission");
     expect(await api.getMe()).toBe("mock:getMe");
+  });
+
+  it("answers the constant 404 for stored submissions", async () => {
+    // The mock's fabricated record must never displace the genuine
+    // sent copy on the reveal screen — the composite refuses until
+    // the backend phase serves GET /api/submission.
+    await expect(api.getSubmission("2026-08-01")).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it("splits getReveal on the day argument", async () => {

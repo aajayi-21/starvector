@@ -28,7 +28,7 @@ export default defineConfig({
       cwd: repoRoot,
       port: 8199,
       timeout: 240_000,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       stdout: "ignore",
       stderr: "pipe",
     },
@@ -37,7 +37,9 @@ export default defineConfig({
         "pnpm run build:e2e && pnpm exec vite preview --port 4173 --strictPort",
       port: 4173,
       timeout: 240_000,
-      reuseExistingServer: true,
+      // Never adopt a foreign server: a manually started preview is a
+      // PWA-enabled build proxying at the REAL dev server on :8000.
+      reuseExistingServer: false,
       env: { VITE_PROXY_TARGET: "http://127.0.0.1:8199" },
     },
   ],
