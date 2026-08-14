@@ -11,6 +11,7 @@ import argparse
 import math
 import secrets
 import sys
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -37,6 +38,8 @@ POPULATION_SPREAD = 0.15
 _NOT_REVEALED = b'{"detail":"not revealed"}'
 _NO_DAY = b'{"detail":"no day open"}'
 _DEV_OFF = b'{"detail":"not found"}'
+_NO_PRACTICE = b'{"detail":"no revealed day"}'
+_NOT_PRACTICE = b'{"detail":"not a practice day"}'
 
 _UI_ROOT = Path(__file__).parent / "ui"
 
@@ -115,22 +118,31 @@ def create_app(service_config: ServiceConfig,
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
 
-    # The dev-mode scoring context wires lazily on the first dev
-    # score and is kept for the process - a new start re-reads
-    # config.
-    dev_state: dict[str, object] = {}
+    # The resident scoring context (P5 R1): wired lazily one time
+    # for each process from the server's config, read by the close
+    # endpoint, the dev surfaces, and practice. The lock stops a
+    # double wire when two threadpool handlers race the first use.
+    # A new start re-reads config. This supersedes the fifth 14b
+    # ruling's wording: the dev surfaces score with the config the
+    # server names, not the one the latest day names - the two are
+    # the same file in usual operation.
+    resident_state: dict[str, object] = {}
+    resident_lock = threading.Lock()
+    # Day-start values (P5 item B4), keyed by target - targets
+    # of revealed days do not change, thus no invalidation. Its own
+    # lock: the resident lock does not nest.
+    practice_precompute: dict[str, object] = {}
+    precompute_lock = threading.Lock()
 
-    def _dev_wired():
-        from pipeline.config import load_scoring_config as load_scoring
+    def _resident():
         from service.scoring import wire_for_close
 
-        if "wired" not in dev_state:
-            day = store.latest_day(root)
-            record = store.read_day_record(root, day)
-            named = load_scoring(Path(record.scoring_config_path))
-            dev_state["wired"] = wire_for_close(
-                named, record.scoring_config_path, data_root)
-        return dev_state["wired"]
+        with resident_lock:
+            if "wired" not in resident_state:
+                resident_state["wired"] = wire_for_close(
+                    scoring_config, service_config.scoring_config,
+                    data_root)
+            return resident_state["wired"]
 
     @app.get("/dev")
     def dev_page() -> Response:
@@ -231,15 +243,94 @@ def create_app(service_config: ServiceConfig,
         from service.scoring import dev_rankings
 
         try:
-            # An earlier day scores with the config the latest
-            # day names - a drifted config gives the browser
-            # numbers different from the stored trial row.
+            # An earlier day scores with the resident context - a
+            # drifted config gives the browser numbers different
+            # from the stored trial row, and the stored row stays
+            # the record.
             value = dev_rankings(stored["record"], record.target_id,
-                                 _dev_wired())
+                                 _resident())
         except Exception as error:
             return JSONResponse({"cause": "dev-score-failed",
                                  "detail": str(error)}, status_code=400)
         return JSONResponse(value)
+
+    @app.get("/api/practice")
+    def practice_days() -> Response:
+        # A function of revealed days alone (P5 R4): while a day is
+        # open, this body cannot change with its target.
+        rows = []
+        for day in reversed(store.list_days(root)):
+            record = store.read_day_record(root, day)
+            if record.status == "revealed":
+                rows.append({"day": record.day,
+                             "target_id": record.target_id,
+                             "trial_code": record.trial_code})
+        if not rows:
+            return Response(content=_NO_PRACTICE, status_code=404,
+                            media_type="application/json")
+        return JSONResponse({"days": rows})
+
+    @app.post("/api/practice/score")
+    async def practice_score_endpoint(request: Request) -> Response:
+        from starlette.concurrency import run_in_threadpool
+
+        from service.scoring import day_precompute, practice_score
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body is not JSON"},
+                status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body must be an object"},
+                status_code=400)
+        day = body.get("day")
+        wire_record = body.get("record")
+        # One constant refusal for a missing, unknown, open, or
+        # unrevealed day - the distinctions tell nothing, and one
+        # body is the cheapest R4 argument.
+        try:
+            if not isinstance(day, str) \
+                    or day not in store.list_days(root):
+                raise store.StoreError("not a practice day")
+            record = store.read_day_record(root, day)
+            if record.status != "revealed":
+                raise store.StoreError("not a practice day")
+        except store.StoreError:
+            return Response(content=_NOT_PRACTICE, status_code=404,
+                            media_type="application/json")
+        try:
+            submission = validate_submission(wire_record, gates, canvas_px)
+        except IntakeError as error:
+            return JSONResponse({"cause": error.cause,
+                                 "detail": str(error)}, status_code=400)
+        if not _activates_weighted_channel(submission, weights):
+            return JSONResponse(
+                {"cause": "no-scoreable-atom",
+                 "detail": "no atom reads into a weighted channel - add "
+                           "an impression, a labeled group, or strokes"},
+                status_code=400)
+
+        def compute():
+            wired = _resident()
+            with precompute_lock:
+                pre = practice_precompute.get(record.target_id)
+                if pre is None:
+                    pre = day_precompute(wired.context, record.target_id)
+                    practice_precompute[record.target_id] = pre
+            return practice_score(wire_record, record.target_id, wired,
+                                  pre)
+
+        try:
+            value = await run_in_threadpool(compute)
+        except Exception as error:
+            return JSONResponse({"cause": "practice-score-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse({"day": day, **value})
 
     @app.get("/")
     def index() -> Response:
@@ -355,9 +446,20 @@ def create_app(service_config: ServiceConfig,
 
         # The one live step (R5): the server process needs the
         # provider key in its environment for a live config. The
-        # answer names the row count and no score (R3).
+        # answer names the row count and no score (R3). The resident
+        # context serves the close when the day's pinned config path
+        # is the server's own - a day opened with a different config
+        # wires anew from its pinned path (P5 R1).
         try:
-            count = close_day(service_config)
+            wired = None
+            day = store.latest_day(root)
+            if day is not None:
+                record = store.read_day_record(root, day)
+                if record.status == "open" \
+                        and record.scoring_config_path \
+                        == service_config.scoring_config:
+                    wired = _resident()
+            count = close_day(service_config, wired=wired)
         except store.StoreError as error:
             return JSONResponse({"cause": "refused",
                                  "detail": str(error)}, status_code=409)

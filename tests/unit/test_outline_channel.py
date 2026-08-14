@@ -105,3 +105,33 @@ def test_a_non_finite_sketch_vector_raises() -> None:
     poisoned = np.asarray([1.0, float("nan"), 0.0, 0.0], dtype=np.float32)
     with pytest.raises(ValueError, match="non-finite"):
         outline_scores(poisoned, index, CONFIG)
+
+
+def test_the_pool_cache_gives_equal_bytes() -> None:
+    # The P5 R2 cache: a cached index and a bare index score the
+    # same submission to byte-equal output, and the cached arrays
+    # equal the scoring-time expressions.
+    import dataclasses
+
+    import numpy as np
+
+    from core.channels.outline import outline_pool_cache
+
+    e0 = [1.0, 0.0, 0.0, 0.0]
+    e1 = [0.0, 1.0, 0.0, 0.0]
+    index = _index([[e1, e1, e1, e0, e1, e1], [e0] * 6],
+                   mean=[0.1, 0.0, 0.0, 0.0])
+    centered, norms = outline_pool_cache(index.outline_vectors,
+                                         index.outline_space_mean)
+    assert centered.tobytes() == (index.outline_vectors
+                                  - index.outline_space_mean).tobytes()
+    expected_norms = np.linalg.norm(
+        index.outline_vectors - index.outline_space_mean, axis=2)
+    assert norms.tobytes() == expected_norms.tobytes()
+    cached = dataclasses.replace(index, outline_centered=centered,
+                                 outline_norms=norms)
+    sketch = _unit([1.0, 2.0, 3.0, 4.0])
+    config = OutlineConfig(comparison_rule="center-cosine-v1")
+    bare = outline_scores(sketch, index, config)
+    warm = outline_scores(sketch, cached, config)
+    assert bare.tobytes() == warm.tobytes()

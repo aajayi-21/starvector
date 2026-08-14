@@ -35,13 +35,16 @@
 <div id="trial-code">······</div>
 <h1 class="muted" style="font-size:15px">daily trial
   <span id="day-label"></span></h1>
-<p class="muted">commitment <span id="commitment"></span></p>
+<p class="muted">commitment <span id="commitment"></span> ·
+   <a href="#" id="practice-link">practice</a></p>
 
 <div id="view-loading"><p>loading…</p></div>
 
 <div id="view-noday" class="hidden"><p>No day is open.</p></div>
 
 <div id="view-intake" class="hidden">
+ <div id="day-intake-slot">
+ <div id="intake-surface">
   <h2>Impressions</h2>
   <p class="muted">Write what comes to you, one impression at a time —
      "tall vertical structure", "cold", "water nearby". Enter commits
@@ -93,6 +96,8 @@
   <h2>Paste</h2>
   <textarea id="paste-input" rows="3" cols="60"
             placeholder="optional pasted notes"></textarea>
+ </div>
+ </div>
 
   <div class="row">
     <button id="send-button" type="button" disabled>Send</button>
@@ -101,6 +106,40 @@
   </div>
   <p class="muted">One send for each day — it locks when it lands.</p>
   <p id="send-error" class="error"></p>
+</div>
+
+<div id="view-practice" class="hidden">
+  <h2>Practice</h2>
+  <p class="muted">Replay a past target: sketch, score at the moment
+     of sending, see the revealed image. Nothing is stored, and
+     practice scores do not touch the skill number.</p>
+  <p class="muted" id="practice-empty" class="hidden"></p>
+  <div class="row">
+    <select id="practice-day"></select>
+    <button id="practice-random" type="button">Random day</button>
+    <a href="#" id="back-to-day">back to today</a>
+  </div>
+  <div id="practice-intake-slot"></div>
+  <div class="row">
+    <button id="practice-score-button" type="button">Score now</button>
+    <span id="practice-session" class="muted"></span>
+    <span id="practice-note" class="muted"></span>
+  </div>
+  <p id="practice-error" class="error"></p>
+  <div id="practice-result" class="hidden">
+    <p id="practice-score-line"></p>
+    <table id="practice-report-table" class="hidden">
+      <thead><tr><th>atom</th><th>matched element</th><th>weight</th>
+                 <th>similarity</th><th>rarity</th></tr></thead>
+      <tbody id="practice-report-body"></tbody>
+    </table>
+    <table id="practice-head-table">
+      <thead><tr><th>#</th><th>fused</th><th></th></tr></thead>
+      <tbody id="practice-head-body"></tbody>
+    </table>
+    <p><img id="practice-image" alt="the revealed practice target"
+            width="256"></p>
+  </div>
 </div>
 
 <div id="view-submitted" class="hidden">

@@ -200,7 +200,7 @@ Each row names its gate. The sequence is the architecture's §25.
   numbers come only after this row (R13).
 - **Phase 5 — the fast path.** Tiering residency, batching, the
   50 ms budget, practice mode, and the production V6 thresholds
-  (shortlist widths 50/25, the 90% recall line). Gate: the
+  (shortlist widths 500/25, the 90% recall line). Gate: the
   production pool. The tier interface is built in
   `core/channels/element.py` — this is optimization, not rewrite.
 - **Phase 6 — Layer 7 deferred rerank.** The VLM judge above the

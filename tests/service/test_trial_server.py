@@ -91,7 +91,7 @@ def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
     def walk() -> dict[str, bytes]:
         return {path: client.get(path).content
                 for path in ("/", "/ui/trial.js", "/api/day",
-                             "/api/reveal",
+                             "/api/reveal", "/api/practice",
                              f"/image/{record.target_id}", "/history")}
 
     while_open = walk()
@@ -346,3 +346,44 @@ def test_an_empty_store_answers_with_constants(tmp_path) -> None:
         == b'{"detail":"no day open"}'
     assert client.post("/api/submission",
                        json=mixed_wire_record()).status_code == 404
+
+
+def test_the_resident_context_wires_one_time(tmp_path, monkeypatch) -> None:
+    # P5 R1: the dev surfaces and the close endpoint read one
+    # resident context - the wire runs one time for the process,
+    # also when two threadpool handlers race the first use.
+    import threading
+    import time
+
+    from service import scoring as service_scoring
+
+    fixture, _ = _world(tmp_path)
+    client = TestClient(create_app(fixture["service_config"],
+                                   dev_mode=True))
+    client.post("/api/submission", json=mixed_wire_record())
+
+    calls: list[str] = []
+    original = service_scoring.wire_for_close
+
+    def slow_wire(config, config_path, data_root, providers=None):
+        calls.append(config_path)
+        time.sleep(0.2)
+        return original(config, config_path, data_root, providers)
+
+    monkeypatch.setattr(service_scoring, "wire_for_close", slow_wire)
+
+    answers = []
+
+    def hit():
+        answers.append(client.get("/api/dev/rankings").status_code)
+
+    first = threading.Thread(target=hit)
+    second = threading.Thread(target=hit)
+    first.start(); second.start()
+    first.join(); second.join()
+    assert answers == [200, 200]
+    assert len(calls) == 1
+    # The next answer reads the kept context - no new wire.
+    assert client.get("/api/dev/rankings").status_code == 200
+    assert len(calls) == 1
+    assert calls[0] == fixture["service_config"].scoring_config

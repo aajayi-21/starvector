@@ -73,7 +73,7 @@ subsequent multi-player stage adds players, not migrations.
   `CLAUDE.md` §7). Layer 9 ships as functions and a one-player
   summary only.
 - Practice mode and the 50 ms budget (Phase 5). The daily close task
-  has hours (§18), and at 225 images the plain path completes in seconds.
+  has hours (§18), and at the dev pool count the plain path completes in seconds.
 - Layer 7, frontloading and the tag vocabulary (§20), source-3
   fitting.
 - Accounts, sessions, and network hardening. The server binds to

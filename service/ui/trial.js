@@ -97,7 +97,15 @@ if (typeof module !== "undefined") {
 /* ---------- the page half ---------- */
 
 function startTrialPage() {
-  var state = emptyState();
+  /* Two backing states (P5): the daily sketch and the practice
+   * sketch stay apart, and the shared intake surface re-parents
+   * between the two views - the canvas survives a DOM move. */
+  var dayState = emptyState();
+  var practiceState = emptyState();
+  var state = dayState;
+  var dayView = "view-noday";
+  var paletteBuilt = false;
+  var practiceRounds = 0;
   var canvas = document.getElementById("canvas");
   var context = canvas.getContext("2d");
   var drawing = null;
@@ -147,9 +155,11 @@ function startTrialPage() {
   }
   function show(view) {
     ["view-loading", "view-noday", "view-intake", "view-submitted",
-     "view-closed", "view-reveal"].forEach(function (name) {
-      byId(name).classList.toggle("hidden", name !== view);
-    });
+     "view-closed", "view-reveal", "view-practice"].forEach(
+      function (name) {
+        byId(name).classList.toggle("hidden", name !== view);
+      });
+    if (view !== "view-practice") { dayView = view; }
   }
 
   function drawPath(points, color, width) {
@@ -181,6 +191,8 @@ function startTrialPage() {
   }
 
   function startPalette() {
+    if (paletteBuilt) { return; }
+    paletteBuilt = true;
     var row = byId("palette");
     PALETTE.forEach(function (entry) {
       var button = document.createElement("button");
@@ -431,6 +443,147 @@ function startTrialPage() {
     });
   });
 
+  function renderReportRows(tbody, rows) {
+    tbody.innerHTML = "";
+    rows.forEach(function (row) {
+      var line = document.createElement("tr");
+      [row.atom_text, row.element === null ? "-" : row.element,
+       row.weight.toFixed(3), row.similarity.toFixed(3),
+       row.rarity.toFixed(2)].forEach(function (cell) {
+        var td = document.createElement("td");
+        td.textContent = String(cell);
+        line.appendChild(td);
+      });
+      tbody.appendChild(line);
+    });
+  }
+
+  /* ---------- practice (P5) ---------- */
+
+  function moveIntakeSurface(slotId) {
+    byId(slotId).appendChild(byId("intake-surface"));
+  }
+
+  function swapState(next, slotId) {
+    /* The paste textarea is live DOM inside the moved surface -
+     * snapshot it into the outgoing state and restore the incoming
+     * one, or practice notes ride into the permanent daily record. */
+    var paste = byId("paste-input");
+    state.pastedText = paste.value.trim() === "" ? null : paste.value;
+    state = next;
+    paste.value = state.pastedText || "";
+    moveIntakeSurface(slotId);
+    redraw();
+    refreshControls();
+  }
+
+  function enterPractice() {
+    fetch("/api/practice").then(function (response) {
+      if (!response.ok) {
+        byId("practice-empty").textContent =
+          "No revealed day yet - play and reveal a day first.";
+        byId("practice-empty").classList.remove("hidden");
+        show("view-practice");
+        return;
+      }
+      response.json().then(function (body) {
+        var select = byId("practice-day");
+        select.innerHTML = "";
+        body.days.forEach(function (row) {
+          var option = document.createElement("option");
+          option.value = row.day;
+          option.textContent = row.day + " · " + row.trial_code;
+          select.appendChild(option);
+        });
+        byId("practice-empty").classList.add("hidden");
+        startPalette();
+        swapState(practiceState, "practice-intake-slot");
+        byId("practice-result").classList.add("hidden");
+        show("view-practice");
+      });
+    }).catch(function () {
+      byId("practice-note").textContent = "the server did not answer";
+    });
+  }
+
+  function leavePractice() {
+    swapState(dayState, "day-intake-slot");
+    show(dayView);
+  }
+
+  function scorePractice() {
+    var day = byId("practice-day").value;
+    if (!day) { return; }
+    var paste = byId("paste-input").value;
+    state.pastedText = paste.trim() === "" ? null : paste;
+    byId("practice-score-button").disabled = true;
+    byId("practice-note").textContent = "scoring…";
+    byId("practice-error").textContent = "";
+    fetch("/api/practice/score", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({day: day, record: assembleRecord(state)}),
+    }).then(function (response) {
+      return response.json().then(function (body) {
+        byId("practice-score-button").disabled = false;
+        byId("practice-note").textContent = "";
+        if (!response.ok) {
+          byId("practice-error").textContent =
+            body.detail || body.cause || "refused";
+          return;
+        }
+        practiceRounds += 1;
+        byId("practice-session").textContent =
+          practiceRounds + " scored this session";
+        byId("practice-score-line").textContent =
+          "trial score " + body.trial.p.toFixed(4)
+          + " - you beat " + body.trial.beaten + " of "
+          + body.trial.decoy_count + " decoys (rank "
+          + body.trial.target_rank + ", position "
+          + body.target_position + " of the full ordering)";
+        var rows = body.report || [];
+        byId("practice-report-table").classList.toggle(
+          "hidden", rows.length === 0);
+        renderReportRows(byId("practice-report-body"), rows);
+        var head = byId("practice-head-body");
+        head.innerHTML = "";
+        (body.ranking_head || []).forEach(function (row) {
+          var line = document.createElement("tr");
+          if (row.is_target) { line.className = "ok"; }
+          [String(row.position), row.fused.toFixed(4),
+           row.is_target ? "your target" : ""].forEach(function (cell) {
+            var td = document.createElement("td");
+            td.textContent = cell;
+            line.appendChild(td);
+          });
+          head.appendChild(line);
+        });
+        byId("practice-image").src = "/image/" + body.target_id;
+        byId("practice-result").classList.remove("hidden");
+      });
+    }).catch(function () {
+      byId("practice-score-button").disabled = false;
+      byId("practice-note").textContent = "the server did not answer";
+    });
+  }
+
+  byId("practice-link").addEventListener("click", function (event) {
+    event.preventDefault();
+    enterPractice();
+  });
+  byId("back-to-day").addEventListener("click", function (event) {
+    event.preventDefault();
+    leavePractice();
+  });
+  byId("practice-random").addEventListener("click", function () {
+    var select = byId("practice-day");
+    if (select.options.length > 0) {
+      select.selectedIndex = Math.floor(
+        Math.random() * select.options.length);
+    }
+  });
+  byId("practice-score-button").addEventListener("click", scorePractice);
+
   function renderReveal() {
     fetch("/api/reveal").then(function (response) {
       if (!response.ok) { show("view-closed"); return; }
@@ -448,19 +601,7 @@ function startTrialPage() {
         }
         var rows = body.report || [];
         byId("report-table").classList.toggle("hidden", rows.length === 0);
-        var tbody = byId("report-body");
-        tbody.innerHTML = "";
-        rows.forEach(function (row) {
-          var line = document.createElement("tr");
-          [row.atom_text, row.element === null ? "-" : row.element,
-           row.weight.toFixed(3), row.similarity.toFixed(3),
-           row.rarity.toFixed(2)].forEach(function (cell) {
-            var td = document.createElement("td");
-            td.textContent = String(cell);
-            line.appendChild(td);
-          });
-          tbody.appendChild(line);
-        });
+        renderReportRows(byId("report-body"), rows);
         show("view-reveal");
       });
     });

@@ -215,6 +215,12 @@ class PoolIndex:
     element_space_mean: FloatArray
     box_table: FloatArray
     box_mask: NDArray[np.bool_]
+    # The section 18 residency cache (spec P5 R2): the centered
+    # outline pool and its norms, calculated one time at index
+    # build. None keeps a directly constructed index usable - the
+    # channel then calculates the same values at scoring time.
+    outline_centered: FloatArray | None = None
+    outline_norms: FloatArray | None = None
 
 
 @dataclass(frozen=True, slots=True)
