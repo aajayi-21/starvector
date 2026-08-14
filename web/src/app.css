@@ -1,0 +1,11 @@
+/* App-level layout on top of the vendored Nocturne classes. The
+   mobile pass (spec W1 B10) extends this file. */
+
+.today-columns {
+  display: grid;
+  grid-template-columns: 1fr 372px;
+  gap: 20px;
+  padding: 0 28px 28px;
+  flex: 1;
+  align-items: start;
+}

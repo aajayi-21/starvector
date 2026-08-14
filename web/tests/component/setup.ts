@@ -6,6 +6,13 @@
  * the Playwright suite and the device matrix, not here.
  */
 
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+// Vitest runs without injected globals, so RTL cannot self-register
+// its cleanup — do it here or trees accumulate across tests.
+afterEach(() => cleanup());
+
 const FAKE_SIZE = { width: 300, height: 300 };
 
 class FakeResizeObserver {
@@ -73,4 +80,39 @@ Object.defineProperty(globalThis, "matchMedia", {
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
   }),
+});
+
+// jsdom 30 ships no Storage implementation — a memory stub matches
+// the app's disposable-cache semantics (spec W1 §8).
+class MemoryStorage {
+  private store = new Map<string, string>();
+
+  get length(): number {
+    return this.store.size;
+  }
+
+  getItem(key: string): string | null {
+    return this.store.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.store.set(key, String(value));
+  }
+
+  removeItem(key: string): void {
+    this.store.delete(key);
+  }
+
+  clear(): void {
+    this.store.clear();
+  }
+
+  key(index: number): string | null {
+    return [...this.store.keys()][index] ?? null;
+  }
+}
+
+Object.defineProperty(window, "localStorage", {
+  writable: true,
+  value: new MemoryStorage(),
 });
