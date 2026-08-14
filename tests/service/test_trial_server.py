@@ -77,7 +77,13 @@ def test_one_full_day_end_to_end(tmp_path) -> None:
              if image_id != record.target_id][0]
     assert client.get(f"/image/{other}").status_code == 404
 
-    history = client.get("/history")
+    # The history page is a dev surface (spec S2 B4): the
+    # plain client gets the constant refusal, the dev client the
+    # page.
+    assert client.get("/history").status_code == 404
+    dev_client = TestClient(create_app(fixture["service_config"],
+                                       dev_mode=True))
+    history = dev_client.get("/history")
     assert "DEV-ONLY" in history.text
     assert "skill number" in history.text
     assert DAY in history.text
@@ -92,7 +98,11 @@ def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
         return {path: client.get(path).content
                 for path in ("/", "/ui/trial.js", "/api/day",
                              "/api/reveal", "/api/practice",
-                             f"/image/{record.target_id}", "/history")}
+                             f"/image/{record.target_id}", "/history",
+                             "/api/history", "/api/me",
+                             f"/api/reveal?day={DAY}",
+                             f"/api/leaderboard?day={DAY}",
+                             f"/api/submission?day={DAY}")}
 
     while_open = walk()
     close_day(fixture["service_config"], providers=fixture["providers"],
@@ -184,7 +194,7 @@ def test_dev_surfaces_are_constant_404_without_the_flag(tmp_path) -> None:
     fixture, client = _world(tmp_path)
     record = store.read_day_record(fixture["store"], DAY)
     for path in ("/api/dev", "/dev", "/ui/dev.js", "/api/dev/rankings",
-                 "/api/dev/submission", "/api/dev/days"):
+                 "/api/dev/submission", "/api/dev/days", "/history"):
         for _ in range(2):
             answer = client.get(path)
             assert answer.status_code == 404, path

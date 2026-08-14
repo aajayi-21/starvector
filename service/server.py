@@ -667,6 +667,11 @@ def create_app(service_config: ServiceConfig,
 
     @app.get("/history")
     def history() -> Response:
+        # The app owns the /history path in production (spec S2
+        # section 3) - the page is a dev surface at this time.
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
         from html import escape
 
         rows = []
