@@ -1,8 +1,8 @@
 /**
- * The live fetch adapter (spec W1 §6). Relative URLs only — the dev
- * proxy and same-origin serving both work unchanged. No retries and
- * no fallbacks: a failed call throws ApiError and the screen shows
- * it (§8, fail loudly).
+ * The live fetch adapter (spec W1 §6 and the §7 surfaces spec S2
+ * made live). Relative URLs only — the dev proxy and same-origin
+ * serving both work unchanged. No retries and no fallbacks: a
+ * failed call throws ApiError and the screen shows it (§8).
  */
 
 import type { Api } from "./client";

@@ -21,7 +21,7 @@ export interface DayView {
   /** Revealed days only. */
   target_id?: string;
   secret?: string;
-  /** §7 contract field — absent from the live server today. */
+  /** Served by the day view; null when no close time is set. */
   closes_at?: string | null;
 }
 
@@ -111,7 +111,7 @@ export interface PracticeScore {
   report: ReportRow[];
 }
 
-// ── §7: the backend-phase contract, mock-served this phase ──────
+// ── §7: the contract spec S2 made live ─────────────────────────
 
 export interface HistoryDayRow {
   day: string;

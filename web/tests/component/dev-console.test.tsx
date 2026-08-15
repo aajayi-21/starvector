@@ -215,3 +215,60 @@ describe("the operator console", () => {
     });
   });
 });
+
+describe("the console's async discipline", () => {
+  it("drops a response from a day the operator left", async () => {
+    let releaseFirst: (value: DevRankings) => void = () => undefined;
+    const slow = new Promise<DevRankings>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const base = makeStubApi([
+      dayRow({ day: "2026-08-13", status: "revealed" }),
+      dayRow({ day: "2026-08-12", status: "revealed" }),
+    ]);
+    const api: DevApi = {
+      ...base,
+      getRankings: (day) => {
+        base.rankingsCalls.push(day);
+        return day === "2026-08-13"
+          ? slow
+          : Promise.resolve(rankingsFixture(8));
+      },
+    };
+    render(<DevApp api={api} />);
+    await screen.findByLabelText("stored day");
+    fireEvent.change(screen.getByLabelText("stored day"), {
+      target: { value: "2026-08-12" },
+    });
+    await waitFor(() => expect(screen.getByText(/of 8 \(rank/)).toBeDefined());
+    // The abandoned day's answer lands late and must be ignored.
+    releaseFirst(rankingsFixture(40));
+    await waitFor(() => expect(screen.getByText(/of 8 \(rank/)).toBeDefined());
+    expect(screen.queryByText(/of 40 \(rank/)).toBeNull();
+  });
+
+  it("offers no control before the day listing lands", async () => {
+    let release: (value: { days: DevDayRow[] }) => void = () => undefined;
+    const gate = new Promise<{ days: DevDayRow[] }>((resolve) => {
+      release = resolve;
+    });
+    const base = makeStubApi([dayRow({ status: "revealed" })]);
+    const api: DevApi = { ...base, getDays: () => gate };
+    render(<DevApp api={api} />);
+    expect(screen.queryByText("Open the next day")).toBeNull();
+    release({ days: [dayRow({ status: "revealed" })] });
+    expect(await screen.findByText("Open the next day")).toBeDefined();
+  });
+
+  it("shows a failed submission read instead of nothing-sent", async () => {
+    const base = makeStubApi([dayRow({ status: "open" })]);
+    const api: DevApi = {
+      ...base,
+      getSubmission: () =>
+        Promise.reject(new DevApiError(500, "the server did not answer")),
+    };
+    render(<DevApp api={api} />);
+    expect(await screen.findByText("the server did not answer")).toBeDefined();
+    expect(screen.queryByText("nothing sent this day")).toBeNull();
+  });
+});

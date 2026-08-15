@@ -94,7 +94,11 @@ function HistoryBody(props: {
         <div className="card elev-sm" style={{ gap: 8 }}>
           <Kicker>Skill number</Kicker>
           {view.skill === null ? (
-            <p className="text-muted">No revealed trial yet.</p>
+            <p className="text-muted">
+              {view.days.length === 0
+                ? "No revealed trial yet."
+                : "Skill number undefined — each trial score is 1.0."}
+            </p>
           ) : (
             <>
               <div

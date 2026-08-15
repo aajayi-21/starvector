@@ -61,6 +61,15 @@ read-only against the store, and the rescore byte equality
    `service/ui/` stays byte-untouched — its tests pin the page —
    and keeps serving with `--dev`.
 
+   Amended 2026-08-14 (review): the console's read surfaces want
+   `--dev`, and that flag also ungates `/image`, which the proxy
+   serves publicly. The public process thus keeps the flag off,
+   and a second unit (`deploy/starvector-dev.service`) carries it
+   on `127.0.0.1:8001` when the operator wants the console. The
+   proxy holds no path to that port. The two processes share the
+   store, which the `write_once_json` records and the guarded
+   status moves make safe.
+
 ## 3. The wire additions
 
 The shapes are typed in `web/src/api/types.ts` and this section
@@ -153,8 +162,15 @@ serves the API and the images.**
   leaked server key is bounded.
 
 The files land in `deploy/`: `Caddyfile`, `starvector.service`,
-`restic-backup.service`, `restic-backup.timer`, `env.example`,
-`restic-env.example`, and a provider-neutral `README.md` runbook.
+`starvector-dev.service`, `restic-backup.service`,
+`restic-backup.timer`, `env.example`, `restic-env.example`, and a
+provider-neutral `README.md` runbook.
+
+The proxy's refused set names each dev path in the two shapes a
+Caddy matcher needs — `/api/dev` and `/api/dev/*` are two
+patterns, and the bare one answers the day's target id. `/history`
+is not refused: the app owns that path, and the server's page
+answers 404 without the flag.
 
 ## 5. The operator console
 

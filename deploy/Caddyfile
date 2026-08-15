@@ -7,13 +7,20 @@ game.example.com {
 
 	# The operator plane and the console never serve publicly
 	# (spec S2 ruling 2): the operator reaches them through an
-	# SSH tunnel straight to uvicorn on 127.0.0.1:8000.
-	@blocked path /dev.html /api/dev/* /api/day/open /api/day/close /api/day/reveal /history /dev /ui/dev.js
+	# SSH tunnel to the on-demand dev unit on 127.0.0.1:8001.
+	#
+	# Caddy path matching is exact unless a wildcard ends the
+	# pattern, and /api/dev/* does NOT match the bare /api/dev -
+	# which answers the day's target id. Both forms are listed.
+	# /history is NOT here: the app owns that path (spec S2
+	# section 3), and the server's page already answers 404
+	# without the --dev flag.
+	@blocked path /dev.html /dev /ui/dev.js /api/dev /api/dev/* /api/day/open /api/day/close /api/day/reveal
 	handle @blocked {
 		respond 404
 	}
 
-	# The API and the images go to the one uvicorn process.
+	# The API and the images go to the one public uvicorn process.
 	handle /api/* {
 		reverse_proxy 127.0.0.1:8000
 	}
@@ -24,13 +31,14 @@ game.example.com {
 	# Hashed assets never fall back to index.html: a stale chunk
 	# answers 404 cleanly instead of HTML.
 	handle /assets/* {
-		root * /srv/starvector/web/dist
+		root * /srv/starvector/app/web/dist
 		file_server
 	}
 
-	# The app shell with the SPA fallback.
+	# The app shell with the SPA fallback. /history reaches the
+	# app here, as the app's own screen.
 	handle {
-		root * /srv/starvector/web/dist
+		root * /srv/starvector/app/web/dist
 		try_files {path} /index.html
 		file_server
 	}

@@ -1,0 +1,32 @@
+# The operator's console server (spec S2 ruling 4), started on
+# demand and never proxied:
+#   systemctl start starvector-dev      # then the SSH tunnel
+#   systemctl stop starvector-dev       # when the work is done
+#
+# --dev opens the console's read surfaces and, with them, each pool
+# image. The port binds to 127.0.0.1 alone and Caddy does not carry
+# it, thus the surface reaches the operator's tunnel and nothing
+# else. Do not add this port to the proxy.
+
+[Unit]
+Description=Starvector operator console server (on demand)
+After=network-online.target
+
+[Service]
+User=starvector
+Group=starvector
+WorkingDirectory=/srv/starvector/app
+EnvironmentFile=/etc/starvector/env
+ExecStart=/srv/starvector/app/.venv/bin/python -m service.server \
+    --service-config /etc/starvector/service.json --port 8001 --dev
+Restart=no
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/srv/starvector/app/store /srv/starvector/app/data
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
