@@ -155,3 +155,24 @@ describe("the Today screen", () => {
     expect(screen.queryByText("Send today's trial")).toBeNull();
   });
 });
+
+describe("the countdown", () => {
+  it("renders when the day carries closes_at", async () => {
+    const base = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...base,
+      getDay: async () => ({
+        ...(await base.getDay()),
+        closes_at: "2099-01-01T22:00:00+00:00",
+      }),
+    };
+    renderAt("/", api);
+    expect(await screen.findByText(/closes in \d+h \d+m/)).toBeDefined();
+  });
+
+  it("stays absent when closes_at is null", async () => {
+    renderAt("/");
+    await screen.findByText("Send today's trial");
+    expect(screen.queryByText(/closes in/)).toBeNull();
+  });
+});

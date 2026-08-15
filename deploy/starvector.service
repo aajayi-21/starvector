@@ -1,0 +1,34 @@
+# The one uvicorn process (spec S2 section 4). Install:
+#   cp deploy/starvector.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now starvector
+
+[Unit]
+Description=Starvector trial server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=starvector
+Group=starvector
+WorkingDirectory=/srv/starvector/app
+# The env file holds OPENROUTER_API_KEY (root:root, chmod 600).
+EnvironmentFile=/etc/starvector/env
+ExecStart=/usr/local/bin/uv run python -m service.server \
+    --service-config /etc/starvector/service.json --port 8000
+Restart=on-failure
+RestartSec=2
+
+# Hardening: the store and the data cache are the only writable
+# paths. Loosen ReadWritePaths if the roots move.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/srv/starvector/app/store /srv/starvector/app/data
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+
+[Install]
+WantedBy=multi-user.target

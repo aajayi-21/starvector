@@ -17,7 +17,6 @@ import type {
   SubmissionAck,
   WireRecord,
 } from "./types";
-import { ApiError } from "./types";
 
 export interface DayApi {
   getDay(): Promise<DayView>;
@@ -58,34 +57,12 @@ export type Api = DayApi &
 export type ApiMode = "composite" | "mock";
 
 /**
- * The composite: live §6 methods win over the mock's, the §7
- * domains stay mock, and a day-addressed reveal routes to the mock
- * (the live server serves the latest day alone). Full-mock mode
- * serves everything from the mock adapter.
+ * The composite: every surface is live (spec S2 made the §7
+ * contract real). Full-mock mode serves everything from the mock
+ * adapter — offline UI work and tests.
  */
-export function composeApi(
-  live: DayApi & PracticeApi,
-  mock: Api,
-  mode: ApiMode,
-): Api {
-  if (mode === "mock") {
-    return mock;
-  }
-  return {
-    ...mock,
-    ...live,
-    getReveal(day?: string): Promise<RevealView> {
-      return day === undefined ? live.getReveal() : mock.getReveal(day);
-    },
-    // The mock fabricates a stored submission for its own calendar;
-    // on a live day that fabrication would displace the player's
-    // genuine sent copy on the reveal screen. Until the backend
-    // phase serves GET /api/submission, the composite answers the
-    // constant 404 and the screen falls back to the sent copy.
-    getSubmission(): Promise<StoredSubmission> {
-      return Promise.reject(new ApiError(404, undefined, "no submission"));
-    },
-  };
+export function composeApi(live: Api, mock: Api, mode: ApiMode): Api {
+  return mode === "mock" ? mock : live;
 }
 
 export const ApiContext = createContext<Api | null>(null);

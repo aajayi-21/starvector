@@ -80,3 +80,19 @@
     height: 16px;
   }
 }
+
+/* The operator console's ranking table (spec S2 B6). */
+.dev-rankings img {
+  display: block;
+  transition: transform 0.12s;
+  transform-origin: left center;
+}
+.dev-rankings img:hover {
+  transform: scale(5);
+  position: relative;
+  z-index: 5;
+}
+.dev-target-row {
+  color: var(--color-accent-300);
+  font-weight: 600;
+}

@@ -5,13 +5,17 @@
  * it (§8, fail loudly).
  */
 
-import type { DayApi, PracticeApi } from "./client";
+import type { Api } from "./client";
 import type {
   DayView,
+  HistoryView,
+  LeaderboardView,
+  MeView,
   PracticeDays,
   PracticeScore,
   RefusalBody,
   RevealView,
+  StoredSubmission,
   SubmissionAck,
   WireRecord,
 } from "./types";
@@ -44,7 +48,7 @@ function postJson<T>(url: string, payload: unknown): Promise<T> {
   });
 }
 
-export function makeRealApi(): DayApi & PracticeApi {
+export function makeRealApi(): Api {
   return {
     getDay(): Promise<DayView> {
       return request<DayView>("/api/day");
@@ -53,13 +57,11 @@ export function makeRealApi(): DayApi & PracticeApi {
       return postJson<SubmissionAck>("/api/submission", record);
     },
     getReveal(day?: string): Promise<RevealView> {
-      if (day !== undefined) {
-        // §7 scaffold: the live server serves the latest day alone.
-        // The composite client routes day-addressed reveals to the
-        // mock adapter; reaching this line is a wiring bug.
-        throw new ApiError(501, undefined, "per-day reveal is not live yet");
-      }
-      return request<RevealView>("/api/reveal");
+      return request<RevealView>(
+        day === undefined
+          ? "/api/reveal"
+          : `/api/reveal?day=${encodeURIComponent(day)}`,
+      );
     },
     imageUrl(imageId: string): string {
       return `/image/${imageId}`;
@@ -69,6 +71,22 @@ export function makeRealApi(): DayApi & PracticeApi {
     },
     scorePractice(day: string, record: WireRecord): Promise<PracticeScore> {
       return postJson<PracticeScore>("/api/practice/score", { day, record });
+    },
+    getHistory(): Promise<HistoryView> {
+      return request<HistoryView>("/api/history");
+    },
+    getLeaderboard(day: string): Promise<LeaderboardView> {
+      return request<LeaderboardView>(
+        `/api/leaderboard?day=${encodeURIComponent(day)}`,
+      );
+    },
+    getSubmission(day: string): Promise<StoredSubmission> {
+      return request<StoredSubmission>(
+        `/api/submission?day=${encodeURIComponent(day)}`,
+      );
+    },
+    getMe(): Promise<MeView> {
+      return request<MeView>("/api/me");
     },
   };
 }

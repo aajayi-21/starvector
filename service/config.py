@@ -21,6 +21,13 @@ _PLAYER_RULE = re.compile(r"^[a-z0-9-]{1,64}$")
 _FIELDS = ("config_version", "player", "scoring_config", "data_root",
            "store_root", "port")
 
+# Optional fields parse when given and default when missing, so each
+# committed config stays readable (spec S2 ruling 3).
+_OPTIONAL_FIELDS = ("closes_at_utc",)
+
+# The display close time: "HH:MM", 24-hour, UTC.
+_CLOSES_AT_RULE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
 
 class ServiceConfigError(ValueError):
     """The server configuration file did not validate."""
@@ -28,20 +35,26 @@ class ServiceConfigError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ServiceConfig:
-    """The five values the server and the day commands read."""
+    """The values the server and the day commands read.
+
+    closes_at_utc is display-only (spec S2 ruling 3): the day view
+    computes closes_at from it for an open day. It does not enter
+    the stored day record, and closing stays the operator's action.
+    """
 
     player: str
     scoring_config: str
     data_root: str
     store_root: str
     port: int
+    closes_at_utc: str | None = None
 
 
 def parse_service_config(raw: object, source: str) -> ServiceConfig:
     """Parse and validate one raw JSON document into a ServiceConfig."""
     if not isinstance(raw, dict):
         raise ServiceConfigError(f"{source}: expected an object")
-    unknown = sorted(set(raw) - set(_FIELDS))
+    unknown = sorted(set(raw) - set(_FIELDS) - set(_OPTIONAL_FIELDS))
     missing = sorted(set(_FIELDS) - set(raw))
     if unknown or missing:
         parts = []
@@ -67,12 +80,19 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
             or not 1 <= port <= 65535:
         raise ServiceConfigError(
             f"{source}.port: expected an integer in [1, 65535]")
+    closes_at_utc = raw.get("closes_at_utc")
+    if closes_at_utc is not None and (
+            not isinstance(closes_at_utc, str)
+            or not _CLOSES_AT_RULE.match(closes_at_utc)):
+        raise ServiceConfigError(
+            f"{source}.closes_at_utc: expected \"HH:MM\" (24-hour UTC)")
     return ServiceConfig(
         player=raw["player"],
         scoring_config=raw["scoring_config"],
         data_root=raw["data_root"],
         store_root=raw["store_root"],
         port=port,
+        closes_at_utc=closes_at_utc,
     )
 
 

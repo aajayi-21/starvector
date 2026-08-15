@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-import { makeMockApi } from "../src/api/mock";
 import { blockExternalHosts } from "./helpers";
 
-test("history renders the pinned mock numbers", async ({ page }) => {
+test("history renders the live numbers", async ({ page }) => {
   await blockExternalHosts(page);
-  const today = new Date().toISOString().slice(0, 10);
-  const expected = await makeMockApi({ today }).getHistory();
+  const expected = await (
+    await page.request.get("http://127.0.0.1:8199/api/history")
+  ).json();
+  expect(expected.days.length).toBeGreaterThan(0);
   const theta = expected.skill?.theta.toFixed(3);
   expect(theta).toBeDefined();
 

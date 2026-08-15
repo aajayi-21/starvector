@@ -1,0 +1,37 @@
+# Starvector edge (spec S2 section 4).
+# Replace game.example.com with the real domain; Caddy fetches and
+# renews the certificate on its own.
+
+game.example.com {
+	encode zstd gzip
+
+	# The operator plane and the console never serve publicly
+	# (spec S2 ruling 2): the operator reaches them through an
+	# SSH tunnel straight to uvicorn on 127.0.0.1:8000.
+	@blocked path /dev.html /api/dev/* /api/day/open /api/day/close /api/day/reveal /history /dev /ui/dev.js
+	handle @blocked {
+		respond 404
+	}
+
+	# The API and the images go to the one uvicorn process.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /image/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Hashed assets never fall back to index.html: a stale chunk
+	# answers 404 cleanly instead of HTML.
+	handle /assets/* {
+		root * /srv/starvector/web/dist
+		file_server
+	}
+
+	# The app shell with the SPA fallback.
+	handle {
+		root * /srv/starvector/web/dist
+		try_files {path} /index.html
+		file_server
+	}
+}

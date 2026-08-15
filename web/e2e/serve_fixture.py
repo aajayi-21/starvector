@@ -19,9 +19,13 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "tests"))
 sys.path.insert(0, str(REPO / "tests" / "service"))
 
-import uvicorn  # noqa: E402
-from svc_fixture import FIXED_CLOCK, build_service_fixture  # noqa: E402
+import dataclasses  # noqa: E402
 
+import uvicorn  # noqa: E402
+from svc_fixture import (FIXED_CLOCK, build_service_fixture,  # noqa: E402
+                         mixed_wire_record)
+
+from service import store  # noqa: E402
 from service.day import close_day, open_day, reveal_day  # noqa: E402
 from service.server import create_app  # noqa: E402
 
@@ -34,15 +38,21 @@ def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="sv-e2e-"))
     print(f"building the fixture store in {root}", file=sys.stderr, flush=True)
     fixture = build_service_fixture(root)
-    config = fixture["service_config"]
+    # The close time lights the countdown field (spec S2 B8).
+    config = dataclasses.replace(fixture["service_config"],
+                                 closes_at_utc="22:00")
 
     def clock() -> str:
         return FIXED_CLOCK
 
-    # A revealed day for practice: opened, closed clean (zero
-    # submissions), revealed. Then the day the tests play.
+    # A revealed, played day: the live history, leaderboard, and
+    # stored-submission surfaces then hold one honest row.
     open_day(config, date=PRACTICE_DAY, clock=clock,
              pick_seed="a" * 32, secret="b" * 64)
+    store.write_once_json(
+        store.submission_path(root / "store", PRACTICE_DAY, "ade"),
+        {"day": PRACTICE_DAY, "player": "ade", "trial_id": "e" * 32,
+         "received_at": FIXED_CLOCK, "record": mixed_wire_record()})
     close_day(config, clock=clock)
     reveal_day(config, clock=clock)
     open_day(config, date=LIVE_DAY, clock=clock,
