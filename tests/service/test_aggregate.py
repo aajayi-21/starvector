@@ -9,8 +9,14 @@ import math
 import numpy as np
 import pytest
 
-from core.aggregate import (SkillSummary, chi_squared_tail, fdr_adjusted,
-                            shrunk_log_theta, skill_summary)
+from core.aggregate import (PROVISIONAL_MEAN, PROVISIONAL_SPREAD,
+                            SkillSummary, _generalized_q,
+                            _reml_score, baseline_check,
+                            chi_squared_tail, digamma, fdr_adjusted,
+                            fit_population, kolmogorov_tail,
+                            population_point, shrunk_log_theta,
+                            skill_summary, trigamma,
+                            variation_report)
 
 # Reference values from an offline high-precision computation
 # (scipy.stats.chi2.sf, 2026-08-12), 12 digits. The
@@ -51,10 +57,10 @@ def test_dof_two_is_the_bare_exponential() -> None:
 
 
 def test_bad_tail_inputs_raise() -> None:
-    with pytest.raises(ValueError, match="even"):
-        chi_squared_tail(1.0, 3)
-    with pytest.raises(ValueError, match="even"):
+    with pytest.raises(ValueError, match="positive"):
         chi_squared_tail(1.0, 0)
+    with pytest.raises(ValueError, match="positive"):
+        chi_squared_tail(1.0, -2)
     with pytest.raises(ValueError, match="not negative"):
         chi_squared_tail(-1.0, 2)
     with pytest.raises(ValueError, match="finite"):
@@ -145,3 +151,197 @@ def test_the_functions_are_deterministic() -> None:
     ps = [0.31, 0.77, 0.99, 0.45]
     assert skill_summary(ps) == skill_summary(ps)
     assert fdr_adjusted(ps) == fdr_adjusted(ps)
+
+
+# ---- spec M1 section 6: the accurate parameterization ----
+
+_GAMMA = 0.5772156649015328606
+
+
+def test_digamma_and_trigamma_match_their_closed_forms() -> None:
+    assert digamma(1.0) == pytest.approx(-_GAMMA, rel=1e-14)
+    assert digamma(0.5) == pytest.approx(-_GAMMA - 2.0 * math.log(2.0),
+                                         rel=1e-14)
+    assert digamma(2.0) == pytest.approx(1.0 - _GAMMA, rel=1e-14)
+    assert trigamma(1.0) == pytest.approx(math.pi ** 2 / 6.0, rel=1e-14)
+    assert trigamma(0.5) == pytest.approx(math.pi ** 2 / 2.0, rel=1e-14)
+
+
+@pytest.mark.parametrize("x", [0.3, 1.0, 2.7, 9.9, 40.0])
+def test_the_duplication_identities_hold(x: float) -> None:
+    # A property that wants no reference table, and the one identity
+    # available here: the reflection formula wants x below zero,
+    # which these functions refuse.
+    assert (0.5 * digamma(x) + 0.5 * digamma(x + 0.5) + math.log(2.0)
+            == pytest.approx(digamma(2.0 * x), rel=1e-12))
+    assert (0.25 * (trigamma(x) + trigamma(x + 0.5))
+            == pytest.approx(trigamma(2.0 * x), rel=1e-12))
+
+
+@pytest.mark.parametrize("x", [0.5, 1.0, 7.0, 250.0, 1.0e6])
+def test_the_recurrence_identities_hold(x: float) -> None:
+    # The tolerance is scaled to the operands and not to 1/x. At
+    # x = 1e6 the difference is 1e-6 formed from two values near
+    # 13.8, thus seven digits cancel by construction and a tighter
+    # bound is a flake waiting to occur.
+    assert abs((digamma(x + 1.0) - digamma(x)) - 1.0 / x) \
+        <= 8.0 * math.ulp(abs(digamma(x)))
+    assert abs((trigamma(x) - trigamma(x + 1.0)) - 1.0 / (x * x)) \
+        <= 8.0 * math.ulp(abs(trigamma(x)))
+
+
+@pytest.mark.parametrize("x", [1.0, 2.0, 10.0, 1000.0])
+def test_the_asymptotic_brackets_hold(x: float) -> None:
+    assert math.log(x) - 1.0 / x < digamma(x) < math.log(x) - 0.5 / x
+    assert 1.0 / x + 0.5 / (x * x) < trigamma(x) <= 1.0 / x + 1.0 / (x * x)
+
+
+def test_the_architecture_quotes_land() -> None:
+    # The section 17 change quotes these to two digits, thus the
+    # tolerance is the one that fits two digits.
+    assert math.log(1.0) - digamma(1.0) == pytest.approx(0.58, abs=5e-3)
+    assert math.log(10.0) - digamma(10.0) == pytest.approx(0.05, abs=5e-3)
+    assert 1.0 * trigamma(1.0) - 1.0 == pytest.approx(0.64, abs=5e-3)
+    assert 3.0 * trigamma(3.0) - 1.0 == pytest.approx(0.18, abs=5e-3)
+
+
+def test_the_parameterization_functions_are_monotone() -> None:
+    ladder = [0.5, 1.0, 2.0, 5.0, 20.0, 100.0]
+    assert all(digamma(a) < digamma(b)
+               for a, b in zip(ladder, ladder[1:]))
+    assert all(trigamma(a) > trigamma(b)
+               for a, b in zip(ladder, ladder[1:]))
+
+
+def test_the_parameterization_refuses_a_pole() -> None:
+    for bad in (0.0, -1.0, -0.5, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="positive"):
+            digamma(bad)
+        with pytest.raises(ValueError, match="positive"):
+            trigamma(bad)
+
+
+def test_the_odd_tail_agrees_with_its_closed_forms() -> None:
+    # dof 1 and dof 3 have elementary shapes, thus they pin the odd
+    # branch with no reference table.
+    for x in (0.1, 0.5, 1.0, 2.0, 3.84, 7.0, 15.0, 40.0):
+        assert chi_squared_tail(x, 1) == pytest.approx(
+            math.erfc(math.sqrt(x / 2.0)), rel=1e-12)
+        expected = (math.erfc(math.sqrt(x / 2.0))
+                    + 2.0 * math.sqrt(x / (2.0 * math.pi))
+                    * math.exp(-x / 2.0))
+        assert chi_squared_tail(x, 3) == pytest.approx(expected, rel=1e-12)
+
+
+def test_the_tail_rises_with_the_degrees_of_freedom() -> None:
+    for x in (150.0, 199.0, 250.0, 300.0):
+        assert chi_squared_tail(x, 198) < chi_squared_tail(x, 199) \
+            < chi_squared_tail(x, 200)
+
+
+def _null_points(count: int, low: int, high: int, seed: int,
+                 tau: float = 0.0) -> list:
+    """Players pulled from the accurate law, at a width of tau."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for n in rng.integers(low, high + 1, size=count):
+        skill = math.exp(tau * rng.standard_normal())
+        rows.append(population_point(int(n),
+                                     float(rng.gamma(int(n), 1.0 / skill))))
+    return rows
+
+
+def test_the_population_point_carries_the_exact_transform() -> None:
+    point = population_point(7, 4.0)
+    assert point.y == pytest.approx(digamma(7) - math.log(4.0), rel=1e-14)
+    assert point.v == pytest.approx(trigamma(7), rel=1e-14)
+    with pytest.raises(ValueError, match="trial count"):
+        population_point(0, 1.0)
+    with pytest.raises(ValueError, match="positive"):
+        population_point(3, 0.0)
+
+
+def test_the_fit_recovers_a_generated_population() -> None:
+    fit = fit_population(_null_points(200, 30, 200, 5, tau=0.20))
+    assert fit.fitted is True
+    assert 0.15 < fit.tau < 0.25
+    assert abs(fit.mu) < 3.0 * fit.mu_spread
+
+
+def test_the_zero_estimate_is_kept_as_zero() -> None:
+    # A fitted width of zero is a correct answer and stays one.
+    fit = fit_population(_null_points(400, 30, 200, 7))
+    assert fit.fitted is True
+    assert fit.tau == 0.0
+    assert fit.halvings == 0
+
+
+def test_the_returned_root_satisfies_the_score_equation() -> None:
+    # The honest test of a root: its own equation, not a number
+    # copied from somewhere else.
+    rows = _null_points(200, 30, 200, 11, tau=0.25)
+    fit = fit_population(rows)
+    scale = math.fsum(1.0 / (row.v + fit.tau ** 2) for row in rows)
+    assert abs(_reml_score(rows, fit.tau ** 2)) <= 1e-9 * scale
+
+
+def test_the_fit_is_a_function_of_its_input() -> None:
+    rows = _null_points(60, 30, 200, 13, tau=0.3)
+    assert fit_population(rows) == fit_population(rows)
+
+
+def test_the_fit_below_the_player_floor_is_provisional() -> None:
+    fit = fit_population(_null_points(10, 30, 200, 3))
+    assert fit.fitted is False
+    assert fit.player_count == 10
+    assert (fit.mu, fit.tau) == (PROVISIONAL_MEAN, PROVISIONAL_SPREAD)
+
+
+def test_the_variation_report_is_four_numbers_and_no_verdict() -> None:
+    rows = _null_points(200, 30, 200, 5, tau=0.20)
+    report = variation_report(rows, fit_population(rows))
+    assert report.dof == 199
+    assert report.q_significance < 0.01
+    assert report.tau_low < report.tau < (report.tau_high or math.inf)
+    assert report.tau_multiplicative == pytest.approx(math.exp(report.tau))
+    assert report.prediction_low < report.prediction_high
+
+
+def test_the_variation_interval_reaches_zero_on_a_flat_population() -> None:
+    # The contour method is what stays honest here: a symmetric
+    # interval can put the bottom end below zero and say nothing.
+    rows = _null_points(200, 30, 200, 7)
+    report = variation_report(rows, fit_population(rows))
+    assert report.tau == 0.0
+    assert report.tau_low == 0.0
+    assert report.tau_high is not None and report.tau_high > 0.0
+    assert report.q_significance > 0.05
+
+
+def test_the_profile_ends_satisfy_their_defining_equation() -> None:
+    rows = _null_points(200, 30, 200, 5, tau=0.20)
+    report = variation_report(rows, fit_population(rows))
+    for end, level in ((report.tau_low, 0.025), (report.tau_high, 0.975)):
+        assert end is not None
+        tail = chi_squared_tail(_generalized_q(rows, end * end), report.dof)
+        assert tail == pytest.approx(level, abs=1e-6)
+
+
+def test_the_baseline_check_passes_the_null_and_fails_skewed_play(
+) -> None:
+    assert baseline_check(_null_points(300, 30, 200, 9)).significance > 0.01
+    rng = np.random.default_rng(4)
+    skewed = [population_point(int(n), float(rng.gamma(int(n), 0.6)))
+              for n in rng.integers(30, 200, size=300)]
+    assert baseline_check(skewed).significance < 1e-6
+
+
+def test_the_core_and_harness_kolmogorov_values_agree() -> None:
+    # core must not import validation, thus this file holds the
+    # tail two times, and this test keeps the two together.
+    from validation.v2 import ks_significance
+
+    for statistic in (0.01, 0.05, 0.1, 0.2, 0.4):
+        for count in (10, 100, 1000):
+            assert kolmogorov_tail(statistic, count) == pytest.approx(
+                ks_significance(statistic, count), rel=1e-12)
