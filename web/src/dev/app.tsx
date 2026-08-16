@@ -18,8 +18,29 @@ function messageOf(error: unknown): string {
   return error instanceof DevApiError ? error.message : "refused";
 }
 
+/** Where the operator token is kept between visits. */
+export const TOKEN_KEY = "sv:dev:token";
+
+function storedToken(): string {
+  try {
+    return window.localStorage.getItem(TOKEN_KEY) ?? "";
+  } catch {
+    // A browser with storage refused still runs the console; the
+    // operator pastes the token on each visit.
+    return "";
+  }
+}
+
 export function DevApp(props: { api?: DevApi }): React.JSX.Element {
-  const [api] = useState<DevApi>(() => props.api ?? makeDevApi());
+  const [token, setToken] = useState(storedToken);
+  // Read at call time, so a pasted token takes effect on the next
+  // request. Held in a ref so the client is built once and the
+  // loadDays callback does not change identity on each keystroke.
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const [api] = useState<DevApi>(
+    () => props.api ?? makeDevApi(() => tokenRef.current),
+  );
   const [days, setDays] = useState<DevDayRow[] | null>(null);
   const [note, setNote] = useState("");
   const [selected, setSelected] = useState<DevDayRow | null>(null);
@@ -90,9 +111,15 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
     } catch (error) {
       setDays([]);
       setSelected(null);
+      // A refused operator check on a dev read answers the same 404
+      // the server gives with no --dev flag, and that is deliberate:
+      // a 401 there would announce that dev mode is on. The console
+      // only ever runs against a dev server, thus it can say both
+      // causes out loud without opening the oracle on the wire.
       setNote(
         error instanceof DevApiError && error.status === 404
-          ? "start the server with --dev to use this console"
+          ? "not found: start the server with --dev, or the operator " +
+              "token is missing or wrong"
           : messageOf(error),
       );
     }
@@ -161,6 +188,24 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
           flexWrap: "wrap",
         }}
       >
+        <input
+          className="input"
+          type="password"
+          aria-label="operator token"
+          placeholder="operator token"
+          style={{ width: 220 }}
+          value={token}
+          onChange={(event) => {
+            const next = event.target.value;
+            setToken(next);
+            try {
+              window.localStorage.setItem(TOKEN_KEY, next);
+            } catch {
+              // Storage refused: the token still works this visit.
+            }
+          }}
+          onBlur={() => void loadDays()}
+        />
         {days !== null && days.length > 0 ? (
           <select
             className="input"

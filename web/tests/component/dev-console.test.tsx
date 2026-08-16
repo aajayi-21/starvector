@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DevApi } from "../../src/dev/api";
 import { DevApiError } from "../../src/dev/api";
-import { DevApp } from "../../src/dev/app";
+import { DevApp, TOKEN_KEY } from "../../src/dev/app";
 import type { DevDayRow, DevRankings, DevStored } from "../../src/dev/types";
 
 afterEach(() => {
@@ -258,6 +258,39 @@ describe("the console's async discipline", () => {
     expect(screen.queryByText("Open the next day")).toBeNull();
     release({ days: [dayRow({ status: "revealed" })] });
     expect(await screen.findByText("Open the next day")).toBeDefined();
+  });
+
+  it("keeps the operator token across visits", async () => {
+    window.localStorage.removeItem(TOKEN_KEY);
+    const api = makeStubApi([dayRow({ status: "revealed" })]);
+    const first = render(<DevApp api={api} />);
+    const field = await screen.findByLabelText("operator token");
+    // A password field: the token is a credential, not a setting.
+    expect(field.getAttribute("type")).toBe("password");
+    fireEvent.change(field, { target: { value: "an-operator-token" } });
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBe("an-operator-token");
+    first.unmount();
+
+    render(<DevApp api={api} />);
+    const again = await screen.findByLabelText("operator token");
+    expect((again as HTMLInputElement).value).toBe("an-operator-token");
+    window.localStorage.removeItem(TOKEN_KEY);
+  });
+
+  it("names both causes of a refused dev read", async () => {
+    // The server answers a refused operator check on a dev read
+    // with the same 404 it gives with no --dev flag, on purpose: a
+    // 401 there would announce that dev mode is on. The console
+    // only ever runs against a dev server, thus it can say both
+    // causes without opening that oracle on the wire.
+    const base = makeStubApi([]);
+    const api: DevApi = {
+      ...base,
+      getDays: () => Promise.reject(new DevApiError(404, "not found")),
+    };
+    render(<DevApp api={api} />);
+    const note = await screen.findByText(/start the server with --dev/);
+    expect(note.textContent).toContain("operator token is missing or wrong");
   });
 
   it("shows a failed submission read instead of nothing-sent", async () => {
