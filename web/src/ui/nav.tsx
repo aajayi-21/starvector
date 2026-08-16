@@ -16,7 +16,9 @@ const activeProps = { "aria-current": "page" } as const;
 export function Nav(): React.JSX.Element {
   const api = useApi();
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
-  const initial = (me.data?.player ?? "").slice(0, 2).toUpperCase();
+  // The label, not the store key (spec M1 §9). The account card
+  // takes its initials from the same field.
+  const initial = (me.data?.display_name ?? "").slice(0, 2).toUpperCase();
   return (
     <nav
       className="nav"
@@ -38,7 +40,7 @@ export function Nav(): React.JSX.Element {
       <Link to="/history" activeProps={activeProps}>
         History
       </Link>
-      <Link to="/reveal" activeProps={activeProps}>
+      <Link to="/leaderboard" activeProps={activeProps}>
         Leaderboard
       </Link>
       {me.data === undefined ? null : (

@@ -34,6 +34,16 @@
   align-items: start;
 }
 
+/* The leaderboard (spec M1 §9). The chart column leads: the funnel
+   is the screen's primary shape and it wants the width. */
+.leaderboard-columns {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  padding: 24px 28px 28px;
+  align-items: start;
+}
+
 /* The target code row (mock 1a / 1f). */
 .target-code-row {
   display: flex;
@@ -58,10 +68,17 @@
   .today-columns,
   .reveal-columns,
   .reveal-tables,
-  .history-columns {
+  .history-columns,
+  .leaderboard-columns {
     grid-template-columns: 1fr;
     padding-left: 16px;
     padding-right: 16px;
+  }
+  /* Five columns of numbers do not fit 390 px. The table scrolls
+     inside its own card rather than pushing the page sideways. */
+  .leaderboard-columns .table {
+    display: block;
+    overflow-x: auto;
   }
   .nav {
     flex-wrap: wrap;

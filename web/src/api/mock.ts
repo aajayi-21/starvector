@@ -527,12 +527,18 @@ export function makeMockApi(options: MockOptions = {}): Api {
         },
       });
     },
-    getLeaderboard(day: string): Promise<LeaderboardView> {
+    getLeaderboard(named?: string): Promise<LeaderboardView> {
       // Any requested day is served: in composite mode the caller
       // holds a day the live server revealed, and the mock cannot
       // know the live revealed set — a gate here would kill the
       // card for real days (the backend phase adds the true
       // revealed-only 404).
+      //
+      // No day names the newest revealed one, as the server does.
+      const day = named ?? playedDays[0];
+      if (day === undefined) {
+        return Promise.reject(new ApiError(404, undefined, "not revealed"));
+      }
       const own = trialFor(day);
       const rows: LeaderboardRow[] = [
         {

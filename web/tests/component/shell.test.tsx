@@ -25,11 +25,16 @@ describe("the shell", () => {
   });
 
   it("renders each screen at its path", async () => {
+    // Each pattern must name something only that screen renders.
+    // "Leaderboard" was matching the nav item, which renders on
+    // every path, so the /reveal probe passed without the reveal
+    // screen having to render at all.
     const paths: Array<[string, RegExp]> = [
       ["/", /Today's target/],
       ["/practice", /Practice/],
       ["/history", /History/],
-      ["/reveal", /Reveal|Leaderboard/],
+      ["/leaderboard", /The day's board/],
+      ["/reveal", /Trial score/],
     ];
     for (const [path, expected] of paths) {
       const view = renderAt(path);

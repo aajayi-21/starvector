@@ -38,7 +38,8 @@ export interface HistoryApi {
 }
 
 export interface LeaderboardApi {
-  getLeaderboard(day: string): Promise<LeaderboardView>;
+  /** No argument: the newest revealed day (spec M1 §8). */
+  getLeaderboard(day?: string): Promise<LeaderboardView>;
   getSkillLeaderboard(): Promise<SkillBoardView>;
 }
 

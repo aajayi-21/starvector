@@ -237,8 +237,12 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
                     }
                   >
                     <td>{index + 1}</td>
+                    {/* Key and compare on the store key, which is
+                        unique; render the label, which is not. */}
                     <td>
-                      {row.player === me.data?.player ? "you" : row.player}
+                      {row.player === me.data?.player
+                        ? "you"
+                        : row.display_name}
                     </td>
                     <td>{row.p.toFixed(4)}</td>
                     <td>

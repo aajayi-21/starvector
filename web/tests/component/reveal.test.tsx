@@ -37,11 +37,13 @@ describe("the Reveal screen", () => {
       expect(screen.getByText(row.atom_text)).toBeDefined();
     }
     await screen.findByText("Today's leaderboard");
-    // The own row renders as "you", the cast by name.
+    // The own row renders as "you", the cast by label. The card
+    // compares on the store key and renders display_name, and two
+    // players may share a label, thus getAllByText.
     expect(screen.getByText("you")).toBeDefined();
     const named = board.rows.filter((row) => row.player !== "ade");
     for (const row of named) {
-      expect(screen.getByText(row.player)).toBeDefined();
+      expect(screen.getAllByText(row.display_name).length).toBeGreaterThan(0);
     }
   });
 

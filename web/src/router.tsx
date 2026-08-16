@@ -16,6 +16,7 @@ import {
 import { useApi } from "./api/client";
 import { isUnauthorized } from "./api/types";
 import { HistoryScreen } from "./screens/history";
+import { LeaderboardScreen } from "./screens/leaderboard";
 import { PracticeScreen } from "./screens/practice";
 import { RevealScreen } from "./screens/reveal";
 import { TodayScreen } from "./screens/today";
@@ -63,6 +64,12 @@ const historyRoute = createRoute({
   component: HistoryScreen,
 });
 
+const leaderboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/leaderboard",
+  component: LeaderboardScreen,
+});
+
 export interface RevealSearch {
   day?: string;
 }
@@ -80,6 +87,7 @@ const routeTree = rootRoute.addChildren([
   todayRoute,
   practiceRoute,
   historyRoute,
+  leaderboardRoute,
   revealRoute,
 ]);
 
