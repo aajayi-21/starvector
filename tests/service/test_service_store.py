@@ -150,6 +150,28 @@ def _config_value(**overrides: object) -> dict:
     return value
 
 
+def test_the_shipped_config_port_agrees_with_the_web_proxy() -> None:
+    """The local loop is two processes and they must agree.
+
+    The web dev server sends /api to a default address and the
+    shipped server config names a port. While the two are
+    different the app says the server did not answer while a
+    server is up, the proxy logs a refused connection, and nothing
+    on the two sides names the cause. The deployed unit passes
+    --port 8000, thus 8000 is the number the two sides hold and
+    spec W1 section 13 prints it.
+    """
+    import re
+
+    root = Path(__file__).resolve().parents[2]
+    shipped = json.loads((root / "configs/service/dev-wit.json").read_text())
+    found = re.search(
+        r'VITE_PROXY_TARGET \?\? "http://127\.0\.0\.1:(\d+)"',
+        (root / "web/vite.config.ts").read_text())
+    assert found is not None, "the web proxy default moved"
+    assert shipped["port"] == int(found.group(1))
+
+
 def test_the_service_config_parses_and_is_strict() -> None:
     config = parse_service_config(_config_value(), "test")
     assert config.player == "ade"
