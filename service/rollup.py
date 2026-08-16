@@ -212,6 +212,18 @@ def _band(counts: list[int], mu: float) -> list[dict[str, JsonValue]]:
     return rows
 
 
+def _row_order(row: dict) -> tuple:
+    """Eligible players by expected rank, then the others by trials.
+
+    One total sequence, thus two assemblies give equal bytes. The
+    ineligible run reads by trial count down, which puts the player
+    who is nearest the floor at its head.
+    """
+    if row["eligible"]:
+        return (0, row["expected_rank"], row["player"])
+    return (1, -row["n"], row["player"])
+
+
 def skill_board_value(pairs: list[dict], *, scoring_hash: str,
                       preparation_version_id: str, day: str, seed: int,
                       created_at: str | None) -> dict[str, JsonValue]:
@@ -229,6 +241,17 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
     turns the board on, and provisional stands until the population
     floor. A new deployment thus gates itself with no operator
     step.
+
+    Each player holds a row and the eligible players hold a rank
+    (ruling 17 of 2026-08-16). A player below the trial floor keeps
+    their skill number and their evidence value, because the two
+    read their own pair alone, and their shrunk value, expected
+    rank, and rank interval are None. The fit and the rank
+    simulation read the eligible set, thus to give an ineligible
+    player a rank moves the rank of each other player. The chart
+    plots each row and the ranked table reads the eligible ones:
+    that is what lets a player read the low-trial scatter as noise
+    (section 9) while membership stays at the floor.
 
     A player with 1.0 at each trial score has no skill number, thus
     they stay off this board and degenerate_count says how many.
@@ -299,26 +322,34 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
     posteriors = [aggregate.posterior_normal(points[pair["player"]], fit)
                   for pair in eligible]
     ranks = aggregate.posterior_ranks(posteriors, seed=seed)
+    ranked = {pair["player"]: (posterior, rank) for pair, posterior, rank
+              in zip(eligible, posteriors, ranks)}
     fixed_values, rows = [], []
-    for pair, posterior, rank in zip(eligible, posteriors, ranks):
+    for pair in usable:
         point = points[pair["player"]]
         summary = aggregate.summary_of_pair(
             pair["n"], pair["s_statistic"],
             clamp_count=pair["clamp_count"], unbiased=pair["n"] >= 2)
         evidence = aggregate.anytime_evidence(pair["n"],
                                               pair["s_statistic"])
-        fixed_values.append(summary.evidence_p)
+        posterior, rank = ranked.get(pair["player"], (None, None))
+        if rank is not None:
+            fixed_values.append(summary.evidence_p)
         rows.append({
             "player": pair["player"], "n": pair["n"],
+            "eligible": rank is not None,
             "theta": quantized(summary.theta),
-            "shrunk": quantized(posterior.mean),
+            "shrunk": (None if posterior is None
+                       else quantized(posterior.mean)),
             "y": quantized(point.y), "v": quantized(point.v),
-            "expected_rank": quantized(rank.expected_rank),
-            "rank_low": rank.rank_low, "rank_high": rank.rank_high,
+            "expected_rank": (None if rank is None
+                              else quantized(rank.expected_rank)),
+            "rank_low": None if rank is None else rank.rank_low,
+            "rank_high": None if rank is None else rank.rank_high,
             "evidence_p": quantized(summary.evidence_p),
             "log_e_value": quantized(evidence.log_e_value),
             "anytime_significance": quantized(evidence.significance)})
-    rows.sort(key=lambda row: (row["expected_rank"], row["player"]))
+    rows.sort(key=_row_order)
     body["rows"] = rows
     claim = aggregate.discovery_report(fixed_values)
     body["discovery"] = {

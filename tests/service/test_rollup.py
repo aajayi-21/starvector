@@ -247,16 +247,17 @@ def test_the_skill_board_gates_itself_on_a_new_deployment(
 
 
 def _synthetic_pairs(count: int, trials: int, scoring_hash: str,
-                     preparation_version_id: str) -> list[dict]:
+                     preparation_version_id: str, *, spread: int = 40,
+                     first: int = 0) -> list[dict]:
     """Pairs with no store behind them, for the board arithmetic."""
     import numpy as np
 
     rng = np.random.default_rng(5)
     pairs = []
     for index in range(count):
-        n = trials + int(rng.integers(0, 40))
+        n = trials + int(rng.integers(0, spread))
         pairs.append({
-            "player": f"player-{index:03d}",
+            "player": f"player-{first + index:03d}",
             "scoring_config_hash": scoring_hash,
             "preparation_version_id": preparation_version_id,
             "n": n, "clamp_count": 0,
@@ -297,6 +298,64 @@ def test_a_full_population_reports_each_number() -> None:
     assert ranks == sorted(ranks)
     for row in board["rows"]:
         assert row["rank_low"] <= row["expected_rank"] <= row["rank_high"]
+
+
+def test_each_player_holds_a_row_and_the_eligible_hold_a_rank() -> None:
+    """Ruling 17 of 2026-08-16.
+
+    A player below the trial floor keeps their skill number and
+    their evidence value, which read their own pair alone. They
+    hold no rank: the fit and the rank simulation read the eligible
+    set, thus to give one of them a rank moves the rank of each
+    other player. The fields are None and not a number a reader has
+    to know to discard.
+    """
+    pairs = (_synthetic_pairs(40, 40, "h" * 64, "p" * 64)
+             + _synthetic_pairs(12, 5, "h" * 64, "p" * 64,
+                                spread=10, first=100))
+    board = rollup.skill_board_value(
+        pairs, scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        day=DAYS[0], seed=7, created_at=FIXED_CLOCK)
+    assert board["player_count"] == 52
+    assert board["eligible_count"] == 40
+    assert len(board["rows"]) == 52
+    ranked = [row for row in board["rows"] if row["eligible"]]
+    rest = [row for row in board["rows"] if not row["eligible"]]
+    assert len(ranked) == 40 and len(rest) == 12
+    # The eligible run leads, ordered by the expected rank.
+    assert board["rows"][:40] == ranked
+    assert [row["expected_rank"] for row in ranked] \
+        == sorted(row["expected_rank"] for row in ranked)
+    for row in ranked:
+        assert row["n"] >= board["eligibility_floor"]
+        assert row["rank_low"] <= row["expected_rank"] <= row["rank_high"]
+        assert row["shrunk"] is not None
+    for row in rest:
+        assert row["n"] < board["eligibility_floor"]
+        assert row["expected_rank"] is None
+        assert row["rank_low"] is None and row["rank_high"] is None
+        assert row["shrunk"] is None
+        # The chart plots them, thus these two travel.
+        assert row["theta"] > 0
+        assert row["v"] > 0
+    # The ineligible run reads by trial count down.
+    assert [row["n"] for row in rest] \
+        == sorted((row["n"] for row in rest), reverse=True)
+    # One population definition: the claim tests the eligible set.
+    assert board["discovery"]["tested"] == 40
+    assert board["variation"]["dof"] == 39
+
+
+def test_the_board_rows_hold_one_field_set() -> None:
+    """A nullable field is a field. A screen reads one shape."""
+    pairs = (_synthetic_pairs(2, 40, "h" * 64, "p" * 64)
+             + _synthetic_pairs(2, 5, "h" * 64, "p" * 64,
+                                spread=10, first=100))
+    board = rollup.skill_board_value(
+        pairs, scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        day=DAYS[0], seed=7, created_at=FIXED_CLOCK)
+    shapes = {tuple(sorted(row)) for row in board["rows"]}
+    assert len(shapes) == 1
 
 
 def test_the_recomputed_floor_stays_a_report(tmp_path) -> None:

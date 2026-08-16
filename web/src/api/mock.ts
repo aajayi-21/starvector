@@ -161,6 +161,27 @@ const STEM_B = [
   "ember",
 ];
 
+/**
+ * The two evidence fields, kept consistent with each other.
+ *
+ * The live pair comes from one closed form (spec M1 §6) that a
+ * mock has no business reimplementing — a Layer 9 formula lives
+ * in one place. So the mock draws the significance and derives
+ * the e-value from it. What matters here is that the two agree:
+ * a screen that renders one from the other must not meet a row
+ * where they disagree.
+ */
+function significanceOf(drawn: number): {
+  log_e_value: number;
+  anytime_significance: number;
+} {
+  const significance = Math.min(1, Math.max(1e-6, drawn));
+  return {
+    log_e_value: round4(-Math.log(significance)),
+    anytime_significance: round4(significance),
+  };
+}
+
 /** A standard normal from two keyed draws - Box-Muller, pure. */
 function normalDraw(key: string): number {
   const first = Math.max(draw(`${key}:u`), 1e-12);
@@ -200,49 +221,64 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
       player: `${first}-${second}-${index}`,
       display_name: `${first} ${second}`,
       n,
+      eligible: n >= MOCK_ELIGIBILITY_FLOOR,
       theta: round4(Math.exp(logTheta)),
-      shrunk: round4(logTheta),
+      shrunk: null,
       y: round4(logTheta),
       v: round4(1 / n),
-      expected_rank: 0,
-      rank_low: 0,
-      rank_high: 0,
+      expected_rank: null,
+      rank_low: null,
+      rank_high: null,
       evidence_p: round4(draw(`pop:p:${index}`)),
-      log_e_value: 0,
-      anytime_significance: round4(draw(`pop:s:${index}`)),
+      ...significanceOf(draw(`pop:s:${index}`)),
     });
   }
   rows.unshift({
     player,
     display_name: player,
     n: 61,
+    eligible: true,
     theta: round4(Math.exp(MOCK_MU + 0.31)),
-    shrunk: round4(MOCK_MU + 0.24),
+    shrunk: null,
     y: round4(MOCK_MU + 0.31),
     v: round4(1 / 61),
-    expected_rank: 0,
-    rank_low: 0,
-    rank_high: 0,
+    expected_rank: null,
+    rank_low: null,
+    rank_high: null,
     evidence_p: round4(ownScore),
-    log_e_value: 2.1,
-    anytime_significance: 0.041,
+    ...significanceOf(0.041),
   });
 
-  rows.sort((a, b) => b.shrunk - a.shrunk);
-  const middle = (rows.length + 1) / 2;
-  rows.forEach((row, position) => {
+  // Ruling 17 of 2026-08-16: every player holds a row and the
+  // eligible ones hold a rank. The ranking runs over the eligible
+  // rows alone, thus the low-trial scatter cannot move anybody's
+  // rank - the rule the server follows.
+  const eligible = rows.filter((row) => row.eligible);
+  const rest = rows.filter((row) => !row.eligible);
+  eligible.sort((a, b) => b.y - a.y);
+  const middle = (eligible.length + 1) / 2;
+  eligible.forEach((row, position) => {
+    const weight = row.n / (row.n + 1 / (MOCK_TAU * MOCK_TAU));
+    // The shrunk estimate pulls toward the population centre, thus
+    // the table's number and the chart's dot are not the same
+    // number - which is the point of plotting the raw estimate.
+    row.shrunk = round4(MOCK_MU + (row.y - MOCK_MU) * weight);
     // The posterior expected rank pulls a low-trial player toward
     // the middle (spec M1 §6). The mock reproduces the direction
     // with the shrinkage weight and not the simulation.
-    const weight = row.n / (row.n + 1 / (MOCK_TAU * MOCK_TAU));
-    row.expected_rank = round4(weight * (position + 1) + (1 - weight) * middle);
-    const half = Math.max(1, Math.round((1 - weight) * rows.length * 0.5 + 2));
-    row.rank_low = Math.max(1, Math.round(row.expected_rank) - half);
-    row.rank_high = Math.min(rows.length, Math.round(row.expected_rank) + half);
+    const rank = round4(weight * (position + 1) + (1 - weight) * middle);
+    const half = Math.max(
+      1,
+      Math.round((1 - weight) * eligible.length * 0.5 + 2),
+    );
+    row.expected_rank = rank;
+    row.rank_low = Math.max(1, Math.round(rank) - half);
+    row.rank_high = Math.min(eligible.length, Math.round(rank) + half);
   });
-  rows.sort((a, b) => a.expected_rank - b.expected_rank);
+  eligible.sort((a, b) => (a.expected_rank ?? 0) - (b.expected_rank ?? 0));
+  rest.sort((a, b) => b.n - a.n);
+  const ordered = [...eligible, ...rest];
 
-  const eligible = rows.filter((row) => row.n >= MOCK_ELIGIBILITY_FLOOR);
   const mean =
     eligible.reduce((total, row) => total + row.y, 0) / eligible.length;
   // Computed from the generated rows, thus the reported number
@@ -265,15 +301,15 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
   }
   const flagged = eligible.filter((row) => row.evidence_p <= 0.05).length;
   return {
-    active: true,
-    player_count: rows.length,
+    active: eligible.length >= 1,
+    player_count: ordered.length,
     eligible_count: eligible.length,
     degenerate_count: 0,
     eligibility_floor: MOCK_ELIGIBILITY_FLOOR,
     recomputed_floor: null,
     fit_floor: MOCK_FIT_FLOOR,
     provisional: eligible.length < MOCK_FIT_FLOOR,
-    rows,
+    rows: ordered,
     baseline_band: band,
     population: {
       mu: round4(MOCK_MU),
