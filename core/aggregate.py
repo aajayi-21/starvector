@@ -244,17 +244,37 @@ def skill_summary(ps: Sequence[float], unbiased: bool = True) -> SkillSummary:
         raise ValueError(
             "each trial score is 1.0 - S is 0 and the skill number is "
             "out of range")
+    return summary_of_pair(n, s_statistic, clamp_count=clamp_count,
+                           unbiased=unbiased)
+
+
+def summary_of_pair(n: int, s_statistic: float, *, clamp_count: int = 0,
+                    unbiased: bool = True) -> SkillSummary:
+    """The section 17 aggregate from a folded pair.
+
+    skill_summary walks the trial scores and this reads the two
+    numbers a rollup keeps, thus a stored pair and a new walk give
+    the same record and the formula lives one time.
+
+    A trial count below one, an S statistic at or below zero, or
+    the unbiased variant at a trial count of one raises.
+    """
+    if n < 1:
+        raise ValueError(f"the trial count must be at least 1, got {n}")
+    if unbiased and n < 2:
+        raise ValueError(
+            "the unbiased variant needs n >= 2 - (n - 1) / S at n = 1 "
+            "is 0, not an estimate (spec S1 section 14a)")
+    if not math.isfinite(s_statistic) or s_statistic <= 0.0:
+        raise ValueError(
+            "each trial score is 1.0 - S is 0 and the skill number is "
+            "out of range")
     theta = ((n - 1) if unbiased else n) / s_statistic
     return SkillSummary(
-        n=n,
-        clamp_count=clamp_count,
-        s_statistic=s_statistic,
-        theta=theta,
-        log_theta=math.log(theta),
-        evidence_statistic=2.0 * s_statistic,
-        dof=2 * n,
-        evidence_p=1.0 - chi_squared_tail(2.0 * s_statistic, 2 * n),
-    )
+        n=n, clamp_count=clamp_count, s_statistic=s_statistic,
+        theta=theta, log_theta=math.log(theta),
+        evidence_statistic=2.0 * s_statistic, dof=2 * n,
+        evidence_p=1.0 - chi_squared_tail(2.0 * s_statistic, 2 * n))
 
 
 def shrunk_log_theta(log_theta: float, n: int, population_mean: float,
