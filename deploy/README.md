@@ -146,6 +146,40 @@ The two processes share the store. The store's `write_once_json`
 records and its guarded status moves keep that safe, and the
 operator moves days from the dev unit.
 
+### The operator token
+
+The tunnel and the proxy refusal are two layers. The bearer token
+is the third. It holds when the other two are misconfigured. Put
+`STARVECTOR_OPERATOR_TOKEN` in `/etc/starvector/env` before the
+first invite goes out. **The server refuses to start when the
+store holds player records and this token is not set.**
+
+The token stands in front of the three day lifecycle paths, the
+console surfaces, and the player mint. The console asks for it in
+a field and keeps it in the browser's local storage.
+
+A check that does not agree on a console surface answers the same
+404 that the surface gives with no `--dev` flag. That is
+deliberate: a 401 there tells an outsider that this deployment
+runs the flag. The lifecycle paths answer 401, because they are in
+each process and there is nothing to hide.
+
+### Inviting a player
+
+```
+# on the box, as the starvector user
+cd /srv/starvector/app
+.venv/bin/python -m service.players \
+    --service-config /etc/starvector/service.json \
+    --origin https://<domain> \
+    mint <name> --display-name "<label>"
+```
+
+The invite prints one time. The store keeps its digest alone, thus
+an invite nobody can find wants `rotate` and not a lookup. `list`
+shows the roster with no secret in it, `revoke` stops a player,
+and `restore` puts one back with a new invite.
+
 ## 8. The smoke checklist
 
 - The site answers on HTTPS with the app. `/history` and the other
@@ -155,6 +189,12 @@ operator moves days from the dev unit.
   → 404. The same for `/api/dev`, `/api/dev/days`, and
   `/api/day/close`.
 - `curl https://<domain>/image/<an unrevealed image id>` → 404.
+- **`curl -sI https://<domain>/join/bogus` → the server's 401, and
+  the content type is JSON and not `text/html`.** HTML here means
+  the invite path fell to the app fallback. The server then sees no
+  invite, and no invite URL can sign anybody in. No test in the
+  repository sees this one, because it lives in the edge
+  configuration alone.
 - With the dev unit started and the tunnel up, the console lists
   the days.
 - `systemctl reboot` → the site is back with no hand work.

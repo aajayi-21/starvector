@@ -1,3 +1,4 @@
+[Aa]bility
 abort
 abort button
 accelerate
@@ -109,6 +110,7 @@ caution
 cavitation
 center
 chafing
+[Cc]hance
 chapter
 chatbot
 Check
@@ -633,6 +635,7 @@ second \(''\)
 second \(2nd\)
 second \(s\)
 section
+[Ss]ecure
 serious incident
 serious offense
 service bay
@@ -660,6 +663,7 @@ specific gravity
 spin
 [Ss]plit
 spot[-\s]check
+[Ss]pread
 spring
 spurious fault message
 square inch \(sq\.in\.\)

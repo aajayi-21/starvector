@@ -16,14 +16,32 @@ from core.canonical import JsonValue, canonical_json_pretty
 from pool.artifacts import write_json_pretty
 
 DAY_STATUSES = ("open", "closed", "revealed")
+PLAYER_STATUSES = ("active", "revoked")
 
+# The rules below match the full value with fullmatch. The dollar
+# sign also matches before a newline at the end, thus a changed
+# value with a newline at its end gets through a re.match check and
+# then names a file. The server configuration reader had the same
+# hole on closes_at_utc.
 _DAY_RULE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# The player name becomes a file name below store/players/, thus
+# its shape is the shape the server configuration pins. The
+# alphabet holds no dot, and that is what makes the invite token's
+# one separator unambiguous (spec M1 in docs/specs/, section 4).
+_PLAYER_RULE = re.compile(r"[a-z0-9-]{1,64}")
+_TOKEN_HASH_RULE = re.compile(r"[0-9a-f]{64}")
+
+_DISPLAY_NAME_LIMIT = 32
 
 _DAY_FIELDS = ("day", "trial_code", "target_id", "pick_seed", "secret",
                "commitment",
                "scoring_config_path", "scoring_config_hash",
                "preparation_version_id", "status", "opened_at", "closed_at",
                "revealed_at")
+
+_PLAYER_FIELDS = ("player", "display_name", "token_hash", "created_at",
+                  "status")
 
 _README = """\
 # The trial store
@@ -66,6 +84,25 @@ class DayRecord:
     revealed_at: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class PlayerRecord:
+    """The stored facts of one player (spec M1 section 4).
+
+    player is the store key, and it is the identity that submissions
+    and trial rows hold today. A mint for a name that plays thus
+    adopts that history and no stored record moves. display_name is
+    the board label, and two players can hold equal labels. The
+    store keeps token_hash, the digest of the invite secret. The
+    store does not keep the secret, which the mint answers one time.
+    """
+
+    player: str
+    display_name: str
+    token_hash: str
+    created_at: str
+    status: str
+
+
 def ensure_store(store: Path) -> None:
     """Make the store root and its permanence README, one time."""
     store.mkdir(parents=True, exist_ok=True)
@@ -101,7 +138,7 @@ def list_days(store: Path) -> tuple[str, ...]:
         return ()
     return tuple(sorted(
         entry.name for entry in root.iterdir()
-        if entry.is_dir() and _DAY_RULE.match(entry.name)))
+        if entry.is_dir() and _DAY_RULE.fullmatch(entry.name)))
 
 
 def latest_day(store: Path) -> str | None:
@@ -190,7 +227,7 @@ def read_day_record(store: Path, day: str) -> DayRecord:
     if raw["status"] not in DAY_STATUSES:
         raise StoreError(
             f"{path}.status: expected one of {list(DAY_STATUSES)}")
-    if not re.match(r"^[A-Z0-9]{6}$", raw["trial_code"]):
+    if not re.fullmatch(r"[A-Z0-9]{6}", raw["trial_code"]):
         raise StoreError(
             f"{path}.trial_code: expected six characters, A-Z and 0-9")
     return DayRecord(**raw)
@@ -245,3 +282,209 @@ def list_submissions(store: Path, day: str) -> tuple[str, ...]:
         entry.name[:-5] for entry in root.iterdir()
         if entry.is_file() and entry.name.endswith(".json")
         and not entry.name.endswith(".tmp")))
+
+
+def check_player_name(value: object, where: str) -> None:
+    """Refuse a player name that is not a legal store key."""
+    if not isinstance(value, str) or not _PLAYER_RULE.fullmatch(value):
+        raise StoreError(
+            f"{where}: expected 1 to 64 characters, a-z, 0-9, and the "
+            f"hyphen, got {value!r}")
+
+
+def check_display_name(value: object, where: str) -> None:
+    """Refuse a board label that is not 1 to 32 printable characters.
+
+    Printable is str.isprintable(): each Unicode category but Other
+    and Separator, and the ASCII space stays. The rule thus refuses
+    the control characters, the zero-width and format characters,
+    and the direction overrides that make one label look the same
+    as a different one. The count is in code points and not in
+    bytes, because the store writes UTF-8 with no escapes and a
+    byte cap becomes a different cap for each script. The rule
+    refuses a space at the start or the end for the same
+    impersonation cause.
+    """
+    if not isinstance(value, str):
+        raise StoreError(f"{where}: expected a string, got {value!r}")
+    if not 1 <= len(value) <= _DISPLAY_NAME_LIMIT:
+        raise StoreError(
+            f"{where}: expected 1 to {_DISPLAY_NAME_LIMIT} characters, "
+            f"got {len(value)}")
+    if not value.isprintable():
+        raise StoreError(
+            f"{where}: the label holds a control or a format character")
+    if value != value.strip():
+        raise StoreError(f"{where}: the label starts or ends with a space")
+
+
+def players_dir(store: Path) -> Path:
+    return store / "players"
+
+
+def player_record_path(store: Path, player: str) -> Path:
+    return players_dir(store) / f"{player}.json"
+
+
+def any_player(store: Path) -> bool:
+    """The store holds one player record or more - the access switch.
+
+    Ruling 7 of spec M1: with no record the server keeps today's
+    behavior, and the first mint turns access control on. The walk
+    stops at the first entry, thus its cost does not become larger
+    with the player count and a handler can use it. This function
+    reads the directory each time and caches nothing, because a
+    record that an operator puts back by hand must count
+    immediately.
+    """
+    root = players_dir(store)
+    if not root.is_dir():
+        return False
+    for entry in root.iterdir():
+        if entry.is_file() and entry.name.endswith(".json"):
+            return True
+    return False
+
+
+def list_players(store: Path) -> tuple[str, ...]:
+    """The player names with a stored record, ascending."""
+    root = players_dir(store)
+    if not root.is_dir():
+        return ()
+    return tuple(sorted(
+        entry.name[:-5] for entry in root.iterdir()
+        if entry.is_file() and entry.name.endswith(".json")
+        and not entry.name.endswith(".tmp")))
+
+
+def _player_to_value(record: PlayerRecord) -> dict[str, JsonValue]:
+    return {
+        "player": record.player,
+        "display_name": record.display_name,
+        "token_hash": record.token_hash,
+        "created_at": record.created_at,
+        "status": record.status,
+    }
+
+
+def _check_player_record(record: PlayerRecord) -> None:
+    """Refuse a record the store must not write."""
+    check_player_name(record.player, "player")
+    check_display_name(record.display_name, "display_name")
+    if not _TOKEN_HASH_RULE.fullmatch(record.token_hash):
+        raise StoreError(
+            f"token_hash: expected 64 lowercase hex characters, "
+            f"got {record.token_hash!r}")
+    if not record.created_at:
+        raise StoreError("created_at: expected a non-empty string")
+
+
+def write_player_record(store: Path, record: PlayerRecord) -> None:
+    """Write a new player record - the mint alone does this, one time.
+
+    The mint rides the one-write primitive. A second mint for the
+    name thus raises, and an invite cannot silently change the
+    credential that a name which plays today holds. The guarded
+    edit below turns the token.
+    """
+    if record.status != "active":
+        raise StoreError(
+            f"a new player record must have status 'active', got "
+            f"{record.status!r}")
+    _check_player_record(record)
+    write_once_json(player_record_path(store, record.player),
+                    _player_to_value(record))
+
+
+def read_player_record(store: Path, player: str) -> PlayerRecord:
+    """Read and validate one stored player record, strict."""
+    import json
+
+    check_player_name(player, "player")
+    path = player_record_path(store, player)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise StoreError(f"{path}: cannot read the player record: {error}") \
+            from error
+    if not isinstance(raw, dict) or set(raw) != set(_PLAYER_FIELDS):
+        raise StoreError(
+            f"{path}: the player record must have the fields "
+            f"{sorted(_PLAYER_FIELDS)}")
+    for name in _PLAYER_FIELDS:
+        if not isinstance(raw[name], str) or not raw[name]:
+            raise StoreError(f"{path}.{name}: expected a non-empty string")
+    if raw["status"] not in PLAYER_STATUSES:
+        raise StoreError(
+            f"{path}.status: expected one of {list(PLAYER_STATUSES)}")
+    if raw["player"] != player:
+        raise StoreError(
+            f"{path}.player: the record names {raw['player']!r} and the "
+            f"file names {player!r}")
+    check_display_name(raw["display_name"], f"{path}.display_name")
+    if not _TOKEN_HASH_RULE.fullmatch(raw["token_hash"]):
+        raise StoreError(
+            f"{path}.token_hash: expected 64 lowercase hex characters")
+    return PlayerRecord(**raw)
+
+
+def read_player_or_none(store: Path, player: str) -> PlayerRecord | None:
+    """One stored player record, or None when the file is not there.
+
+    The handler's reader. An unknown name is an ordinary answer,
+    which the caller turns into the constant refusal, and a stored
+    record that does not parse is not an ordinary answer.
+    """
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    if not player_record_path(store, player).is_file():
+        return None
+    return read_player_record(store, player)
+
+
+def replace_player_token(store: Path, player: str, *, expect_status: str,
+                         new_token_hash: str) -> PlayerRecord:
+    """A guarded player-record edit: the stored invite digest moves.
+
+    Reads the stored record again, refuses if its status is not
+    expect_status, then writes the moved record. The name and the
+    creation time do not move. The earlier invite stops at the read
+    which follows, and so does each cookie that holds it.
+    """
+    if expect_status not in PLAYER_STATUSES:
+        raise StoreError(f"unknown status: {expect_status!r}")
+    if not _TOKEN_HASH_RULE.fullmatch(new_token_hash):
+        raise StoreError(
+            "new_token_hash: expected 64 lowercase hex characters")
+    record = read_player_record(store, player)
+    if record.status != expect_status:
+        raise StoreError(
+            f"player {player} has status {record.status!r} and the move "
+            f"needs {expect_status!r}")
+    moved = replace(record, token_hash=new_token_hash)
+    write_json_pretty(player_record_path(store, player),
+                      _player_to_value(moved))
+    return moved
+
+
+def set_player_status(store: Path, player: str, *, expect_status: str,
+                      new_status: str) -> PlayerRecord:
+    """The second guarded player edit: the status move.
+
+    Revoke moves 'active' to 'revoked' and the opposite move puts
+    it back. A move that repeats raises and names the two statuses,
+    thus the command is not silently a no-operation.
+    """
+    if expect_status not in PLAYER_STATUSES:
+        raise StoreError(f"unknown status: {expect_status!r}")
+    if new_status not in PLAYER_STATUSES:
+        raise StoreError(f"unknown status: {new_status!r}")
+    record = read_player_record(store, player)
+    if record.status != expect_status:
+        raise StoreError(
+            f"player {player} has status {record.status!r} and the move "
+            f"needs {expect_status!r}")
+    moved = replace(record, status=new_status)
+    write_json_pretty(player_record_path(store, player),
+                      _player_to_value(moved))
+    return moved
