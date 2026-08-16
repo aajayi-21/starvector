@@ -20,6 +20,9 @@ from service.server import create_app
 DAY = "2026-08-12"
 ALICE_SECRET = "1" * 43
 BRU_SECRET = "2" * 43
+# create_app refuses to start with records stored and no token
+# (spec M1 section 4), thus each world here carries one.
+OPERATOR_TOKEN = "test-operator-token"
 
 
 def _mint(root: Path, player: str, display_name: str, secret: str) -> str:
@@ -51,8 +54,10 @@ def _world(tmp_path, *, players=(("ade", "Ade", ALICE_SECRET),)):
     # transport flag sent from an http address and then does not
     # send it back. Testing the deployed attribute set beats
     # weakening it for the test.
-    client = TestClient(create_app(fixture["service_config"]),
-                        base_url="https://testserver")
+    client = TestClient(
+        create_app(fixture["service_config"],
+                   operator_token=OPERATOR_TOKEN),
+        base_url="https://testserver")
     return fixture, client, tokens
 
 
@@ -98,7 +103,8 @@ def test_the_transport_flag_turns_off_for_the_offline_tests(
     fixture = build_service_fixture(tmp_path)
     token = _mint(fixture["store"], "ade", "Ade", ALICE_SECRET)
     client = TestClient(create_app(fixture["service_config"],
-                                   cookie_secure=False))
+                                   cookie_secure=False,
+                                   operator_token=OPERATOR_TOKEN))
     header = client.get(f"/join/{token}",
                         follow_redirects=False).headers["set-cookie"]
     assert "Secure" not in header

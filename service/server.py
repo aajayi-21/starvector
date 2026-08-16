@@ -9,6 +9,7 @@ it. The server binds to localhost, one configured player (D6).
 
 import argparse
 import math
+import os
 import secrets
 import sys
 import threading
@@ -27,7 +28,8 @@ from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
 from service import auth, store
-from service.config import ServiceConfig, load_service_config
+from service.config import (ServiceConfig, ServiceConfigError,
+                            load_service_config)
 
 # The D5 solo display inputs (spec S1 section 14a): display-only, a
 # fitted population comes with live players.
@@ -142,7 +144,8 @@ def _revealed_targets(root: Path) -> dict[str, str]:
 
 def create_app(service_config: ServiceConfig,
                dev_mode: bool = False, *,
-               cookie_secure: bool = True) -> FastAPI:
+               cookie_secure: bool = True,
+               operator_token: str | None = None) -> FastAPI:
     """The app factory - tests run it through TestClient.
 
     With dev_mode the server adds the section 14b surfaces: the
@@ -156,7 +159,22 @@ def create_app(service_config: ServiceConfig,
     the offline browser tests, which speak http to a loopback port.
     The default is the deployed attribute set, thus a deployment
     that forgets the argument gets the safe one.
+
+    operator_token arrives as an argument and is not read from the
+    environment here, in the manner of open_day's secret: a
+    component reads no global configuration. main() does the
+    environment read.
+
+    Raises ServiceConfigError when the store holds player records
+    and no operator token is set. A quiet hole is worse than a loud
+    stop (spec M1 section 4).
     """
+    if store.any_player(Path(service_config.store_root)) \
+            and not operator_token:
+        raise ServiceConfigError(
+            "the store holds player records and the operator token is "
+            "not set - put STARVECTOR_OPERATOR_TOKEN in the deployment "
+            "environment file")
     scoring_config = load_scoring_config(Path(service_config.scoring_config))
     gates: IntakeGates = intake_gates(scoring_config)
     weights: Weights = fusion_weights(scoring_config)
@@ -203,6 +221,29 @@ def create_app(service_config: ServiceConfig,
         if record is None or record.status != "active" or not agreed:
             return _unauthorized()
         return name
+
+    def _bearer_ok(request: Request) -> bool:
+        """The request carries the operator token.
+
+        False with no configured token, thus the mint refuses in
+        each world where nobody set the operator plane up.
+        """
+        if not operator_token:
+            return False
+        scheme, _, given = request.headers.get(
+            "authorization", "").partition(" ")
+        return (scheme.lower() == "bearer"
+                and auth.constant_time_equal(given, operator_token))
+
+    def _operator_ok(request: Request) -> bool:
+        """The operator gate: open in the fallback, the bearer above.
+
+        Ruling 7 of spec M1: with no stored player record nothing
+        holds credentials, thus the day commands and the console
+        answer as they do today and the offline runbook wants no
+        edit. The first mint closes this.
+        """
+        return not store.any_player(root) or _bearer_ok(request)
 
     def _caller(request: Request) -> str | Response:
         """The player behind the cookie, or the constant refusal.
@@ -266,15 +307,15 @@ def create_app(service_config: ServiceConfig,
             return resident_state["wired"]
 
     @app.get("/dev")
-    def dev_page() -> Response:
-        if not dev_mode:
+    def dev_page(request: Request) -> Response:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         return HTMLResponse(content=dev_page_bytes)
 
     @app.get("/ui/dev.js")
-    def dev_script() -> Response:
-        if not dev_mode:
+    def dev_script(request: Request) -> Response:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         return Response(content=dev_script_bytes,
@@ -296,8 +337,8 @@ def create_app(service_config: ServiceConfig,
         return day
 
     @app.get("/api/dev/days")
-    def dev_days() -> Response:
-        if not dev_mode:
+    def dev_days(request: Request) -> Response:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         rows = []
@@ -314,8 +355,9 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"days": rows})
 
     @app.get("/api/dev/submission")
-    def dev_submission(day: str | None = None) -> Response:
-        if not dev_mode:
+    def dev_submission(request: Request,
+                       day: str | None = None) -> Response:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         picked = _picked_day(day)
@@ -330,8 +372,8 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse(stored)
 
     @app.get("/api/dev")
-    def dev_view() -> Response:
-        if not dev_mode:
+    def dev_view(request: Request) -> Response:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         day = store.latest_day(root)
@@ -347,8 +389,9 @@ def create_app(service_config: ServiceConfig,
         })
 
     @app.get("/api/dev/rankings")
-    def dev_stored_rankings(day: str | None = None) -> Response:
-        if not dev_mode:
+    def dev_stored_rankings(request: Request,
+                            day: str | None = None) -> Response:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         picked = _picked_day(day)
@@ -552,7 +595,9 @@ def create_app(service_config: ServiceConfig,
                              "atom_count": len(submission.atoms)})
 
     @app.post("/api/day/open")
-    def day_open() -> Response:
+    def day_open(request: Request) -> Response:
+        if not _operator_ok(request):
+            return _unauthorized()
         import datetime
 
         from service.day import open_day
@@ -586,7 +631,9 @@ def create_app(service_config: ServiceConfig,
                              "commitment": record.commitment})
 
     @app.post("/api/day/close")
-    def day_close() -> Response:
+    def day_close(request: Request) -> Response:
+        if not _operator_ok(request):
+            return _unauthorized()
         from service.day import close_day
 
         # The one live step (R5): the server process needs the
@@ -614,7 +661,9 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"trial_rows": count})
 
     @app.post("/api/day/reveal")
-    def day_reveal() -> Response:
+    def day_reveal(request: Request) -> Response:
+        if not _operator_ok(request):
+            return _unauthorized()
         from service.day import reveal_day
 
         try:
@@ -754,8 +803,8 @@ def create_app(service_config: ServiceConfig,
         })
 
     @app.get("/image/{image_id}")
-    def image(image_id: str) -> Response:
-        if not dev_mode:
+    def image(request: Request, image_id: str) -> Response:
+        if not (dev_mode and _operator_ok(request)):
             targets = _revealed_targets(root)
             if image_id not in targets:
                 return Response(content=_NOT_REVEALED, status_code=404,
@@ -771,10 +820,10 @@ def create_app(service_config: ServiceConfig,
                         media_type=_mime_of(image_bytes))
 
     @app.get("/history")
-    def history() -> Response:
+    def history(request: Request) -> Response:
         # The app owns the /history path in production (spec S2
         # section 3) - the page is a dev surface at this time.
-        if not dev_mode:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         from html import escape
@@ -840,15 +889,20 @@ def main(argv: list[str] | None = None) -> int:
                         help="the section 14b dev surfaces - target "
                              "readable, draft scoring, all images")
     arguments = parser.parse_args(argv)
+    # create_app sits inside the try: it refuses to start when the
+    # store holds players and no operator token is set, and that
+    # refusal must print as one line and not as a traceback.
     try:
         service_config = load_service_config(Path(arguments.service_config))
+        app = create_app(
+            service_config, dev_mode=arguments.dev,
+            operator_token=os.environ.get("STARVECTOR_OPERATOR_TOKEN"))
     except Exception as error:
         print(f"refused: {error}", file=sys.stderr)
         return 1
     import uvicorn
 
-    uvicorn.run(create_app(service_config, dev_mode=arguments.dev),
-                host="127.0.0.1",
+    uvicorn.run(app, host="127.0.0.1",
                 port=arguments.port or service_config.port)
     return 0
 
