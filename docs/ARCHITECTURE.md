@@ -548,6 +548,8 @@ This only *partly* closes the gap. Even a good photo-derived drawing is far dens
 
 **Do not assume the bridge works. Measure it** (test V1 in §23). If it fails, the fallback is to drop the sketch encoder entirely and require players to label their stroke groups, so the signal flows through text instead. The architecture does not change; one model is replaced by human annotation. That substitutability is the reason this is its own layer.
 
+**Note, 2026-08-15 — the live lineage does not use a line drawing.** This section describes the line drawing as *the* mechanism, and that is no longer what runs. Spec P2c measured the ladder and found the bridge actively harmful with the adopted embedding model: removing it moved first-rank from 40.5% to 55.5%, and the adopted configuration instead encodes the **instructed photograph** on both sides (`outline.source: "photo"`, both instructions on — the two instructions interact, +13.5pp together). The line-drawing stage still exists and still runs on request; it is skipped on the released lineage. This layer's substitutability is what made that swap a configuration change rather than a rewrite, which is the section's real claim. The prose above is kept as written because the fallback it describes remains live if the photograph path ever fails.
+
 ---
 
 ## 12. Layer 4 — Channels
@@ -804,6 +806,8 @@ skill number θ = −n / Σ log(pᵢ)          over a player's n trials
 
 `θ = 1` is chance. `θ > 1` means the trial scores are clustered high.
 
+**Convention, pinned 2026-08-15 (spec M1 §10).** `pᵢ` is the **trial score** — the fraction of decoys beaten, so high is good — and not a p-value. The three directions follow from that and must never be inverted silently: the skill number **rises** with ability, the evidence statistic's **small** tail is the evidence direction, and a leaderboard sorts **descending** by the ranking quantity. `core/aggregate.py` implements exactly this today; the sentence exists so a future edit cannot flip a sign unnoticed.
+
 ### Evidence
 
 The same quantity gives a significance test. Under the no-ability assumption:
@@ -823,6 +827,23 @@ Writing `S = −Σ log(pᵢ)`:
 - `θ = n/S` is slightly biased upward; `(n−1)/S` is unbiased.
 - The uncertainty in `log θ` is approximately `1/√n`, **independent of θ itself.**
 
+**Amendment, 2026-08-15 (spec M1 §6) — use the exact form for anything that compares players.** The `1/√n` approximation is right about the independence and wrong about the magnitude, and the error is largest exactly where the population fit is most sensitive. Under the no-ability null `S` is Gamma with shape `n` and rate 1, so:
+
+```
+y = digamma(n) − log S          unbiased for log θ
+v = trigamma(n)                 the exact variance
+```
+
+`log(n/S)` carries an upward bias of about `1/(2n)` (0.58 at n=1, 0.05 at n=10), and `1/n` understates the variance by 64% at n=1 and 18% at n=3. Both errors scale with `n`, so they impersonate between-player spread. Measured on simulated play where **no player has any ability**, the heterogeneity test at the 5% level fires:
+
+| players | with `log(n/S)` and `1/n` | with `y` and `v` |
+|---|---|---|
+| 50 | 22.5% | 7.5% |
+| 200 | 57.0% | 6.5% |
+| 1000 | **97.3%** | 7.0% |
+
+At a thousand players the approximation reports genuine ability spread almost always when there is none — the §19 failure arriving through arithmetic rather than through fitted weights. The player-facing `θ` is unchanged; this governs the population fit, the shrinkage, and the heterogeneity report.
+
 That last property is what makes `log θ` the right quantity to average across players.
 
 ### Shrinking toward the average
@@ -836,6 +857,16 @@ shrunk log θ  =      ───────────────────�
 ```
 
 Rank the leaderboard by this, or more conservatively by its lower confidence bound.
+
+**Amendment, 2026-08-15 (spec M1 §6) — rank by posterior expected rank.** Ranks are a non-linear functional of the estimates, so neither of the two rules above is optimal for producing an ordering (Shen & Louis 1998; Lin, Louis, Paddock & Ridgeway 2006). Use
+
+```
+R̄ⱼ = Σ over the other players k of  Pr( θⱼ ≥ θₖ | data )
+```
+
+computed by sampling the fitted posterior. The difference shows on a player with few trials: expected rank places them mid-table, which is the honest statement that we do not yet know; a lower bound places them last, which asserts they are weak; the shrunk mean confounds ability with trial count. Sampling also yields the rank interval that should be published beside the rank. The two rules above remain valid simpler choices, and the shrunk estimate stays the right thing to *display* as a player's number.
+
+**Fit the population parameters, do not assume them.** Use restricted maximum likelihood on `(y, v)` from the amendment above. A fitted spread of zero is a correct answer meaning "the players are not yet distinguishable" — do not apply a prior that forces it positive, which manufactures apparent ability. Below about 30 eligible players the fit is a coin toss (simulation: 66% chance of a zero estimate at 5 players, 12% at 50), so hold a declared fixed value there and mark the board provisional.
 
 **Without this the leaderboard is a competition to be lucky recently**, and the top position will be permanently occupied by whoever joined most recently and got two good days. This is not cosmetic — it destroys the meaning of the ranking, and it is the first thing a statistically literate player will notice.
 
