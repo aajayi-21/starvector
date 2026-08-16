@@ -403,6 +403,66 @@ def test_the_fold_is_repeatable_for_one_day() -> None:
     assert later["days"] == [DAYS[0], DAYS[1]]
 
 
+def test_a_perfect_day_folds_and_does_not_stop_the_reveal(tmp_path) -> None:
+    """The 2026-08-16 ruling, which no path could run before.
+
+    term_of read skill_summary, which refuses a sequence where each
+    trial score is 1.0. That refusal is right for a full history
+    and incorrect for one trial, thus a player who beat each decoy
+    on one day answered the reveal with a 400 and the day could not
+    be revealed at all. The degenerate pair the ruling describes
+    did not get written at all, because the fold raised before it
+    marked one.
+    """
+    term, clamped = rollup.term_of(1.0)
+    assert term == 0.0
+    assert clamped is False
+
+    fixture = _played_world(tmp_path, players=("ade",), days=DAYS[:1])
+    config = fixture["service_config"]
+    root = Path(config.store_root)
+    scoring_hash = store.read_day_record(root, DAYS[0]).scoring_config_hash
+    # A perfect trial, put in the stored row the rollup reads.
+    row_path = store.trial_row_path(root, DAYS[0], "ade")
+    row = json.loads(row_path.read_text())
+    row["p"] = 1.0
+    row_path.write_text(json.dumps(row))
+
+    counts = rollup.assemble(config, scoring_hash=scoring_hash)
+    assert counts["players"] == 1
+    pair = json.loads(rollup.skill_pair_path(
+        Path(config.data_root), "ade", scoring_hash).read_text())
+    assert pair["s_statistic"] == 0.0
+    assert pair["degenerate"] is True
+    board = json.loads(rollup.skill_board_path(
+        Path(config.data_root), scoring_hash).read_text())
+    assert board["degenerate_count"] == 1
+    assert board["player_count"] == 0
+    # The day's board keeps their position: it reads the trial
+    # score and takes no logarithm.
+    daily = json.loads(rollup.leaderboard_path(
+        Path(config.data_root), DAYS[0], scoring_hash).read_text())
+    assert [row["player"] for row in daily["rows"]] == ["ade"]
+
+
+def test_a_perfect_day_does_not_end_a_players_skill_number() -> None:
+    """One perfect day in a run of others leaves a skill number."""
+    perfect, _clamped = rollup.term_of(1.0)
+    ordinary, _also = rollup.term_of(0.5)
+    first = rollup.fold_day(
+        None, player="ade", day=DAYS[0], term=perfect, clamped=False,
+        scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        updated_at=FIXED_CLOCK)
+    assert first["degenerate"] is True
+    second = rollup.fold_day(
+        first, player="ade", day=DAYS[1], term=ordinary, clamped=False,
+        scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        updated_at=FIXED_CLOCK)
+    assert second["n"] == 2
+    assert second["degenerate"] is False
+    assert second["s_statistic"] == pytest.approx(ordinary)
+
+
 def test_the_board_seed_is_a_function_of_recorded_inputs() -> None:
     first = rollup.board_seed("h" * 64, DAYS[0])
     assert first == rollup.board_seed("h" * 64, DAYS[0])

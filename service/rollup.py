@@ -127,12 +127,19 @@ def fold_day(pair: dict | None, *, player: str, day: str, term: float,
 def term_of(p: float) -> tuple[float, bool]:
     """The negative logarithm of one trial score, and its clamp.
 
-    One clamp rule for the full system: skill_summary holds it,
-    thus this reads that function and no second rule can drift away
-    from it.
+    One clamp rule for the full system: aggregate.log_term holds
+    it, thus no second rule can drift away from it.
+
+    This read skill_summary before, which refuses a sequence where
+    each trial score is 1.0. That refusal is correct for a player's
+    full history, where S of zero means the skill number is out of
+    range, and incorrect for one trial's term, which is 0.0. A
+    player who beat each decoy on one day thus stopped the reveal
+    with a 400, and the degenerate pair that the 2026-08-16 ruling
+    asks for did not get written at all, because the fold raised
+    before it could mark one.
     """
-    summary = aggregate.skill_summary([p], unbiased=False)
-    return summary.s_statistic, summary.clamp_count == 1
+    return aggregate.log_term(p)
 
 
 def daily_board_value(record: store.DayRecord,
