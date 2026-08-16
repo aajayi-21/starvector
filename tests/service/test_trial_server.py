@@ -102,6 +102,8 @@ def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
                              "/api/history", "/api/me",
                              f"/api/reveal?day={DAY}",
                              f"/api/leaderboard?day={DAY}",
+                             "/api/leaderboard/skill",
+                             f"/join/ade.{'s' * 43}",
                              f"/api/submission?day={DAY}")}
 
     while_open = walk()

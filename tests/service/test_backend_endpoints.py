@@ -212,8 +212,12 @@ def test_the_leaderboard_serves_the_one_honest_row(
     row = body["rows"][0]
     assert row["player"] == "ade"
     assert row["streak"] == 1
-    assert set(row) == {"player", "p", "target_rank", "decoy_count",
-                        "streak"}
+    # display_name attaches at read time (spec M1 B8). A name with
+    # no stored record falls back to its store key, which is the
+    # world this fixture builds.
+    assert set(row) == {"player", "display_name", "p", "target_rank",
+                        "decoy_count", "streak"}
+    assert row["display_name"] == "ade"
     from service import store as store_module
 
     stored = store_module.read_json_or_none(store_module.trial_row_path(
@@ -275,6 +279,7 @@ def test_the_new_surfaces_are_byte_stable_across_open_targets(
                  secret="c" * 64, trial_code="BBBBBB")
         collected = []
         for path in ("/api/history", f"/api/leaderboard?day={DAY}",
+                     "/api/leaderboard/skill",
                      f"/api/reveal?day={DAY}",
                      f"/api/submission?day={DAY}", "/api/me"):
             collected.append(client.get(path).content)
@@ -293,7 +298,7 @@ def test_the_new_surfaces_are_byte_stable_across_open_targets(
 def test_the_history_page_holds_at_a_degenerate_skill(
         tmp_path: Path) -> None:
     # Each score at 1.0 refuses the aggregation. /api/history serves
-    # the defined null and the page says so - neither raises.
+    # the defined null and the page says so - no path raises.
     from service import store
     from service.server import _skill_value
 
