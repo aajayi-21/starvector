@@ -455,36 +455,54 @@ def test_an_empty_board_ranks_nothing() -> None:
 
 
 def test_the_evidence_collapses_to_its_closed_shape() -> None:
+    # The cut mixture adds the moved constant and the top tail at
+    # an integer shape, which chi_squared_tail holds today.
     for n, s in ((1, 0.5), (12, 9.0), (200, 150.0)):
-        summary = anytime_evidence(n, s)
-        assert summary.log_e_value == pytest.approx(
-            s + math.lgamma(n + 1) - (n + 1) * math.log(s + 1.0), rel=1e-12)
-        assert summary.significance == pytest.approx(
-            min(1.0, math.exp(-summary.log_e_value)), rel=1e-12)
-        assert (summary.mixture_shape, summary.mixture_rate) == (1.0, 1.0)
+        shifted = s + 1.0
+        expected = (s + 1.0 + math.lgamma(n + 1)
+                    - (n + 1) * math.log(shifted)
+                    + math.log(chi_squared_tail(2.0 * shifted, 2 * (n + 1))))
+        assert anytime_evidence(n, s).log_e_value == pytest.approx(
+            expected, rel=1e-12)
 
 
-def test_the_evidence_is_two_sided_and_bottoms_at_the_null() -> None:
-    """The mixture spans each positive skill, thus so does the value.
+def test_the_evidence_agrees_with_its_own_integral() -> None:
+    """The closed shape against a numeric area below the curve.
 
-    The prior of section 6 is Gamma at shape and rate one, and it
-    spans each skill above zero - not the skills above one.
-    The value thus falls to a minimum at S equal to n, which
-    is a skill number of one, and climbs on the two sides of it.
-
-    A player far below the baseline thus gets a large value, the
-    same as a player far above it. That is what the pinned mixture
-    gives. This test records the shape and then nobody reads the
-    number as one-sided by accident.
+    The cut mixture (the 2026-08-16 ruling) is a moved exponential
+    on the skills above one, thus the value is the area below the
+    likelihood ratio against it. Summing that area by hand is the
+    one check that wants no other library and no reference table.
     """
-    n = 20
-    values = [anytime_evidence(n, s).log_e_value
-              for s in (5.0, 10.0, 20.0, 40.0, 100.0)]
-    # Falls to the null and climbs after it.
-    assert values[0] > values[1] > values[2]
-    assert values[2] < values[3] < values[4]
-    # The minimum sits at S equal to n.
-    assert min(values) == values[2]
+    for n, s in ((3, 1.0), (20, 5.0), (20, 20.0), (50, 30.0)):
+        grid = np.linspace(1.0, 1.0 + 400.0 / (s + 1.0), 400001)
+        ratio = np.exp(n * np.log(grid) + s * (1.0 - grid) - (grid - 1.0))
+        # The tolerance is the trapezoid rule's own error and not
+        # the closed shape's: the grid is finite.
+        assert anytime_evidence(n, s).log_e_value == pytest.approx(
+            math.log(float(np.trapezoid(ratio, grid))), rel=1e-7)
+
+
+def test_the_evidence_falls_as_the_player_does_worse() -> None:
+    """The direction a reader expects: a small S is a high skill.
+
+    The mixture is cut at a skill number of one, thus the value
+    answers "is this player above the baseline" and falls from the
+    top down. The mixture across each positive skill, which section
+    6 pinned before the 2026-08-16 ruling, climbed again below the
+    baseline and named a weak run strong evidence.
+    """
+    values = [anytime_evidence(20, s).log_e_value
+              for s in (2.0, 5.0, 10.0, 20.0, 40.0, 100.0)]
+    assert values == sorted(values, reverse=True)
+
+
+def test_the_evidence_records_the_mixture_it_used() -> None:
+    summary = anytime_evidence(12, 9.0)
+    assert (summary.mixture_shape, summary.mixture_rate) == (1.0, 1.0)
+    assert summary.mixture_floor == 1.0
+    assert summary.significance == pytest.approx(
+        min(1.0, math.exp(-summary.log_e_value)), rel=1e-12)
 
 
 def test_the_evidence_holds_its_bound_with_no_skill() -> None:
