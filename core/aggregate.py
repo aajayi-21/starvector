@@ -68,6 +68,12 @@ PUBLISHABLE_PLAYER_COUNT = 200
 PROVISIONAL_MEAN = 0.0
 PROVISIONAL_SPREAD = 0.15
 
+# The posterior rank simulation and the site-wide level, the two
+# of them from
+# spec M1 section 6.
+RANK_SAMPLE_COUNT = 2000
+DISCOVERY_LEVEL = 0.05
+
 
 class SkillSummary(NamedTuple):
     """One player's aggregate across n trials (architecture 17).
@@ -161,14 +167,12 @@ def chi_squared_tail(statistic: float, dof: int) -> float:
 
     An odd dof runs the same finite recurrence from a different
     start: it begins at erfc(sqrt(S)) and not at exp(-S). The two
-    branches have
-    different shapes, and the cause matters. The first moves
-    exp(-S)
-    out of the sum, thus its terms become large and want the peak
-    removed. The odd one keeps -S in each exponent, where each term
-    is a weight below one and the total is a probability, thus it
-    wants no peak and a large statistic goes to 0.0 in one
-    direction.
+    branches have different shapes, and the cause matters. The
+    first moves exp(-S) out of the sum, thus its terms become large
+    and want the peak removed. The odd one keeps -S in each
+    exponent, where each term is a weight below one and the total
+    is a probability, thus it wants no peak and a large statistic
+    goes to 0.0 in one direction.
 
     The variation report of spec M1 section 6 runs at
     players - 1 degrees of freedom, which is odd one time in two.
@@ -602,6 +606,327 @@ def baseline_check(points: Sequence[PopulationPoint]) -> BaselineCheck:
         for index, value in enumerate(values))
     return BaselineCheck(player_count=count, statistic=statistic,
                          significance=kolmogorov_tail(statistic, count))
+
+
+class PosteriorRow(NamedTuple):
+    """One player's posterior on the log_theta scale."""
+
+    mean: float
+    spread: float
+
+
+def posterior_normal(point: PopulationPoint,
+                     fit: PopulationFit) -> PosteriorRow:
+    """Shrink one player to the fitted centre (section 17).
+
+    This is shrunk_log_theta with the trial count replaced by one
+    divided by the accurate variance. The section 17 change says
+    the accurate parameterization governs the fit, the shrinkage,
+    and the variation report, thus the shrinkage reads v and not n.
+
+    A fitted tau of zero collapses each player onto mu, which is
+    the correct answer at that fit and not a defect.
+    """
+    if fit.tau == 0.0:
+        return PosteriorRow(mean=fit.mu, spread=0.0)
+    tau_precision = 1.0 / (fit.tau * fit.tau)
+    own_precision = 1.0 / point.v
+    total = tau_precision + own_precision
+    return PosteriorRow(
+        mean=(fit.mu * tau_precision + point.y * own_precision) / total,
+        spread=math.sqrt(1.0 / total))
+
+
+class RankRow(NamedTuple):
+    """One player's posterior expected rank and its interval.
+
+    expected_rank is fractional: it is an expectation across the
+    posterior and not a position in a sorted sequence. Rank 1 is
+    the top, which is the direction section 17 pins.
+    """
+
+    expected_rank: float
+    rank_low: int
+    rank_high: int
+
+
+def posterior_ranks(rows: Sequence[PosteriorRow], *, seed: int,
+                    sample_count: int = RANK_SAMPLE_COUNT
+                    ) -> tuple[RankRow, ...]:
+    """The posterior expected rank of each player (section 6).
+
+    A player with a small number of trials holds a wide posterior, thus their
+    sampled position moves across the board and their expected
+    rank sits near the middle. That is the property the rule buys:
+    a lucky short run cannot get the top, and no threshold does
+    the work.
+
+    This is the one function in the module that wants an array.
+    2000 samples across the players plus one sort for each sample
+    costs about 0.3 seconds at a thousand players in array shape,
+    and minutes in a plain loop. The cost table of section 7 counts
+    on the array shape.
+
+    The bell-curve values come from the Box-Muller transform on the
+    generator's own stream and not from the method that shapes
+    them. numpy
+    guarantees the bit stream across releases and does not
+    guarantee the methods that shape it, and a published board
+    must give equal bytes on two numpy releases.
+
+    seed is a keyword and has no default: an RNG in core wants the
+    seed in the signature (CLAUDE.md section 3). The caller keys it
+    to the scoring configuration and the day, and records it.
+
+    A fitted tau of zero puts each player at the middle with the
+    full interval: they are equal, and a stable sort must not turn
+    that equality into a sequence.
+
+    An empty input gives an empty output. A sample count below one
+    raises.
+    """
+    import numpy as np
+
+    players = list(rows)
+    count = len(players)
+    if count == 0:
+        return ()
+    if sample_count < 1:
+        raise ValueError(f"the sample count must be at least 1, "
+                         f"got {sample_count}")
+    middle = (count + 1) / 2.0
+    if all(row.spread == 0.0 for row in players):
+        return tuple(RankRow(expected_rank=middle, rank_low=1,
+                             rank_high=count) for _ in players)
+    generator = np.random.default_rng(seed)
+    first = 1.0 - generator.random((sample_count, count))
+    second = generator.random((sample_count, count))
+    gaussian = np.sqrt(-2.0 * np.log(first)) \
+        * np.cos(2.0 * np.pi * second)
+    means = np.array([row.mean for row in players])
+    spreads = np.array([row.spread for row in players])
+    drawn = means + spreads * gaussian
+    # Rank 1 is the top, thus the sequence runs down.
+    order = np.argsort(-drawn, axis=1, kind="stable")
+    positions = np.empty_like(order)
+    ladder = np.arange(1, count + 1)
+    for row_index in range(sample_count):
+        positions[row_index, order[row_index]] = ladder
+    expected = positions.mean(axis=0)
+    sorted_positions = np.sort(positions, axis=0)
+    low_index = min(sample_count - 1, int(round(0.025 * sample_count)))
+    high_index = min(sample_count - 1, int(round(0.975 * sample_count)))
+    return tuple(
+        RankRow(expected_rank=float(expected[index]),
+                rank_low=int(sorted_positions[low_index, index]),
+                rank_high=int(sorted_positions[high_index, index]))
+        for index in range(count))
+
+
+def eligible_trial_floor(fit: PopulationFit) -> int:
+    """The trial count a player wants to enter the board.
+
+    Section 17's own figure of 30 stands until the estimate is
+    publishable at 200 players. Above that the floor recomputes as
+    the trial count where the shrinkage weight gets to one half,
+    which is the n with trigamma(n) at or below tau squared. The
+    approximate indication of the same rule is 1 / tau squared.
+
+    The recomputed value does not falls below 30. Ruling 9 of
+    2026-08-15: 30 is a reliability and fairness statement, thus a
+    statistical recomputation can widen the floor and must not
+    quietly weaken it. The board publishes the recomputed value
+    adjacent to the floor it uses, thus the divergence stays in view.
+    """
+    if (fit.player_count < PUBLISHABLE_PLAYER_COUNT or not fit.fitted
+            or fit.tau <= 0.0):
+        return ELIGIBLE_TRIAL_FLOOR
+    return max(ELIGIBLE_TRIAL_FLOOR, recomputed_trial_floor(fit.tau))
+
+
+def recomputed_trial_floor(tau: float) -> int:
+    """The trial count where the shrinkage weight gets to one half.
+
+    The weight is tau squared divided by tau squared plus
+    trigamma(n), thus it is one half at trigamma(n) equal to tau
+    squared. The start is the approximate 1 / tau squared and a
+    fixed five-point walk finds the smallest n that qualifies: a
+    pinned window and no wider hunt.
+
+    A tau at or below zero raises: the weight has no crossing.
+    """
+    if not tau > 0.0:
+        raise ValueError(f"the width must be positive, got {tau!r}")
+    wanted = tau * tau
+    start = max(1, int(1.0 / wanted + 0.5))
+    for candidate in range(max(1, start - 2), start + 3):
+        if trigamma(candidate) <= wanted:
+            return candidate
+    return start + 2
+
+
+class EvidenceSummary(NamedTuple):
+    """The evidence that holds at each look (section 6).
+
+    significance is one divided by the value and reads as a
+    significance level. The mixture constants travel with it,
+    because the number means nothing without them.
+    """
+
+    log_e_value: float
+    significance: float
+    mixture_shape: float
+    mixture_rate: float
+
+
+def anytime_evidence(n: int, s_statistic: float, *,
+                     mixture_shape: float = 1.0,
+                     mixture_rate: float = 1.0) -> EvidenceSummary:
+    """The evidence value that holds at each look (section 6).
+
+    A player selects when to stop, thus a fixed-count significance
+    value is not theirs to read: they can look after each trial and
+    stop at a good one. This value holds at each look and after a
+    stop of their own selection, which is the property that earns
+    it a position on a player's screen.
+
+    The mixture across skill values has a closed shape in the same
+    two numbers the player holds today:
+
+        S + a log_b + lgamma(n + a) - lgamma(a) - (n + a) log_of(S + b)
+
+    At a and b of one it collapses to
+    S + lgamma(n + 1) - (n + 1) log_of(S + 1), and its mean with no
+    skill is accurately one. That is why one divided by the value
+    reads as a level.
+
+    The value is TWO-SIDED, and a caller which shows it to a player
+    must know that. The pinned mixture spans each skill above zero
+    and not the skills above one, thus the value falls to its
+    minimum at S equal to n - a skill number of one - and climbs on
+    the two sides. A player far below the baseline thus gets a
+    large value, the same as a player far above it. The board must
+    show the skill number adjacent to this value, or its copy names
+    a weak run strong evidence.
+
+    The fixed-count value stays in the record for the site-wide
+    work.
+
+    A trial count below one, an S statistic at or below zero, or a
+    mixture constant at or below zero raises.
+    """
+    if n < 1:
+        raise ValueError(f"the trial count must be at least 1, got {n}")
+    if not math.isfinite(s_statistic) or s_statistic <= 0.0:
+        raise ValueError(f"the S statistic must be finite and positive, "
+                         f"got {s_statistic!r}")
+    if not mixture_shape > 0.0 or not mixture_rate > 0.0:
+        raise ValueError("the mixture constants must be positive")
+    log_e = (s_statistic
+             + mixture_shape * math.log(mixture_rate)
+             + math.lgamma(n + mixture_shape)
+             - math.lgamma(mixture_shape)
+             - (n + mixture_shape) * math.log(s_statistic + mixture_rate))
+    return EvidenceSummary(
+        log_e_value=log_e,
+        significance=min(1.0, math.exp(-log_e)),
+        mixture_shape=mixture_shape,
+        mixture_rate=mixture_rate)
+
+
+class StoppingMonitor(NamedTuple):
+    """The correlation between the estimate and the trial count.
+
+    correlation is None when one of the two has no width, which
+    happens when each player holds the same trial count. None says
+    the monitor did not measure, and a silent zero can say clean
+    play.
+    """
+
+    player_count: int
+    correlation: float | None
+
+
+def stopping_monitor(points: Sequence[PopulationPoint],
+                     fit: PopulationFit) -> StoppingMonitor:
+    """Monitor the players who stop after a good run (section 6).
+
+    The precision-weighted correlation between the logarithm of the
+    trial count and the raw estimate y is the statistic. With clean
+    play it sits at zero. A player who stops after a good run holds
+    a high estimate at a low trial count, thus the correlation
+    moves away from zero, and the variation statistic sees none of
+    it.
+
+    The correlation reads y and does not the shrunk value. The shrunk
+    value is a function of n by construction, thus it can move
+    this number on a clean population and the monitor can fire
+    at nothing.
+
+    Section 6 quotes +0.34 and +0.54 for a stopping pattern. A
+    simulation here of the same behavior gives -0.76: with the
+    natural indication, a high estimate at a low trial count is a
+    negative correlation. The magnitude is what carries, thus the
+    tests read the magnitude and not the sign. This note records
+    the divergence and does not resolve it silently.
+
+    Fewer than two players raises.
+    """
+    rows = list(points)
+    count = len(rows)
+    if count < 2:
+        raise ValueError("the stopping monitor wants two or more players")
+    variance = fit.tau * fit.tau
+    weights = [1.0 / (row.v + variance) for row in rows]
+    total = math.fsum(weights)
+    counts = [math.log(row.n) for row in rows]
+    values = [row.y for row in rows]
+    count_mean = math.fsum(w * x for w, x in zip(weights, counts)) / total
+    value_mean = math.fsum(w * y for w, y in zip(weights, values)) / total
+    count_spread = math.fsum(w * (x - count_mean) ** 2
+                             for w, x in zip(weights, counts))
+    value_spread = math.fsum(w * (y - value_mean) ** 2
+                             for w, y in zip(weights, values))
+    if count_spread <= 0.0 or value_spread <= 0.0:
+        return StoppingMonitor(player_count=count, correlation=None)
+    together = math.fsum(w * (x - count_mean) * (y - value_mean)
+                         for w, x, y in zip(weights, counts, values))
+    return StoppingMonitor(
+        player_count=count,
+        correlation=together / math.sqrt(count_spread * value_spread))
+
+
+class DiscoveryReport(NamedTuple):
+    """The site-wide claim as a natural frequency (section 6)."""
+
+    level: float
+    tested: int
+    flagged: int
+    expected_by_luck: float
+
+
+def discovery_report(p_values: Sequence[float], *,
+                     level: float = DISCOVERY_LEVEL) -> DiscoveryReport:
+    """Count the flagged players and the ones luck explains.
+
+    The rate adjustment of fdr_adjusted at the given level, said as
+    a natural frequency: "47 players are flagged. About 5 of those
+    are flagged by luck alone." A rate is a promise about the
+    flagged set, thus the count luck explains is the level times
+    the flagged count and not the level times the tested count.
+
+    The input is the fixed-count evidence value of each player, the
+    one the record keeps for this work.
+
+    A level that is not in the unit interval raises.
+    """
+    if not 0.0 < level < 1.0:
+        raise ValueError(f"the level must sit in (0, 1), got {level!r}")
+    adjusted = fdr_adjusted(p_values)
+    flagged = sum(1 for value in adjusted if value <= level)
+    return DiscoveryReport(level=level, tested=len(adjusted),
+                           flagged=flagged,
+                           expected_by_luck=level * flagged)
 
 
 def fdr_adjusted(p_values: Sequence[float]) -> tuple[float, ...]:

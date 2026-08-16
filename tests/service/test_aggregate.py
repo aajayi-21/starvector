@@ -9,14 +9,21 @@ import math
 import numpy as np
 import pytest
 
-from core.aggregate import (PROVISIONAL_MEAN, PROVISIONAL_SPREAD,
+from core.aggregate import (DISCOVERY_LEVEL, ELIGIBLE_TRIAL_FLOOR,
+                            PROVISIONAL_MEAN, PROVISIONAL_SPREAD,
+                            PopulationFit, PosteriorRow,
                             SkillSummary, _generalized_q,
                             _reml_score, baseline_check,
                             chi_squared_tail, digamma, fdr_adjusted,
                             fit_population, kolmogorov_tail,
                             population_point, shrunk_log_theta,
-                            skill_summary, trigamma,
-                            variation_report)
+                            anytime_evidence,
+                            discovery_report,
+                            eligible_trial_floor,
+                            posterior_normal, posterior_ranks,
+                            recomputed_trial_floor,
+                            skill_summary, stopping_monitor,
+                            trigamma, variation_report)
 
 # Reference values from an offline high-precision computation
 # (scipy.stats.chi2.sf, 2026-08-12), 12 digits. The
@@ -345,3 +352,209 @@ def test_the_core_and_harness_kolmogorov_values_agree() -> None:
         for count in (10, 100, 1000):
             assert kolmogorov_tail(statistic, count) == pytest.approx(
                 ks_significance(statistic, count), rel=1e-12)
+
+
+# ---- spec M1 section 6: ranks, evidence, and the monitors ----
+
+
+def _fixed_fit(tau: float = 0.3) -> PopulationFit:
+    return PopulationFit(player_count=50, fitted=True, mu=0.0, tau=tau,
+                         mu_spread=0.05, halvings=60)
+
+
+def test_the_posterior_reads_the_accurate_variance() -> None:
+    fit = _fixed_fit()
+    point = population_point(12, 12.0)
+    row = posterior_normal(point, fit)
+    tau_precision = 1.0 / fit.tau ** 2
+    own = 1.0 / point.v
+    assert row.mean == pytest.approx(
+        (fit.mu * tau_precision + point.y * own) / (tau_precision + own),
+        rel=1e-12)
+    assert row.spread == pytest.approx(
+        math.sqrt(1.0 / (tau_precision + own)), rel=1e-12)
+
+
+def test_a_zero_width_collapses_each_player_onto_the_centre() -> None:
+    fit = _fixed_fit(tau=0.0)
+    row = posterior_normal(population_point(12, 12.0), fit)
+    assert (row.mean, row.spread) == (fit.mu, 0.0)
+
+
+def _rank_oracle(rows: list[PosteriorRow]) -> list[float]:
+    """The closed-shape expected rank, from the bell-curve tail.
+
+    Rank one is the top, thus a player's expected rank is one plus
+    the count of players above them in expectation. This wants no
+    reference table and no other library, thus it is the strongest
+    check available on the simulation.
+    """
+    out = []
+    for own in rows:
+        total = 1.0
+        for other in rows:
+            if other is own:
+                continue
+            z = ((other.mean - own.mean)
+                 / math.sqrt(own.spread ** 2 + other.spread ** 2))
+            total += 0.5 * math.erfc(-z / math.sqrt(2.0))
+        out.append(total)
+    return out
+
+
+def test_the_sampled_expected_rank_agrees_with_the_closed_shape() -> None:
+    fit = _fixed_fit(tau=0.25)
+    rows = [posterior_normal(point, fit)
+            for point in _null_points(8, 5, 200, 3, tau=0.25)]
+    sampled = [row.expected_rank for row in posterior_ranks(rows, seed=42)]
+    for got, want in zip(sampled, _rank_oracle(rows)):
+        assert got == pytest.approx(want, abs=0.2)
+
+
+def test_a_low_trial_player_lands_at_the_middle() -> None:
+    # The property the rule buys: a lucky short run cannot get the
+    # top, and no threshold does the work.
+    fit = _fixed_fit()
+    strong = math.exp(-0.8)
+    low = posterior_normal(population_point(3, 3 * strong), fit)
+    high = posterior_normal(population_point(200, 200 * strong), fit)
+    others = [posterior_normal(point, fit)
+              for point in _null_points(8, 5, 200, 3)]
+    ranks = posterior_ranks([low, high] + others, seed=7)
+    middle = (len(ranks) + 1) / 2.0
+    assert abs(ranks[0].expected_rank - middle) \
+        < abs(ranks[1].expected_rank - middle)
+    assert (ranks[0].rank_high - ranks[0].rank_low) \
+        > (ranks[1].rank_high - ranks[1].rank_low)
+
+
+def test_the_ranks_are_a_function_of_the_seed() -> None:
+    rows = [posterior_normal(point, _fixed_fit())
+            for point in _null_points(6, 5, 200, 3)]
+    assert posterior_ranks(rows, seed=11) == posterior_ranks(rows, seed=11)
+
+
+def test_a_zero_width_ties_every_player_at_the_middle() -> None:
+    fit = _fixed_fit(tau=0.0)
+    rows = [posterior_normal(point, fit)
+            for point in _null_points(5, 5, 200, 3)]
+    ranks = posterior_ranks(rows, seed=1)
+    assert all(row.expected_rank == 3.0 for row in ranks)
+    assert all((row.rank_low, row.rank_high) == (1, 5) for row in ranks)
+
+
+def test_the_rank_interval_holds_the_expected_rank() -> None:
+    rows = [posterior_normal(point, _fixed_fit())
+            for point in _null_points(10, 5, 200, 3, tau=0.3)]
+    for row in posterior_ranks(rows, seed=5):
+        assert row.rank_low <= row.expected_rank <= row.rank_high
+
+
+def test_an_empty_board_ranks_nothing() -> None:
+    assert posterior_ranks([], seed=1) == ()
+
+
+def test_the_evidence_collapses_to_its_closed_shape() -> None:
+    for n, s in ((1, 0.5), (12, 9.0), (200, 150.0)):
+        summary = anytime_evidence(n, s)
+        assert summary.log_e_value == pytest.approx(
+            s + math.lgamma(n + 1) - (n + 1) * math.log(s + 1.0), rel=1e-12)
+        assert summary.significance == pytest.approx(
+            min(1.0, math.exp(-summary.log_e_value)), rel=1e-12)
+        assert (summary.mixture_shape, summary.mixture_rate) == (1.0, 1.0)
+
+
+def test_the_evidence_is_two_sided_and_bottoms_at_the_null() -> None:
+    """The mixture spans each positive skill, thus so does the value.
+
+    The prior of section 6 is Gamma at shape and rate one, and it
+    spans each skill above zero - not the skills above one.
+    The value thus falls to a minimum at S equal to n, which
+    is a skill number of one, and climbs on the two sides of it.
+
+    A player far below the baseline thus gets a large value, the
+    same as a player far above it. That is what the pinned mixture
+    gives. This test records the shape and then nobody reads the
+    number as one-sided by accident.
+    """
+    n = 20
+    values = [anytime_evidence(n, s).log_e_value
+              for s in (5.0, 10.0, 20.0, 40.0, 100.0)]
+    # Falls to the null and climbs after it.
+    assert values[0] > values[1] > values[2]
+    assert values[2] < values[3] < values[4]
+    # The minimum sits at S equal to n.
+    assert min(values) == values[2]
+
+
+def test_the_evidence_holds_its_bound_with_no_skill() -> None:
+    # Ville's inequality: with no skill the chance the value ever
+    # gets to 20 is at or below 1/20.
+    #
+    # Do NOT check this by the sample mean. The mean with no skill
+    # is accurately one and the variance is unbounded, thus the sample
+    # mean is not a stable statistic - 20000 values here average
+    # 0.615. The bound is the statement that holds.
+    rng = np.random.default_rng(5)
+    statistics = rng.gamma(25, 1.0, size=20000)
+    values = np.array([math.exp(anytime_evidence(25, float(s)).log_e_value)
+                       for s in statistics])
+    assert float((values >= 20.0).mean()) <= 0.05
+
+
+def test_the_recomputed_floor_tracks_the_approximate_reading() -> None:
+    for tau, approximate in ((0.05, 400), (0.15, 44.4), (0.3, 11.1)):
+        assert abs(recomputed_trial_floor(tau) - approximate) <= 1.5
+    with pytest.raises(ValueError, match="positive"):
+        recomputed_trial_floor(0.0)
+
+
+def test_the_floor_never_falls_below_the_architecture_figure() -> None:
+    # Ruling 9 of 2026-08-15: a recomputation can widen the floor
+    # and must not quietly weaken it.
+    wide = PopulationFit(player_count=300, fitted=True, mu=0.0, tau=0.3,
+                         mu_spread=0.01, halvings=60)
+    assert recomputed_trial_floor(0.3) < ELIGIBLE_TRIAL_FLOOR
+    assert eligible_trial_floor(wide) == ELIGIBLE_TRIAL_FLOOR
+    narrow = PopulationFit(player_count=300, fitted=True, mu=0.0, tau=0.05,
+                           mu_spread=0.01, halvings=60)
+    assert eligible_trial_floor(narrow) == 401
+    small = PopulationFit(player_count=100, fitted=True, mu=0.0, tau=0.05,
+                          mu_spread=0.01, halvings=60)
+    assert eligible_trial_floor(small) == ELIGIBLE_TRIAL_FLOOR
+
+
+def test_the_stopping_monitor_separates_clean_play_from_stopping() -> None:
+    # The magnitude carries and not the sign: section 6 quotes a
+    # positive number and the natural indication gives a negative one.
+    clean = _null_points(300, 5, 200, 1)
+    assert abs(stopping_monitor(
+        clean, fit_population(clean)).correlation) < 4.0 / math.sqrt(300)
+    stopped = []
+    rng = np.random.default_rng(2)
+    for _ in range(300):
+        for n in range(3, 200):
+            point = population_point(n, float(rng.gamma(n, 1.0)))
+            if point.y > 0.6 or n > 150:
+                stopped.append(point)
+                break
+    monitor = stopping_monitor(stopped, fit_population(stopped))
+    assert monitor.correlation is not None
+    assert abs(monitor.correlation) >= 0.3
+
+
+def test_the_monitor_says_nothing_when_it_measured_nothing() -> None:
+    # A silent zero here can read as clean play.
+    rng = np.random.default_rng(8)
+    flat = [population_point(40, float(rng.gamma(40, 1.0)))
+            for _ in range(30)]
+    assert stopping_monitor(flat, fit_population(flat)).correlation is None
+
+
+def test_the_discovery_report_is_a_natural_frequency() -> None:
+    report = discovery_report([0.001] * 3 + [0.5] * 97)
+    assert (report.tested, report.flagged) == (100, 3)
+    assert report.expected_by_luck == pytest.approx(0.05 * 3)
+    assert report.level == 0.05
+    with pytest.raises(ValueError, match=r"\(0, 1\)"):
+        discovery_report([0.5], level=0.0)
