@@ -204,6 +204,24 @@ def create_app(service_config: ServiceConfig,
             return _unauthorized()
         return name
 
+    def _caller(request: Request) -> str | Response:
+        """The player behind the cookie, or the constant refusal.
+
+        Ruling 7 of spec M1: with no player record stored the
+        identity is the configured player and nothing holds
+        credentials, thus a box that plays alone answers as it does
+        today. With records stored the session cookie names the
+        player, and the token in it meets the stored digest at each
+        read. A revoked or a replaced token thus stops at the next
+        read, and no session table accumulates.
+        """
+        if not store.any_player(root):
+            return player
+        token = request.cookies.get(auth.SESSION_COOKIE)
+        if token is None:
+            return _unauthorized()
+        return _resolve_token(token)
+
     @app.get("/join/{token}")
     def join(token: str) -> Response:
         """The invite gate (spec M1 section 4).
@@ -358,7 +376,10 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse(value)
 
     @app.get("/api/practice")
-    def practice_days() -> Response:
+    def practice_days(request: Request) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         # A function of revealed days alone (P5 R4): while a day is
         # open, this body cannot change with its target.
         rows = []
@@ -379,6 +400,12 @@ def create_app(service_config: ServiceConfig,
 
         from service.scoring import day_precompute, practice_score
 
+        # The gate stands before the work: this is the one player
+        # path that scores, thus a caller with no invite does none
+        # of it.
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         try:
             body = await request.json()
         except Exception:
@@ -445,7 +472,10 @@ def create_app(service_config: ServiceConfig,
                         media_type="text/javascript")
 
     @app.get("/api/day")
-    def day_view() -> Response:
+    def day_view(request: Request) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         day = store.latest_day(root)
         if day is None:
             return Response(content=_NO_DAY, status_code=404,
@@ -464,8 +494,8 @@ def create_app(service_config: ServiceConfig,
             "trial_code": record.trial_code,
             "status": record.status,
             "commitment": record.commitment,
-            "player": player,
-            "submitted": player in store.list_submissions(root, day),
+            "player": caller,
+            "submitted": caller in store.list_submissions(root, day),
             "relation_vocabulary": relation_vocabulary,
             "canvas_px": canvas_px,
             "closes_at": closes_at,
@@ -477,6 +507,9 @@ def create_app(service_config: ServiceConfig,
 
     @app.post("/api/submission")
     async def submit(request: Request) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         day = store.latest_day(root)
         if day is None:
             return Response(content=_NO_DAY, status_code=404,
@@ -484,7 +517,7 @@ def create_app(service_config: ServiceConfig,
         record = store.read_day_record(root, day)
         if record.status != "open":
             return JSONResponse({"cause": "day-closed"}, status_code=409)
-        if player in store.list_submissions(root, day):
+        if caller in store.list_submissions(root, day):
             return JSONResponse({"cause": "already-submitted"},
                                 status_code=409)
         try:
@@ -508,8 +541,8 @@ def create_app(service_config: ServiceConfig,
         trial_id = secrets.token_hex(16)
         try:
             store.write_once_json(
-                store.submission_path(root, day, player),
-                {"day": day, "player": player, "trial_id": trial_id,
+                store.submission_path(root, day, caller),
+                {"day": day, "player": caller, "trial_id": trial_id,
                  "received_at": store_received_at(),
                  "record": wire_record})
         except store.StoreError:
@@ -610,7 +643,10 @@ def create_app(service_config: ServiceConfig,
         }
 
     @app.get("/api/reveal")
-    def reveal_view(day: str | None = None) -> Response:
+    def reveal_view(request: Request, day: str | None = None) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         # No argument names the latest day. A named day serves only
         # when that day is revealed - one constant refusal for the
         # unknown, open, and closed-unrevealed conditions (R3).
@@ -624,11 +660,14 @@ def create_app(service_config: ServiceConfig,
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")
         row = store.read_json_or_none(
-            store.trial_row_path(root, day, player))
+            store.trial_row_path(root, day, caller))
         return JSONResponse(_reveal_value(record, row))
 
     @app.get("/api/history")
-    def history_view() -> Response:
+    def history_view(request: Request) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         # Revealed days that hold the player's trial row, newest
         # first (spec S2 B3). Read-only against the store.
         days = []
@@ -638,7 +677,7 @@ def create_app(service_config: ServiceConfig,
             if record.status != "revealed":
                 continue
             row = store.read_json_or_none(
-                store.trial_row_path(root, day, player))
+                store.trial_row_path(root, day, caller))
             if row is None:
                 continue
             ps.append(float(row["p"]))
@@ -652,18 +691,22 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"days": days, "skill": _skill_value(ps)})
 
     @app.get("/api/submission")
-    def submission_view(day: str | None = None) -> Response:
+    def submission_view(request: Request,
+                        day: str | None = None) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         # The player's own stored record - an echo of their input
-        # with no target information and no score. The player name
-        # comes from the config alone. The day membership check
-        # keeps the query string out of the path arithmetic.
+        # with no target information and no score. The caller of
+        # ruling 7 names the record. The day membership check keeps
+        # the query string out of the path arithmetic.
         if day is None:
             day = store.latest_day(root)
         if day is None or day not in store.list_days(root):
             return Response(content=_NO_SUBMISSION, status_code=404,
                             media_type="application/json")
         stored = store.read_json_or_none(
-            store.submission_path(root, day, player))
+            store.submission_path(root, day, caller))
         if stored is None:
             return Response(content=_NO_SUBMISSION, status_code=404,
                             media_type="application/json")
@@ -671,9 +714,13 @@ def create_app(service_config: ServiceConfig,
                              "record": stored["record"]})
 
     @app.get("/api/leaderboard")
-    def leaderboard_view(day: str | None = None) -> Response:
-        # Revealed days alone (spec S2 B3): the one configured
-        # player's row from the stored trial row, or no rows.
+    def leaderboard_view(request: Request,
+                         day: str | None = None) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        # Revealed days alone (spec S2 B3): the caller's row from
+        # the stored trial row, or no rows.
         if day is None or day not in store.list_days(root):
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")
@@ -682,23 +729,26 @@ def create_app(service_config: ServiceConfig,
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")
         row = store.read_json_or_none(
-            store.trial_row_path(root, day, player))
+            store.trial_row_path(root, day, caller))
         rows = [] if row is None else [{
-            "player": player,
+            "player": caller,
             "p": row["p"],
             "target_rank": row["target_rank"],
             "decoy_count": row["decoy_count"],
-            "streak": _streak(root, player),
+            "streak": _streak(root, caller),
         }]
         return JSONResponse({"day": day, "rows": rows})
 
     @app.get("/api/me")
-    def me_view() -> Response:
+    def me_view(request: Request) -> Response:
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
         # The reminder and public flags have no storage at this
         # time (spec S2 section 3).
         return JSONResponse({
-            "player": player,
-            "streak": _streak(root, player),
+            "player": caller,
+            "streak": _streak(root, caller),
             "reminder": False,
             "public": False,
         })

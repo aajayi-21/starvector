@@ -31,6 +31,15 @@ def _mint(root: Path, player: str, display_name: str, secret: str) -> str:
     return token
 
 
+def _sign_in(client: TestClient, token: str | None) -> TestClient:
+    """Put the session cookie on the client, in the manner a browser
+    does after the invite gate answers. None clears it."""
+    client.cookies.clear()
+    if token is not None:
+        client.cookies.set(auth.SESSION_COOKIE, token)
+    return client
+
+
 def _world(tmp_path, *, players=(("ade", "Ade", ALICE_SECRET),)):
     fixture = build_service_fixture(tmp_path)
     tokens = {name: _mint(fixture["store"], name, label, secret)
@@ -185,6 +194,95 @@ def test_a_minted_secret_has_the_pinned_shape() -> None:
     assert name == "ade"
     assert len(secret) == 43
     assert auth.secret_matches(secret, digest) is True
+
+
+_PLAYER_SURFACES = ("/api/day", "/api/reveal", "/api/history",
+                    "/api/submission", "/api/leaderboard", "/api/me",
+                    "/api/practice")
+
+
+def test_an_unknown_cookie_meets_the_constant_401(tmp_path) -> None:
+    _fixture, client, _tokens = _world(tmp_path)
+    bodies, statuses = set(), set()
+    for token in (None, "garbage", f"ade.{'9' * 43}"):
+        _sign_in(client, token)
+        for path in _PLAYER_SURFACES:
+            for _ in range(2):
+                answer = client.get(path)
+                bodies.add(answer.content)
+                statuses.add(answer.status_code)
+    assert bodies == {b'{"detail":"unauthorized"}'}
+    assert statuses == {401}
+
+
+def _two_player_world(tmp_path):
+    return _world(tmp_path, players=(("ade", "Ade", ALICE_SECRET),
+                                     ("bru", "Bru", BRU_SECRET)))
+
+
+def test_two_players_see_their_own_submitted_flags(tmp_path) -> None:
+    from svc_fixture import mixed_wire_record
+
+    fixture, client, tokens = _two_player_world(tmp_path)
+    store.write_once_json(
+        store.submission_path(fixture["store"], DAY, "ade"),
+        {"day": DAY, "player": "ade", "trial_id": "f" * 32,
+         "received_at": FIXED_CLOCK, "record": mixed_wire_record()})
+    alice = _sign_in(client, tokens["ade"]).get("/api/day").json()
+    bru = _sign_in(client, tokens["bru"]).get("/api/day").json()
+    assert alice["player"] == "ade" and alice["submitted"] is True
+    assert bru["player"] == "bru" and bru["submitted"] is False
+    # The day itself is one shared trial (spec M1 ruling 2).
+    assert alice["trial_code"] == bru["trial_code"]
+    assert alice["commitment"] == bru["commitment"]
+
+
+def test_the_stored_submission_is_the_callers_own(tmp_path) -> None:
+    from svc_fixture import mixed_wire_record
+
+    fixture, client, tokens = _two_player_world(tmp_path)
+    store.write_once_json(
+        store.submission_path(fixture["store"], DAY, "ade"),
+        {"day": DAY, "player": "ade", "trial_id": "f" * 32,
+         "received_at": FIXED_CLOCK, "record": mixed_wire_record()})
+    mine = _sign_in(client, tokens["ade"]).get(f"/api/submission?day={DAY}")
+    assert mine.status_code == 200
+    assert mine.json()["trial_id"] == "f" * 32
+    theirs = _sign_in(client,
+                      tokens["bru"]).get(f"/api/submission?day={DAY}")
+    assert theirs.status_code == 404
+    assert theirs.content == b'{"detail":"no submission"}'
+
+
+def test_two_players_see_their_own_me_and_streaks(tmp_path) -> None:
+    _fixture, client, tokens = _two_player_world(tmp_path)
+    for name in ("ade", "bru"):
+        answer = _sign_in(client, tokens[name]).get("/api/me")
+        assert answer.status_code == 200
+        assert answer.json()["player"] == name
+
+
+def test_the_me_surface_follows_the_cookie_and_not_the_config(
+        tmp_path) -> None:
+    # The configured player is 'ade'. With records stored, a cookie
+    # for 'bru' must answer bru - the config must not leak through.
+    _fixture, client, tokens = _two_player_world(tmp_path)
+    answer = _sign_in(client, tokens["bru"]).get("/api/me")
+    assert answer.json()["player"] == "bru"
+
+
+def test_the_fallback_answers_as_today(tmp_path) -> None:
+    """Ruling 7: with no record stored, nothing holds credentials."""
+    fixture = build_service_fixture(tmp_path)
+    open_day(fixture["service_config"], date=DAY,
+             clock=lambda: FIXED_CLOCK, pick_seed="a" * 32,
+             secret="b" * 64)
+    client = TestClient(create_app(fixture["service_config"]))
+    assert store.any_player(fixture["store"]) is False
+    for path in _PLAYER_SURFACES:
+        assert client.get(path).status_code != 401
+    assert client.get("/api/me").json()["player"] == "ade"
+    assert client.get("/api/day").json()["player"] == "ade"
 
 
 @pytest.mark.parametrize("name", ["ade.x", "A Player", "../escape"])
