@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { blockExternalHosts, SERVER, signIn, TOKENS } from "./helpers";
+import {
+  blockExternalHosts,
+  OPERATOR_HEADERS,
+  SERVER,
+  signIn,
+  TOKENS,
+} from "./helpers";
 
 test("the leaderboard serves the day's board and gates the skill board", async ({
   page,
@@ -65,6 +71,46 @@ test("an invite link signs the browser in", async ({ browser }) => {
   const me = await (await page.request.get(`${SERVER}/api/me`)).json();
   expect(me.player).toBe("bru");
   expect(me.display_name).toBe("Bru Lin");
+  await context.close();
+});
+
+test("an operator mints an invite that signs a new browser in", async ({
+  browser,
+  request,
+}) => {
+  // The console's mint, over the wire it uses. The gate is the
+  // bearer and not the operator gate of ruling 7: the switch that
+  // turns access control on must not itself be open in the world
+  // where nothing holds credentials.
+  const refused = await request.post(`${SERVER}/api/players`, {
+    data: { player: "cyd", display_name: "Cyd Vega" },
+  });
+  expect(refused.status()).toBe(401);
+
+  const minted = await request.post(`${SERVER}/api/players`, {
+    headers: OPERATOR_HEADERS,
+    data: { player: "cyd", display_name: "Cyd Vega" },
+  });
+  expect(minted.ok()).toBeTruthy();
+  const invite = await minted.json();
+  // A path and not an address: the server does not know its public
+  // origin and must not trust the Host header for one.
+  expect(invite.join_path).toBe(`/join/${invite.token}`);
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(invite.join_path);
+  expect(new URL(page.url()).pathname).toBe("/");
+  const me = await (await page.request.get(`${SERVER}/api/me`)).json();
+  expect(me.player).toBe("cyd");
+  expect(me.display_name).toBe("Cyd Vega");
+
+  // The name is taken now, and the refusal says so.
+  const again = await request.post(`${SERVER}/api/players`, {
+    headers: OPERATOR_HEADERS,
+    data: { player: "cyd", display_name: "Cyd Vega" },
+  });
+  expect(again.status()).toBe(409);
   await context.close();
 });
 

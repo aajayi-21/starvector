@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevApi } from "../../src/dev/api";
 import { DevApiError } from "../../src/dev/api";
 import { DevApp, TOKEN_KEY } from "../../src/dev/app";
+import { ORIGIN_KEY } from "../../src/dev/invite-panel";
 import type { DevDayRow, DevRankings, DevStored } from "../../src/dev/types";
 
 afterEach(() => {
@@ -80,12 +81,15 @@ function rankingsFixture(poolCount: number): DevRankings {
 function makeStubApi(days: DevDayRow[]): DevApi & {
   rankingsCalls: string[];
   lifecycle: string[];
+  mints: Array<[string, string]>;
 } {
   const rankingsCalls: string[] = [];
   const lifecycle: string[] = [];
+  const mints: Array<[string, string]> = [];
   return {
     rankingsCalls,
     lifecycle,
+    mints,
     getDays: () => Promise.resolve({ days }),
     getSubmission: (day) => {
       const row = days.find((r) => r.day === day);
@@ -109,6 +113,15 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
     postReveal: () => {
       lifecycle.push("reveal");
       return Promise.resolve({});
+    },
+    mintPlayer: (player, displayName) => {
+      mints.push([player, displayName]);
+      return Promise.resolve({
+        player,
+        display_name: displayName,
+        token: `${player}.${"s".repeat(43)}`,
+        join_path: `/join/${player}.${"s".repeat(43)}`,
+      });
     },
     imageUrl: (imageId) => `stub:/image/${imageId}`,
   };
@@ -291,6 +304,71 @@ describe("the console's async discipline", () => {
     render(<DevApp api={api} />);
     const note = await screen.findByText(/start the server with --dev/);
     expect(note.textContent).toContain("operator token is missing or wrong");
+  });
+
+  it("mints an invite and prints it one time", async () => {
+    window.localStorage.removeItem(ORIGIN_KEY);
+    const api = makeStubApi([dayRow({ status: "revealed" })]);
+    render(<DevApp api={api} />);
+    const name = await screen.findByLabelText("player name");
+    fireEvent.change(name, { target: { value: "bru" } });
+    fireEvent.change(screen.getByLabelText("display name"), {
+      target: { value: "Bru Lin" },
+    });
+    fireEvent.change(screen.getByLabelText("invite origin"), {
+      target: { value: "https://game.example.com" },
+    });
+    fireEvent.click(screen.getByText("Mint the invite"));
+
+    await waitFor(() => expect(api.mints).toEqual([["bru", "Bru Lin"]]));
+    // The origin is the operator's, not this console's address: the
+    // console is reached through a tunnel at localhost while the
+    // invite has to name the public site.
+    const url = await screen.findByTestId("invite-url");
+    expect(url.textContent).toBe(
+      `https://game.example.com/join/bru.${"s".repeat(43)}`,
+    );
+    expect(screen.getByText(/one time the invite prints/)).toBeDefined();
+    // A minted token is never persisted: the store keeps its digest
+    // alone, thus a lost invite wants a rotate and not a lookup.
+    const kept = Object.values(window.localStorage);
+    expect(kept.join(" ")).not.toContain("s".repeat(43));
+    window.localStorage.removeItem(ORIGIN_KEY);
+  });
+
+  it("defaults the display name to the player name", async () => {
+    const api = makeStubApi([dayRow({ status: "revealed" })]);
+    render(<DevApp api={api} />);
+    fireEvent.change(await screen.findByLabelText("player name"), {
+      target: { value: "cyd" },
+    });
+    fireEvent.click(screen.getByText("Mint the invite"));
+    await waitFor(() => expect(api.mints).toEqual([["cyd", "cyd"]]));
+  });
+
+  it("refuses to mint with no player name", async () => {
+    const api = makeStubApi([dayRow({ status: "revealed" })]);
+    render(<DevApp api={api} />);
+    const button = await screen.findByText("Mint the invite");
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(api.mints).toEqual([]);
+  });
+
+  it("says why a mint was refused", async () => {
+    const base = makeStubApi([dayRow({ status: "revealed" })]);
+    const api: DevApi = {
+      ...base,
+      mintPlayer: () =>
+        Promise.reject(new DevApiError(409, "player 'ade' is stored")),
+    };
+    render(<DevApp api={api} />);
+    fireEvent.change(await screen.findByLabelText("player name"), {
+      target: { value: "ade" },
+    });
+    fireEvent.click(screen.getByText("Mint the invite"));
+    expect(await screen.findByText("player 'ade' is stored")).toBeDefined();
+    expect(screen.queryByTestId("invite-url")).toBeNull();
   });
 
   it("shows a failed submission read instead of nothing-sent", async () => {

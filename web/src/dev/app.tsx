@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError, makeDevApi } from "./api";
+import { InvitePanel } from "./invite-panel";
 import { RankingsView } from "./rankings";
 import { SubmissionView } from "./submission-view";
 import type { DevDayRow, DevRankings, DevStored } from "./types";
@@ -298,6 +299,8 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
           </span>
         </div>
       </div>
+
+      <InvitePanel api={api} />
 
       {selected === null ? null : (
         <div className="card" style={{ gap: 8 }}>

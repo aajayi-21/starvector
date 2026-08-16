@@ -4,7 +4,13 @@
  * fetch reads as the server not answering.
  */
 
-import type { DevDays, DevRankings, DevStored, LifecycleAck } from "./types";
+import type {
+  DevDays,
+  DevRankings,
+  DevStored,
+  LifecycleAck,
+  MintedInvite,
+} from "./types";
 
 export class DevApiError extends Error {
   readonly status: number;
@@ -23,9 +29,20 @@ function authorized(token: string, init?: RequestInit): RequestInit {
   // No header with no token: that world is the one ruling 7 of
   // spec M1 describes, where nothing holds credentials and the
   // operator plane answers as it always did.
-  return token === ""
-    ? (init ?? {})
-    : { ...init, headers: { Authorization: `Bearer ${token}` } };
+  //
+  // The caller's own headers are merged and not replaced - the
+  // mint sends a content type, and a bearer that overwrote it
+  // would be a silent loss.
+  if (token === "") {
+    return init ?? {};
+  }
+  return {
+    ...init,
+    headers: {
+      ...(init?.headers as Record<string, string> | undefined),
+      Authorization: `Bearer ${token}`,
+    },
+  };
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -58,6 +75,7 @@ export interface DevApi {
   postOpen(): Promise<LifecycleAck>;
   postClose(): Promise<LifecycleAck>;
   postReveal(): Promise<LifecycleAck>;
+  mintPlayer(player: string, displayName: string): Promise<MintedInvite>;
   imageUrl(imageId: string): string;
 }
 
@@ -101,6 +119,18 @@ export function makeDevApi(token: TokenSource = () => ""): DevApi {
       request<LifecycleAck>(
         "/api/day/reveal",
         authorized(token(), { method: "POST" }),
+      ),
+    mintPlayer: (player, displayName) =>
+      request<MintedInvite>(
+        "/api/players",
+        authorized(token(), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            player,
+            display_name: displayName,
+          }),
+        }),
       ),
     imageUrl: (imageId) => `/image/${imageId}`,
   };
