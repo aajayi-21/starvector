@@ -71,7 +71,7 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
         if not isinstance(value, str) or not value:
             raise ServiceConfigError(
                 f"{source}.{name}: expected a non-empty string")
-    if not _PLAYER_RULE.match(raw["player"]):
+    if not _PLAYER_RULE.fullmatch(raw["player"]):
         raise ServiceConfigError(
             f"{source}.player: must agree with [a-z0-9-]{{1,64}} - the "
             "name becomes a file name in the store")
