@@ -9,6 +9,7 @@ from pathlib import Path
 
 from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
 
+from core import aggregate
 from service import auth, players, rollup, store
 from service.day import close_day, open_day, reveal_day
 from service.server import create_app
@@ -223,6 +224,79 @@ def test_the_skill_board_keeps_the_configuration_off_the_wire(
     for name in ("scoring_config_hash", "preparation_version_id",
                  "rank_seed"):
         assert name not in view
+
+
+# Each field SkillBoardView declares without a question mark. A
+# body that drops one makes a screen that trusts the type read a
+# missing value, and the gated board is where that happens.
+_REQUIRED = ("active", "player_count", "eligible_count",
+             "degenerate_count", "eligibility_floor", "recomputed_floor",
+             "fit_floor", "provisional", "rows", "baseline_band",
+             "population", "variation", "discovery")
+
+
+def test_each_gated_body_is_a_complete_view(tmp_path) -> None:
+    """The two gated paths each answer each declared field.
+
+    One path serves the constant, when no reveal wrote an artifact.
+    The other serves an artifact that is gated on its own count.
+    A screen renders the same words for the two, thus the two hold
+    the same fields.
+    """
+    fixture = build_service_fixture(tmp_path)
+    config = fixture["service_config"]
+    players.mint_player(config, player="ade", display_name="Ade",
+                        clock=lambda: FIXED_CLOCK, secret="1" * 43)
+    open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
+             pick_seed="a" * 32, secret="b" * 64)
+    constant = TestClient(create_app(config, operator_token=TOKEN))
+    _as(constant, f"ade.{'1' * 43}")
+    bodies = [constant.get("/api/leaderboard/skill").json()]
+
+    _played, client, tokens = _world(tmp_path / "played")
+    bodies.append(
+        _as(client, tokens["ade"]).get("/api/leaderboard/skill").json())
+
+    for view in bodies:
+        assert view["active"] is False
+        for name in _REQUIRED:
+            assert name in view, name
+        # The floors travel from the module that owns them.
+        assert view["eligibility_floor"] == aggregate.ELIGIBLE_TRIAL_FLOOR
+        assert view["fit_floor"] == aggregate.FIT_PLAYER_FLOOR
+
+
+def test_the_standing_monitors_stay_operator_only(tmp_path) -> None:
+    """Ruling 5 of 2026-08-15 publishes the discovery claim alone.
+
+    The baseline check and the stopping monitor hold no
+    player-facing copy, thus they stay in the artifact where the
+    operator reads them.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    root = Path(fixture["service_config"].store_root)
+    data_root = Path(fixture["service_config"].data_root)
+    record = store.read_day_record(root, DAY)
+    stored = json.loads(rollup.skill_board_path(
+        data_root, record.scoring_config_hash).read_text())
+    # The guard against a test that passes on a missing field.
+    assert "baseline" in stored and "stopping_monitor" in stored
+    view = _as(client, tokens["ade"]).get("/api/leaderboard/skill").json()
+    assert "baseline" not in view
+    assert "stopping_monitor" not in view
+    assert "discovery" in view
+
+
+def test_the_me_surface_holds_no_flag_that_cannot_vary(tmp_path) -> None:
+    """Ruling 3 of spec M1 removed the public flag.
+
+    Ruling 4 removed the opt-out, thus the field was correct for
+    each player forever, and a value that cannot change is a claim
+    that waits for a reader to trust it.
+    """
+    _fixture, client, tokens = _world(tmp_path)
+    body = _as(client, tokens["ade"]).get("/api/me").json()
+    assert set(body) == {"player", "display_name", "streak", "reminder"}
 
 
 def test_the_skill_board_answers_the_constant_before_any_reveal(

@@ -8,6 +8,7 @@ it. The server binds to localhost, one configured player (D6).
 """
 
 import argparse
+import json
 import math
 import os
 import secrets
@@ -19,6 +20,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from core import aggregate
 from core.aggregate import shrunk_log_theta, skill_summary
 from core.intake import IntakeError, validate_submission
 from core.types import ROUTING_TABLE, IntakeGates, Submission, Weights
@@ -46,14 +48,50 @@ _DEV_OFF = b'{"detail":"not found"}'
 _NO_PRACTICE = b'{"detail":"no revealed day"}'
 _NOT_PRACTICE = b'{"detail":"not a practice day"}'
 
-# The gated skill board (spec M1 section 8). It carries the two
-# floors and the count, thus the screen holds no number the wire
-# does not give it. The two are different quantities: one
-# counts a player's trials and one counts eligible players.
-_SKILL_INACTIVE = (
-    b'{"active":false,"eligible_count":0,"eligibility_floor":30,'
-    b'"fit_floor":30,"provisional":true,"rows":[],"population":null,'
-    b'"baseline_band":[],"discovery":null}')
+# The gated skill board (spec M1 section 8). Two properties, each
+# load-bearing. It carries each field the view declares, thus a
+# screen that trusts the type reads no missing value while the
+# board is gated. And it carries the two floors, thus it holds no
+# number the wire does not give it - they are different
+# quantities, one counting a player's trials and one counting
+# eligible players. The floors come from the module that owns
+# them, thus one edit moves the board and the gate together.
+_SKILL_INACTIVE = json.dumps({
+    "active": False,
+    "player_count": 0,
+    "eligible_count": 0,
+    "degenerate_count": 0,
+    "eligibility_floor": aggregate.ELIGIBLE_TRIAL_FLOOR,
+    "recomputed_floor": None,
+    "fit_floor": aggregate.FIT_PLAYER_FLOOR,
+    "provisional": True,
+    "rows": [],
+    "baseline_band": [],
+    "population": None,
+    "variation": None,
+    "discovery": None,
+}, separators=(",", ":")).encode()
+
+# The skill-board fields the artifact keeps and the player wire
+# drops (spec M1 section 8).
+#
+# The configuration identity: the two hashes, and the rank seed,
+# which is a digest of one of them. The operator keeps the ability
+# to reproduce the board. A player wants none of it, and a body
+# that carries it makes the R4 two-world compare read a difference
+# that has nothing to do with the target.
+#
+# The two standing monitors: the baseline check and the stopping
+# monitor. Ruling 5 of 2026-08-15 publishes the discovery claim
+# and holds these two for the operator, because they hold no
+# player-facing copy, and a reader gives a number that arrives
+# with no sentence one of their own. Section 6 asks for the
+# goodness-of-fit check in its four numbers, thus the player panel
+# shows three of the four and the operator reads the fourth in the
+# artifact - a divergence this comment records rather than
+# resolves.
+_OPERATOR_ONLY = ("scoring_config_hash", "preparation_version_id",
+                  "rank_seed", "baseline", "stopping_monitor")
 
 # The digest the caller path compares against with no record
 # stored, thus an unknown name costs the same work as an incorrect
@@ -923,17 +961,8 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         rows = [{**row, "display_name": _label_of(row["player"])}
                 for row in prepared["rows"]]
-        # The configuration identity stays off the player wire: the
-        # two hashes, and the rank seed, which is a digest of one of
-        # them. The artifact keeps each of the three, thus the
-        # operator keeps the ability to reproduce it. A player wants
-        # none of it, and a body that carries it makes the R4
-        # two-world compare read a difference that has nothing to
-        # do with the target.
         served = {name: value for name, value in prepared.items()
-                  if name not in ("scoring_config_hash",
-                                  "preparation_version_id",
-                                  "rank_seed")}
+                  if name not in _OPERATOR_ONLY}
         return JSONResponse({**served, "rows": rows})
 
     @app.get("/api/me")
@@ -941,14 +970,16 @@ def create_app(service_config: ServiceConfig,
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
-        # The reminder and public flags have no storage at this
-        # time (spec S2 section 3).
+        # The reminder flag has no storage at this time (spec S2
+        # section 3). The public flag left with ruling 3 of spec
+        # M1: ruling 4 removed the opt-out, thus the field was
+        # correct for each player forever, and a value that cannot
+        # change is a claim that waits for a reader to trust it.
         return JSONResponse({
             "player": caller,
             "display_name": _label_of(caller),
             "streak": _streak(root, caller, _newest_revealed(root)),
             "reminder": False,
-            "public": False,
         })
 
     @app.get("/image/{image_id}")
