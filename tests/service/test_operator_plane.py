@@ -28,8 +28,10 @@ DAY = "2026-08-12"
 TOKEN = "test-operator-token"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 
-_DEV_PATHS = ("/dev", "/ui/dev.js", "/api/dev", "/api/dev/days",
-              "/api/dev/submission", "/api/dev/rankings", "/history")
+# The pages left on 2026-08-16. The data surfaces are what a
+# bearer stands in front of at this time.
+_DEV_PATHS = ("/api/dev", "/api/dev/days",
+              "/api/dev/submission", "/api/dev/rankings")
 _LIFECYCLE = ("/api/day/open", "/api/day/close", "/api/day/reveal")
 
 

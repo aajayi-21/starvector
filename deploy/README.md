@@ -123,9 +123,11 @@ diff -r /srv/starvector/app/store /tmp/restore-drill/srv/starvector/app/store
 
 The public process runs without `--dev`, thus its console
 surfaces answer 404 and `/image` serves revealed targets alone.
-The proxy also answers 404 on `/dev.html`, `/dev`, `/ui/dev.js`,
-`/api/dev`, `/api/dev/*`, the three day lifecycle paths, and the
-player mint.
+The proxy also answers 404 on `/dev.html`, `/api/dev`,
+`/api/dev/*`, the three day lifecycle paths, and the player mint.
+It keeps refusing `/dev` and `/ui/dev.js`, which name nothing in
+the server since the hand-written pages retired. A caller that
+tries a console-shaped path meets a 404 and not the app shell.
 
 The mint wants the proxy refusal because of something the others
 do not have. It is the one operator path that needs no `--dev`,

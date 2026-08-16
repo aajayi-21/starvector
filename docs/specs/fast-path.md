@@ -135,6 +135,11 @@ speed work.
   kept from the first use for the day — small at dev scale,
   structural for production.
 - **B5 — practice mode** (`service/server.py`, `service/ui/`).
+  **Dated note, 2026-08-16:** the two endpoints landed with spec
+  S2 and the page half is the app's `/practice` screen (spec W1).
+  `service/ui/` no longer exists — the hand-written pages retired
+  and `docs/specs/trial-service.md` §5 records it. Read the page
+  bullet below as the screen that is built, not as work to do.
   - `GET /api/practice` — the playable set: the revealed days with
     their target identifiers (public after reveal), or a constant
     refusal when none is revealed.

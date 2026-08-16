@@ -2,9 +2,15 @@
 
 FastAPI endpoints in front of the store, with the R3 rules held
 structurally: pre-reveal refusals are module constants returned
-before target-dependent work, the intake page is one constant byte
-string, and the acknowledgment is a validation echo with no score in
-it. The server binds to localhost, one configured player (D6).
+before target-dependent work, and the acknowledgment is a
+validation echo with no score in it.
+
+This process serves the API and no page. The player app and the
+operator console are the built web app of spec W1, which the edge
+serves from web/dist and which reaches this process at /api,
+/image, and the invite path. The hand-written pages that stood in before
+that app existed retired on 2026-08-16, thus GET / answers 404
+here and the app owns each path a person types.
 """
 
 import argparse
@@ -18,7 +24,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 
 from core import aggregate
 from core.aggregate import shrunk_log_theta, skill_summary
@@ -98,8 +104,6 @@ _OPERATOR_ONLY = ("scoring_config_hash", "preparation_version_id",
 # secret (the architecture's section 22 hygiene rule).
 _ABSENT_HASH = "0" * 64
 
-_UI_ROOT = Path(__file__).parent / "ui"
-
 
 def _skill_value(ps: list[float]) -> dict | None:
     """The history skill values, or None (spec S2 section 3).
@@ -153,7 +157,6 @@ def _streak(root: Path, player: str, newest: str | None) -> int:
         count += 1
         cursor -= timedelta(days=1)
     return count
-
 
 
 def _activates_weighted_channel(submission: Submission,
@@ -242,10 +245,6 @@ def create_app(service_config: ServiceConfig,
         Path(scoring_config.input.preparation_record))
     canvas_px = load_preparation_config(
         Path(record.config_path)).linedraw.canvas_px
-    page_bytes = (_UI_ROOT / "index.html").read_bytes()
-    script_bytes = (_UI_ROOT / "trial.js").read_bytes()
-    dev_page_bytes = (_UI_ROOT / "dev.html").read_bytes()
-    dev_script_bytes = (_UI_ROOT / "dev.js").read_bytes()
     root = Path(service_config.store_root)
     data_root = Path(service_config.data_root)
     player = service_config.player
@@ -361,21 +360,6 @@ def create_app(service_config: ServiceConfig,
                     scoring_config, service_config.scoring_config,
                     data_root)
             return resident_state["wired"]
-
-    @app.get("/dev")
-    def dev_page(request: Request) -> Response:
-        if not (dev_mode and _operator_ok(request)):
-            return Response(content=_DEV_OFF, status_code=404,
-                            media_type="application/json")
-        return HTMLResponse(content=dev_page_bytes)
-
-    @app.get("/ui/dev.js")
-    def dev_script(request: Request) -> Response:
-        if not (dev_mode and _operator_ok(request)):
-            return Response(content=_DEV_OFF, status_code=404,
-                            media_type="application/json")
-        return Response(content=dev_script_bytes,
-                        media_type="text/javascript")
 
     def _picked_day(day: str | None) -> str | Response:
         """The requested day, or the latest one - the day browser
@@ -560,15 +544,6 @@ def create_app(service_config: ServiceConfig,
             return JSONResponse({"cause": "practice-score-failed",
                                  "detail": str(error)}, status_code=400)
         return JSONResponse({"day": day, **value})
-
-    @app.get("/")
-    def index() -> Response:
-        return HTMLResponse(content=page_bytes)
-
-    @app.get("/ui/trial.js")
-    def script() -> Response:
-        return Response(content=script_bytes,
-                        media_type="text/javascript")
 
     @app.get("/api/day")
     def day_view(request: Request) -> Response:
@@ -998,57 +973,6 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         return Response(content=image_bytes,
                         media_type=_mime_of(image_bytes))
-
-    @app.get("/history")
-    def history(request: Request) -> Response:
-        # The app owns the /history path in production (spec S2
-        # section 3) - the page is a dev surface at this time.
-        if not (dev_mode and _operator_ok(request)):
-            return Response(content=_DEV_OFF, status_code=404,
-                            media_type="application/json")
-        from html import escape
-
-        rows = []
-        ps = []
-        for day in store.list_days(root):
-            record = store.read_day_record(root, day)
-            if record.status != "revealed":
-                continue
-            row = store.read_json_or_none(
-                store.trial_row_path(root, day, player))
-            if row is None:
-                continue
-            ps.append(float(row["p"]))
-            rows.append(
-                f"<tr><td>{escape(day)}</td>"
-                f"<td>{row['p']:.4f}</td>"
-                f"<td>{row['target_rank']} of {row['decoy_count'] + 1}"
-                f"</td></tr>")
-        skill = _skill_value(ps)
-        if skill is not None:
-            variant = "unbiased" if len(ps) >= 2 else "biased at n = 1"
-            aggregate = (
-                f"<p>skill number {skill['theta']:.3f} ({variant}), "
-                f"shrunk {skill['shrunk']:.3f}, "
-                f"evidence {skill['evidence_p']:.3f}, "
-                f"across <strong>{skill['n']}</strong> trial(s)</p>")
-        elif ps:
-            # Each score at 1.0: the aggregation refuses, and the
-            # page says so rather than raising (spec S2 section 3).
-            aggregate = ("<p>skill number undefined - each trial "
-                         "score is 1.0</p>")
-        else:
-            aggregate = "<p>no revealed trial yet</p>"
-        body = (
-            "<!doctype html><meta charset='utf-8'>"
-            "<title>trial history</title>"
-            "<p><strong>DEV-ONLY</strong> - development pool numbers, "
-            "not for publication</p>"
-            f"{aggregate}"
-            "<table><tr><th>day</th><th>trial score</th><th>rank</th></tr>"
-            + "".join(rows) + "</table>"
-            "<p><a href='/'>today</a></p>")
-        return HTMLResponse(content=body)
 
     return app
 

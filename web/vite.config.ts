@@ -69,7 +69,6 @@ export default defineConfig({
           /^\/api\//,
           /^\/image\//,
           /^\/dev/,
-          /^\/ui\//,
           // An installed client must not answer the invite gate
           // from the precached shell: the server sets the cookie.
           /^\/join\//,
