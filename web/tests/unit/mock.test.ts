@@ -18,6 +18,8 @@ describe("mock determinism", () => {
       (api: ReturnType<typeof makeMockApi>) => api.getMe(),
       (api: ReturnType<typeof makeMockApi>) => api.getPracticeDays(),
       (api: ReturnType<typeof makeMockApi>) => api.getReveal(),
+      (api: ReturnType<typeof makeMockApi>) => api.getLeaderboard(TODAY),
+      (api: ReturnType<typeof makeMockApi>) => api.getSkillLeaderboard(),
     ]) {
       expect(JSON.stringify(await pick(one))).toBe(
         JSON.stringify(await pick(two)),
@@ -144,5 +146,53 @@ describe("the full-mock day flow", () => {
     await expect(api.getSubmission("1999-01-01")).rejects.toMatchObject({
       status: 404,
     });
+  });
+});
+
+describe("the mock skill board", () => {
+  it("keeps the shapes spec M1 section 6 states", async () => {
+    const board = await makeMockApi({ today: TODAY }).getSkillLeaderboard();
+    expect(board.rows.length).toBeGreaterThan(30);
+    expect(board.variation?.dof).toBe(board.eligible_count - 1);
+    expect(board.eligible_count).toBe(
+      board.rows.filter((row) => row.n >= board.eligibility_floor).length,
+    );
+    for (const row of board.rows) {
+      expect(row.theta).toBeGreaterThan(0);
+      expect(row.rank_low).toBeLessThanOrEqual(row.expected_rank);
+      expect(row.rank_high).toBeGreaterThanOrEqual(row.expected_rank);
+    }
+  });
+
+  it("pulls a low-trial player toward the middle", async () => {
+    // The property the posterior expected rank buys: a lucky short
+    // run cannot take the top, and no threshold does the work.
+    const board = await makeMockApi({ today: TODAY }).getSkillLeaderboard();
+    const middle = (board.rows.length + 1) / 2;
+    const bySkill = [...board.rows].sort((a, b) => b.shrunk - a.shrunk);
+    const byTrials = [...board.rows].sort((a, b) => a.n - b.n);
+    const lowest = byTrials[0];
+    const highest = byTrials[byTrials.length - 1];
+    if (lowest === undefined || highest === undefined) {
+      throw new Error("the board must hold players");
+    }
+    const rawPosition = bySkill.indexOf(lowest) + 1;
+    expect(Math.abs(lowest.expected_rank - middle)).toBeLessThan(
+      Math.abs(rawPosition - middle),
+    );
+    expect(lowest.rank_high - lowest.rank_low).toBeGreaterThan(
+      highest.rank_high - highest.rank_low,
+    );
+  });
+
+  it("generates players who share a display name", async () => {
+    // 140 players across a 64-name space: the shared-label case is
+    // exercised without being planted, and the store keys stay
+    // unique. A screen that keys on the label breaks here.
+    const board = await makeMockApi({ today: TODAY }).getSkillLeaderboard();
+    const keys = new Set(board.rows.map((row) => row.player));
+    const labels = new Set(board.rows.map((row) => row.display_name));
+    expect(keys.size).toBe(board.rows.length);
+    expect(labels.size).toBeLessThan(board.rows.length);
   });
 });

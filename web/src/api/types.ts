@@ -134,7 +134,10 @@ export interface HistoryView {
 }
 
 export interface LeaderboardRow {
+  /** The store key: unique, the React key, the identity compare. */
   player: string;
+  /** The board label. NOT unique - two players may share one. */
+  display_name: string;
   p: number;
   target_rank: number;
   decoy_count: number;
@@ -153,9 +156,103 @@ export interface StoredSubmission {
 
 export interface MeView {
   player: string;
+  display_name: string;
   streak: number;
   reminder: boolean;
-  public: boolean;
+}
+
+// ── spec M1 §8: players and the skill board ─────────────────────
+
+/** A closed interval [low, high] in the units of its field. */
+export type Interval = [number, number];
+
+/** One row of the skill board. */
+export interface SkillBoardRow {
+  player: string;
+  display_name: string;
+  n: number;
+  /** The skill number. Rises with skill (spec M1 §10). */
+  theta: number;
+  /** The shrunk estimate, on the log theta scale. */
+  shrunk: number;
+  y: number;
+  v: number;
+  /** Fractional - a posterior expectation, not a position. */
+  expected_rank: number;
+  rank_low: number;
+  rank_high: number;
+  evidence_p: number;
+  log_e_value: number;
+  /**
+   * 1/E, and SMALL is the evidence direction. The mixture is cut
+   * at a skill number of one (the 2026-08-16 amendment), thus this
+   * asks "is this player above the baseline" and a weak run does
+   * not read as strong evidence.
+   */
+  anytime_significance: number;
+}
+
+/** The no-skill range at a trial count, on the log theta scale. */
+export interface BaselineBandPoint {
+  n: number;
+  low: number;
+  high: number;
+}
+
+export interface PopulationFit {
+  mu: number;
+  /** A fitted tau of 0.0 is a correct answer and is published. */
+  tau: number;
+  mu_spread: number;
+  fitted: boolean;
+  halvings: number;
+}
+
+export interface VariationReport {
+  q_statistic: number;
+  dof: number;
+  q_significance: number;
+  tau_low: number;
+  tau_high: number | null;
+  /** exp(tau): the multiplicative width a player can read. */
+  tau_multiplicative: number;
+  prediction_low: number;
+  prediction_high: number;
+}
+
+/** The site-wide claim as a natural frequency (spec M1 §6). */
+export interface DiscoveryReport {
+  level: number;
+  tested: number;
+  flagged: number;
+  expected_by_luck: number;
+}
+
+export interface SkillBoardView {
+  /**
+   * Computed, not a switch: one eligible player turns the board on
+   * and a new deployment gates itself. Distinct from `provisional`,
+   * which is the population's own state.
+   */
+  active: boolean;
+  player_count: number;
+  eligible_count: number;
+  degenerate_count: number;
+  /** Trials, per player. Membership stays here (2026-08-16). */
+  eligibility_floor: number;
+  /** The recomputed value, published as a report alone, or null. */
+  recomputed_floor: number | null;
+  /** Eligible players, before the fit runs. A different quantity. */
+  fit_floor: number;
+  provisional: boolean;
+  rows: SkillBoardRow[];
+  baseline_band: BaselineBandPoint[];
+  population: PopulationFit | null;
+  variation: VariationReport | null;
+  discovery: DiscoveryReport | null;
+  day?: string;
+  created_at?: string | null;
+  rank_sample_count?: number;
 }
 
 // ── Refusals ────────────────────────────────────────────────────
@@ -189,6 +286,18 @@ const CAUSE_COPY: Record<string, string> = {
 /** True for the server's deliberate constant refusals (404s). */
 export function isRefusal(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
+}
+
+/**
+ * True for the server's constant 401 - no invite on this device.
+ *
+ * 401 exactly. A network failure is ApiError(0) and a 500 is a
+ * 500, and neither means "your invite is not valid here". Telling
+ * a player to hunt for a working link while the server is down
+ * sends them somewhere no link helps.
+ */
+export function isUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }
 
 /**

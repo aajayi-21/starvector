@@ -14,6 +14,7 @@ import type {
   PracticeDays,
   PracticeScore,
   RevealView,
+  SkillBoardView,
   StoredSubmission,
   SubmissionAck,
   WireRecord,
@@ -38,6 +39,7 @@ export interface HistoryApi {
 
 export interface LeaderboardApi {
   getLeaderboard(day: string): Promise<LeaderboardView>;
+  getSkillLeaderboard(): Promise<SkillBoardView>;
 }
 
 export interface ArchiveApi {

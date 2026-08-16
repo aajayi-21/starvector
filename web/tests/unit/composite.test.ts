@@ -21,6 +21,7 @@ function adapter(prefix: string): Api {
     scorePractice: spy(`${prefix}:scorePractice`),
     getHistory: spy(`${prefix}:getHistory`),
     getLeaderboard: spy(`${prefix}:getLeaderboard`),
+    getSkillLeaderboard: spy(`${prefix}:getSkillLeaderboard`),
     getSubmission: spy(`${prefix}:getSubmission`),
     getMe: spy(`${prefix}:getMe`),
   } as unknown as Api;

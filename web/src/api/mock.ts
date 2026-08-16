@@ -8,6 +8,7 @@
 
 import type { Api } from "./client";
 import type {
+  BaselineBandPoint,
   DayView,
   HistoryDayRow,
   HistoryView,
@@ -19,6 +20,8 @@ import type {
   RankingHeadRow,
   ReportRow,
   RevealView,
+  SkillBoardRow,
+  SkillBoardView,
   StoredSubmission,
   SubmissionAck,
   TrialValue,
@@ -124,6 +127,178 @@ export interface MockOptions {
   /** The anchor day — fixed so tests are byte-stable. */
   today?: string;
   player?: string;
+}
+
+// ── spec M1: a synthetic population for the skill board ─────────
+//
+// CAST is six names and cannot make a funnel. These players come
+// from the same keyed hash the rest of the mock uses: no
+// Math.random and no clock, thus two loads give equal bytes.
+
+const POPULATION = 140;
+const MOCK_ELIGIBILITY_FLOOR = 30;
+const MOCK_FIT_FLOOR = 30;
+const MOCK_MU = 0.06;
+const MOCK_TAU = 0.18;
+const STEM_A = [
+  "quiet",
+  "tall",
+  "north",
+  "slow",
+  "amber",
+  "pale",
+  "far",
+  "still",
+];
+const STEM_B = [
+  "signal",
+  "grass",
+  "harbor",
+  "vetiver",
+  "iris",
+  "hollis",
+  "marlow",
+  "ember",
+];
+
+/** A standard normal from two keyed draws - Box-Muller, pure. */
+function normalDraw(key: string): number {
+  const first = Math.max(draw(`${key}:u`), 1e-12);
+  return (
+    Math.sqrt(-2 * Math.log(first)) * Math.cos(2 * Math.PI * draw(`${key}:v`))
+  );
+}
+
+/**
+ * The synthetic board.
+ *
+ * The trial count is log-uniform on [3, 400]: a straight draw puts
+ * almost every player past the eligibility floor and the funnel's
+ * mouth stays empty. The observed value carries the observation
+ * error the no-skill law predicts, thus the scatter genuinely
+ * narrows as the trial count rises and the bands genuinely contain
+ * it.
+ *
+ * 140 players across a 64-name space generates duplicate display
+ * names on its own, thus the shared-label case is exercised
+ * without being planted, while the store keys stay unique.
+ */
+function skillBoard(player: string, ownScore: number): SkillBoardView {
+  const rows: SkillBoardRow[] = [];
+  for (let index = 0; index < POPULATION; index += 1) {
+    const n = Math.max(
+      3,
+      Math.round(3 * Math.exp(draw(`pop:n:${index}`) * Math.log(400 / 3))),
+    );
+    const logTheta =
+      MOCK_MU +
+      MOCK_TAU * normalDraw(`pop:t:${index}`) +
+      normalDraw(`pop:e:${index}`) / Math.sqrt(n);
+    const first = STEM_A[Math.floor(draw(`pop:a:${index}`) * STEM_A.length)];
+    const second = STEM_B[Math.floor(draw(`pop:b:${index}`) * STEM_B.length)];
+    rows.push({
+      player: `${first}-${second}-${index}`,
+      display_name: `${first} ${second}`,
+      n,
+      theta: round4(Math.exp(logTheta)),
+      shrunk: round4(logTheta),
+      y: round4(logTheta),
+      v: round4(1 / n),
+      expected_rank: 0,
+      rank_low: 0,
+      rank_high: 0,
+      evidence_p: round4(draw(`pop:p:${index}`)),
+      log_e_value: 0,
+      anytime_significance: round4(draw(`pop:s:${index}`)),
+    });
+  }
+  rows.unshift({
+    player,
+    display_name: player,
+    n: 61,
+    theta: round4(Math.exp(MOCK_MU + 0.31)),
+    shrunk: round4(MOCK_MU + 0.24),
+    y: round4(MOCK_MU + 0.31),
+    v: round4(1 / 61),
+    expected_rank: 0,
+    rank_low: 0,
+    rank_high: 0,
+    evidence_p: round4(ownScore),
+    log_e_value: 2.1,
+    anytime_significance: 0.041,
+  });
+
+  rows.sort((a, b) => b.shrunk - a.shrunk);
+  const middle = (rows.length + 1) / 2;
+  rows.forEach((row, position) => {
+    // The posterior expected rank pulls a low-trial player toward
+    // the middle (spec M1 §6). The mock reproduces the direction
+    // with the shrinkage weight and not the simulation.
+    const weight = row.n / (row.n + 1 / (MOCK_TAU * MOCK_TAU));
+    row.expected_rank = round4(weight * (position + 1) + (1 - weight) * middle);
+    const half = Math.max(1, Math.round((1 - weight) * rows.length * 0.5 + 2));
+    row.rank_low = Math.max(1, Math.round(row.expected_rank) - half);
+    row.rank_high = Math.min(rows.length, Math.round(row.expected_rank) + half);
+  });
+  rows.sort((a, b) => a.expected_rank - b.expected_rank);
+
+  const eligible = rows.filter((row) => row.n >= MOCK_ELIGIBILITY_FLOOR);
+  const mean =
+    eligible.reduce((total, row) => total + row.y, 0) / eligible.length;
+  // Computed from the generated rows, thus the reported number
+  // agrees with the dots a chart paints.
+  const statistic = eligible.reduce(
+    (total, row) => total + (row.y - mean) ** 2 / row.v,
+    0,
+  );
+  const band: BaselineBandPoint[] = [];
+  for (let step = 0; step < 12; step += 1) {
+    // 1.96/sqrt(n) here. The live server uses sqrt(trigamma(n))
+    // (core/aggregate.py) - this is the mock's data-generator
+    // stand-in and not a published number.
+    const n = Math.round(3 * Math.exp((step / 11) * Math.log(400 / 3)));
+    band.push({
+      n,
+      low: round4(MOCK_MU - 1.96 / Math.sqrt(n)),
+      high: round4(MOCK_MU + 1.96 / Math.sqrt(n)),
+    });
+  }
+  const flagged = eligible.filter((row) => row.evidence_p <= 0.05).length;
+  return {
+    active: true,
+    player_count: rows.length,
+    eligible_count: eligible.length,
+    degenerate_count: 0,
+    eligibility_floor: MOCK_ELIGIBILITY_FLOOR,
+    recomputed_floor: null,
+    fit_floor: MOCK_FIT_FLOOR,
+    provisional: eligible.length < MOCK_FIT_FLOOR,
+    rows,
+    baseline_band: band,
+    population: {
+      mu: round4(MOCK_MU),
+      tau: round4(MOCK_TAU),
+      mu_spread: round4(MOCK_TAU / Math.sqrt(eligible.length)),
+      fitted: true,
+      halvings: 60,
+    },
+    variation: {
+      q_statistic: round4(statistic),
+      dof: eligible.length - 1,
+      q_significance: 0.0001,
+      tau_low: round4(MOCK_TAU * 0.86),
+      tau_high: round4(MOCK_TAU * 1.19),
+      tau_multiplicative: round4(Math.exp(MOCK_TAU)),
+      prediction_low: round4(MOCK_MU - 1.96 * MOCK_TAU),
+      prediction_high: round4(MOCK_MU + 1.96 * MOCK_TAU),
+    },
+    discovery: {
+      level: 0.05,
+      tested: eligible.length,
+      flagged,
+      expected_by_luck: round4(0.05 * flagged),
+    },
+  };
 }
 
 export function makeMockApi(options: MockOptions = {}): Api {
@@ -326,6 +501,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       const rows: LeaderboardRow[] = [
         {
           player,
+          display_name: player,
           p: own.p,
           target_rank: own.target_rank,
           decoy_count: own.decoy_count,
@@ -336,6 +512,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         const trial = trialFor(`lb:${day}:${name}`);
         rows.push({
           player: name,
+          display_name: name,
           p: trial.p,
           target_rank: trial.target_rank,
           decoy_count: trial.decoy_count,
@@ -383,12 +560,15 @@ export function makeMockApi(options: MockOptions = {}): Api {
         },
       });
     },
+    getSkillLeaderboard(): Promise<SkillBoardView> {
+      return Promise.resolve(skillBoard(player, trialFor("skill:self").p));
+    },
     getMe(): Promise<MeView> {
       return Promise.resolve({
         player,
+        display_name: player,
         streak: streak(),
         reminder: false,
-        public: false,
       });
     },
   };
