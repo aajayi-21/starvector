@@ -11,21 +11,7 @@ import { Link } from "@tanstack/react-router";
 import { useApi } from "../api/client";
 import type { HistoryView, MeView } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
-
-function Kicker(props: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: "var(--color-neutral-500)",
-      }}
-    >
-      {props.children}
-    </div>
-  );
-}
+import { Kicker } from "../ui/kicker";
 
 function StatCard(props: { label: string; value: string }): React.JSX.Element {
   return (

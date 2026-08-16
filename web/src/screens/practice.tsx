@@ -26,24 +26,10 @@ import {
   serialize,
   undo,
 } from "../sketch/core";
+import { Kicker } from "../ui/kicker";
 import { PaletteRow } from "../ui/palette-row";
 
 const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
-
-function Kicker(props: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: "var(--color-neutral-500)",
-      }}
-    >
-      {props.children}
-    </div>
-  );
-}
 
 export function PracticeScreen(): React.JSX.Element {
   const api = useApi();
