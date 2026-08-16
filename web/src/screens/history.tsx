@@ -166,14 +166,14 @@ function HistoryBody(props: {
                   fontWeight: 500,
                 }}
               >
-                {props.me.player.slice(0, 2).toUpperCase()}
+                {props.me.display_name.slice(0, 2).toUpperCase()}
               </span>
               <div>
-                <div style={{ fontSize: 14 }}>{props.me.player}</div>
+                <div style={{ fontSize: 14 }}>{props.me.display_name}</div>
                 <div
                   style={{ fontSize: 12, color: "var(--color-neutral-500)" }}
                 >
-                  {props.me.public ? "public on leaderboard" : "not public yet"}
+                  {props.me.player}
                 </div>
               </div>
             </div>

@@ -15,6 +15,7 @@ import type {
   PracticeScore,
   RefusalBody,
   RevealView,
+  SkillBoardView,
   StoredSubmission,
   SubmissionAck,
   WireRecord,
@@ -79,6 +80,12 @@ export function makeRealApi(): Api {
       return request<LeaderboardView>(
         `/api/leaderboard?day=${encodeURIComponent(day)}`,
       );
+    },
+    getSkillLeaderboard(): Promise<SkillBoardView> {
+      // No credentials option: fetch defaults to same-origin, thus
+      // the session cookie rides and the client handles no
+      // credential (spec M1 §9).
+      return request<SkillBoardView>("/api/leaderboard/skill");
     },
     getSubmission(day: string): Promise<StoredSubmission> {
       return request<StoredSubmission>(

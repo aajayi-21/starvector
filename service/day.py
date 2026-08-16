@@ -171,14 +171,25 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
 def reveal_day(service_config: ServiceConfig, *,
                date: str | None = None,
                clock: Callable[[], str] | None = None) -> store.DayRecord:
-    """Reveal one closed day: the status move that opens the report."""
+    """Reveal one closed day: the status move that opens the report.
+
+    The status moves first and the rollup follows (the 2026-08-16
+    ruling), thus the boards do not go stale while the process
+    runs. Each rollup write is repeatable, and a stop part of the
+    procedure is repaired by a second reveal or by the assemble
+    command of the rollup module.
+    """
+    from service import rollup
+
     clock = clock or harness.default_clock
     root = Path(service_config.store_root)
     day = _resolve_day(service_config, date)
-    return store.update_day_status(root, day, expect_status="closed",
-                                   new_status="revealed",
-                                   timestamp_field="revealed_at",
-                                   timestamp=clock())
+    record = store.update_day_status(root, day, expect_status="closed",
+                                     new_status="revealed",
+                                     timestamp_field="revealed_at",
+                                     timestamp=clock())
+    rollup.roll_up_day(service_config, record)
+    return record
 
 
 def _first_difference(stored: dict, recomputed: dict) -> str:

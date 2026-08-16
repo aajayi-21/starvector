@@ -11,6 +11,10 @@ const proxyTarget = process.env.VITE_PROXY_TARGET ?? "http://127.0.0.1:8000";
 const proxy = {
   "/api": { target: proxyTarget },
   "/image": { target: proxyTarget },
+  // The invite gate is a server path (spec M1 §4). Without this
+  // entry an invite URL only works against the built app, and the
+  // dev server hands it to the SPA fallback instead.
+  "/join": { target: proxyTarget },
 };
 
 export default defineConfig({
@@ -66,6 +70,9 @@ export default defineConfig({
           /^\/image\//,
           /^\/dev/,
           /^\/ui\//,
+          // An installed client must not answer the invite gate
+          // from the precached shell: the server sets the cookie.
+          /^\/join\//,
         ],
         runtimeCaching: [],
       },

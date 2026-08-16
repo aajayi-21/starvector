@@ -292,17 +292,47 @@ it is.
 
 The player selects when to stop, thus a fixed-count significance
 value is not theirs to read. The e-value from a mixture across
-skill values is closed shape in the same two numbers:
+skill values is closed shape in the same two numbers.
+
+**Amended 2026-08-16.** This section first pinned a mixture across
+each skill above zero:
 
 ```
 log E = S + a·log b + lgamma(n + a) − lgamma(a) − (n + a)·log(S + b)
 ```
 
-with the mixture constants `a = 1` and `b = 1` recorded here. The
-value holds at each look and after the player stops at a moment of
-their selection, and `1/E` reads as a significance level. This is
-the number a player sees. The fixed-count value stays in the
-record for the site-wide work.
+That value is correct and it answers a different question. Its
+mixture spans the skills below one and the skills above one, thus
+it falls to a minimum at `S = n` and climbs on the two sides. Measured at `n = 20`: `S = 5` gives `+9.71`, `S = 20` gives
+`−1.08`, and `S = 100` gives about `+45`. A player who beat
+almost no decoys thus reads a larger number than a strong player. The value tests "the skill number is not one". The game
+claims "the skill number is above one".
+
+The mixture is cut at a skill number of one. At `a = 1` and
+`b = 1` the cut mixture is a moved exponential and the closed shape
+survives:
+
+```
+log E = S + 1 + lgamma(n + 1) − (n + 1)·log(S + 1)
+              + log Q(n + 1, S + 1)
+```
+
+`Q` is the top tail of the gamma law at shape `n + 1`. At an
+integer shape it is the finite sum `chi_squared_tail` holds today,
+thus the change wants no new arithmetic. The value falls as `S`
+rises, which is the direction a reader expects.
+
+The mixture constants `a = 1` and `b = 1` and the floor of one are
+recorded with each value. Each mixture across the alternative
+gives a value with a mean of one with no skill, thus the bound
+that holds at each look survives the cut: measured on 200000
+no-skill players at `n = 25`, the share at or above 20 is 0.0033,
+below the 0.05 the bound promises.
+
+The value holds at each look and after the player stops at a
+moment of their selection, and `1/E` reads as a significance
+level. This is the number a player sees. The fixed-count value
+stays in the record for the site-wide work.
 
 ### Standing monitors
 

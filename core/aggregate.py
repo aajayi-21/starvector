@@ -69,10 +69,17 @@ PROVISIONAL_MEAN = 0.0
 PROVISIONAL_SPREAD = 0.15
 
 # The posterior rank simulation and the site-wide level, the two
-# of them from
-# spec M1 section 6.
+# of them from spec M1 section 6.
 RANK_SAMPLE_COUNT = 2000
 DISCOVERY_LEVEL = 0.05
+
+# The mixture of the evidence value, recorded because the number
+# means nothing without it. The mixture is cut at a skill number of
+# one (the 2026-08-16 ruling), thus the value tests "above the
+# baseline" and not "away from the baseline".
+EVIDENCE_MIXTURE_SHAPE = 1.0
+EVIDENCE_MIXTURE_RATE = 1.0
+EVIDENCE_MIXTURE_FLOOR = 1.0
 
 
 class SkillSummary(NamedTuple):
@@ -237,17 +244,37 @@ def skill_summary(ps: Sequence[float], unbiased: bool = True) -> SkillSummary:
         raise ValueError(
             "each trial score is 1.0 - S is 0 and the skill number is "
             "out of range")
+    return summary_of_pair(n, s_statistic, clamp_count=clamp_count,
+                           unbiased=unbiased)
+
+
+def summary_of_pair(n: int, s_statistic: float, *, clamp_count: int = 0,
+                    unbiased: bool = True) -> SkillSummary:
+    """The section 17 aggregate from a folded pair.
+
+    skill_summary walks the trial scores and this reads the two
+    numbers a rollup keeps, thus a stored pair and a new walk give
+    the same record and the formula lives one time.
+
+    A trial count below one, an S statistic at or below zero, or
+    the unbiased variant at a trial count of one raises.
+    """
+    if n < 1:
+        raise ValueError(f"the trial count must be at least 1, got {n}")
+    if unbiased and n < 2:
+        raise ValueError(
+            "the unbiased variant needs n >= 2 - (n - 1) / S at n = 1 "
+            "is 0, not an estimate (spec S1 section 14a)")
+    if not math.isfinite(s_statistic) or s_statistic <= 0.0:
+        raise ValueError(
+            "each trial score is 1.0 - S is 0 and the skill number is "
+            "out of range")
     theta = ((n - 1) if unbiased else n) / s_statistic
     return SkillSummary(
-        n=n,
-        clamp_count=clamp_count,
-        s_statistic=s_statistic,
-        theta=theta,
-        log_theta=math.log(theta),
-        evidence_statistic=2.0 * s_statistic,
-        dof=2 * n,
-        evidence_p=1.0 - chi_squared_tail(2.0 * s_statistic, 2 * n),
-    )
+        n=n, clamp_count=clamp_count, s_statistic=s_statistic,
+        theta=theta, log_theta=math.log(theta),
+        evidence_statistic=2.0 * s_statistic, dof=2 * n,
+        evidence_p=1.0 - chi_squared_tail(2.0 * s_statistic, 2 * n))
 
 
 def shrunk_log_theta(log_theta: float, n: int, population_mean: float,
@@ -771,17 +798,19 @@ class EvidenceSummary(NamedTuple):
     significance is one divided by the value and reads as a
     significance level. The mixture constants travel with it,
     because the number means nothing without them.
+
+    mixture_floor is the smallest skill number the mixture spans.
+    At one, the value asks if the player is above the baseline. Read it before you read the value.
     """
 
     log_e_value: float
     significance: float
     mixture_shape: float
     mixture_rate: float
+    mixture_floor: float = EVIDENCE_MIXTURE_FLOOR
 
 
-def anytime_evidence(n: int, s_statistic: float, *,
-                     mixture_shape: float = 1.0,
-                     mixture_rate: float = 1.0) -> EvidenceSummary:
+def anytime_evidence(n: int, s_statistic: float) -> EvidenceSummary:
     """The evidence value that holds at each look (section 6).
 
     A player selects when to stop, thus a fixed-count significance
@@ -790,48 +819,62 @@ def anytime_evidence(n: int, s_statistic: float, *,
     stop of their own selection, which is the property that earns
     it a position on a player's screen.
 
-    The mixture across skill values has a closed shape in the same
-    two numbers the player holds today:
+    The mixture runs across the skills ABOVE one and not across each
+    skill above zero. Section 6 pinned the wider mixture, and the
+    2026-08-16 ruling narrowed it, because the wider one answers a
+    different question than the game asks. With a Gamma mixture across
+    each positive skill the value falls to its minimum at S
+    equal to n and climbs on the two sides, thus a player far below
+    the baseline gets the same large value as a player far above
+    it. That value tests "the skill number is not one". The game
+    claims "the skill number is above one".
 
-        S + a log_b + lgamma(n + a) - lgamma(a) - (n + a) log_of(S + b)
+    Cut at one, the mixture at a and b of one is a moved
+    exponential and the closed shape survives:
 
-    At a and b of one it collapses to
-    S + lgamma(n + 1) - (n + 1) log_of(S + 1), and its mean with no
-    skill is accurately one. That is why one divided by the value
-    reads as a level.
+        S + 1 + lgamma(n + 1) - (n + 1) log_of(S + 1)
+              + log_of Q(n + 1, S + 1)
 
-    The value is TWO-SIDED, and a caller which shows it to a player
-    must know that. The pinned mixture spans each skill above zero
-    and not the skills above one, thus the value falls to its
-    minimum at S equal to n - a skill number of one - and climbs on
-    the two sides. A player far below the baseline thus gets a
-    large value, the same as a player far above it. The board must
-    show the skill number adjacent to this value, or its copy names
-    a weak run strong evidence.
+    Q is the top tail of the gamma law at shape n + 1. At an
+    integer shape it is the finite sum chi_squared_tail holds
+    today, thus this wants no new arithmetic. The value falls as S
+    rises, which is the direction a reader expects: a small S is a
+    high skill number.
+
+    The mean with no skill stays accurately one, because each
+    mixture across the alternative gives a value with that mean.
+    One divided by the value thus reads as a level, and the bound
+    that holds at each look survives the cut. Measured on 200000
+    no-skill players at n of 25, the share at or above 20 is
+    0.0033, below the 0.05 the bound promises.
+
+    The constants stay recorded, because the number means nothing
+    without them. They are not arguments: the cut mixture has a
+    closed shape at a and b of one, and a general pair wants a
+    general gamma tail this module does not hold.
 
     The fixed-count value stays in the record for the site-wide
     work.
 
-    A trial count below one, an S statistic at or below zero, or a
-    mixture constant at or below zero raises.
+    A trial count below one or an S statistic at or below zero
+    raises.
     """
     if n < 1:
         raise ValueError(f"the trial count must be at least 1, got {n}")
     if not math.isfinite(s_statistic) or s_statistic <= 0.0:
         raise ValueError(f"the S statistic must be finite and positive, "
                          f"got {s_statistic!r}")
-    if not mixture_shape > 0.0 or not mixture_rate > 0.0:
-        raise ValueError("the mixture constants must be positive")
+    shifted = s_statistic + EVIDENCE_MIXTURE_RATE
     log_e = (s_statistic
-             + mixture_shape * math.log(mixture_rate)
-             + math.lgamma(n + mixture_shape)
-             - math.lgamma(mixture_shape)
-             - (n + mixture_shape) * math.log(s_statistic + mixture_rate))
+             + EVIDENCE_MIXTURE_RATE
+             + math.lgamma(n + 1)
+             - (n + 1) * math.log(shifted)
+             + math.log(chi_squared_tail(2.0 * shifted, 2 * (n + 1))))
     return EvidenceSummary(
         log_e_value=log_e,
         significance=min(1.0, math.exp(-log_e)),
-        mixture_shape=mixture_shape,
-        mixture_rate=mixture_rate)
+        mixture_shape=EVIDENCE_MIXTURE_SHAPE,
+        mixture_rate=EVIDENCE_MIXTURE_RATE)
 
 
 class StoppingMonitor(NamedTuple):

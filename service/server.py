@@ -27,7 +27,7 @@ from pipeline.config import (fusion_weights, intake_gates,
 from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
-from service import auth, store
+from service import auth, rollup, store
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 
@@ -45,6 +45,15 @@ _NO_SUBMISSION = b'{"detail":"no submission"}'
 _DEV_OFF = b'{"detail":"not found"}'
 _NO_PRACTICE = b'{"detail":"no revealed day"}'
 _NOT_PRACTICE = b'{"detail":"not a practice day"}'
+
+# The gated skill board (spec M1 section 8). It carries the two
+# floors and the count, thus the screen holds no number the wire
+# does not give it. The two are different quantities: one
+# counts a player's trials and one counts eligible players.
+_SKILL_INACTIVE = (
+    b'{"active":false,"eligible_count":0,"eligibility_floor":30,'
+    b'"fit_floor":30,"provisional":true,"rows":[],"population":null,'
+    b'"baseline_band":[],"discovery":null}')
 
 # The digest the caller path compares against with no record
 # stored, thus an unknown name costs the same work as an incorrect
@@ -75,7 +84,21 @@ def _skill_value(ps: list[float]) -> dict | None:
     }
 
 
-def _streak(root: Path, player: str) -> int:
+def _newest_revealed(root: Path) -> str | None:
+    """The newest revealed day, or None.
+
+    Hoisted out of _streak: the daily board calls the streak one
+    time for each row, and this walk reads a day record for each
+    day. Passing it in drops the cost for each row to the length of
+    the run (spec M1 section 7).
+    """
+    for day in reversed(store.list_days(root)):
+        if store.read_day_record(root, day).status == "revealed":
+            return day
+    return None
+
+
+def _streak(root: Path, player: str, newest: str | None) -> int:
     """Spec S2 section 3: the count of calendar days in an unbroken
     run that ends on the newest revealed day, each day holding the
     player's stored submission. Zero without a revealed day or when
@@ -83,11 +106,6 @@ def _streak(root: Path, player: str) -> int:
     it lies after the run's last day, thus the value is a function
     of revealed days and the player's own records alone (R4).
     """
-    newest = None
-    for day in reversed(store.list_days(root)):
-        if store.read_day_record(root, day).status == "revealed":
-            newest = day
-            break
     if newest is None:
         return 0
     count = 0
@@ -162,8 +180,8 @@ def create_app(service_config: ServiceConfig,
 
     operator_token arrives as an argument and is not read from the
     environment here, in the manner of open_day's secret: a
-    component reads no global configuration. main() does the
-    environment read.
+    component reads no global configuration. The start-up path
+    does the environment read.
 
     Raises ServiceConfigError when the store holds player records
     and no operator token is set. A quiet hole is worse than a loud
@@ -223,10 +241,10 @@ def create_app(service_config: ServiceConfig,
         return name
 
     def _bearer_ok(request: Request) -> bool:
-        """The request carries the operator token.
+        """This holds the operator token.
 
-        False with no configured token, thus the mint refuses in
-        each world where nobody set the operator plane up.
+        Not agreed with no configured token, thus the mint refuses
+        in each world where nobody set the operator plane up.
         """
         if not operator_token:
             return False
@@ -762,14 +780,28 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"trial_id": stored["trial_id"],
                              "record": stored["record"]})
 
+    def _label_of(name: str) -> str:
+        """The board label for one store key.
+
+        The board artifact carries the store key alone, thus this
+        joins to the player record at read time - one file read,
+        and an edited label wants no new assembly. A name with no
+        record falls back to its key, which is what the world of
+        ruling 7 needs.
+        """
+        found = store.read_player_or_none(root, name)
+        return name if found is None else found.display_name
+
     @app.get("/api/leaderboard")
     def leaderboard_view(request: Request,
                          day: str | None = None) -> Response:
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
-        # Revealed days alone (spec S2 B3): the caller's row from
-        # the stored trial row, or no rows.
+        # Revealed days alone (spec S2 B3), each player with a row.
+        # The prepared board serves it. With no board the reader
+        # falls back to the stored rows, thus a day revealed before
+        # the rollup was written continues to answer.
         if day is None or day not in store.list_days(root):
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")
@@ -777,16 +809,119 @@ def create_app(service_config: ServiceConfig,
         if record.status != "revealed":
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")
-        row = store.read_json_or_none(
-            store.trial_row_path(root, day, caller))
-        rows = [] if row is None else [{
-            "player": caller,
-            "p": row["p"],
-            "target_rank": row["target_rank"],
-            "decoy_count": row["decoy_count"],
-            "streak": _streak(root, caller),
-        }]
+        prepared = store.read_json_or_none(rollup.leaderboard_path(
+            data_root, day, record.scoring_config_hash))
+        if prepared is None:
+            board = []
+            for name in store.list_submissions(root, day):
+                stored = store.read_json_or_none(
+                    store.trial_row_path(root, day, name))
+                if stored is not None:
+                    board.append((name, stored))
+            prepared = rollup.daily_board_value(record, board)
+        newest = _newest_revealed(root)
+        rows = [{
+            "player": entry["player"],
+            "display_name": _label_of(entry["player"]),
+            "p": entry["p"],
+            "target_rank": entry.get("target_rank", entry["rank"]),
+            "decoy_count": entry["decoy_count"],
+            "streak": _streak(root, entry["player"], newest),
+        } for entry in prepared["rows"]]
         return JSONResponse({"day": day, "rows": rows})
+
+    @app.post("/api/players")
+    async def mint_player_endpoint(request: Request) -> Response:
+        """Mint one invite (spec M1 section 8).
+
+        The gate is the bearer and not the operator gate of
+        ruling 7. With no configured token this answers the
+        constant refusal forever: the switch that turns access
+        control on must not itself be open in the world where
+        nothing holds credentials.
+
+        The answer holds the invite path and not a full address.
+        The server does not know its public source and must not
+        trust the Host header for one. The console knows its own
+        source and the command-line path takes an argument.
+
+        The token prints one time. The store keeps its digest
+        alone, thus no read that follows can collect it.
+        """
+        from service import players
+
+        if not _bearer_ok(request):
+            return _unauthorized()
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body is not JSON"},
+                status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body must be an object"},
+                status_code=400)
+        name = body.get("player")
+        label = body.get("display_name") or name
+        try:
+            store.check_player_name(name, "player")
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-player",
+                                 "detail": str(error)}, status_code=400)
+        try:
+            store.check_display_name(label, "display_name")
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-display-name",
+                                 "detail": str(error)}, status_code=400)
+        try:
+            record, token = players.mint_player(
+                service_config, player=name, display_name=label)
+        except store.StoreError as error:
+            return JSONResponse({"cause": "already-minted",
+                                 "detail": str(error)}, status_code=409)
+        return JSONResponse({"player": record.player,
+                             "display_name": record.display_name,
+                             "token": token,
+                             "join_path": f"/join/{token}"})
+
+    @app.get("/api/leaderboard/skill")
+    def skill_board_view(request: Request) -> Response:
+        """The skill board (spec M1 section 8).
+
+        The prepared artifact when the rollup wrote one, and the
+        gated body when it did not. The gated body carries the two
+        floors, thus the screen holds no number the wire does not
+        give it.
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        newest = _newest_revealed(root)
+        prepared = None
+        if newest is not None:
+            record = store.read_day_record(root, newest)
+            prepared = store.read_json_or_none(rollup.skill_board_path(
+                data_root, record.scoring_config_hash))
+        if prepared is None:
+            return Response(content=_SKILL_INACTIVE, status_code=200,
+                            media_type="application/json")
+        rows = [{**row, "display_name": _label_of(row["player"])}
+                for row in prepared["rows"]]
+        # The configuration identity stays off the player wire: the
+        # two hashes, and the rank seed, which is a digest of one of
+        # them. The artifact keeps each of the three, thus the
+        # operator keeps the ability to reproduce it. A player wants
+        # none of it, and a body that carries it makes the R4
+        # two-world compare read a difference that has nothing to
+        # do with the target.
+        served = {name: value for name, value in prepared.items()
+                  if name not in ("scoring_config_hash",
+                                  "preparation_version_id",
+                                  "rank_seed")}
+        return JSONResponse({**served, "rows": rows})
 
     @app.get("/api/me")
     def me_view(request: Request) -> Response:
@@ -797,7 +932,8 @@ def create_app(service_config: ServiceConfig,
         # time (spec S2 section 3).
         return JSONResponse({
             "player": caller,
-            "streak": _streak(root, caller),
+            "display_name": _label_of(caller),
+            "streak": _streak(root, caller, _newest_revealed(root)),
             "reminder": False,
             "public": False,
         })
@@ -889,7 +1025,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="the section 14b dev surfaces - target "
                              "readable, draft scoring, all images")
     arguments = parser.parse_args(argv)
-    # create_app sits inside the try: it refuses to start when the
+    # create_app sits in the try: it refuses to start when the
     # store holds players and no operator token is set, and that
     # refusal must print as one line and not as a traceback.
     try:
