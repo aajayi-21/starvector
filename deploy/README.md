@@ -182,9 +182,10 @@ and `restore` puts one back with a new invite.
 
 ## 8. The smoke checklist
 
-- The site answers on HTTPS with the app. `/history` and the other
-  app paths load when typed into the address bar. `/assets/*` for
-  an incorrect hash answers 404, not HTML.
+- The site answers on HTTPS with the app. `/history`,
+  `/leaderboard`, and the other app paths load when typed into the
+  address bar. `/assets/*` for an incorrect hash answers 404, not
+  HTML.
 - `curl -s -o /dev/null -w "%{http_code}" https://<domain>/dev.html`
   → 404. The same for `/api/dev`, `/api/dev/days`, and
   `/api/day/close`.
