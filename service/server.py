@@ -110,8 +110,7 @@ def _skill_value(ps: list[float]) -> dict | None:
 
     None is a defined wire value for two conditions: no revealed
     trial with a stored row, and each stored p equal to 1.0 - the
-    aggregation refuses an S statistic of zero there. The numbers
-    are the /history page's, computed with the same functions.
+    aggregation refuses an S statistic of zero there.
     """
     if not ps or all(p == 1.0 for p in ps):
         return None

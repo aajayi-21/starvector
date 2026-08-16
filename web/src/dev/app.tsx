@@ -232,7 +232,11 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
           {note === "" ? `status ${status}` : note}
         </span>
         <span style={{ flex: 1 }} />
-        <a href="/history">history and skill number</a>
+        {/* The link here named the hand-written history page, which
+            retired on 2026-08-16. The app owns /history now and the
+            banner above already points at it, thus a second link
+            from the operator plane to the player app is one too
+            many. */}
       </div>
 
       <div className="card" style={{ gap: 8 }}>
