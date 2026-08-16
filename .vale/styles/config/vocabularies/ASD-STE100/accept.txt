@@ -635,6 +635,7 @@ second \(''\)
 second \(2nd\)
 second \(s\)
 section
+[Ss]ecure
 serious incident
 serious offense
 service bay

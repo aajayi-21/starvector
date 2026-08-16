@@ -28,6 +28,18 @@ game.example.com {
 		reverse_proxy 127.0.0.1:8000
 	}
 
+	# The invite gate (spec M1 section 4). This block must sit
+	# above the catch-all: without it /join/{token} falls to the
+	# SPA fallback below, serves the app shell, sets no cookie,
+	# and every invited player lands on the invite gate telling
+	# them to open the URL they just opened. No Python test can
+	# see this - check it after each deploy:
+	#   curl -sI https://game.example.com/join/bogus
+	# must answer the server's 401 and not text/html.
+	handle /join/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
 	# Hashed assets never fall back to index.html: a stale chunk
 	# answers 404 cleanly instead of HTML.
 	handle /assets/* {

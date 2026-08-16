@@ -26,7 +26,7 @@ from pipeline.config import (fusion_weights, intake_gates,
 from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
-from service import store
+from service import auth, store
 from service.config import ServiceConfig, load_service_config
 
 # The D5 solo display inputs (spec S1 section 14a): display-only, a
@@ -38,10 +38,16 @@ POPULATION_SPREAD = 0.15
 # path, with no target-dependent work before it.
 _NOT_REVEALED = b'{"detail":"not revealed"}'
 _NO_DAY = b'{"detail":"no day open"}'
+_UNAUTHORIZED = b'{"detail":"unauthorized"}'
 _NO_SUBMISSION = b'{"detail":"no submission"}'
 _DEV_OFF = b'{"detail":"not found"}'
 _NO_PRACTICE = b'{"detail":"no revealed day"}'
 _NOT_PRACTICE = b'{"detail":"not a practice day"}'
+
+# The digest the caller path compares against with no record
+# stored, thus an unknown name costs the same work as an incorrect
+# secret (the architecture's section 22 hygiene rule).
+_ABSENT_HASH = "0" * 64
 
 _UI_ROOT = Path(__file__).parent / "ui"
 
@@ -135,7 +141,8 @@ def _revealed_targets(root: Path) -> dict[str, str]:
 
 
 def create_app(service_config: ServiceConfig,
-               dev_mode: bool = False) -> FastAPI:
+               dev_mode: bool = False, *,
+               cookie_secure: bool = True) -> FastAPI:
     """The app factory - tests run it through TestClient.
 
     With dev_mode the server adds the section 14b surfaces: the
@@ -144,6 +151,11 @@ def create_app(service_config: ServiceConfig,
     image serves - the R3 wire rules are deliberately off, for the
     owner's scoring work on the development pool alone. Without the
     flag the dev paths answer one constant 404.
+
+    cookie_secure turns off the session cookie's transport flag for
+    the offline browser tests, which speak http to a loopback port.
+    The default is the deployed attribute set, thus a deployment
+    that forgets the argument gets the safe one.
     """
     scoring_config = load_scoring_config(Path(service_config.scoring_config))
     gates: IntakeGates = intake_gates(scoring_config)
@@ -165,6 +177,49 @@ def create_app(service_config: ServiceConfig,
     player = service_config.player
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+
+    def _unauthorized() -> Response:
+        return Response(content=_UNAUTHORIZED, status_code=401,
+                        media_type="application/json")
+
+    def _resolve_token(token: object) -> str | Response:
+        """The player one invite or cookie names, or the refusal.
+
+        Divides the token at its one separator, reads that single
+        player record, and compares the digests in constant time.
+        The compare also runs with no record stored, thus an
+        unknown name costs the same work as an incorrect secret,
+        and the refusal says nothing about who is stored. The lookup
+        reads one file and walks nothing, which is what lets the
+        shape hold thousands of players (spec M1 section 7).
+        """
+        parsed = auth.parse_token(token)
+        if parsed is None:
+            return _unauthorized()
+        name, secret = parsed
+        record = store.read_player_or_none(root, name)
+        stored_hash = _ABSENT_HASH if record is None else record.token_hash
+        agreed = auth.secret_matches(secret, stored_hash)
+        if record is None or record.status != "active" or not agreed:
+            return _unauthorized()
+        return name
+
+    @app.get("/join/{token}")
+    def join(token: str) -> Response:
+        """The invite gate (spec M1 section 4).
+
+        On agreement the answer moves the browser to the app and
+        sets the session cookie. A refusal is one constant body,
+        equal for a token that does not parse, an unknown player,
+        an incorrect secret, and a revoked record.
+        """
+        resolved = _resolve_token(token)
+        if isinstance(resolved, Response):
+            return resolved
+        return Response(status_code=302, headers={
+            "location": "/",
+            "set-cookie": auth.session_cookie_header(
+                token, secure=cookie_secure)})
 
     # The resident scoring context (P5 R1): wired lazily one time
     # for each process from the server's config, read by the close

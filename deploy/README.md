@@ -155,6 +155,12 @@ operator moves days from the dev unit.
   → 404. The same for `/api/dev`, `/api/dev/days`, and
   `/api/day/close`.
 - `curl https://<domain>/image/<an unrevealed image id>` → 404.
+- **`curl -sI https://<domain>/join/bogus` → the server's 401, and
+  the content type is JSON and not `text/html`.** HTML here means
+  the invite path fell to the app fallback. The server then sees no
+  invite, and no invite URL can sign anybody in. No test in the
+  repository sees this one, because it lives in the edge
+  configuration alone.
 - With the dev unit started and the tunnel up, the console lists
   the days.
 - `systemctl reboot` → the site is back with no hand work.
