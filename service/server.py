@@ -802,6 +802,15 @@ def create_app(service_config: ServiceConfig,
         # The prepared board serves it. With no board the reader
         # falls back to the stored rows, thus a day revealed before
         # the rollup was written continues to answer.
+        #
+        # No day names the newest revealed one. The leaderboard
+        # screen wants that day and nothing else answers it: the
+        # reveal reads the latest day, which is the open one for
+        # most of each day, and the history reads the days that one
+        # caller played. This says nothing new, because a caller
+        # who names that day reads the same board today.
+        if day is None:
+            day = _newest_revealed(root)
         if day is None or day not in store.list_days(root):
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")

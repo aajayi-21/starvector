@@ -125,6 +125,26 @@ def test_a_board_from_before_the_target_rank_is_rebuilt(tmp_path) -> None:
     assert {row["player"]: row["target_rank"] for row in rows} == wanted
 
 
+def test_the_board_with_no_day_names_the_newest_revealed(tmp_path) -> None:
+    """The leaderboard screen wants that day and cannot name it.
+
+    The reveal reads the latest day, which is the open one for most
+    of each day, and the history reads the days that one caller
+    played. A newer open day must not hide the newest revealed
+    board.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    named = _as(client, tokens["ade"]).get(
+        f"/api/leaderboard?day={DAY}").content
+    assert _as(client, tokens["ade"]).get(
+        "/api/leaderboard").content == named
+    open_day(fixture["service_config"], date="2026-08-13",
+             clock=lambda: FIXED_CLOCK, pick_seed="c" * 32,
+             secret="d" * 64)
+    assert _as(client, tokens["ade"]).get(
+        "/api/leaderboard").content == named
+
+
 def test_an_edited_label_wants_no_new_assembly(tmp_path) -> None:
     """The artifact holds the store key, thus the label attaches."""
     fixture, client, tokens = _world(tmp_path)
