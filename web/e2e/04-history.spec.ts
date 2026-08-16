@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { blockExternalHosts } from "./helpers";
+import { blockExternalHosts, signIn } from "./helpers";
 
 test("history renders the live numbers", async ({ page }) => {
+  await signIn(page);
   await blockExternalHosts(page);
   const expected = await (
     await page.request.get("http://127.0.0.1:8199/api/history")
@@ -25,6 +26,7 @@ test("history renders the live numbers", async ({ page }) => {
 test("keyboard focus lands on the nav with a visible ring", async ({
   page,
 }) => {
+  await signIn(page);
   await blockExternalHosts(page);
   await page.goto("/history");
   await page.locator("body").click({ position: { x: 5, y: 5 } });

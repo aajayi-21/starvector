@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { blockExternalHosts, canvasPoint, drawStroke } from "./helpers";
+import { blockExternalHosts, canvasPoint, drawStroke, signIn } from "./helpers";
 
 test("the daily flow: draw, group, send, lock", async ({ page }) => {
+  await signIn(page);
   await blockExternalHosts(page);
   let posts = 0;
   page.on("request", (request) => {

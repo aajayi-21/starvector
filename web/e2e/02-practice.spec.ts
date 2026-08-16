@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { blockExternalHosts, drawStroke } from "./helpers";
+import { blockExternalHosts, drawStroke, signIn } from "./helpers";
 
 const PRACTICE_DAY = "2026-08-10";
 
 test("a practice cycle scores against the revealed day", async ({ page }) => {
+  await signIn(page);
   await blockExternalHosts(page);
   await page.goto("/practice");
   await page.getByLabel("practice day").selectOption(PRACTICE_DAY);

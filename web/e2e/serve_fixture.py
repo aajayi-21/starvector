@@ -1,10 +1,31 @@
-"""The e2e fixture server (spec W1 B11).
+"""The e2e fixture server (spec W1 B11, grown by spec M1 B9).
 
 Runs the live trial server on a throwaway store: fake providers,
 warm commonness tables, one revealed day for practice and one open
 day to play. No network and no API key — the fixture config wires
 the fake encoder slots. Playwright's webServer starts this script
 and waits on the port.
+
+Two players are minted, which switches access control on for the
+full world: each spec plants the session cookie and the operator
+calls hold the bearer. Their secrets and the operator token are
+constants here on purpose. The store is a temporary directory
+built for one test run and thrown away, and a browser cannot plant
+a cookie nobody gave it, so a spec that wants a session must
+name one.
+
+Two arguments the deployed server does not get:
+
+`cookie_secure` off, because Chromium stores a cookie with the
+transport flag sent from an http loopback port and then does not
+send it back. The failure has no connection to the code a reader
+blames for it. The one test that walks the invite gate in a browser
+needs the cookie the server itself set, thus the flag comes off
+here and nowhere else.
+
+`operator_token`, because create_app refuses to start with player
+records stored and no token — a quiet hole is worse than a loud
+stop, and this world stores two.
 """
 
 import os
@@ -25,12 +46,17 @@ import uvicorn  # noqa: E402
 from svc_fixture import (FIXED_CLOCK, build_service_fixture,  # noqa: E402
                          mixed_wire_record)
 
-from service import store  # noqa: E402
+from service import players, store  # noqa: E402
 from service.day import close_day, open_day, reveal_day  # noqa: E402
 from service.server import create_app  # noqa: E402
 
 PRACTICE_DAY = "2026-08-10"
 LIVE_DAY = "2026-08-12"
+OPERATOR_TOKEN = "e2e-operator-token"
+# The store key "ade" matches the configured player, thus the
+# fallback world and this one resolve to the same identity and no
+# stored path moves.
+CAST = (("ade", "Ade", "1" * 43), ("bru", "Bru Lin", "2" * 43))
 
 
 def main() -> None:
@@ -45,6 +71,10 @@ def main() -> None:
     def clock() -> str:
         return FIXED_CLOCK
 
+    for name, label, secret in CAST:
+        players.mint_player(config, player=name, display_name=label,
+                            clock=clock, secret=secret)
+
     # A revealed, played day: the live history, leaderboard, and
     # stored-submission surfaces then hold one honest row.
     open_day(config, date=PRACTICE_DAY, clock=clock,
@@ -57,12 +87,23 @@ def main() -> None:
     reveal_day(config, clock=clock)
     open_day(config, date=LIVE_DAY, clock=clock,
              pick_seed="c" * 32, secret="d" * 64)
+    # The second player sends on the live day and the first does
+    # not, thus the board the reveal spec opens holds two rows in a
+    # sequence the scores set. This record is not the one the
+    # browser draws, thus the two scores are different.
+    store.write_once_json(
+        store.submission_path(root / "store", LIVE_DAY, "bru"),
+        {"day": LIVE_DAY, "player": "bru", "trial_id": "b" * 32,
+         "received_at": FIXED_CLOCK,
+         "record": {**mixed_wire_record(),
+                    "impressions": ["a wide flat plain", "warm light"]}})
     print("fixture ready", file=sys.stderr, flush=True)
     # dev_mode: the throwaway world is what the owner's offline
     # runbook (spec S2 section 9 step 2) drives from the operator
     # console, and the console reads the dev surfaces.
-    uvicorn.run(create_app(config, dev_mode=True), host="127.0.0.1",
-                port=port, log_level="warning")
+    uvicorn.run(create_app(config, dev_mode=True, cookie_secure=False,
+                           operator_token=OPERATOR_TOKEN),
+                host="127.0.0.1", port=port, log_level="warning")
 
 
 if __name__ == "__main__":
