@@ -191,12 +191,42 @@ def test_players_with_an_equal_score_share_a_rank() -> None:
         preparation_version_id="p" * 64, status="revealed",
         opened_at=FIXED_CLOCK, closed_at=FIXED_CLOCK,
         revealed_at=FIXED_CLOCK)
-    rows = [("cyd", {"p": 0.5, "decoy_count": 9}),
-            ("ade", {"p": 0.9, "decoy_count": 9}),
-            ("bru", {"p": 0.9, "decoy_count": 9})]
+    rows = [("cyd", {"p": 0.5, "decoy_count": 9, "target_rank": 5}),
+            ("ade", {"p": 0.9, "decoy_count": 9, "target_rank": 1}),
+            ("bru", {"p": 0.9, "decoy_count": 9, "target_rank": 1})]
     board = rollup.daily_board_value(record, rows)
     assert [(row["player"], row["rank"]) for row in board["rows"]] \
         == [("ade", 1), ("bru", 1), ("cyd", 3)]
+
+
+def test_the_board_keeps_the_two_ranks_apart() -> None:
+    """The board position and the target rank count different things.
+
+    A board that carries the position alone makes the reader
+    answer the decoy rank with it, which is what the reveal card
+    prints with the decoy count.
+    """
+    record = store.DayRecord(
+        day=DAYS[0], trial_code="R7K2QX", target_id="t" * 64,
+        pick_seed="s" * 32, secret="x" * 64, commitment="c" * 64,
+        scoring_config_path="x.json", scoring_config_hash="h" * 64,
+        preparation_version_id="p" * 64, status="revealed",
+        opened_at=FIXED_CLOCK, closed_at=FIXED_CLOCK,
+        revealed_at=FIXED_CLOCK)
+    rows = [("ade", {"p": 0.9, "decoy_count": 119, "target_rank": 12}),
+            ("bru", {"p": 0.4, "decoy_count": 119, "target_rank": 72})]
+    board = rollup.daily_board_value(record, rows)
+    assert [(row["rank"], row["target_rank"]) for row in board["rows"]] \
+        == [(1, 12), (2, 72)]
+    assert rollup.board_is_current(board)
+
+
+def test_a_board_from_before_the_target_rank_is_not_current() -> None:
+    """The reader finds a stale board and assembles the rows again."""
+    stale = {"rows": [{"player": "ade", "p": 0.9, "decoy_count": 119,
+                       "rank": 1}]}
+    assert not rollup.board_is_current(stale)
+    assert rollup.board_is_current({"rows": []})
 
 
 def test_the_skill_board_gates_itself_on_a_new_deployment(

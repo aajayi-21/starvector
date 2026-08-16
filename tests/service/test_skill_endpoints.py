@@ -69,6 +69,62 @@ def test_the_daily_board_serves_each_player(tmp_path) -> None:
                             "decoy_count", "streak"}
 
 
+def _stored_target_ranks(fixture) -> dict[str, int]:
+    """The rank of the target in the set of images, for each player."""
+    root = Path(fixture["service_config"].store_root)
+    ranks = {}
+    for name, _label, _secret in CAST:
+        row = store.read_json_or_none(
+            store.trial_row_path(root, DAY, name))
+        ranks[name] = row["target_rank"]
+    return ranks
+
+
+def test_the_board_says_the_target_rank_and_not_the_position(
+        tmp_path) -> None:
+    """The two ranks count different things (spec M1 B9).
+
+    target_rank is the position of the target in the set of images
+    and it is what the reveal card prints with the decoy count.
+    The board position is the position in the set of players. A
+    board that carries one alone makes the reader answer with the
+    other.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    wanted = _stored_target_ranks(fixture)
+    rows = _as(client, tokens["ade"]).get(
+        f"/api/leaderboard?day={DAY}").json()["rows"]
+    served = {row["player"]: row["target_rank"] for row in rows}
+    assert served == wanted
+    # The guard against a test that cannot tell the two apart.
+    positions = {row["player"]: index + 1
+                 for index, row in enumerate(rows)}
+    assert any(served[name] != positions[name] for name in served)
+
+
+def test_a_board_from_before_the_target_rank_is_rebuilt(tmp_path) -> None:
+    """A stale artifact is met and not trusted.
+
+    The trial rows are permanent and hold the number, thus the
+    reader assembles the rows again. To answer the board position
+    with the name of the target rank is the fault this stops.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    wanted = _stored_target_ranks(fixture)
+    root = Path(fixture["service_config"].store_root)
+    data_root = Path(fixture["service_config"].data_root)
+    record = store.read_day_record(root, DAY)
+    board_path = rollup.leaderboard_path(
+        data_root, DAY, record.scoring_config_hash)
+    stale = json.loads(board_path.read_text())
+    for row in stale["rows"]:
+        del row["target_rank"]
+    board_path.write_text(json.dumps(stale))
+    rows = _as(client, tokens["ade"]).get(
+        f"/api/leaderboard?day={DAY}").json()["rows"]
+    assert {row["player"]: row["target_rank"] for row in rows} == wanted
+
+
 def test_an_edited_label_wants_no_new_assembly(tmp_path) -> None:
     """The artifact holds the store key, thus the label attaches."""
     fixture, client, tokens = _world(tmp_path)

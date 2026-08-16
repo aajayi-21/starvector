@@ -151,6 +151,12 @@ def daily_board_value(record: store.DayRecord,
     manner (the 2026-08-16 ruling). This board reads the trial
     score and takes no logarithm, thus that player holds a position
     while they have no skill number.
+
+    Two ranks travel and they count different things. rank is the
+    position on this board, in the set of players. target_rank is
+    the position of the target in the set of images, which is the
+    number the reveal card prints with the decoy count. A board
+    that carries one alone makes the reader answer with the other.
     """
     ordered = sorted(rows, key=lambda item: (-item[1]["p"], item[0]))
     board: list[dict[str, JsonValue]] = []
@@ -159,6 +165,7 @@ def daily_board_value(record: store.DayRecord,
         if position and row["p"] == ordered[position - 1][1]["p"]:
             rank = board[-1]["rank"]
         board.append({"player": player, "p": row["p"],
+                      "target_rank": row["target_rank"],
                       "decoy_count": row["decoy_count"], "rank": rank})
     return {"day": record.day,
             "scoring_config_hash": record.scoring_config_hash,
@@ -166,6 +173,19 @@ def daily_board_value(record: store.DayRecord,
             "row_count": len(board),
             "created_at": record.revealed_at,
             "rows": board}
+
+
+def board_is_current(board: dict) -> bool:
+    """Does a stored day board hold each field the wire wants?
+
+    A board written before the target rank travelled holds the
+    board position alone. Its rows cannot answer the position of
+    the target in the set of images, thus a reader that finds one
+    assembles the rows again from the trial rows, which are
+    permanent. The other path is to answer the board position with
+    the name of the target rank, which is the fault this stops.
+    """
+    return all("target_rank" in row for row in board["rows"])
 
 
 def _band(counts: list[int], mu: float) -> list[dict[str, JsonValue]]:

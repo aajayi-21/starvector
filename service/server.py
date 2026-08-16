@@ -811,6 +811,10 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         prepared = store.read_json_or_none(rollup.leaderboard_path(
             data_root, day, record.scoring_config_hash))
+        if prepared is not None and not rollup.board_is_current(prepared):
+            # A board from before the target rank travelled. The
+            # trial rows hold it and they are permanent.
+            prepared = None
         if prepared is None:
             board = []
             for name in store.list_submissions(root, day):
@@ -824,7 +828,7 @@ def create_app(service_config: ServiceConfig,
             "player": entry["player"],
             "display_name": _label_of(entry["player"]),
             "p": entry["p"],
-            "target_rank": entry.get("target_rank", entry["rank"]),
+            "target_rank": entry["target_rank"],
             "decoy_count": entry["decoy_count"],
             "streak": _streak(root, entry["player"], newest),
         } for entry in prepared["rows"]]
