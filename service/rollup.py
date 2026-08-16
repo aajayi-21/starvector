@@ -303,7 +303,13 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
         "mu": quantized(fit.mu), "tau": quantized(fit.tau),
         "mu_spread": quantized(fit.mu_spread), "fitted": fit.fitted,
         "halvings": fit.halvings}
-    body["baseline_band"] = _band([pair["n"] for pair in eligible], fit.mu)
+    # The ladder spans each plotted player and not the eligible run
+    # alone (ruling 17 of 2026-08-16). The band is what makes a
+    # low-trial outlier read as noise, thus it must span the trial
+    # counts where those players sit. A ladder that stops at
+    # the floor leaves the dots the chart exists for with nothing
+    # behind them.
+    body["baseline_band"] = _band([pair["n"] for pair in usable], fit.mu)
     if len(eligible) >= 2:
         report = aggregate.variation_report(eligible_points, fit)
         body["variation"] = {

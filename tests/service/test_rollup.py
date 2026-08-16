@@ -344,6 +344,16 @@ def test_each_player_holds_a_row_and_the_eligible_hold_a_rank() -> None:
     # One population definition: the claim tests the eligible set.
     assert board["discovery"]["tested"] == 40
     assert board["variation"]["dof"] == 39
+    # The band reaches each plotted player. A ladder that stops at
+    # the floor leaves the low-trial dots with nothing behind them,
+    # and those dots are what the chart exists for.
+    band = board["baseline_band"]
+    counts = [row["n"] for row in board["rows"]]
+    assert min(point["n"] for point in band) <= min(counts)
+    assert max(point["n"] for point in band) >= max(counts)
+    # It gets narrower as the trial count rises.
+    widths = [point["high"] - point["low"] for point in band]
+    assert widths == sorted(widths, reverse=True)
 
 
 def test_the_board_rows_hold_one_field_set() -> None:
