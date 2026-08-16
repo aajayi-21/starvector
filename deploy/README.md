@@ -124,7 +124,16 @@ diff -r /srv/starvector/app/store /tmp/restore-drill/srv/starvector/app/store
 The public process runs without `--dev`, thus its console
 surfaces answer 404 and `/image` serves revealed targets alone.
 The proxy also answers 404 on `/dev.html`, `/dev`, `/ui/dev.js`,
-`/api/dev`, `/api/dev/*`, and the three day lifecycle paths.
+`/api/dev`, `/api/dev/*`, the three day lifecycle paths, and the
+player mint.
+
+The mint wants the proxy refusal because of something the others
+do not have. It is the one operator path that needs no `--dev`,
+thus it is live in the public process, and that process must hold
+the operator token. The bearer alone then stands in front of it.
+The console reaches the mint through the tunnel and the
+command-line path runs on the box, thus the public edge wants no
+path to it.
 
 The console runs against the dev unit, which binds
 `127.0.0.1:8001`. The proxy holds no path to that port:
@@ -187,8 +196,8 @@ and `restore` puts one back with a new invite.
   address bar. `/assets/*` for an incorrect hash answers 404, not
   HTML.
 - `curl -s -o /dev/null -w "%{http_code}" https://<domain>/dev.html`
-  → 404. The same for `/api/dev`, `/api/dev/days`, and
-  `/api/day/close`.
+  → 404. The same for `/api/dev`, `/api/dev/days`,
+  `/api/day/close`, and `/api/players`.
 - `curl https://<domain>/image/<an unrevealed image id>` → 404.
 - **`curl -sI https://<domain>/join/bogus` → the server's 401, and
   the content type is JSON and not `text/html`.** HTML here means
