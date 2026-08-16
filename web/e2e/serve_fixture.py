@@ -58,8 +58,11 @@ def main() -> None:
     open_day(config, date=LIVE_DAY, clock=clock,
              pick_seed="c" * 32, secret="d" * 64)
     print("fixture ready", file=sys.stderr, flush=True)
-    uvicorn.run(create_app(config), host="127.0.0.1", port=port,
-                log_level="warning")
+    # dev_mode: the throwaway world is what the owner's offline
+    # runbook (spec S2 section 9 step 2) drives from the operator
+    # console, and the console reads the dev surfaces.
+    uvicorn.run(create_app(config, dev_mode=True), host="127.0.0.1",
+                port=port, log_level="warning")
 
 
 if __name__ == "__main__":

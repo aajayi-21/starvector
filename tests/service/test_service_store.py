@@ -175,3 +175,10 @@ def test_closes_at_utc_is_optional_and_strict() -> None:
     for bad in ("24:00", "9:00", "22:60", "2200", 2200, ""):
         with pytest.raises(ServiceConfigError, match="closes_at_utc"):
             parse_service_config(_config_value(closes_at_utc=bad), "test")
+
+
+def test_closes_at_utc_refuses_a_trailing_newline() -> None:
+    # The dollar sign also matches before a trailing newline, and the
+    # value goes into a timestamp string.
+    with pytest.raises(ServiceConfigError, match="closes_at_utc"):
+        parse_service_config(_config_value(closes_at_utc="22:00\n"), "test")

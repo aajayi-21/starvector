@@ -6,7 +6,7 @@
  * production.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError, makeDevApi } from "./api";
@@ -27,30 +27,50 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
   const [stored, setStored] = useState<DevStored | null>(null);
   const [rankings, setRankings] = useState<DevRankings | null>(null);
   const [rankNote, setRankNote] = useState("");
+  const [dayNote, setDayNote] = useState("");
   const [controlNote, setControlNote] = useState("");
+  // Each day switch takes the next token; a response whose token is
+  // stale belongs to a day the operator left and is dropped.
+  const dayToken = useRef(0);
 
   const showDay = useCallback(
     async (row: DevDayRow) => {
       // A day switch clears the target state and the loaded data,
       // so switching days never leaks the new target.
+      dayToken.current += 1;
+      const token = dayToken.current;
+      const fresh = () => token === dayToken.current;
       setSelected(row);
       setTargetShown(false);
       setStored(null);
       setRankings(null);
       setRankNote("");
+      setDayNote("");
       try {
         const document = await api.getSubmission(row.day);
+        if (!fresh()) {
+          return;
+        }
         setStored(document);
         if (row.status !== "open") {
           setRankNote("scoring…");
-          setRankings(await api.getRankings(row.day));
+          const board = await api.getRankings(row.day);
+          if (!fresh()) {
+            return;
+          }
+          setRankings(board);
           setRankNote("");
         }
       } catch (error) {
-        if (error instanceof DevApiError && error.status === 404) {
-          return; // nothing sent this day
+        if (!fresh()) {
+          return;
         }
-        setRankNote(messageOf(error));
+        if (error instanceof DevApiError && error.status === 404) {
+          setDayNote("nothing sent this day");
+          return;
+        }
+        setDayNote(messageOf(error));
+        setRankNote("");
       }
     },
     [api],
@@ -97,7 +117,10 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
   };
 
   const latestDay = days?.[0]?.day;
-  const movable = selected === null || selected.day === latestDay;
+  // Before the listing lands there is no latest day to move, thus
+  // no control is offered (the earlier page kept them hidden too).
+  const movable =
+    days !== null && (selected === null || selected.day === latestDay);
   const status = selected?.status ?? "none";
 
   const loadPreview = async () => {
@@ -257,8 +280,8 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
       )}
 
       {stored === null ? (
-        <p className="text-muted" style={{ fontSize: 13 }}>
-          nothing sent this day
+        <p className="text-muted" style={{ fontSize: 13 }} role="status">
+          {dayNote === "" ? "loading…" : dayNote}
         </p>
       ) : (
         <>

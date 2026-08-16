@@ -6,6 +6,7 @@ walk and the R4 two-world tests hold the leakage rules.
 """
 
 import dataclasses
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -287,3 +288,28 @@ def test_the_new_surfaces_are_byte_stable_across_open_targets(
             joined = b"|".join(collected)
             assert open_record.target_id.encode() not in joined
     assert answers["one"] == answers["two"]
+
+
+def test_the_history_page_holds_at_a_degenerate_skill(
+        tmp_path: Path) -> None:
+    # Each score at 1.0 refuses the aggregation. /api/history serves
+    # the defined null and the page says so - neither raises.
+    from service import store
+    from service.server import _skill_value
+
+    days = ("2026-08-11", "2026-08-12")
+    fixture, client = _run_of_days(tmp_path, days)
+    for day in days:
+        path = store.trial_row_path(fixture["store"], day, "ade")
+        row = store.read_json_or_none(path)
+        row["p"] = 1.0
+        path.write_text(json.dumps(row), encoding="utf-8")
+    assert _skill_value([1.0, 1.0]) is None
+    body = client.get("/api/history").json()
+    assert body["skill"] is None
+    assert len(body["days"]) == 2
+    dev = TestClient(create_app(fixture["service_config"],
+                                dev_mode=True))
+    page = dev.get("/history")
+    assert page.status_code == 200
+    assert "each trial score is 1.0" in page.text

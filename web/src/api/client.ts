@@ -1,7 +1,8 @@
 /**
  * The Api interface the screens consume (spec W1 §6) and the
- * composite wiring: live adapters where the server has the surface,
- * the deterministic mock elsewhere (§7). No screen holds a URL.
+ * composite wiring. Spec S2 made the §7 contract live, thus the
+ * composite serves the live adapter outright and the mock stays
+ * for the full-mock mode. No screen holds a URL.
  */
 
 import { createContext, useContext } from "react";
@@ -21,7 +22,7 @@ import type {
 export interface DayApi {
   getDay(): Promise<DayView>;
   submit(record: WireRecord): Promise<SubmissionAck>;
-  /** No argument: the latest day (live). With a day: §7 scaffold. */
+  /** No argument: the latest day. With a day: that day's reveal. */
   getReveal(day?: string): Promise<RevealView>;
   imageUrl(imageId: string): string;
 }

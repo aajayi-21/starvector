@@ -690,16 +690,19 @@ def create_app(service_config: ServiceConfig,
                 f"<td>{row['p']:.4f}</td>"
                 f"<td>{row['target_rank']} of {row['decoy_count'] + 1}"
                 f"</td></tr>")
-        if ps:
-            summary = skill_summary(ps, unbiased=(len(ps) >= 2))
-            shrunk = shrunk_log_theta(summary.log_theta, summary.n,
-                                      POPULATION_MEAN, POPULATION_SPREAD)
+        skill = _skill_value(ps)
+        if skill is not None:
             variant = "unbiased" if len(ps) >= 2 else "biased at n = 1"
             aggregate = (
-                f"<p>skill number {summary.theta:.3f} ({variant}), "
-                f"shrunk {math.exp(shrunk):.3f}, "
-                f"evidence {summary.evidence_p:.3f}, "
-                f"across <strong>{summary.n}</strong> trial(s)</p>")
+                f"<p>skill number {skill['theta']:.3f} ({variant}), "
+                f"shrunk {skill['shrunk']:.3f}, "
+                f"evidence {skill['evidence_p']:.3f}, "
+                f"across <strong>{skill['n']}</strong> trial(s)</p>")
+        elif ps:
+            # Each score at 1.0: the aggregation refuses, and the
+            # page says so rather than raising (spec S2 section 3).
+            aggregate = ("<p>skill number undefined - each trial "
+                         "score is 1.0</p>")
         else:
             aggregate = "<p>no revealed trial yet</p>"
         body = (

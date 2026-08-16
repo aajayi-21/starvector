@@ -83,7 +83,10 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
     closes_at_utc = raw.get("closes_at_utc")
     if closes_at_utc is not None and (
             not isinstance(closes_at_utc, str)
-            or not _CLOSES_AT_RULE.match(closes_at_utc)):
+            # fullmatch, not match: the dollar sign also matches
+            # before a trailing newline, and the value goes into
+            # a timestamp string.
+            or not _CLOSES_AT_RULE.fullmatch(closes_at_utc)):
         raise ServiceConfigError(
             f"{source}.closes_at_utc: expected \"HH:MM\" (24-hour UTC)")
     return ServiceConfig(
