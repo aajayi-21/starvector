@@ -4,6 +4,7 @@
  * optional history so tests run on memory history.
  */
 
+import { useQuery } from "@tanstack/react-query";
 import {
   createRootRoute,
   createRoute,
@@ -12,15 +13,26 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 
+import { useApi } from "./api/client";
+import { isUnauthorized } from "./api/types";
 import { HistoryScreen } from "./screens/history";
 import { PracticeScreen } from "./screens/practice";
 import { RevealScreen } from "./screens/reveal";
 import { TodayScreen } from "./screens/today";
 import { InstallHint } from "./ui/install-hint";
+import { InviteGate } from "./ui/invite-gate";
 import { Nav } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
 
 function Shell(): React.JSX.Element {
+  const api = useApi();
+  // The key Nav reads, thus react-query serves one request for the
+  // two of them and the gate costs no round trip.
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
+  // 401 exactly (spec M1 §9). isUnauthorized carries that rule.
+  if (isUnauthorized(me.error)) {
+    return <InviteGate />;
+  }
   return (
     <>
       <OfflineBanner />
