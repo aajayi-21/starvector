@@ -9,6 +9,7 @@ from pathlib import Path
 
 from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
 
+from core import aggregate
 from service import auth, players, rollup, store
 from service.day import close_day, open_day, reveal_day
 from service.server import create_app
@@ -67,6 +68,82 @@ def test_the_daily_board_serves_each_player(tmp_path) -> None:
     for row in rows:
         assert set(row) == {"player", "display_name", "p", "target_rank",
                             "decoy_count", "streak"}
+
+
+def _stored_target_ranks(fixture) -> dict[str, int]:
+    """The rank of the target in the set of images, for each player."""
+    root = Path(fixture["service_config"].store_root)
+    ranks = {}
+    for name, _label, _secret in CAST:
+        row = store.read_json_or_none(
+            store.trial_row_path(root, DAY, name))
+        ranks[name] = row["target_rank"]
+    return ranks
+
+
+def test_the_board_says_the_target_rank_and_not_the_position(
+        tmp_path) -> None:
+    """The two ranks count different things (spec M1 B9).
+
+    target_rank is the position of the target in the set of images
+    and it is what the reveal card prints with the decoy count.
+    The board position is the position in the set of players. A
+    board that carries one alone makes the reader answer with the
+    other.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    wanted = _stored_target_ranks(fixture)
+    rows = _as(client, tokens["ade"]).get(
+        f"/api/leaderboard?day={DAY}").json()["rows"]
+    served = {row["player"]: row["target_rank"] for row in rows}
+    assert served == wanted
+    # The guard against a test that cannot tell the two apart.
+    positions = {row["player"]: index + 1
+                 for index, row in enumerate(rows)}
+    assert any(served[name] != positions[name] for name in served)
+
+
+def test_a_board_from_before_the_target_rank_is_rebuilt(tmp_path) -> None:
+    """A stale artifact is met and not trusted.
+
+    The trial rows are permanent and hold the number, thus the
+    reader assembles the rows again. To answer the board position
+    with the name of the target rank is the fault this stops.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    wanted = _stored_target_ranks(fixture)
+    root = Path(fixture["service_config"].store_root)
+    data_root = Path(fixture["service_config"].data_root)
+    record = store.read_day_record(root, DAY)
+    board_path = rollup.leaderboard_path(
+        data_root, DAY, record.scoring_config_hash)
+    stale = json.loads(board_path.read_text())
+    for row in stale["rows"]:
+        del row["target_rank"]
+    board_path.write_text(json.dumps(stale))
+    rows = _as(client, tokens["ade"]).get(
+        f"/api/leaderboard?day={DAY}").json()["rows"]
+    assert {row["player"]: row["target_rank"] for row in rows} == wanted
+
+
+def test_the_board_with_no_day_names_the_newest_revealed(tmp_path) -> None:
+    """The leaderboard screen wants that day and cannot name it.
+
+    The reveal reads the latest day, which is the open one for most
+    of each day, and the history reads the days that one caller
+    played. A newer open day must not hide the newest revealed
+    board.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    named = _as(client, tokens["ade"]).get(
+        f"/api/leaderboard?day={DAY}").content
+    assert _as(client, tokens["ade"]).get(
+        "/api/leaderboard").content == named
+    open_day(fixture["service_config"], date="2026-08-13",
+             clock=lambda: FIXED_CLOCK, pick_seed="c" * 32,
+             secret="d" * 64)
+    assert _as(client, tokens["ade"]).get(
+        "/api/leaderboard").content == named
 
 
 def test_an_edited_label_wants_no_new_assembly(tmp_path) -> None:
@@ -147,6 +224,79 @@ def test_the_skill_board_keeps_the_configuration_off_the_wire(
     for name in ("scoring_config_hash", "preparation_version_id",
                  "rank_seed"):
         assert name not in view
+
+
+# Each field SkillBoardView declares without a question mark. A
+# body that drops one makes a screen that trusts the type read a
+# missing value, and the gated board is where that happens.
+_REQUIRED = ("active", "player_count", "eligible_count",
+             "degenerate_count", "eligibility_floor", "recomputed_floor",
+             "fit_floor", "provisional", "rows", "baseline_band",
+             "population", "variation", "discovery")
+
+
+def test_each_gated_body_is_a_complete_view(tmp_path) -> None:
+    """The two gated paths each answer each declared field.
+
+    One path serves the constant, when no reveal wrote an artifact.
+    The other serves an artifact that is gated on its own count.
+    A screen renders the same words for the two, thus the two hold
+    the same fields.
+    """
+    fixture = build_service_fixture(tmp_path)
+    config = fixture["service_config"]
+    players.mint_player(config, player="ade", display_name="Ade",
+                        clock=lambda: FIXED_CLOCK, secret="1" * 43)
+    open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
+             pick_seed="a" * 32, secret="b" * 64)
+    constant = TestClient(create_app(config, operator_token=TOKEN))
+    _as(constant, f"ade.{'1' * 43}")
+    bodies = [constant.get("/api/leaderboard/skill").json()]
+
+    _played, client, tokens = _world(tmp_path / "played")
+    bodies.append(
+        _as(client, tokens["ade"]).get("/api/leaderboard/skill").json())
+
+    for view in bodies:
+        assert view["active"] is False
+        for name in _REQUIRED:
+            assert name in view, name
+        # The floors travel from the module that owns them.
+        assert view["eligibility_floor"] == aggregate.ELIGIBLE_TRIAL_FLOOR
+        assert view["fit_floor"] == aggregate.FIT_PLAYER_FLOOR
+
+
+def test_the_standing_monitors_stay_operator_only(tmp_path) -> None:
+    """Ruling 5 of 2026-08-15 publishes the discovery claim alone.
+
+    The baseline check and the stopping monitor hold no
+    player-facing copy, thus they stay in the artifact where the
+    operator reads them.
+    """
+    fixture, client, tokens = _world(tmp_path)
+    root = Path(fixture["service_config"].store_root)
+    data_root = Path(fixture["service_config"].data_root)
+    record = store.read_day_record(root, DAY)
+    stored = json.loads(rollup.skill_board_path(
+        data_root, record.scoring_config_hash).read_text())
+    # The guard against a test that passes on a missing field.
+    assert "baseline" in stored and "stopping_monitor" in stored
+    view = _as(client, tokens["ade"]).get("/api/leaderboard/skill").json()
+    assert "baseline" not in view
+    assert "stopping_monitor" not in view
+    assert "discovery" in view
+
+
+def test_the_me_surface_holds_no_flag_that_cannot_vary(tmp_path) -> None:
+    """Ruling 3 of spec M1 removed the public flag.
+
+    Ruling 4 removed the opt-out, thus the field was correct for
+    each player forever, and a value that cannot change is a claim
+    that waits for a reader to trust it.
+    """
+    _fixture, client, tokens = _world(tmp_path)
+    body = _as(client, tokens["ade"]).get("/api/me").json()
+    assert set(body) == {"player", "display_name", "streak", "reminder"}
 
 
 def test_the_skill_board_answers_the_constant_before_any_reveal(

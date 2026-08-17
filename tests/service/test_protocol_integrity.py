@@ -122,7 +122,7 @@ def _length_walk(fixture, seed: str, tmp_path: Path,
         {"day": DAY, "player": "ade", "trial_id": "f" * 32,
          "received_at": FIXED_CLOCK, "record": mixed_wire_record()})
     client = TestClient(create_app(config))
-    paths = ("/", "/ui/trial.js", "/api/day", "/api/reveal",
+    paths = ("/", "/api/day", "/api/reveal",
              f"/api/reveal?day={DAY}", f"/api/leaderboard?day={DAY}",
              f"/api/submission?day={DAY}", "/api/history", "/api/me",
              "/api/practice", "/api/leaderboard/skill",

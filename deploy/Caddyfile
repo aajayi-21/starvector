@@ -12,10 +12,24 @@ game.example.com {
 	# Caddy path matching is exact unless a wildcard ends the
 	# pattern, and /api/dev/* does NOT match the bare /api/dev -
 	# which answers the day's target id. Both forms are listed.
-	# /history is NOT here: the app owns that path (spec S2
-	# section 3), and the server's page already answers 404
-	# without the --dev flag.
-	@blocked path /dev.html /dev /ui/dev.js /api/dev /api/dev/* /api/day/open /api/day/close /api/day/reveal
+	# /history is NOT here: the app owns that path.
+	#
+	# /dev and /ui/dev.js name nothing in the server since the
+	# hand-written pages retired (2026-08-16). They stay refused
+	# rather than falling to the app shell below, so a probe at a
+	# console-shaped path meets a 404 and not a page.
+	#
+	# /api/players is the one operator path that is live in the
+	# public process: the console surfaces need --dev, which this
+	# process does not have, and the three day paths are below.
+	# The mint needs neither, and the public process must hold the
+	# operator token, because the server refuses to start with
+	# player records stored and no token. That leaves the bearer
+	# as its only layer where the rest have three. The console
+	# reaches the mint through the tunnel to the dev unit and the
+	# command-line path runs on the box, thus nothing wants it
+	# here.
+	@blocked path /dev.html /dev /ui/dev.js /api/dev /api/dev/* /api/day/open /api/day/close /api/day/reveal /api/players
 	handle @blocked {
 		respond 404
 	}

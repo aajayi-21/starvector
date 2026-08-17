@@ -210,6 +210,32 @@ def chi_squared_tail(statistic: float, dof: int) -> float:
     return min(1.0, math.erfc(math.sqrt(half)) + math.fsum(terms))
 
 
+def log_term(p: float) -> tuple[float, bool]:
+    """One trial score's term, and a flag for the clamp.
+
+    The term is the negative logarithm of the trial score, and this
+    holds the one clamp rule for the full system: a trial score of
+    0.0 reads as the smallest positive float and the caller counts
+    it, because the logarithm of zero has no value and to drop the
+    trial rewards the worst one there is.
+
+    A trial score of 1.0 gives a term of 0.0, which is a number and
+    not a fault. skill_summary refuses a full sequence of 1.0
+    scores, because that player has no skill number, but the term
+    of one such trial has a value and the caller that folds it
+    across days needs it. The two questions are different and this
+    answers the narrow one.
+
+    A trial score out of [0, 1] raises.
+    """
+    value = float(p)
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError(f"a trial score must sit in [0, 1], got {p!r}")
+    if value == 0.0:
+        return -math.log(math.ulp(0.0)), True
+    return -math.log(value), False
+
+
 def skill_summary(ps: Sequence[float], unbiased: bool = True) -> SkillSummary:
     """The section 17 aggregate of one player's trial scores.
 
@@ -233,12 +259,9 @@ def skill_summary(ps: Sequence[float], unbiased: bool = True) -> SkillSummary:
     clamp_count = 0
     terms: list[float] = []
     for p in scores:
-        if not math.isfinite(p) or not 0.0 <= p <= 1.0:
-            raise ValueError(f"a trial score must sit in [0, 1], got {p!r}")
-        if p == 0.0:
-            p = math.ulp(0.0)
-            clamp_count += 1
-        terms.append(-math.log(p))
+        term, clamped = log_term(p)
+        clamp_count += 1 if clamped else 0
+        terms.append(term)
     s_statistic = math.fsum(terms)
     if s_statistic == 0.0:
         raise ValueError(

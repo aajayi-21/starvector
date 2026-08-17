@@ -351,6 +351,17 @@ service/
 tests/service/             # the section 11 suite
 ```
 
+**Dated note, 2026-08-16 — the pages retired.** `service/ui/` and
+the four routes that served it (`GET /`, `/ui/trial.js`, `/dev`,
+`/ui/dev.js`) are gone, with the hand-written `/history` page.
+Spec W1 said the page kept serving until the backend phase
+replaced it. That phase closed and spec M1 finished the app, thus
+the replacement is done. This process serves the API and no page: the player app
+and the operator console are the built web app, which the edge
+serves from `web/dist` and which reaches this process through
+`/api`, `/image`, and `/join`. `GET /` answers 404 here. The note
+records the divergence rather than rewriting the section.
+
 `service/` imports `core/`, `pipeline/`, `pool/artifacts`, and
 `validation.harness` for wiring. Nothing imports `service/`.
 `CLAUDE.md` §8 gains the two layout rows when this lands.

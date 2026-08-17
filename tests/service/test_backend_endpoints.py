@@ -295,10 +295,12 @@ def test_the_new_surfaces_are_byte_stable_across_open_targets(
     assert answers["one"] == answers["two"]
 
 
-def test_the_history_page_holds_at_a_degenerate_skill(
+def test_the_history_surface_holds_at_a_degenerate_skill(
         tmp_path: Path) -> None:
-    # Each score at 1.0 refuses the aggregation. /api/history serves
-    # the defined null and the page says so - no path raises.
+    # Each score at 1.0 refuses the aggregation, thus /api/history
+    # serves the defined null rather than raising. The daily
+    # board's own handling of that player is a rollup property and
+    # test_rollup.py holds it.
     from service import store
     from service.server import _skill_value
 
@@ -313,8 +315,3 @@ def test_the_history_page_holds_at_a_degenerate_skill(
     body = client.get("/api/history").json()
     assert body["skill"] is None
     assert len(body["days"]) == 2
-    dev = TestClient(create_app(fixture["service_config"],
-                                dev_mode=True))
-    page = dev.get("/history")
-    assert page.status_code == 200
-    assert "each trial score is 1.0" in page.text

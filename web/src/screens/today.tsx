@@ -31,6 +31,7 @@ import {
   undo,
 } from "../sketch/core";
 import { groupDisplay } from "../sketch/palette";
+import { Kicker } from "../ui/kicker";
 import { PaletteRow } from "../ui/palette-row";
 import { TargetCode } from "../ui/target-code";
 
@@ -76,21 +77,6 @@ function writeStorage(key: string, value: unknown): void {
 
 function shortHash(value: string): string {
   return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
-}
-
-function Kicker(props: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: "var(--color-neutral-500)",
-      }}
-    >
-      {props.children}
-    </div>
-  );
 }
 
 function CenteredCard(props: {

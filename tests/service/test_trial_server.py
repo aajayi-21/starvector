@@ -36,9 +36,9 @@ def _close_and_reveal(fixture):
 
 def test_one_full_day_end_to_end(tmp_path) -> None:
     fixture, client = _world(tmp_path)
-    page = client.get("/")
-    assert page.status_code == 200
-    assert "canvas" in page.text
+    # This process serves the API and no page (2026-08-16): the
+    # app of spec W1 owns each path a person types.
+    assert client.get("/").status_code == 404
 
     day_view = client.get("/api/day").json()
     assert day_view["day"] == DAY
@@ -77,16 +77,16 @@ def test_one_full_day_end_to_end(tmp_path) -> None:
              if image_id != record.target_id][0]
     assert client.get(f"/image/{other}").status_code == 404
 
-    # The history page is a dev surface (spec S2 B4): the
-    # plain client gets the constant refusal, the dev client the
-    # page.
+    # The history page retired with the other hand-written pages
+    # (2026-08-16). /history belongs to the app at this time, thus
+    # this process answers 404 with the flag and without it.
     assert client.get("/history").status_code == 404
     dev_client = TestClient(create_app(fixture["service_config"],
                                        dev_mode=True))
-    history = dev_client.get("/history")
-    assert "DEV-ONLY" in history.text
-    assert "skill number" in history.text
-    assert DAY in history.text
+    assert dev_client.get("/history").status_code == 404
+    history = client.get("/api/history").json()
+    assert [row["day"] for row in history["days"]] == [DAY]
+    assert history["skill"]["n"] == 1
 
 
 def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
@@ -96,7 +96,7 @@ def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
 
     def walk() -> dict[str, bytes]:
         return {path: client.get(path).content
-                for path in ("/", "/ui/trial.js", "/api/day",
+                for path in ("/", "/api/day",
                              "/api/reveal", "/api/practice",
                              f"/image/{record.target_id}", "/history",
                              "/api/history", "/api/me",
@@ -115,12 +115,10 @@ def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
             text = body.decode("utf-8", errors="ignore")
             assert record.target_id not in text, path
             assert record.secret not in text, path
-            if path not in ("/", "/ui/trial.js"):
-                # The static page code names the reveal fields it
-                # renders - constant strings, not values. The data
-                # surfaces must hold no score field at all.
-                assert '"p":' not in text, path
-                assert "target_rank" not in text, path
+            # Each surface here is data at this time, thus none of
+            # them can hold a score field at all.
+            assert '"p":' not in text, path
+            assert "target_rank" not in text, path
     # The refused paths answer with one constant body in each status.
     assert while_open["/api/reveal"] == while_closed["/api/reveal"]
     assert while_open[f"/image/{record.target_id}"] \
@@ -129,15 +127,16 @@ def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
     assert client.get(f"/image/{record.target_id}").status_code == 404
 
 
-def test_the_open_page_is_byte_identical_across_targets(tmp_path) -> None:
+def test_the_open_day_is_byte_identical_across_targets(tmp_path) -> None:
+    # The pages retired on 2026-08-16. What an outsider reads
+    # while a day is open is the day view, and it must not move
+    # with the target. test_protocol_integrity.py holds the same
+    # property across the answer lengths of each path.
     fixture_one, client_one = _world(tmp_path / "one", pick_seed="1" * 32)
     fixture_two, client_two = _world(tmp_path / "two", pick_seed="2" * 32)
     target_one = store.read_day_record(fixture_one["store"], DAY).target_id
     target_two = store.read_day_record(fixture_two["store"], DAY).target_id
     assert target_one != target_two
-    assert client_one.get("/").content == client_two.get("/").content
-    assert client_one.get("/ui/trial.js").content \
-        == client_two.get("/ui/trial.js").content
     day_one = client_one.get("/api/day").json()
     day_two = client_two.get("/api/day").json()
     assert set(day_one) == set(day_two)
@@ -189,14 +188,19 @@ def test_the_day_view_carries_the_trial_code_front_and_center(
     day_view = client.get("/api/day").json()
     assert re.match(r"^[A-Z0-9]{6}$", day_view["trial_code"])
     assert day_view["trial_code"] == record.trial_code
-    assert 'id="trial-code"' in client.get("/").text
+    # The app's TargetCode component displays the code at this
+    # time, and the end-to-end walk counts its six cells.
 
 
 def test_dev_surfaces_are_constant_404_without_the_flag(tmp_path) -> None:
     fixture, client = _world(tmp_path)
     record = store.read_day_record(fixture["store"], DAY)
-    for path in ("/api/dev", "/dev", "/ui/dev.js", "/api/dev/rankings",
-                 "/api/dev/submission", "/api/dev/days", "/history"):
+    # /dev, /ui/dev.js and /history left with the hand-written
+    # pages (2026-08-16). What remains is the data surfaces, and
+    # their refusal is byte-equal to the one a server with no --dev
+    # flag gives - a 401 there announces the flag.
+    for path in ("/api/dev", "/api/dev/rankings",
+                 "/api/dev/submission", "/api/dev/days"):
         for _ in range(2):
             answer = client.get(path)
             assert answer.status_code == 404, path
@@ -282,23 +286,13 @@ def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
 
 
 def test_the_console_page_drives_days_back_to_back(tmp_path) -> None:
-    # The fourth 14b ruling: /dev is the operator console - no sketch
-    # input - and open rolls to the next free date, thus test days
-    # run back to back.
+    # The fourth 14b ruling: open rolls to the next free date, thus
+    # test days run back to back. The console itself is the app of
+    # spec W1 and its own tests cover the page. This walks the
+    # endpoints that page drives.
     fixture = build_service_fixture(tmp_path)
     dev_client = TestClient(create_app(fixture["service_config"],
                                        dev_mode=True))
-
-    page = dev_client.get("/dev")
-    assert page.status_code == 200
-    assert "DEV CONSOLE" in page.text
-    assert "<canvas" not in page.text
-    assert 'id="day-controls"' in page.text
-    assert 'id="target-toggle"' in page.text
-    # The player page carries no console chrome.
-    main_page = dev_client.get("/").text
-    assert 'id="day-controls"' not in main_page
-    assert "DEV CONSOLE" not in main_page
 
     assert dev_client.get("/api/dev").json() == {"day": None,
                                                  "status": "none"}

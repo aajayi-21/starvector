@@ -4,5 +4,5 @@
   "scoring_config": "configs/scoring/dev-wit-mixed-3.json",
   "data_root": "data",
   "store_root": "store",
-  "port": 8321
+  "port": 8000
 }

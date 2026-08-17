@@ -76,9 +76,11 @@ export function makeRealApi(): Api {
     getHistory(): Promise<HistoryView> {
       return request<HistoryView>("/api/history");
     },
-    getLeaderboard(day: string): Promise<LeaderboardView> {
+    getLeaderboard(day?: string): Promise<LeaderboardView> {
       return request<LeaderboardView>(
-        `/api/leaderboard?day=${encodeURIComponent(day)}`,
+        day === undefined
+          ? "/api/leaderboard"
+          : `/api/leaderboard?day=${encodeURIComponent(day)}`,
       );
     },
     getSkillLeaderboard(): Promise<SkillBoardView> {

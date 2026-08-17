@@ -159,29 +159,66 @@ describe("the mock skill board", () => {
     );
     for (const row of board.rows) {
       expect(row.theta).toBeGreaterThan(0);
-      expect(row.rank_low).toBeLessThanOrEqual(row.expected_rank);
-      expect(row.rank_high).toBeGreaterThanOrEqual(row.expected_rank);
+      // The two evidence fields must agree: a screen renders one
+      // from the other (ruling 15 of 2026-08-16).
+      expect(Math.exp(-row.log_e_value)).toBeCloseTo(
+        row.anytime_significance,
+        3,
+      );
     }
+  });
+
+  it("ranks the eligible and leaves the rest without a rank", () => {
+    // Ruling 17 of 2026-08-16. The ranking fields are null below
+    // the floor because ranking those players would move everybody
+    // else's rank - not because the number is unknown.
+    return makeMockApi({ today: TODAY })
+      .getSkillLeaderboard()
+      .then((board) => {
+        const ranked = board.rows.filter((row) => row.eligible);
+        const rest = board.rows.filter((row) => !row.eligible);
+        expect(ranked.length).toBe(board.eligible_count);
+        expect(rest.length).toBeGreaterThan(0);
+        // The eligible run leads, ordered by the expected rank.
+        expect(board.rows.slice(0, ranked.length)).toEqual(ranked);
+        for (const row of ranked) {
+          expect(row.n).toBeGreaterThanOrEqual(board.eligibility_floor);
+          expect(row.shrunk).not.toBeNull();
+          expect(row.rank_low).toBeLessThanOrEqual(row.expected_rank ?? 0);
+          expect(row.rank_high).toBeGreaterThanOrEqual(row.expected_rank ?? 0);
+        }
+        for (const row of rest) {
+          expect(row.n).toBeLessThan(board.eligibility_floor);
+          expect(row.shrunk).toBeNull();
+          expect(row.expected_rank).toBeNull();
+          expect(row.rank_low).toBeNull();
+          expect(row.rank_high).toBeNull();
+          // The chart still plots them, thus these two travel.
+          expect(row.y).toBeTypeOf("number");
+          expect(row.v).toBeGreaterThan(0);
+        }
+      });
   });
 
   it("pulls a low-trial player toward the middle", async () => {
     // The property the posterior expected rank buys: a lucky short
     // run cannot take the top, and no threshold does the work.
     const board = await makeMockApi({ today: TODAY }).getSkillLeaderboard();
-    const middle = (board.rows.length + 1) / 2;
-    const bySkill = [...board.rows].sort((a, b) => b.shrunk - a.shrunk);
-    const byTrials = [...board.rows].sort((a, b) => a.n - b.n);
+    const ranked = board.rows.filter((row) => row.eligible);
+    const middle = (ranked.length + 1) / 2;
+    const bySkill = [...ranked].sort((a, b) => b.y - a.y);
+    const byTrials = [...ranked].sort((a, b) => a.n - b.n);
     const lowest = byTrials[0];
     const highest = byTrials[byTrials.length - 1];
     if (lowest === undefined || highest === undefined) {
-      throw new Error("the board must hold players");
+      throw new Error("the board must hold eligible players");
     }
     const rawPosition = bySkill.indexOf(lowest) + 1;
-    expect(Math.abs(lowest.expected_rank - middle)).toBeLessThan(
+    expect(Math.abs((lowest.expected_rank ?? 0) - middle)).toBeLessThan(
       Math.abs(rawPosition - middle),
     );
-    expect(lowest.rank_high - lowest.rank_low).toBeGreaterThan(
-      highest.rank_high - highest.rank_low,
+    expect((lowest.rank_high ?? 0) - (lowest.rank_low ?? 0)).toBeGreaterThan(
+      (highest.rank_high ?? 0) - (highest.rank_low ?? 0),
     );
   });
 

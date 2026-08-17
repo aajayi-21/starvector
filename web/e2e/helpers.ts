@@ -1,5 +1,42 @@
 import type { Page } from "@playwright/test";
 
+/** Kept equal to serve_fixture.py by hand. */
+export const SERVER = "http://127.0.0.1:8199";
+export const OPERATOR_TOKEN = "e2e-operator-token";
+export const OPERATOR_HEADERS = {
+  Authorization: `Bearer ${OPERATOR_TOKEN}`,
+};
+export const TOKENS = {
+  ade: `ade.${"1".repeat(43)}`,
+  bru: `bru.${"2".repeat(43)}`,
+};
+
+/**
+ * Plant the session cookie, in the manner the invite gate does.
+ *
+ * The fixture mints players, so every player surface refuses
+ * without one. Cookies ignore ports, thus a single 127.0.0.1 entry
+ * covers the app on 4173 and the server on 8199 — which is why
+ * `page.request` calls at the server keep working.
+ *
+ * This is the ambient path. One spec walks GET /join/{token} for
+ * real, which is the only place the server's own Set-Cookie is
+ * exercised in a browser.
+ */
+export async function signIn(
+  page: Page,
+  token: string = TOKENS.ade,
+): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: "sv_session",
+      value: token,
+      domain: "127.0.0.1",
+      path: "/",
+    },
+  ]);
+}
+
 /** The offline posture: anything off-loopback is aborted. */
 export async function blockExternalHosts(page: Page): Promise<void> {
   await page.route("**/*", (route) => {

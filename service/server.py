@@ -2,12 +2,19 @@
 
 FastAPI endpoints in front of the store, with the R3 rules held
 structurally: pre-reveal refusals are module constants returned
-before target-dependent work, the intake page is one constant byte
-string, and the acknowledgment is a validation echo with no score in
-it. The server binds to localhost, one configured player (D6).
+before target-dependent work, and the acknowledgment is a
+validation echo with no score in it.
+
+This process serves the API and no page. The player app and the
+operator console are the built web app of spec W1, which the edge
+serves from web/dist and which reaches this process at /api,
+/image, and the invite path. The hand-written pages that stood in before
+that app existed retired on 2026-08-16, thus GET / answers 404
+here and the app owns each path a person types.
 """
 
 import argparse
+import json
 import math
 import os
 import secrets
@@ -17,8 +24,9 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 
+from core import aggregate
 from core.aggregate import shrunk_log_theta, skill_summary
 from core.intake import IntakeError, validate_submission
 from core.types import ROUTING_TABLE, IntakeGates, Submission, Weights
@@ -46,21 +54,55 @@ _DEV_OFF = b'{"detail":"not found"}'
 _NO_PRACTICE = b'{"detail":"no revealed day"}'
 _NOT_PRACTICE = b'{"detail":"not a practice day"}'
 
-# The gated skill board (spec M1 section 8). It carries the two
-# floors and the count, thus the screen holds no number the wire
-# does not give it. The two are different quantities: one
-# counts a player's trials and one counts eligible players.
-_SKILL_INACTIVE = (
-    b'{"active":false,"eligible_count":0,"eligibility_floor":30,'
-    b'"fit_floor":30,"provisional":true,"rows":[],"population":null,'
-    b'"baseline_band":[],"discovery":null}')
+# The gated skill board (spec M1 section 8). Two properties, each
+# load-bearing. It carries each field the view declares, thus a
+# screen that trusts the type reads no missing value while the
+# board is gated. And it carries the two floors, thus it holds no
+# number the wire does not give it - they are different
+# quantities, one counting a player's trials and one counting
+# eligible players. The floors come from the module that owns
+# them, thus one edit moves the board and the gate together.
+_SKILL_INACTIVE = json.dumps({
+    "active": False,
+    "player_count": 0,
+    "eligible_count": 0,
+    "degenerate_count": 0,
+    "eligibility_floor": aggregate.ELIGIBLE_TRIAL_FLOOR,
+    "recomputed_floor": None,
+    "fit_floor": aggregate.FIT_PLAYER_FLOOR,
+    "provisional": True,
+    "rows": [],
+    "baseline_band": [],
+    "population": None,
+    "variation": None,
+    "discovery": None,
+}, separators=(",", ":")).encode()
+
+# The skill-board fields the artifact keeps and the player wire
+# drops (spec M1 section 8).
+#
+# The configuration identity: the two hashes, and the rank seed,
+# which is a digest of one of them. The operator keeps the ability
+# to reproduce the board. A player wants none of it, and a body
+# that carries it makes the R4 two-world compare read a difference
+# that has nothing to do with the target.
+#
+# The two standing monitors: the baseline check and the stopping
+# monitor. Ruling 5 of 2026-08-15 publishes the discovery claim
+# and holds these two for the operator, because they hold no
+# player-facing copy, and a reader gives a number that arrives
+# with no sentence one of their own. Section 6 asks for the
+# goodness-of-fit check in its four numbers, thus the player panel
+# shows three of the four and the operator reads the fourth in the
+# artifact - a divergence this comment records rather than
+# resolves.
+_OPERATOR_ONLY = ("scoring_config_hash", "preparation_version_id",
+                  "rank_seed", "baseline", "stopping_monitor")
 
 # The digest the caller path compares against with no record
 # stored, thus an unknown name costs the same work as an incorrect
 # secret (the architecture's section 22 hygiene rule).
 _ABSENT_HASH = "0" * 64
-
-_UI_ROOT = Path(__file__).parent / "ui"
 
 
 def _skill_value(ps: list[float]) -> dict | None:
@@ -68,8 +110,7 @@ def _skill_value(ps: list[float]) -> dict | None:
 
     None is a defined wire value for two conditions: no revealed
     trial with a stored row, and each stored p equal to 1.0 - the
-    aggregation refuses an S statistic of zero there. The numbers
-    are the /history page's, computed with the same functions.
+    aggregation refuses an S statistic of zero there.
     """
     if not ps or all(p == 1.0 for p in ps):
         return None
@@ -115,7 +156,6 @@ def _streak(root: Path, player: str, newest: str | None) -> int:
         count += 1
         cursor -= timedelta(days=1)
     return count
-
 
 
 def _activates_weighted_channel(submission: Submission,
@@ -204,10 +244,6 @@ def create_app(service_config: ServiceConfig,
         Path(scoring_config.input.preparation_record))
     canvas_px = load_preparation_config(
         Path(record.config_path)).linedraw.canvas_px
-    page_bytes = (_UI_ROOT / "index.html").read_bytes()
-    script_bytes = (_UI_ROOT / "trial.js").read_bytes()
-    dev_page_bytes = (_UI_ROOT / "dev.html").read_bytes()
-    dev_script_bytes = (_UI_ROOT / "dev.js").read_bytes()
     root = Path(service_config.store_root)
     data_root = Path(service_config.data_root)
     player = service_config.player
@@ -323,21 +359,6 @@ def create_app(service_config: ServiceConfig,
                     scoring_config, service_config.scoring_config,
                     data_root)
             return resident_state["wired"]
-
-    @app.get("/dev")
-    def dev_page(request: Request) -> Response:
-        if not (dev_mode and _operator_ok(request)):
-            return Response(content=_DEV_OFF, status_code=404,
-                            media_type="application/json")
-        return HTMLResponse(content=dev_page_bytes)
-
-    @app.get("/ui/dev.js")
-    def dev_script(request: Request) -> Response:
-        if not (dev_mode and _operator_ok(request)):
-            return Response(content=_DEV_OFF, status_code=404,
-                            media_type="application/json")
-        return Response(content=dev_script_bytes,
-                        media_type="text/javascript")
 
     def _picked_day(day: str | None) -> str | Response:
         """The requested day, or the latest one - the day browser
@@ -522,15 +543,6 @@ def create_app(service_config: ServiceConfig,
             return JSONResponse({"cause": "practice-score-failed",
                                  "detail": str(error)}, status_code=400)
         return JSONResponse({"day": day, **value})
-
-    @app.get("/")
-    def index() -> Response:
-        return HTMLResponse(content=page_bytes)
-
-    @app.get("/ui/trial.js")
-    def script() -> Response:
-        return Response(content=script_bytes,
-                        media_type="text/javascript")
 
     @app.get("/api/day")
     def day_view(request: Request) -> Response:
@@ -802,6 +814,15 @@ def create_app(service_config: ServiceConfig,
         # The prepared board serves it. With no board the reader
         # falls back to the stored rows, thus a day revealed before
         # the rollup was written continues to answer.
+        #
+        # No day names the newest revealed one. The leaderboard
+        # screen wants that day and nothing else answers it: the
+        # reveal reads the latest day, which is the open one for
+        # most of each day, and the history reads the days that one
+        # caller played. This says nothing new, because a caller
+        # who names that day reads the same board today.
+        if day is None:
+            day = _newest_revealed(root)
         if day is None or day not in store.list_days(root):
             return Response(content=_NOT_REVEALED, status_code=404,
                             media_type="application/json")
@@ -811,6 +832,10 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         prepared = store.read_json_or_none(rollup.leaderboard_path(
             data_root, day, record.scoring_config_hash))
+        if prepared is not None and not rollup.board_is_current(prepared):
+            # A board from before the target rank travelled. The
+            # trial rows hold it and they are permanent.
+            prepared = None
         if prepared is None:
             board = []
             for name in store.list_submissions(root, day):
@@ -824,7 +849,7 @@ def create_app(service_config: ServiceConfig,
             "player": entry["player"],
             "display_name": _label_of(entry["player"]),
             "p": entry["p"],
-            "target_rank": entry.get("target_rank", entry["rank"]),
+            "target_rank": entry["target_rank"],
             "decoy_count": entry["decoy_count"],
             "streak": _streak(root, entry["player"], newest),
         } for entry in prepared["rows"]]
@@ -910,17 +935,8 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         rows = [{**row, "display_name": _label_of(row["player"])}
                 for row in prepared["rows"]]
-        # The configuration identity stays off the player wire: the
-        # two hashes, and the rank seed, which is a digest of one of
-        # them. The artifact keeps each of the three, thus the
-        # operator keeps the ability to reproduce it. A player wants
-        # none of it, and a body that carries it makes the R4
-        # two-world compare read a difference that has nothing to
-        # do with the target.
         served = {name: value for name, value in prepared.items()
-                  if name not in ("scoring_config_hash",
-                                  "preparation_version_id",
-                                  "rank_seed")}
+                  if name not in _OPERATOR_ONLY}
         return JSONResponse({**served, "rows": rows})
 
     @app.get("/api/me")
@@ -928,14 +944,16 @@ def create_app(service_config: ServiceConfig,
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
-        # The reminder and public flags have no storage at this
-        # time (spec S2 section 3).
+        # The reminder flag has no storage at this time (spec S2
+        # section 3). The public flag left with ruling 3 of spec
+        # M1: ruling 4 removed the opt-out, thus the field was
+        # correct for each player forever, and a value that cannot
+        # change is a claim that waits for a reader to trust it.
         return JSONResponse({
             "player": caller,
             "display_name": _label_of(caller),
             "streak": _streak(root, caller, _newest_revealed(root)),
             "reminder": False,
-            "public": False,
         })
 
     @app.get("/image/{image_id}")
@@ -954,57 +972,6 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         return Response(content=image_bytes,
                         media_type=_mime_of(image_bytes))
-
-    @app.get("/history")
-    def history(request: Request) -> Response:
-        # The app owns the /history path in production (spec S2
-        # section 3) - the page is a dev surface at this time.
-        if not (dev_mode and _operator_ok(request)):
-            return Response(content=_DEV_OFF, status_code=404,
-                            media_type="application/json")
-        from html import escape
-
-        rows = []
-        ps = []
-        for day in store.list_days(root):
-            record = store.read_day_record(root, day)
-            if record.status != "revealed":
-                continue
-            row = store.read_json_or_none(
-                store.trial_row_path(root, day, player))
-            if row is None:
-                continue
-            ps.append(float(row["p"]))
-            rows.append(
-                f"<tr><td>{escape(day)}</td>"
-                f"<td>{row['p']:.4f}</td>"
-                f"<td>{row['target_rank']} of {row['decoy_count'] + 1}"
-                f"</td></tr>")
-        skill = _skill_value(ps)
-        if skill is not None:
-            variant = "unbiased" if len(ps) >= 2 else "biased at n = 1"
-            aggregate = (
-                f"<p>skill number {skill['theta']:.3f} ({variant}), "
-                f"shrunk {skill['shrunk']:.3f}, "
-                f"evidence {skill['evidence_p']:.3f}, "
-                f"across <strong>{skill['n']}</strong> trial(s)</p>")
-        elif ps:
-            # Each score at 1.0: the aggregation refuses, and the
-            # page says so rather than raising (spec S2 section 3).
-            aggregate = ("<p>skill number undefined - each trial "
-                         "score is 1.0</p>")
-        else:
-            aggregate = "<p>no revealed trial yet</p>"
-        body = (
-            "<!doctype html><meta charset='utf-8'>"
-            "<title>trial history</title>"
-            "<p><strong>DEV-ONLY</strong> - development pool numbers, "
-            "not for publication</p>"
-            f"{aggregate}"
-            "<table><tr><th>day</th><th>trial score</th><th>rank</th></tr>"
-            + "".join(rows) + "</table>"
-            "<p><a href='/'>today</a></p>")
-        return HTMLResponse(content=body)
 
     return app
 

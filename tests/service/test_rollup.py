@@ -191,12 +191,42 @@ def test_players_with_an_equal_score_share_a_rank() -> None:
         preparation_version_id="p" * 64, status="revealed",
         opened_at=FIXED_CLOCK, closed_at=FIXED_CLOCK,
         revealed_at=FIXED_CLOCK)
-    rows = [("cyd", {"p": 0.5, "decoy_count": 9}),
-            ("ade", {"p": 0.9, "decoy_count": 9}),
-            ("bru", {"p": 0.9, "decoy_count": 9})]
+    rows = [("cyd", {"p": 0.5, "decoy_count": 9, "target_rank": 5}),
+            ("ade", {"p": 0.9, "decoy_count": 9, "target_rank": 1}),
+            ("bru", {"p": 0.9, "decoy_count": 9, "target_rank": 1})]
     board = rollup.daily_board_value(record, rows)
     assert [(row["player"], row["rank"]) for row in board["rows"]] \
         == [("ade", 1), ("bru", 1), ("cyd", 3)]
+
+
+def test_the_board_keeps_the_two_ranks_apart() -> None:
+    """The board position and the target rank count different things.
+
+    A board that carries the position alone makes the reader
+    answer the decoy rank with it, which is what the reveal card
+    prints with the decoy count.
+    """
+    record = store.DayRecord(
+        day=DAYS[0], trial_code="R7K2QX", target_id="t" * 64,
+        pick_seed="s" * 32, secret="x" * 64, commitment="c" * 64,
+        scoring_config_path="x.json", scoring_config_hash="h" * 64,
+        preparation_version_id="p" * 64, status="revealed",
+        opened_at=FIXED_CLOCK, closed_at=FIXED_CLOCK,
+        revealed_at=FIXED_CLOCK)
+    rows = [("ade", {"p": 0.9, "decoy_count": 119, "target_rank": 12}),
+            ("bru", {"p": 0.4, "decoy_count": 119, "target_rank": 72})]
+    board = rollup.daily_board_value(record, rows)
+    assert [(row["rank"], row["target_rank"]) for row in board["rows"]] \
+        == [(1, 12), (2, 72)]
+    assert rollup.board_is_current(board)
+
+
+def test_a_board_from_before_the_target_rank_is_not_current() -> None:
+    """The reader finds a stale board and assembles the rows again."""
+    stale = {"rows": [{"player": "ade", "p": 0.9, "decoy_count": 119,
+                       "rank": 1}]}
+    assert not rollup.board_is_current(stale)
+    assert rollup.board_is_current({"rows": []})
 
 
 def test_the_skill_board_gates_itself_on_a_new_deployment(
@@ -217,16 +247,17 @@ def test_the_skill_board_gates_itself_on_a_new_deployment(
 
 
 def _synthetic_pairs(count: int, trials: int, scoring_hash: str,
-                     preparation_version_id: str) -> list[dict]:
+                     preparation_version_id: str, *, spread: int = 40,
+                     first: int = 0) -> list[dict]:
     """Pairs with no store behind them, for the board arithmetic."""
     import numpy as np
 
     rng = np.random.default_rng(5)
     pairs = []
     for index in range(count):
-        n = trials + int(rng.integers(0, 40))
+        n = trials + int(rng.integers(0, spread))
         pairs.append({
-            "player": f"player-{index:03d}",
+            "player": f"player-{first + index:03d}",
             "scoring_config_hash": scoring_hash,
             "preparation_version_id": preparation_version_id,
             "n": n, "clamp_count": 0,
@@ -267,6 +298,74 @@ def test_a_full_population_reports_each_number() -> None:
     assert ranks == sorted(ranks)
     for row in board["rows"]:
         assert row["rank_low"] <= row["expected_rank"] <= row["rank_high"]
+
+
+def test_each_player_holds_a_row_and_the_eligible_hold_a_rank() -> None:
+    """Ruling 17 of 2026-08-16.
+
+    A player below the trial floor keeps their skill number and
+    their evidence value, which read their own pair alone. They
+    hold no rank: the fit and the rank simulation read the eligible
+    set, thus to give one of them a rank moves the rank of each
+    other player. The fields are None and not a number a reader has
+    to know to discard.
+    """
+    pairs = (_synthetic_pairs(40, 40, "h" * 64, "p" * 64)
+             + _synthetic_pairs(12, 5, "h" * 64, "p" * 64,
+                                spread=10, first=100))
+    board = rollup.skill_board_value(
+        pairs, scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        day=DAYS[0], seed=7, created_at=FIXED_CLOCK)
+    assert board["player_count"] == 52
+    assert board["eligible_count"] == 40
+    assert len(board["rows"]) == 52
+    ranked = [row for row in board["rows"] if row["eligible"]]
+    rest = [row for row in board["rows"] if not row["eligible"]]
+    assert len(ranked) == 40 and len(rest) == 12
+    # The eligible run leads, ordered by the expected rank.
+    assert board["rows"][:40] == ranked
+    assert [row["expected_rank"] for row in ranked] \
+        == sorted(row["expected_rank"] for row in ranked)
+    for row in ranked:
+        assert row["n"] >= board["eligibility_floor"]
+        assert row["rank_low"] <= row["expected_rank"] <= row["rank_high"]
+        assert row["shrunk"] is not None
+    for row in rest:
+        assert row["n"] < board["eligibility_floor"]
+        assert row["expected_rank"] is None
+        assert row["rank_low"] is None and row["rank_high"] is None
+        assert row["shrunk"] is None
+        # The chart plots them, thus these two travel.
+        assert row["theta"] > 0
+        assert row["v"] > 0
+    # The ineligible run reads by trial count down.
+    assert [row["n"] for row in rest] \
+        == sorted((row["n"] for row in rest), reverse=True)
+    # One population definition: the claim tests the eligible set.
+    assert board["discovery"]["tested"] == 40
+    assert board["variation"]["dof"] == 39
+    # The band reaches each plotted player. A ladder that stops at
+    # the floor leaves the low-trial dots with nothing behind them,
+    # and those dots are what the chart exists for.
+    band = board["baseline_band"]
+    counts = [row["n"] for row in board["rows"]]
+    assert min(point["n"] for point in band) <= min(counts)
+    assert max(point["n"] for point in band) >= max(counts)
+    # It gets narrower as the trial count rises.
+    widths = [point["high"] - point["low"] for point in band]
+    assert widths == sorted(widths, reverse=True)
+
+
+def test_the_board_rows_hold_one_field_set() -> None:
+    """A nullable field is a field. A screen reads one shape."""
+    pairs = (_synthetic_pairs(2, 40, "h" * 64, "p" * 64)
+             + _synthetic_pairs(2, 5, "h" * 64, "p" * 64,
+                                spread=10, first=100))
+    board = rollup.skill_board_value(
+        pairs, scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        day=DAYS[0], seed=7, created_at=FIXED_CLOCK)
+    shapes = {tuple(sorted(row)) for row in board["rows"]}
+    assert len(shapes) == 1
 
 
 def test_the_recomputed_floor_stays_a_report(tmp_path) -> None:
@@ -312,6 +411,66 @@ def test_the_fold_is_repeatable_for_one_day() -> None:
     assert later["n"] == 2
     assert later["s_statistic"] == pytest.approx(3.5)
     assert later["days"] == [DAYS[0], DAYS[1]]
+
+
+def test_a_perfect_day_folds_and_does_not_stop_the_reveal(tmp_path) -> None:
+    """The 2026-08-16 ruling, which no path could run before.
+
+    term_of read skill_summary, which refuses a sequence where each
+    trial score is 1.0. That refusal is right for a full history
+    and incorrect for one trial, thus a player who beat each decoy
+    on one day answered the reveal with a 400 and the day could not
+    be revealed at all. The degenerate pair the ruling describes
+    did not get written at all, because the fold raised before it
+    marked one.
+    """
+    term, clamped = rollup.term_of(1.0)
+    assert term == 0.0
+    assert clamped is False
+
+    fixture = _played_world(tmp_path, players=("ade",), days=DAYS[:1])
+    config = fixture["service_config"]
+    root = Path(config.store_root)
+    scoring_hash = store.read_day_record(root, DAYS[0]).scoring_config_hash
+    # A perfect trial, put in the stored row the rollup reads.
+    row_path = store.trial_row_path(root, DAYS[0], "ade")
+    row = json.loads(row_path.read_text())
+    row["p"] = 1.0
+    row_path.write_text(json.dumps(row))
+
+    counts = rollup.assemble(config, scoring_hash=scoring_hash)
+    assert counts["players"] == 1
+    pair = json.loads(rollup.skill_pair_path(
+        Path(config.data_root), "ade", scoring_hash).read_text())
+    assert pair["s_statistic"] == 0.0
+    assert pair["degenerate"] is True
+    board = json.loads(rollup.skill_board_path(
+        Path(config.data_root), scoring_hash).read_text())
+    assert board["degenerate_count"] == 1
+    assert board["player_count"] == 0
+    # The day's board keeps their position: it reads the trial
+    # score and takes no logarithm.
+    daily = json.loads(rollup.leaderboard_path(
+        Path(config.data_root), DAYS[0], scoring_hash).read_text())
+    assert [row["player"] for row in daily["rows"]] == ["ade"]
+
+
+def test_a_perfect_day_does_not_end_a_players_skill_number() -> None:
+    """One perfect day in a run of others leaves a skill number."""
+    perfect, _clamped = rollup.term_of(1.0)
+    ordinary, _also = rollup.term_of(0.5)
+    first = rollup.fold_day(
+        None, player="ade", day=DAYS[0], term=perfect, clamped=False,
+        scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        updated_at=FIXED_CLOCK)
+    assert first["degenerate"] is True
+    second = rollup.fold_day(
+        first, player="ade", day=DAYS[1], term=ordinary, clamped=False,
+        scoring_hash="h" * 64, preparation_version_id="p" * 64,
+        updated_at=FIXED_CLOCK)
+    assert second["n"] == 2
+    assert second["degenerate"] is False
+    assert second["s_statistic"] == pytest.approx(ordinary)
 
 
 def test_the_board_seed_is_a_function_of_recorded_inputs() -> None:

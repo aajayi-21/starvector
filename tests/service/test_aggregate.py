@@ -15,7 +15,7 @@ from core.aggregate import (DISCOVERY_LEVEL, ELIGIBLE_TRIAL_FLOOR,
                             SkillSummary, _generalized_q,
                             _reml_score, baseline_check,
                             chi_squared_tail, digamma, fdr_adjusted,
-                            fit_population, kolmogorov_tail,
+                            fit_population, kolmogorov_tail, log_term,
                             population_point, shrunk_log_theta,
                             anytime_evidence,
                             discovery_report,
@@ -106,6 +106,31 @@ def test_a_zero_trial_score_is_clamped_and_counted() -> None:
     assert summary.clamp_count == 1
     assert math.isfinite(summary.s_statistic)
     assert summary.theta > 0.0
+
+
+def test_one_perfect_trial_holds_a_term_and_a_whole_run_does_not() -> None:
+    """The two questions are different and log_term answers one.
+
+    A trial score of 1.0 gives a term of 0.0, which is a number.
+    A player with 1.0 at each trial score has S of zero and no
+    skill number, thus skill_summary refuses that sequence. A
+    reader that answers the narrow question with the wide one stops
+    a reveal for a player who beat each decoy on one day.
+    """
+    assert log_term(1.0) == (0.0, False)
+    assert log_term(0.5) == (-math.log(0.5), False)
+    clamped, ran = log_term(0.0)
+    assert ran is True
+    assert math.isfinite(clamped)
+    assert clamped > 700.0
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        log_term(1.5)
+    # The wide question keeps its refusal.
+    with pytest.raises(ValueError, match="each trial score is 1.0"):
+        skill_summary([1.0, 1.0], unbiased=False)
+    # One perfect day in a run of others is not a refusal.
+    assert skill_summary([1.0, 0.5], unbiased=False).s_statistic \
+        == pytest.approx(-math.log(0.5))
 
 
 def test_the_unbiased_variant_and_its_minimum_count() -> None:

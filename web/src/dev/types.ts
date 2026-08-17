@@ -56,3 +56,20 @@ export interface DevRankings {
 export interface LifecycleAck {
   [key: string]: unknown;
 }
+
+/**
+ * One minted invite (spec M1 §8).
+ *
+ * `join_path` is a path and not a full address: the server does
+ * not know its public origin and must not trust the Host header
+ * for one. The caller puts the origin in front.
+ *
+ * The token is in this answer and nowhere else — the store keeps
+ * its digest alone, so no later read can recover it.
+ */
+export interface MintedInvite {
+  player: string;
+  display_name: string;
+  token: string;
+  join_path: string;
+}

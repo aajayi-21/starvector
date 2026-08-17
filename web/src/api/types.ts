@@ -166,21 +166,34 @@ export interface MeView {
 /** A closed interval [low, high] in the units of its field. */
 export type Interval = [number, number];
 
-/** One row of the skill board. */
+/**
+ * One row of the skill board.
+ *
+ * Ruling 17 of 2026-08-16: every player holds a row and the
+ * eligible ones hold a rank. A player below the trial floor keeps
+ * `theta`, `y`, `v` and the evidence values, which read their own
+ * pair alone, and their ranking fields are null — the fit and the
+ * rank simulation read the eligible set, so ranking one of them
+ * would move everybody else's rank. The chart plots every row and
+ * the ranked table reads the eligible ones.
+ */
 export interface SkillBoardRow {
   player: string;
   display_name: string;
   n: number;
+  /** The server owns the floor compare, so the screen never redoes it. */
+  eligible: boolean;
   /** The skill number. Rises with skill (spec M1 §10). */
   theta: number;
-  /** The shrunk estimate, on the log theta scale. */
-  shrunk: number;
+  /** The shrunk estimate, on the log theta scale. Null below the floor. */
+  shrunk: number | null;
+  /** The accurate estimate of log theta. What the chart plots. */
   y: number;
   v: number;
   /** Fractional - a posterior expectation, not a position. */
-  expected_rank: number;
-  rank_low: number;
-  rank_high: number;
+  expected_rank: number | null;
+  rank_low: number | null;
+  rank_high: number | null;
   evidence_p: number;
   log_e_value: number;
   /**

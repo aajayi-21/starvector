@@ -13,21 +13,7 @@ import { useApi } from "../api/client";
 import type { RevealView, TrialValue, WireRecord } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
 import { ReplayCanvas } from "../sketch/canvas";
-
-function Kicker(props: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: "var(--color-neutral-500)",
-      }}
-    >
-      {props.children}
-    </div>
-  );
-}
+import { Kicker } from "../ui/kicker";
 
 function readSentCopy(day: string): WireRecord | null {
   try {
@@ -251,8 +237,12 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
                     }
                   >
                     <td>{index + 1}</td>
+                    {/* Key and compare on the store key, which is
+                        unique; render the label, which is not. */}
                     <td>
-                      {row.player === me.data?.player ? "you" : row.player}
+                      {row.player === me.data?.player
+                        ? "you"
+                        : row.display_name}
                     </td>
                     <td>{row.p.toFixed(4)}</td>
                     <td>
