@@ -220,6 +220,7 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
     rows.push({
       player: `${first}-${second}-${index}`,
       display_name: `${first} ${second}`,
+      avatar_hash: null,
       n,
       eligible: n >= MOCK_ELIGIBILITY_FLOOR,
       theta: round4(Math.exp(logTheta)),
@@ -236,6 +237,7 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
   rows.unshift({
     player,
     display_name: player,
+    avatar_hash: null,
     n: 61,
     eligible: true,
     theta: round4(Math.exp(MOCK_MU + 0.31)),
@@ -402,6 +404,13 @@ export function makeMockApi(options: MockOptions = {}): Api {
   // Full-mock in-memory day state (offline UI work only).
   let submittedToday = false;
 
+  // Full-mock account state (spec A1): the description and the
+  // avatar digest, kept in memory for the session. The digest
+  // derives from the byte count alone, so the adapter stays
+  // deterministic with no hashing dependency.
+  let description = "";
+  let avatarHash: string | null = null;
+
   return {
     // ── §6 surfaces: reachable only in full-mock mode ──────────
     getDay(): Promise<DayView> {
@@ -544,6 +553,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         {
           player,
           display_name: player,
+          avatar_hash: avatarHash,
           p: own.p,
           target_rank: own.target_rank,
           decoy_count: own.decoy_count,
@@ -555,6 +565,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         rows.push({
           player: name,
           display_name: name,
+          avatar_hash: null,
           p: trial.p,
           target_rank: trial.target_rank,
           decoy_count: trial.decoy_count,
@@ -611,6 +622,47 @@ export function makeMockApi(options: MockOptions = {}): Api {
         display_name: player,
         streak: streak(),
         reminder: false,
+        description,
+        avatar_hash: avatarHash,
+      });
+    },
+    putAccount(text: string): Promise<{ description: string }> {
+      description = text;
+      return Promise.resolve({ description });
+    },
+    putAvatar(image: Blob): Promise<{ avatar_hash: string | null }> {
+      avatarHash = seededHex(`avatar:${image.size}`, 64);
+      return Promise.resolve({ avatar_hash: avatarHash });
+    },
+    deleteAvatar(): Promise<{ avatar_hash: string | null }> {
+      avatarHash = null;
+      return Promise.resolve({ avatar_hash: null });
+    },
+    avatarUrl(forPlayer: string, hash: string): string {
+      // A deterministic placeholder in the manner of imageUrl —
+      // the hash label makes a changed picture readable.
+      const label = hash.slice(0, 6);
+      const initial = forPlayer.slice(0, 2).toUpperCase();
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+        `<circle cx="32" cy="32" r="32" fill="#434c5e"/>` +
+        `<text x="32" y="30" font-size="16" fill="#eceff4" ` +
+        `text-anchor="middle" font-family="monospace">${initial}</text>` +
+        `<text x="32" y="48" font-size="9" fill="#97a1b4" ` +
+        `text-anchor="middle" font-family="monospace">${label}</text></svg>`;
+      return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    },
+    getDoor(): Promise<{ open: boolean }> {
+      // The full-mock world is a dev world, thus the door is on.
+      return Promise.resolve({ open: true });
+    },
+    postDoor(
+      name: string,
+      displayName?: string,
+    ): Promise<{ player: string; display_name: string }> {
+      return Promise.resolve({
+        player: name,
+        display_name: displayName ?? name,
       });
     },
   };

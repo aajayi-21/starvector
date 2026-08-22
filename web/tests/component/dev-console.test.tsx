@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DevApi } from "../../src/dev/api";
@@ -102,6 +108,29 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
       rankingsCalls.push(day);
       return Promise.resolve(rankingsFixture(40));
     },
+    getPlayers: () =>
+      Promise.resolve({
+        players: [
+          {
+            player: "ade",
+            display_name: "Ade",
+            status: "active" as const,
+            created_at: "2026-08-12T00:00:00+00:00",
+          },
+        ],
+      }),
+    getHistory: (player) =>
+      Promise.resolve({
+        player,
+        days: days.map((row) => ({
+          day: row.day,
+          status: row.status,
+          trial_code: row.trial_code,
+          target_id: row.target_id,
+          submitted: row.submitted,
+          trial: null,
+        })),
+      }),
     postOpen: () => {
       lifecycle.push("open");
       return Promise.resolve({});
@@ -381,5 +410,51 @@ describe("the console's async discipline", () => {
     render(<DevApp api={api} />);
     expect(await screen.findByText("the server did not answer")).toBeDefined();
     expect(screen.queryByText("nothing sent this day")).toBeNull();
+  });
+
+  // Spec A1 §5: the roster is the second axis — click a player,
+  // read their history, open a stored day.
+  it("opens a player's history from the roster and drills to a day", async () => {
+    const api = makeStubApi([dayRow({ status: "revealed" })]);
+    const view = render(<DevApp api={api} />);
+    const panel = () => {
+      const found = view.container.querySelector("#roster-panel");
+      if (found === null) {
+        throw new Error("no roster panel");
+      }
+      return found as HTMLElement;
+    };
+    expect(await within(panel()).findByText("Players")).toBeDefined();
+    fireEvent.click(
+      await within(panel()).findByRole("button", { name: "ade" }),
+    );
+    expect(await within(panel()).findByText("ade — history")).toBeDefined();
+    fireEvent.click(
+      await within(panel()).findByRole("button", { name: "2026-08-12" }),
+    );
+    expect(await within(panel()).findByText("Stored submission")).toBeDefined();
+    fireEvent.click(
+      await within(panel()).findByText("Score and rank the submission"),
+    );
+    await waitFor(() => expect(api.rankingsCalls).toContain("2026-08-12"));
+  });
+
+  it("reads the roster refusal as no dev flag or a missing token", async () => {
+    const base = makeStubApi([dayRow({ status: "revealed" })]);
+    const api: DevApi = {
+      ...base,
+      getPlayers: () => Promise.reject(new DevApiError(404, "not found")),
+    };
+    const view = render(<DevApp api={api} />);
+    const panel = () => {
+      const found = view.container.querySelector("#roster-panel");
+      if (found === null) {
+        throw new Error("no roster panel");
+      }
+      return found as HTMLElement;
+    };
+    await waitFor(() =>
+      expect(within(panel()).getByText(/start the server with/)).toBeDefined(),
+    );
   });
 });

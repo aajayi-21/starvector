@@ -1,6 +1,6 @@
 /**
  * The code-based route tree (spec W1 §4: no file routing, no
- * codegen): four screens under one shell. createAppRouter takes an
+ * codegen): the screens under one shell. createAppRouter takes an
  * optional history so tests run on memory history.
  */
 
@@ -15,6 +15,7 @@ import {
 
 import { useApi } from "./api/client";
 import { isUnauthorized } from "./api/types";
+import { AccountScreen } from "./screens/account";
 import { HistoryScreen } from "./screens/history";
 import { LeaderboardScreen } from "./screens/leaderboard";
 import { PracticeScreen } from "./screens/practice";
@@ -70,6 +71,12 @@ const leaderboardRoute = createRoute({
   component: LeaderboardScreen,
 });
 
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account",
+  component: AccountScreen,
+});
+
 export interface RevealSearch {
   day?: string;
 }
@@ -88,6 +95,7 @@ const routeTree = rootRoute.addChildren([
   practiceRoute,
   historyRoute,
   leaderboardRoute,
+  accountRoute,
   revealRoute,
 ]);
 

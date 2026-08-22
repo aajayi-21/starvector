@@ -12,6 +12,7 @@ import type { DevApi } from "./api";
 import { DevApiError, makeDevApi } from "./api";
 import { InvitePanel } from "./invite-panel";
 import { RankingsView } from "./rankings";
+import { RosterPanel } from "./roster-panel";
 import { SubmissionView } from "./submission-view";
 import type { DevDayRow, DevRankings, DevStored } from "./types";
 
@@ -305,6 +306,9 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
       </div>
 
       <InvitePanel api={api} />
+
+      {/* The roster (spec A1 §5): the second axis, by player. */}
+      <RosterPanel api={api} />
 
       {selected === null ? null : (
         <div className="card" style={{ gap: 8 }}>

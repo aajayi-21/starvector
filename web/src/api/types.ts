@@ -138,6 +138,8 @@ export interface LeaderboardRow {
   player: string;
   /** The board label. NOT unique - two players may share one. */
   display_name: string;
+  /** Joined at read time (spec A1, D5). Null: no picture. */
+  avatar_hash: string | null;
   p: number;
   target_rank: number;
   decoy_count: number;
@@ -159,6 +161,30 @@ export interface MeView {
   display_name: string;
   streak: number;
   reminder: boolean;
+  /** The account description; empty when nothing is written. */
+  description: string;
+  /** The stored avatar's digest, or null - the cache-busting key. */
+  avatar_hash: string | null;
+}
+
+// ── spec A1: the account writers and the open door ──────────────
+
+export interface AccountAck {
+  description: string;
+}
+
+export interface AvatarAck {
+  avatar_hash: string | null;
+}
+
+/** GET /api/door answers this when the door is on; 404 when off. */
+export interface DoorView {
+  open: boolean;
+}
+
+export interface DoorAck {
+  player: string;
+  display_name: string;
 }
 
 // ── spec M1 §8: players and the skill board ─────────────────────
@@ -180,6 +206,8 @@ export type Interval = [number, number];
 export interface SkillBoardRow {
   player: string;
   display_name: string;
+  /** Joined at read time (spec A1, D5). Null: no picture. */
+  avatar_hash: string | null;
   n: number;
   /** The server owns the floor compare, so the screen never redoes it. */
   eligible: boolean;

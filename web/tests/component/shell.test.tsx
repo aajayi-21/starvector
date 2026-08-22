@@ -44,15 +44,33 @@ describe("the shell", () => {
   });
 
   it("renders the invite gate on a 401", async () => {
-    renderAt("/", refusing(new ApiError(401, undefined, "unauthorized")));
+    // The production posture: the door probe meets the constant
+    // 404, thus the card is the invite copy and nothing else.
+    const api = {
+      ...refusing(new ApiError(401, undefined, "unauthorized")),
+      getDoor: () => Promise.reject(new ApiError(404, undefined, "not found")),
+    };
+    renderAt("/", api);
     expect(await screen.findByText(/not signed in/)).toBeDefined();
     expect(await screen.findByText(/invite link/)).toBeDefined();
     // The gate replaces the app: no nav, no screen behind it.
     expect(screen.queryByText("Starvector")).toBeNull();
     expect(screen.queryByText("Today")).toBeNull();
     // The client handles no credential (spec M1 §9), thus the gate
-    // has nothing to type into.
+    // has nothing to type into when the door is off.
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("grows the door card when the door answers open (spec A1 §4)", async () => {
+    // The mock's door is on — the dev world. The invite copy stays
+    // and the name field joins it.
+    renderAt("/", refusing(new ApiError(401, undefined, "unauthorized")));
+    expect(await screen.findByText(/not signed in/)).toBeDefined();
+    expect(await screen.findByText(/Dev door/)).toBeDefined();
+    expect(await screen.findByLabelText("player name")).toBeDefined();
+    expect(
+      await screen.findByRole("button", { name: /Create or sign in/ }),
+    ).toBeDefined();
   });
 
   it("does not render the invite gate while the server is down", async () => {

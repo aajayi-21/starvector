@@ -1,8 +1,10 @@
 /**
- * The practice screen (mock 1e, spec W1 B7): replay a revealed day
- * with its own sketch document — nothing is shared with the daily
- * draft and nothing is stored. The session counter is ephemeral by
- * design.
+ * The practice screen (mock 1e, spec W1 B7, grown by spec A1 §6):
+ * replay a revealed day with its own sketch document — nothing is
+ * shared with the daily draft and nothing is stored. The session
+ * counter is ephemeral by design. The typed intake matches the
+ * daily screen: impressions and labeled groups, through the same
+ * extracted cards.
  */
 
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -11,8 +13,10 @@ import { useRef, useState } from "react";
 import { useApi } from "../api/client";
 import type { PracticeScore } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
+import { GroupControls } from "../intake/groups-card";
+import { ImpressionsCard } from "../intake/impressions-card";
 import { SketchCanvas } from "../sketch/canvas";
-import type { DocHistory, Point } from "../sketch/core";
+import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
   addStroke,
   canRedo,
@@ -21,6 +25,7 @@ import {
   current,
   EMPTY_DOC,
   historyOf,
+  makeGroup,
   pushDoc,
   redo,
   serialize,
@@ -28,8 +33,6 @@ import {
 } from "../sketch/core";
 import { Kicker } from "../ui/kicker";
 import { PaletteRow } from "../ui/palette-row";
-
-const EMPTY_SELECTION: ReadonlySet<number> = new Set<number>();
 
 export function PracticeScreen(): React.JSX.Element {
   const api = useApi();
@@ -74,18 +77,24 @@ function PracticeWorkspace(props: {
   const [history, setHistory] = useState<DocHistory>(() =>
     historyOf(EMPTY_DOC),
   );
+  const [selection, setSelection] = useState<ReadonlySet<number>>(
+    () => new Set<number>(),
+  );
+  const [mode, setMode] = useState<"draw" | "select">("draw");
   const [colorIndex, setColorIndex] = useState(0);
+  const [impressions, setImpressions] = useState<string[]>([]);
   const [rounds, setRounds] = useState(0);
   const [result, setResult] = useState<PracticeScore | null>(null);
   const nextStrokeId = useRef(1);
 
   const doc = current(history);
+  const commit = (next: SketchDoc) => setHistory((h) => pushDoc(h, next));
 
   // The same in-flight ref lock as the daily send: isPending flips
   // a task late, and two score POSTs would double-count the session.
   const scoringRef = useRef(false);
   const score = useMutation({
-    mutationFn: () => api.scorePractice(day, serialize(doc, [], "")),
+    mutationFn: () => api.scorePractice(day, serialize(doc, impressions, "")),
     onSuccess: (answer) => {
       setResult(answer);
       setRounds((count) => count + 1);
@@ -102,6 +111,34 @@ function PracticeWorkspace(props: {
       pushDoc(h, addStroke(current(h), points, colorIndex, id)),
     );
   };
+
+  const onPickStroke = (strokeId: number | null) => {
+    if (strokeId === null) {
+      return;
+    }
+    setSelection((old) => {
+      const next = new Set(old);
+      if (next.has(strokeId)) {
+        next.delete(strokeId);
+      } else {
+        next.add(strokeId);
+      }
+      return next;
+    });
+  };
+
+  const makeGroupWith = (label: string) => {
+    if (label === "" || selection.size === 0) {
+      return;
+    }
+    commit(makeGroup(doc, [...selection], label));
+    setSelection(new Set());
+    setMode("draw");
+  };
+
+  // The daily screen's rule (the mirror of the server's
+  // no-scoreable-atom refusal): strokes or impressions.
+  const scoreable = doc.strokes.length > 0 || impressions.length > 0;
 
   const pickRandom = () => {
     const index = Math.floor(Math.random() * props.days.length);
@@ -160,87 +197,115 @@ function PracticeWorkspace(props: {
       </div>
 
       <div className="today-columns" style={{ paddingTop: 14 }}>
-        <div
-          style={{
-            background: "var(--color-surface)",
-            borderRadius: "var(--radius-md)",
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div
             style={{
+              background: "var(--color-surface)",
+              borderRadius: "var(--radius-md)",
+              padding: 14,
               display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
+              flexDirection: "column",
+              gap: 12,
             }}
           >
-            <Kicker>Sketch</Kicker>
-            <PaletteRow colorIndex={colorIndex} onPick={setColorIndex} />
-          </div>
-          <SketchCanvas
-            doc={doc}
-            selection={EMPTY_SELECTION}
-            mode="draw"
-            colorIndex={colorIndex}
-            onCommitStroke={onCommitStroke}
-            onPickStroke={() => undefined}
-            disabled={score.isPending}
-          />
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canUndo(history)}
-              onClick={() => setHistory((h) => undo(h))}
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canRedo(history)}
-              onClick={() => setHistory((h) => redo(h))}
-            >
-              Redo
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={doc.strokes.length === 0}
-              onClick={() =>
-                setHistory((h) => pushDoc(h, clearSketch(current(h))))
-              }
-            >
-              Clear
-            </button>
-            <span style={{ flex: 1 }} />
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ minHeight: 40 }}
-              disabled={
-                doc.strokes.length === 0 || score.isPending || day === ""
-              }
-              onClick={() => {
-                if (scoringRef.current) {
-                  return;
-                }
-                scoringRef.current = true;
-                score.mutate();
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
               }}
             >
-              {score.isPending ? "Scoring…" : "Score now"}
-            </button>
-          </div>
-          {score.isError ? (
-            <div style={{ fontSize: 13, color: "#bf616a" }} role="alert">
-              {friendlyMessage(score.error)}
+              <Kicker>Sketch</Kicker>
+              <PaletteRow colorIndex={colorIndex} onPick={setColorIndex} />
             </div>
-          ) : null}
+            <SketchCanvas
+              doc={doc}
+              selection={selection}
+              mode={mode}
+              colorIndex={colorIndex}
+              onCommitStroke={onCommitStroke}
+              onPickStroke={onPickStroke}
+              disabled={score.isPending}
+            />
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={!canUndo(history)}
+                onClick={() => {
+                  setHistory((h) => undo(h));
+                  setSelection(new Set());
+                }}
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={!canRedo(history)}
+                onClick={() => {
+                  setHistory((h) => redo(h));
+                  setSelection(new Set());
+                }}
+              >
+                Redo
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={doc.strokes.length === 0}
+                onClick={() => {
+                  commit(clearSketch(doc));
+                  setSelection(new Set());
+                }}
+              >
+                Clear
+              </button>
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minHeight: 40 }}
+                disabled={!scoreable || score.isPending || day === ""}
+                onClick={() => {
+                  if (scoringRef.current) {
+                    return;
+                  }
+                  scoringRef.current = true;
+                  score.mutate();
+                }}
+              >
+                {score.isPending ? "Scoring…" : "Score now"}
+              </button>
+            </div>
+            {score.isError ? (
+              <div style={{ fontSize: 13, color: "#bf616a" }} role="alert">
+                {friendlyMessage(score.error)}
+              </div>
+            ) : null}
+          </div>
+
+          <ImpressionsCard
+            impressions={impressions}
+            onAdd={(text) => setImpressions((rows) => [...rows, text])}
+            onRemoveAt={(index) =>
+              setImpressions((rows) => rows.filter((_, at) => at !== index))
+            }
+          />
+
+          <div className="card">
+            <GroupControls
+              doc={doc}
+              mode={mode}
+              selectionSize={selection.size}
+              onToggleSelect={() => {
+                setMode((old) => (old === "select" ? "draw" : "select"));
+                setSelection(new Set());
+              }}
+              onMakeGroup={makeGroupWith}
+            />
+          </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

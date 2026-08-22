@@ -10,6 +10,7 @@ function row(over: Partial<SkillBoardRow> & { n: number }): SkillBoardRow {
   return {
     player: `p-${over.n}`,
     display_name: "A Player",
+    avatar_hash: null,
     eligible: over.n >= 30,
     theta: 1,
     shrunk: null,

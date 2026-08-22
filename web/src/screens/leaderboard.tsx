@@ -40,6 +40,7 @@ import type {
 } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
 import { boardSlice, funnelGeometry } from "../board/core";
+import { AvatarCircle } from "../ui/avatar";
 import { Kicker } from "../ui/kicker";
 import { useNarrow } from "../ui/narrow";
 
@@ -166,7 +167,14 @@ function DailyBoard(props: {
                   }
                 >
                   <td>{index + 1}</td>
-                  <td>{row.player === self ? "you" : row.display_name}</td>
+                  <td>
+                    <PlayerCell
+                      player={row.player}
+                      displayName={row.display_name}
+                      avatarHash={row.avatar_hash}
+                      self={self}
+                    />
+                  </td>
                   <td>{row.p.toFixed(4)}</td>
                   <td>
                     {row.target_rank} of {row.decoy_count + 1}
@@ -179,6 +187,31 @@ function DailyBoard(props: {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The board name cell (D5 as ruled 2026-08-21): the avatar beside
+ * the label. The circle falls back to initials, so a board with no
+ * pictures reads as it did before the ruling.
+ */
+function PlayerCell(props: {
+  player: string;
+  displayName: string;
+  avatarHash: string | null;
+  self: string;
+}): React.JSX.Element {
+  const { player, displayName, avatarHash, self } = props;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <AvatarCircle
+        player={player}
+        displayName={displayName}
+        avatarHash={avatarHash}
+        size={20}
+      />
+      {player === self ? "you" : displayName}
+    </span>
   );
 }
 
@@ -522,7 +555,14 @@ function RankedRow(props: {
       <td style={{ fontVariantNumeric: "tabular-nums" }}>
         {row.expected_rank?.toFixed(1) ?? "—"}
       </td>
-      <td>{mine ? "you" : row.display_name}</td>
+      <td>
+        <PlayerCell
+          player={row.player}
+          displayName={row.display_name}
+          avatarHash={row.avatar_hash}
+          self={self}
+        />
+      </td>
       <td style={{ fontVariantNumeric: "tabular-nums" }}>
         {row.shrunk === null ? "—" : Math.exp(row.shrunk).toFixed(3)}
       </td>
