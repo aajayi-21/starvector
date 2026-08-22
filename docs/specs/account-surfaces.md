@@ -1,6 +1,6 @@
 # Spec A1 — the account page, the open door, the console roster, and the practice intake
 
-**Status:** draft, awaiting the owner's ruling.
+**Status:** ruled 2026-08-21 (§10), in build.
 **Phase:** surface growth after spec M1. Four pieces land across
 the server and the two web apps. No scoring code moves and no
 frozen tier moves.
@@ -127,6 +127,9 @@ The system of record is `service/server.py`. Types land in
   move — pool images keep their reveal gate. An `<img>` fetch
   works here because the session cookie rides the app's own
   fetches to the same site — no header wanted.
+- The two board reads get `avatar_hash` on each row (D5 as
+  ruled): joined at read time in the manner of the display name,
+  one account read for each row, null with no picture.
 
 Each new surface sits behind `_caller`, and the two writers write
 for the resolved caller alone — no `player` parameter on the
@@ -306,8 +309,11 @@ practice. The server accepts them today, thus each piece is in
   loudly, and stores the bytes as received — no image library
   joins the dependencies (D2 records the client-side downscale).
 - **The door in production.** Without `--dev` the door's two
-  paths answer the constant 404, byte-equal with an unknown
-  path. A Playwright check and a Python test pin it.
+  paths answer the dev surfaces' constant 404, byte-equal with
+  the body `/api/dev/days` gives in that world. A Python test
+  pins the bytes and the on-world flow rides Playwright.
+  (Amended at build time: the draft said "an unknown path",
+  and the framework's own 404 body is a different constant.)
 
 ## 8. Build items
 
@@ -354,8 +360,8 @@ New pins:
   with an unknown field refuses loudly.
 - The avatar writer refuses bytes above the cap and bytes with
   unknown magic, in that sequence, before a write.
-- The door without `--dev` answers bytes equal to an unknown
-  path's 404.
+- The door without `--dev` answers bytes equal to the dev
+  surfaces' constant 404.
 - The door mint and the console mint write the same record
   shape.
 - The extracted intake cards serialize byte-identically to the
@@ -363,11 +369,12 @@ New pins:
 - Two players hold two account records, and each reads their own
   on `/api/me`.
 
-## 10. Open decisions, with proposed defaults
+## 10. Open decisions, ruled 2026-08-21
 
 In the manner of spec S1 §14: each value below is not given by
-the architecture, thus it wants agreement before it lands in
-code.
+the architecture, thus it waited for agreement before it landed
+in code. **The owner ruled on 2026-08-21:** D1, D2, D3, and D4
+land as proposed. D5 turned around — the boards hold avatars.
 
 - **D1 — the description cap.** Proposed: 500 code points,
   printable plus the newline, no edge whitespace. The
@@ -384,8 +391,11 @@ code.
   phase, for the §6 reasons. Saying yes pulls the relation
   vocabulary into the practice screen's reads.
 - **D5 — avatars on the boards.** Proposed: the boards keep
-  initials this phase. Serving avatars on the leaderboard is one
-  component edit after D2 settles.
+  initials this phase. **The ruling turned it around:** the
+  daily board rows and the skill board rows get `avatar_hash`,
+  and the two board
+  tables render the circle adjacent to the label, with the
+  initials as the fallback when no picture is stored.
 
 ## 11. Out of scope, with reasons
 
