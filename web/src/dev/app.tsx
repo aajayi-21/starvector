@@ -12,6 +12,7 @@ import type { DevApi } from "./api";
 import { DevApiError, makeDevApi } from "./api";
 import { InvitePanel } from "./invite-panel";
 import { RankingsView } from "./rankings";
+import { RosterPanel } from "./roster-panel";
 import { SubmissionView } from "./submission-view";
 import type { DevDayRow, DevRankings, DevStored } from "./types";
 
@@ -51,6 +52,9 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
   const [rankNote, setRankNote] = useState("");
   const [dayNote, setDayNote] = useState("");
   const [controlNote, setControlNote] = useState("");
+  // Bumped when the token field blurs, so the roster reloads with
+  // the day browser and a paste needs no page reload.
+  const [rosterReload, setRosterReload] = useState(0);
   // Each day switch takes the next token; a response whose token is
   // stale belongs to a day the operator left and is dropped.
   const dayToken = useRef(0);
@@ -205,7 +209,10 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
               // Storage refused: the token still works this visit.
             }
           }}
-          onBlur={() => void loadDays()}
+          onBlur={() => {
+            setRosterReload((count) => count + 1);
+            void loadDays();
+          }}
         />
         {days !== null && days.length > 0 ? (
           <select
@@ -305,6 +312,9 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
       </div>
 
       <InvitePanel api={api} />
+
+      {/* The roster (spec A1 §5): the second axis, by player. */}
+      <RosterPanel api={api} reload={rosterReload} />
 
       {selected === null ? null : (
         <div className="card" style={{ gap: 8 }}>

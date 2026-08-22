@@ -7,7 +7,11 @@
 
 import type { Api } from "./client";
 import type {
+  AccountAck,
+  AvatarAck,
   DayView,
+  DoorAck,
+  DoorView,
   HistoryView,
   LeaderboardView,
   MeView,
@@ -96,6 +100,40 @@ export function makeRealApi(): Api {
     },
     getMe(): Promise<MeView> {
       return request<MeView>("/api/me");
+    },
+    putAccount(description: string): Promise<AccountAck> {
+      return request<AccountAck>("/api/account", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description }),
+      });
+    },
+    putAvatar(image: Blob): Promise<AvatarAck> {
+      // Raw bytes, no form encoding — the server reads the magic
+      // bytes and ignores any declared type.
+      return request<AvatarAck>("/api/account/avatar", {
+        method: "PUT",
+        body: image,
+      });
+    },
+    deleteAvatar(): Promise<AvatarAck> {
+      return request<AvatarAck>("/api/account/avatar", {
+        method: "DELETE",
+      });
+    },
+    avatarUrl(player: string, avatarHash: string): string {
+      // The hash is the cache-busting key: a new picture changes
+      // the URL and no stale copy survives an edit.
+      return `/api/avatar/${encodeURIComponent(player)}?v=${avatarHash.slice(0, 8)}`;
+    },
+    getDoor(): Promise<DoorView> {
+      return request<DoorView>("/api/door");
+    },
+    postDoor(player: string, displayName?: string): Promise<DoorAck> {
+      return postJson<DoorAck>("/api/door", {
+        player,
+        ...(displayName === undefined ? {} : { display_name: displayName }),
+      });
     },
   };
 }

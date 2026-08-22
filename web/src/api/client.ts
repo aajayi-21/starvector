@@ -7,7 +7,11 @@
 
 import { createContext, useContext } from "react";
 import type {
+  AccountAck,
+  AvatarAck,
   DayView,
+  DoorAck,
+  DoorView,
   HistoryView,
   LeaderboardView,
   MeView,
@@ -49,6 +53,18 @@ export interface ArchiveApi {
 
 export interface AccountApi {
   getMe(): Promise<MeView>;
+  putAccount(description: string): Promise<AccountAck>;
+  /** The body is the raw image bytes - downscaled client-side. */
+  putAvatar(image: Blob): Promise<AvatarAck>;
+  deleteAvatar(): Promise<AvatarAck>;
+  /** The hash rides the URL as the cache-busting key. */
+  avatarUrl(player: string, avatarHash: string): string;
+}
+
+/** The open door (spec A1 §4): dev servers only, 404 elsewhere. */
+export interface DoorApi {
+  getDoor(): Promise<DoorView>;
+  postDoor(player: string, displayName?: string): Promise<DoorAck>;
 }
 
 export type Api = DayApi &
@@ -56,7 +72,8 @@ export type Api = DayApi &
   HistoryApi &
   LeaderboardApi &
   ArchiveApi &
-  AccountApi;
+  AccountApi &
+  DoorApi;
 
 export type ApiMode = "composite" | "mock";
 

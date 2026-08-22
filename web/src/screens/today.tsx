@@ -12,6 +12,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "../api/client";
 import type { SubmissionAck, WireRecord } from "../api/types";
 import { ApiError, friendlyMessage, isRefusal } from "../api/types";
+import { GroupControls } from "../intake/groups-card";
+import { ImpressionsCard } from "../intake/impressions-card";
 import { SketchCanvas } from "../sketch/canvas";
 import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
@@ -30,7 +32,6 @@ import {
   serialize,
   undo,
 } from "../sketch/core";
-import { groupDisplay } from "../sketch/palette";
 import { Kicker } from "../ui/kicker";
 import { PaletteRow } from "../ui/palette-row";
 import { TargetCode } from "../ui/target-code";
@@ -187,8 +188,6 @@ function OpenWorkspace(props: {
   const [impressions, setImpressions] = useState<string[]>(
     () => restored?.impressions ?? [],
   );
-  const [impressionInput, setImpressionInput] = useState("");
-  const [groupLabel, setGroupLabel] = useState("");
   const [pastedText, setPastedText] = useState(
     () => restored?.pastedText ?? "",
   );
@@ -257,14 +256,6 @@ function OpenWorkspace(props: {
     doc.strokes.length > 0 ||
     pastedText.trim() !== "";
 
-  const addImpression = () => {
-    const text = impressionInput.trim();
-    if (text !== "") {
-      setImpressions((rows) => [...rows, text]);
-      setImpressionInput("");
-    }
-  };
-
   const onCommitStroke = (points: Point[]) => {
     const id = nextStrokeId.current;
     nextStrokeId.current += 1;
@@ -290,14 +281,12 @@ function OpenWorkspace(props: {
     });
   };
 
-  const makeGroupNow = () => {
-    const label = groupLabel.trim();
+  const makeGroupWith = (label: string) => {
     if (label === "" || selection.size === 0) {
       return;
     }
     commit(makeGroup(doc, [...selection], label));
     setSelection(new Set());
-    setGroupLabel("");
     setMode("draw");
   };
 
@@ -468,144 +457,25 @@ function OpenWorkspace(props: {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="card">
-            <Kicker>Impressions</Kicker>
-            <input
-              className="input"
-              placeholder="one impression — Enter commits"
-              value={impressionInput}
-              onChange={(event) => setImpressionInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) {
-                  return;
-                }
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addImpression();
-                }
-              }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {impressions.map((text, index) => (
-                <div
-                  key={`${text}-${
-                    // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
-                    index
-                  }`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 13,
-                    padding: "6px 8px",
-                    background: "var(--color-neutral-900)",
-                    borderRadius: 6,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: "50%",
-                      background: "var(--color-accent)",
-                      flex: "none",
-                    }}
-                  />
-                  <span style={{ flex: 1 }}>{text}</span>
-                  <button
-                    type="button"
-                    title="remove"
-                    aria-label={`remove impression ${text}`}
-                    onClick={() =>
-                      setImpressions((rows) =>
-                        rows.filter((_, at) => at !== index),
-                      )
-                    }
-                    style={{
-                      border: "none",
-                      background: "none",
-                      color: "var(--color-neutral-500)",
-                      cursor: "pointer",
-                      fontSize: 14,
-                      padding: "0 2px",
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ImpressionsCard
+            impressions={impressions}
+            onAdd={(text) => setImpressions((rows) => [...rows, text])}
+            onRemoveAt={(index) =>
+              setImpressions((rows) => rows.filter((_, at) => at !== index))
+            }
+          />
 
           <div className="card">
-            <Kicker>Groups on the sketch</Kicker>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                className={
-                  mode === "select" ? "btn btn-primary" : "btn btn-secondary"
-                }
-                onClick={() => {
-                  setMode((old) => (old === "select" ? "draw" : "select"));
-                  setSelection(new Set());
-                }}
-              >
-                {mode === "select" ? "Done selecting" : "Select strokes"}
-              </button>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                className="input"
-                placeholder="what is it? e.g. tower"
-                value={groupLabel}
-                onChange={(event) => setGroupLabel(event.target.value)}
-                style={{ flex: 1 }}
-              />
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={selection.size === 0 || groupLabel.trim() === ""}
-                onClick={makeGroupNow}
-              >
-                Group
-              </button>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                fontSize: 13,
+            <GroupControls
+              doc={doc}
+              mode={mode}
+              selectionSize={selection.size}
+              onToggleSelect={() => {
+                setMode((old) => (old === "select" ? "draw" : "select"));
+                setSelection(new Set());
               }}
-            >
-              {doc.groups.map((group, index) => (
-                <div
-                  key={group.id}
-                  style={{ display: "flex", alignItems: "center", gap: 8 }}
-                >
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 3,
-                      background: groupDisplay(index),
-                    }}
-                  />
-                  {group.label}{" "}
-                  <span
-                    style={{ color: "var(--color-neutral-600)", fontSize: 11 }}
-                  >
-                    {group.id} ·{" "}
-                    {
-                      doc.strokes.filter(
-                        (stroke) => doc.assignments[stroke.id] === group.id,
-                      ).length
-                    }{" "}
-                    strokes
-                  </span>
-                </div>
-              ))}
-            </div>
+              onMakeGroup={makeGroupWith}
+            />
             <div className="hr" style={{ margin: 0 }} />
             <Kicker>How things sit</Kicker>
             <div

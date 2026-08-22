@@ -1,8 +1,8 @@
 /**
  * The app nav (mock screens 1a-1f): logo v2-nav (spec W1 ruling 7),
- * the four items, the streak tag, and the avatar initial. Streak
- * and player come from /api/me — mock-served until the backend
- * phase.
+ * the four items, the streak tag, and the avatar. The circle is the
+ * way into the account screen (spec A1 §3): it links to /account
+ * and shows the stored picture when the account holds one.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -10,15 +10,13 @@ import { Link } from "@tanstack/react-router";
 
 import { useApi } from "../api/client";
 import navMark from "../brand/starvector-logo-v2-nav.svg";
+import { AvatarCircle } from "./avatar";
 
 const activeProps = { "aria-current": "page" } as const;
 
 export function Nav(): React.JSX.Element {
   const api = useApi();
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
-  // The label, not the store key (spec M1 §9). The account card
-  // takes its initials from the same field.
-  const initial = (me.data?.display_name ?? "").slice(0, 2).toUpperCase();
   return (
     <nav
       className="nav"
@@ -48,23 +46,19 @@ export function Nav(): React.JSX.Element {
           streak&nbsp;{me.data.streak}
         </span>
       )}
-      {initial === "" ? null : (
-        <span
-          aria-hidden="true"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            background: "var(--color-neutral-800)",
-            color: "var(--color-neutral-200)",
-            display: "grid",
-            placeItems: "center",
-            fontSize: 11,
-            fontWeight: 500,
-          }}
+      {me.data === undefined ? null : (
+        <Link
+          to="/account"
+          aria-label="your account"
+          style={{ display: "flex", padding: 0 }}
         >
-          {initial}
-        </span>
+          <AvatarCircle
+            player={me.data.player}
+            displayName={me.data.display_name}
+            avatarHash={me.data.avatar_hash}
+            size={28}
+          />
+        </Link>
       )}
     </nav>
   );

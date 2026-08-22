@@ -22,6 +22,41 @@ async function typeImpression(text: string): Promise<void> {
   fireEvent.keyDown(input, { key: "Enter" });
 }
 
+/** The practice tests' drawing helper, with a real 300x300 box. */
+function stubCanvasBox(container: HTMLElement): HTMLCanvasElement {
+  const live = container.querySelectorAll("canvas")[1];
+  if (live === undefined) {
+    throw new Error("no live canvas layer");
+  }
+  vi.spyOn(live, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    right: 300,
+    bottom: 300,
+    width: 300,
+    height: 300,
+    toJSON: () => ({}),
+  } as DOMRect);
+  return live;
+}
+
+function firePointer(
+  target: HTMLElement,
+  type: string,
+  x: number,
+  y: number,
+): void {
+  const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+  Object.defineProperties(event, {
+    pointerId: { value: 1 },
+    isPrimary: { value: true },
+    pointerType: { value: "mouse" },
+  });
+  fireEvent(target, event);
+}
+
 describe("the Today screen", () => {
   it("renders the open workspace with code cells and palette", async () => {
     renderAt("/");
@@ -33,6 +68,55 @@ describe("the Today screen", () => {
     expect(screen.getByLabelText("color ink")).toBeDefined();
     expect(screen.getByLabelText("color teal")).toBeDefined();
     expect(screen.getByText("Send today's trial")).toBeDefined();
+  });
+
+  // Spec A1 §9: the extracted intake cards serialize identically
+  // to the inline cards they replaced. The literal below is the
+  // fixture — an extraction that moves one byte of the wire
+  // record fails here.
+  it("serializes the extracted cards to the pinned wire record", async () => {
+    const sent: unknown[] = [];
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...mock,
+      submit: (record) => {
+        sent.push(record);
+        return mock.submit(record);
+      },
+    };
+    const view = renderAt("/", api);
+    await screen.findByText("Send today's trial");
+    const live = stubCanvasBox(view.container);
+    firePointer(live, "pointerdown", 30, 30);
+    firePointer(live, "pointermove", 150, 150);
+    firePointer(live, "pointerup", 150, 150);
+    await typeImpression("tall vertical structure");
+    fireEvent.click(screen.getByText("Select strokes"));
+    firePointer(live, "pointerdown", 90, 90);
+    fireEvent.change(screen.getByPlaceholderText(/what is it/), {
+      target: { value: "tower" },
+    });
+    fireEvent.click(screen.getByText("Group"));
+    await screen.findByText("tower");
+    fireEvent.click(screen.getByText("Send today's trial"));
+    await screen.findByText(/Sent\./);
+    expect(sent).toEqual([
+      {
+        impressions: ["tall vertical structure"],
+        canvas_strokes: [
+          {
+            points: [
+              [0.1, 0.1],
+              [0.5, 0.5],
+            ],
+            group_id: "g1",
+          },
+        ],
+        groups: [{ id: "g1", label: "tower" }],
+        relations: [],
+        pasted_text: null,
+      },
+    ]);
   });
 
   it("disables send until something is scoreable", async () => {

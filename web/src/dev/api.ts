@@ -6,7 +6,9 @@
 
 import type {
   DevDays,
+  DevHistory,
   DevRankings,
+  DevRoster,
   DevStored,
   LifecycleAck,
   MintedInvite,
@@ -70,8 +72,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export interface DevApi {
   getDays(): Promise<DevDays>;
-  getSubmission(day: string): Promise<DevStored>;
-  getRankings(day: string): Promise<DevRankings>;
+  /** No player names the configured one — today's behavior. */
+  getSubmission(day: string, player?: string): Promise<DevStored>;
+  getRankings(day: string, player?: string): Promise<DevRankings>;
+  getPlayers(): Promise<DevRoster>;
+  getHistory(player: string): Promise<DevHistory>;
   postOpen(): Promise<LifecycleAck>;
   postClose(): Promise<LifecycleAck>;
   postReveal(): Promise<LifecycleAck>;
@@ -95,14 +100,25 @@ export interface DevApi {
 export function makeDevApi(token: TokenSource = () => ""): DevApi {
   return {
     getDays: () => request<DevDays>("/api/dev/days", authorized(token())),
-    getSubmission: (day) =>
+    getSubmission: (day, player) =>
       request<DevStored>(
-        `/api/dev/submission?day=${encodeURIComponent(day)}`,
+        `/api/dev/submission?day=${encodeURIComponent(day)}${
+          player === undefined ? "" : `&player=${encodeURIComponent(player)}`
+        }`,
         authorized(token()),
       ),
-    getRankings: (day) =>
+    getRankings: (day, player) =>
       request<DevRankings>(
-        `/api/dev/rankings?day=${encodeURIComponent(day)}`,
+        `/api/dev/rankings?day=${encodeURIComponent(day)}${
+          player === undefined ? "" : `&player=${encodeURIComponent(player)}`
+        }`,
+        authorized(token()),
+      ),
+    getPlayers: () =>
+      request<DevRoster>("/api/dev/players", authorized(token())),
+    getHistory: (player) =>
+      request<DevHistory>(
+        `/api/dev/history?player=${encodeURIComponent(player)}`,
         authorized(token()),
       ),
     postOpen: () =>

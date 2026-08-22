@@ -12,11 +12,16 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from core.canonical import JsonValue, canonical_json_pretty
+from core.canonical import JsonValue, canonical_json_pretty, sha256_hex
 from pool.artifacts import write_json_pretty
 
 DAY_STATUSES = ("open", "closed", "revealed")
 PLAYER_STATUSES = ("active", "revoked")
+
+# The account limits (spec A1 in docs/specs/, D1 and D2 as ruled
+# 2026-08-21).
+DESCRIPTION_LIMIT = 500
+AVATAR_BYTE_CAP = 1_048_576
 
 # The rules below match the full value with fullmatch. The dollar
 # sign also matches before a newline at the end, thus a changed
@@ -42,6 +47,8 @@ _DAY_FIELDS = ("day", "trial_code", "target_id", "pick_seed", "secret",
 
 _PLAYER_FIELDS = ("player", "display_name", "token_hash", "created_at",
                   "status")
+
+_ACCOUNT_FIELDS = ("player", "description", "avatar_hash", "updated_at")
 
 _README = """\
 # The trial store
@@ -82,6 +89,25 @@ class DayRecord:
     opened_at: str
     closed_at: str | None
     revealed_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class AccountRecord:
+    """The stored account facts of one player (spec A1 section 3).
+
+    The player's own mutable document: the description and the
+    avatar digest. It is a raw fact of play and not a cache
+    (Rule 4). It is also the third record class: submissions and
+    trial rows are one-write, the day record has one guarded move,
+    and this document is replaced as one unit through
+    write_account_record. A missing file reads as the empty
+    account, not an error.
+    """
+
+    player: str
+    description: str
+    avatar_hash: str | None
+    updated_at: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -487,4 +513,246 @@ def set_player_status(store: Path, player: str, *, expect_status: str,
     moved = replace(record, status=new_status)
     write_json_pretty(player_record_path(store, player),
                       _player_to_value(moved))
+    return moved
+
+
+def check_description(value: object, where: str) -> None:
+    """Refuse a description that breaks the account text rule.
+
+    The display-name discipline, grown for long text (spec A1
+    section 3, D1): 0 to 500 code points, printable characters
+    with the newline as the one control character permitted, and
+    no whitespace at the start or the end. Empty text is legal -
+    an account with nothing written is the usual condition.
+    """
+    if not isinstance(value, str):
+        raise StoreError(f"{where}: expected a string, got {value!r}")
+    if len(value) > DESCRIPTION_LIMIT:
+        raise StoreError(
+            f"{where}: expected at most {DESCRIPTION_LIMIT} characters, "
+            f"got {len(value)}")
+    for line in value.split("\n"):
+        if not line.isprintable():
+            raise StoreError(
+                f"{where}: the text holds a control or a format character")
+    if value != value.strip():
+        raise StoreError(f"{where}: the text starts or ends with whitespace")
+
+
+def avatar_media_type(data: bytes) -> str | None:
+    """The avatar media type from magic bytes, or None.
+
+    The accepted set is the four kinds of spec A1 D2: PNG, JPEG,
+    WebP, GIF. No header counts here - the stored bytes alone do.
+    """
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    return None
+
+
+def accounts_dir(store: Path) -> Path:
+    """The account directory - its own, not store/players/.
+
+    list_players and any_player read each .json name below
+    store/players/ as a player, thus a second file class there
+    becomes a phantom player name (spec A1 section 3).
+    """
+    return store / "accounts"
+
+
+def account_record_path(store: Path, player: str) -> Path:
+    return accounts_dir(store) / f"{player}.json"
+
+
+def avatar_path(store: Path, player: str) -> Path:
+    return accounts_dir(store) / f"{player}.avatar"
+
+
+def _account_to_value(record: AccountRecord) -> dict[str, JsonValue]:
+    return {
+        "player": record.player,
+        "description": record.description,
+        "avatar_hash": record.avatar_hash,
+        "updated_at": record.updated_at,
+    }
+
+
+def _check_account_record(record: AccountRecord) -> None:
+    """Refuse an account record the store must not write."""
+    check_player_name(record.player, "player")
+    check_description(record.description, "description")
+    if record.avatar_hash is not None \
+            and not _TOKEN_HASH_RULE.fullmatch(record.avatar_hash):
+        raise StoreError(
+            "avatar_hash: expected 64 lowercase hex characters or null")
+    if not record.updated_at:
+        raise StoreError("updated_at: expected a non-empty string")
+
+
+def _write_bytes_replacing(path: Path, data: bytes) -> None:
+    """Replace one file atomically through its own temporary sibling.
+
+    Not write_bytes_atomic: that helper names one fixed .tmp
+    sibling, thus two concurrent writers of the same destination
+    collide on it - the loser's os.replace raises and a reader can
+    read a torn temporary. Each write here gets its own sibling
+    from mkstemp, thus concurrent writers end in last-writer-wins
+    with complete documents in each interleaving.
+    """
+    import tempfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=path.parent,
+                                         prefix=path.name + ".",
+                                         suffix=".tmp")
+    try:
+        with os.fdopen(handle, "wb") as sibling:
+            sibling.write(data)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def write_account_record(store: Path, record: AccountRecord) -> None:
+    """Write one account record, replacing the earlier one.
+
+    The document lands in its own temporary sibling and os.replace
+    takes the destination - atomic, thus a torn document cannot
+    occur, also with two concurrent writers. This is the account
+    record's one edit path (spec A1 section 3).
+    """
+    _check_account_record(record)
+    text = canonical_json_pretty(_account_to_value(record)) + "\n"
+    _write_bytes_replacing(account_record_path(store, record.player),
+                           text.encode("utf-8"))
+
+
+def read_account_or_none(store: Path, player: str) -> AccountRecord | None:
+    """One stored account record, or None when the file is not there.
+
+    None reads as the empty account. A stored record that does not
+    validate is not an ordinary answer and raises.
+    """
+    import json
+
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    path = account_record_path(store, player)
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise StoreError(
+            f"{path}: cannot read the account record: {error}") from error
+    if not isinstance(raw, dict) or set(raw) != set(_ACCOUNT_FIELDS):
+        raise StoreError(
+            f"{path}: the account record must have the fields "
+            f"{sorted(_ACCOUNT_FIELDS)}")
+    if raw["player"] != player:
+        raise StoreError(
+            f"{path}.player: the record names {raw['player']!r} and the "
+            f"file names {player!r}")
+    check_description(raw["description"], f"{path}.description")
+    if raw["avatar_hash"] is not None and (
+            not isinstance(raw["avatar_hash"], str)
+            or not _TOKEN_HASH_RULE.fullmatch(raw["avatar_hash"])):
+        raise StoreError(
+            f"{path}.avatar_hash: expected 64 lowercase hex characters "
+            "or null")
+    if not isinstance(raw["updated_at"], str) or not raw["updated_at"]:
+        raise StoreError(f"{path}.updated_at: expected a non-empty string")
+    return AccountRecord(**raw)
+
+
+def _account_base(store: Path, player: str,
+                  timestamp: str) -> AccountRecord:
+    """The stored account, or the empty one - the edit starting point."""
+    found = read_account_or_none(store, player)
+    if found is not None:
+        return found
+    return AccountRecord(player=player, description="", avatar_hash=None,
+                         updated_at=timestamp)
+
+
+def set_account_description(store: Path, player: str, text: str, *,
+                            timestamp: str) -> AccountRecord:
+    """Store one player's description and answer the moved record."""
+    check_player_name(player, "player")
+    check_description(text, "description")
+    moved = replace(_account_base(store, player, timestamp),
+                    description=text, updated_at=timestamp)
+    write_account_record(store, moved)
+    return moved
+
+
+def write_avatar_bytes(store: Path, player: str, data: bytes) -> str:
+    """Store one avatar and answer its sha256 digest.
+
+    The two refusals come in a fixed sequence (spec A1 section 9):
+    the cap first, the magic bytes second. The bytes land in a
+    temporary sibling and os.replace takes the destination, thus a
+    torn file cannot occur.
+    """
+    check_player_name(player, "player")
+    if not isinstance(data, bytes):
+        raise StoreError("avatar: expected bytes")
+    if len(data) > AVATAR_BYTE_CAP:
+        raise StoreError(
+            f"avatar: expected at most {AVATAR_BYTE_CAP} bytes, "
+            f"got {len(data)}")
+    if avatar_media_type(data) is None:
+        raise StoreError(
+            "avatar: the bytes are not a PNG, JPEG, WebP, or GIF image")
+    _write_bytes_replacing(avatar_path(store, player), data)
+    return sha256_hex(data)
+
+
+def read_avatar_or_none(store: Path, player: str) -> bytes | None:
+    """One stored avatar, or None - one answer covers a player with
+    no picture and a name with no record, thus the serving path
+    holds no roster oracle (spec A1 section 3)."""
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    path = avatar_path(store, player)
+    if not path.is_file():
+        return None
+    return path.read_bytes()
+
+
+def set_account_avatar(store: Path, player: str, data: bytes, *,
+                       timestamp: str) -> AccountRecord:
+    """Store one avatar and move the account record after it.
+
+    The bytes land first and the record follows (spec A1
+    section 3). A stop between the two gives a stale avatar_hash -
+    a cache key and not a claim - and the next write heals it.
+    """
+    digest = write_avatar_bytes(store, player, data)
+    moved = replace(_account_base(store, player, timestamp),
+                    avatar_hash=digest, updated_at=timestamp)
+    write_account_record(store, moved)
+    return moved
+
+
+def clear_account_avatar(store: Path, player: str, *,
+                         timestamp: str) -> AccountRecord:
+    """Remove one avatar and move the account record after it.
+
+    The same sequence as set_account_avatar: the bytes go first
+    and the record follows. Clearing an account with no picture is
+    legal and answers the moved record all the same.
+    """
+    check_player_name(player, "player")
+    avatar_path(store, player).unlink(missing_ok=True)
+    moved = replace(_account_base(store, player, timestamp),
+                    avatar_hash=None, updated_at=timestamp)
+    write_account_record(store, moved)
     return moved
