@@ -66,6 +66,9 @@ export function RosterPanel(props: {
   }, [api]);
 
   useEffect(() => {
+    // `reload` re-fires this effect when the token field blurs;
+    // the fetch itself does not read it.
+    void reload;
     void loadPlayers();
   }, [loadPlayers, reload]);
 
