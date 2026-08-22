@@ -27,8 +27,13 @@ function messageOf(error: unknown): string {
   return error instanceof DevApiError ? error.message : "refused";
 }
 
-export function RosterPanel(props: { api: DevApi }): React.JSX.Element {
-  const { api } = props;
+export function RosterPanel(props: {
+  api: DevApi;
+  /** Bumped by the console when the operator token changes, so a
+   * roster that failed before the paste loads without a reload. */
+  reload?: number;
+}): React.JSX.Element {
+  const { api, reload } = props;
   const [players, setPlayers] = useState<DevRosterRow[] | null>(null);
   const [note, setNote] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -62,7 +67,7 @@ export function RosterPanel(props: { api: DevApi }): React.JSX.Element {
 
   useEffect(() => {
     void loadPlayers();
-  }, [loadPlayers]);
+  }, [loadPlayers, reload]);
 
   const showPlayer = async (name: string) => {
     switchToken.current += 1;
@@ -119,12 +124,23 @@ export function RosterPanel(props: { api: DevApi }): React.JSX.Element {
     if (selected === null || openedDay === null) {
       return;
     }
+    // The same staleness guard as showPlayer and showDay: scoring
+    // is slow, and a response from a player or day the operator
+    // left must not render under the one they moved to.
+    const token = switchToken.current;
+    const fresh = () => token === switchToken.current;
     setRankNote("scoring…");
     try {
-      setRankings(await api.getRankings(openedDay, selected));
+      const answer = await api.getRankings(openedDay, selected);
+      if (!fresh()) {
+        return;
+      }
+      setRankings(answer);
       setRankNote("");
     } catch (error) {
-      setRankNote(messageOf(error));
+      if (fresh()) {
+        setRankNote(messageOf(error));
+      }
     }
   };
 

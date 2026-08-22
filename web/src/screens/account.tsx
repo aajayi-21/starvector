@@ -51,6 +51,16 @@ function AccountBody(props: { me: MeView }): React.JSX.Element {
   const fileRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(me.description);
   const [savedNote, setSavedNote] = useState(false);
+  // Resync the draft when the stored description moves under it —
+  // the server canonicalizes (trim), and a save from a second tab
+  // must not be silently overwritten by a stale draft here. The
+  // render-time adjustment keeps the other state (the saved note,
+  // an in-flight upload) alive, which a remount key would not.
+  const [baseline, setBaseline] = useState(me.description);
+  if (me.description !== baseline) {
+    setBaseline(me.description);
+    setDraft(me.description);
+  }
 
   const invalidateMe = () =>
     queryClient.invalidateQueries({ queryKey: ["me"] });

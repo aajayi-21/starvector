@@ -7,6 +7,7 @@ walk. This file pins the shapes, the caller scoping, and the
 constant avatar refusal.
 """
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -186,6 +187,92 @@ def test_the_account_read_paths_keep_the_store_byte_equal(
     ade.get("/api/avatar/ade")
     ade.get("/api/avatar/nobody-here")
     assert snapshot() == before
+
+
+def test_the_avatar_cap_guards_the_read_itself(tmp_path) -> None:
+    """The refusal comes while the body streams, not after the
+    full body lands in memory - a signed-in caller cannot make
+    the server hold an unbounded upload (found in the adversarial
+    check of 2026-08-21)."""
+    _fixture, client, tokens = _world(tmp_path)
+    ade = _sign_in(client, tokens["ade"])
+    chunk = b"j" * 65536
+    total = store.AVATAR_BYTE_CAP + 2 * len(chunk)
+
+    def body():
+        sent = 0
+        while sent < total:
+            yield chunk
+            sent += len(chunk)
+
+    # A generator body goes out chunked, with no Content-Length,
+    # thus the streaming branch is the one that refuses.
+    answer = ade.put("/api/account/avatar", content=body())
+    assert answer.status_code == 400
+    assert answer.json()["cause"] == "bad-avatar"
+    assert "at most" in answer.json()["detail"]
+
+
+def _played_revealed_world(tmp_path):
+    """The two players send, the day closes and reveals - the
+    boards then hold two honest rows for the D5 tests."""
+    from svc_fixture import mixed_wire_record
+
+    from service.day import close_day, reveal_day
+
+    fixture = build_service_fixture(tmp_path)
+    tokens = {name: _mint(fixture["store"], name, label, secret)
+              for name, label, secret in (("ade", "Ade", ALICE_SECRET),
+                                          ("bru", "Bru Lin", BRU_SECRET))}
+    open_day(fixture["service_config"], date=DAY,
+             clock=lambda: FIXED_CLOCK, pick_seed="a" * 32,
+             secret="b" * 64)
+    for name in ("ade", "bru"):
+        store.write_once_json(
+            store.submission_path(fixture["store"], DAY, name),
+            {"day": DAY, "player": name, "trial_id": name[0] * 32,
+             "received_at": FIXED_CLOCK, "record": mixed_wire_record()})
+    close_day(fixture["service_config"], clock=lambda: FIXED_CLOCK)
+    reveal_day(fixture["service_config"], clock=lambda: FIXED_CLOCK)
+    client = TestClient(
+        create_app(fixture["service_config"],
+                   operator_token=OPERATOR_TOKEN),
+        base_url="https://testserver")
+    return fixture, client, tokens
+
+
+def test_the_boards_hold_the_avatar_digest(tmp_path) -> None:
+    """D5 as ruled 2026-08-21: the daily board and the skill board
+    attach avatar_hash at read time, and a player with no picture
+    gets null."""
+    from service import rollup
+
+    fixture, client, tokens = _played_revealed_world(tmp_path)
+    ade = _sign_in(client, tokens["ade"])
+    digest = ade.put("/api/account/avatar",
+                     content=PNG).json()["avatar_hash"]
+
+    rows = ade.get(f"/api/leaderboard?day={DAY}").json()["rows"]
+    hashes = {row["player"]: row["avatar_hash"] for row in rows}
+    assert hashes == {"ade": digest, "bru": None}
+
+    # The skill board attaches through the same helper. The
+    # reader serves the prepared artifact as stored, thus a
+    # minimal hand-written one is sufficient to pin it.
+    root = Path(fixture["service_config"].store_root)
+    data_root = Path(fixture["service_config"].data_root)
+    record = store.read_day_record(root, DAY)
+    board_path = rollup.skill_board_path(data_root,
+                                         record.scoring_config_hash)
+    board_path.parent.mkdir(parents=True, exist_ok=True)
+    board_path.write_text(json.dumps(
+        {"active": True, "rows": [{"player": "ade"},
+                                  {"player": "bru"}]}),
+        encoding="utf-8")
+    skill_rows = ade.get("/api/leaderboard/skill").json()["rows"]
+    skill_hashes = {row["player"]: row["avatar_hash"]
+                    for row in skill_rows}
+    assert skill_hashes == {"ade": digest, "bru": None}
 
 
 def test_the_fallback_world_edits_the_configured_players_account(

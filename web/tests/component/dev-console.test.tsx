@@ -439,6 +439,40 @@ describe("the console's async discipline", () => {
     await waitFor(() => expect(api.rankingsCalls).toContain("2026-08-12"));
   });
 
+  it("reloads the roster when the operator token field blurs", async () => {
+    // A roster that failed before the paste recovers with the day
+    // browser, wanting no page reload (the review of 2026-08-21).
+    const base = makeStubApi([dayRow({ status: "revealed" })]);
+    let calls = 0;
+    const api: DevApi = {
+      ...base,
+      getPlayers: () => {
+        calls += 1;
+        if (calls === 1) {
+          return Promise.reject(new DevApiError(404, "not found"));
+        }
+        return base.getPlayers();
+      },
+    };
+    const view = render(<DevApp api={api} />);
+    const panel = () => {
+      const found = view.container.querySelector("#roster-panel");
+      if (found === null) {
+        throw new Error("no roster panel");
+      }
+      return found as HTMLElement;
+    };
+    await waitFor(() =>
+      expect(within(panel()).getByText(/start the server with/)).toBeDefined(),
+    );
+    fireEvent.blur(screen.getByLabelText("operator token"));
+    await waitFor(() =>
+      expect(
+        within(panel()).getByRole("button", { name: "ade" }),
+      ).toBeDefined(),
+    );
+  });
+
   it("reads the roster refusal as no dev flag or a missing token", async () => {
     const base = makeStubApi([dayRow({ status: "revealed" })]);
     const api: DevApi = {

@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from core.canonical import JsonValue, canonical_json_pretty, sha256_hex
-from pool.artifacts import write_bytes_atomic, write_json_pretty
+from pool.artifacts import write_json_pretty
 
 DAY_STATUSES = ("open", "closed", "revealed")
 PLAYER_STATUSES = ("active", "revoked")
@@ -595,16 +595,43 @@ def _check_account_record(record: AccountRecord) -> None:
         raise StoreError("updated_at: expected a non-empty string")
 
 
+def _write_bytes_replacing(path: Path, data: bytes) -> None:
+    """Replace one file atomically through its own temporary sibling.
+
+    Not write_bytes_atomic: that helper names one fixed .tmp
+    sibling, thus two concurrent writers of the same destination
+    collide on it - the loser's os.replace raises and a reader can
+    read a torn temporary. Each write here gets its own sibling
+    from mkstemp, thus concurrent writers end in last-writer-wins
+    with complete documents in each interleaving.
+    """
+    import tempfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=path.parent,
+                                         prefix=path.name + ".",
+                                         suffix=".tmp")
+    try:
+        with os.fdopen(handle, "wb") as sibling:
+            sibling.write(data)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
 def write_account_record(store: Path, record: AccountRecord) -> None:
     """Write one account record, replacing the earlier one.
 
-    The document lands in a temporary sibling and os.replace takes
-    the destination - atomic, thus a torn document cannot occur.
-    This is the account record's one edit path (spec A1 section 3).
+    The document lands in its own temporary sibling and os.replace
+    takes the destination - atomic, thus a torn document cannot
+    occur, also with two concurrent writers. This is the account
+    record's one edit path (spec A1 section 3).
     """
     _check_account_record(record)
-    write_json_pretty(account_record_path(store, record.player),
-                      _account_to_value(record))
+    text = canonical_json_pretty(_account_to_value(record)) + "\n"
+    _write_bytes_replacing(account_record_path(store, record.player),
+                           text.encode("utf-8"))
 
 
 def read_account_or_none(store: Path, player: str) -> AccountRecord | None:
@@ -684,7 +711,7 @@ def write_avatar_bytes(store: Path, player: str, data: bytes) -> str:
     if avatar_media_type(data) is None:
         raise StoreError(
             "avatar: the bytes are not a PNG, JPEG, WebP, or GIF image")
-    write_bytes_atomic(avatar_path(store, player), data)
+    _write_bytes_replacing(avatar_path(store, player), data)
     return sha256_hex(data)
 
 

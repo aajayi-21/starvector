@@ -125,6 +125,25 @@ def test_the_door_refuses_an_illegal_name_or_label(tmp_path) -> None:
     assert store.any_player(_fixture["store"]) is False
 
 
+def test_a_mint_race_answers_a_refusal_and_not_a_crash(
+        tmp_path, monkeypatch) -> None:
+    """The door's read and its write can straddle a mint from a
+    different process - the CLI on the box. The store's one-write
+    guard raises, and the door must answer a refusal. The
+    monkeypatch stands in for the interleaving, which two
+    processes cannot rehearse in one test."""
+    _fixture, client = _world(tmp_path, dev_mode=True)
+
+    def collide(*_args, **_kwargs):
+        raise store.StoreError("the store is one-write and the file "
+                               "exists")
+
+    monkeypatch.setattr(players, "mint_player", collide)
+    answer = client.post("/api/door", json={"player": "walkin"})
+    assert answer.status_code == 409
+    assert answer.json()["cause"] == "refused"
+
+
 def test_the_door_mint_and_the_console_mint_write_one_shape(
         tmp_path) -> None:
     fixture, client = _world(tmp_path, dev_mode=True)

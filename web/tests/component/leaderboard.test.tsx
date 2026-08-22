@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { makeMockApi } from "../../src/api/mock";
@@ -19,6 +19,32 @@ function serving(view: SkillBoardView) {
 }
 
 describe("the leaderboard screen", () => {
+  // D5 as ruled 2026-08-21: a row with a stored avatar renders
+  // the picture, and a row without one keeps the initials.
+  it("renders the avatar circle on the board rows", async () => {
+    const base = api();
+    const withAvatar = {
+      ...base,
+      getLeaderboard: async (day?: string) => {
+        const board = await base.getLeaderboard(day);
+        const first = board.rows[0];
+        if (first !== undefined) {
+          first.avatar_hash = "a".repeat(64);
+        }
+        return board;
+      },
+    };
+    const view = renderAt("/leaderboard", withAvatar);
+    await screen.findByText("The day's board");
+    // One 20 px picture for the row with a hash; the others fall
+    // back to initials and render no image.
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll('table img[width="20"]').length,
+      ).toBeGreaterThanOrEqual(1),
+    );
+  });
+
   it("serves the day's board and the ranked skill board", async () => {
     const board = await api().getSkillLeaderboard();
     renderAt("/leaderboard");

@@ -389,14 +389,22 @@ def create_app(service_config: ServiceConfig,
             return JSONResponse({"cause": "bad-display-name",
                                  "detail": str(error)}, status_code=400)
         record = store.read_player_or_none(root, name)
-        if record is None:
-            record, token = players.mint_player(
-                service_config, player=name, display_name=label)
-        elif record.status == "active":
-            record, token = players.rotate_player(service_config,
-                                                  player=name)
-        else:
-            return JSONResponse({"cause": "revoked"}, status_code=409)
+        try:
+            if record is None:
+                record, token = players.mint_player(
+                    service_config, player=name, display_name=label)
+            elif record.status == "active":
+                record, token = players.rotate_player(service_config,
+                                                      player=name)
+            else:
+                return JSONResponse({"cause": "revoked"}, status_code=409)
+        except store.StoreError as error:
+            # The read above and the write here can straddle a mint
+            # or a revoke from a different process - the CLI on the
+            # box. The store's own guards refuse, and the door says
+            # so rather than crashing.
+            return JSONResponse({"cause": "refused",
+                                 "detail": str(error)}, status_code=409)
         return JSONResponse(
             {"player": record.player,
              "display_name": record.display_name},
@@ -1153,28 +1161,51 @@ def create_app(service_config: ServiceConfig,
                                  "detail": str(error)}, status_code=400)
         return JSONResponse({"description": record.description})
 
+    # The three account writers below are async on purpose, also
+    # the one with no body to read: each store mutation then runs
+    # on uvicorn's one loop thread with no await in it, thus two
+    # requests cannot interleave a read-modify-write and no lock
+    # is wanted. The server is one process (spec S2 ruling 1).
+    _AVATAR_CAP_REFUSAL = {
+        "cause": "bad-avatar",
+        "detail": f"avatar: expected at most {store.AVATAR_BYTE_CAP} "
+                  "bytes"}
+
     @app.put("/api/account/avatar")
     async def avatar_update(request: Request) -> Response:
         """Store the caller's avatar (spec A1 section 3).
 
-        The body is the raw image bytes. The store writer checks
-        the cap and the magic bytes in that sequence, before a
-        write, and refuses everything else loudly.
+        The body is the raw image bytes. The cap guards the read
+        itself: a declared length above it refuses before a byte
+        arrives, and the stream stops at the first byte above it -
+        the server holds at most the cap plus one chunk in
+        memory. The store writer then checks the cap and the
+        magic bytes again, in that sequence, before a write.
         """
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
-        data = await request.body()
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > store.AVATAR_BYTE_CAP:
+            return JSONResponse(_AVATAR_CAP_REFUSAL, status_code=400)
+        received = 0
+        chunks = []
+        async for chunk in request.stream():
+            received += len(chunk)
+            if received > store.AVATAR_BYTE_CAP:
+                return JSONResponse(_AVATAR_CAP_REFUSAL, status_code=400)
+            chunks.append(chunk)
         try:
             record = store.set_account_avatar(
-                root, caller, data, timestamp=store_received_at())
+                root, caller, b"".join(chunks),
+                timestamp=store_received_at())
         except store.StoreError as error:
             return JSONResponse({"cause": "bad-avatar",
                                  "detail": str(error)}, status_code=400)
         return JSONResponse({"avatar_hash": record.avatar_hash})
 
     @app.delete("/api/account/avatar")
-    def avatar_remove(request: Request) -> Response:
+    async def avatar_remove(request: Request) -> Response:
         """Remove the caller's avatar. Legal with no picture too."""
         caller = _caller(request)
         if isinstance(caller, Response):

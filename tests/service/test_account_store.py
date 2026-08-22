@@ -138,6 +138,62 @@ def test_clear_avatar_removes_the_bytes_and_the_hash(
     assert again.avatar_hash is None
 
 
+def test_a_stop_between_the_bytes_and_the_record_heals(
+        tmp_path: Path) -> None:
+    """The write sequence of spec A1 section 3: the bytes land
+    first and the record follows. A stop between the two gives a
+    stale avatar_hash - a cache key, not a claim - and the next
+    write heals it."""
+    store.set_account_avatar(tmp_path, "ade", PNG, timestamp=CLOCK)
+    # The stop: the bytes moved and the record write did not run.
+    store.write_avatar_bytes(tmp_path, "ade", GIF)
+    stale = store.read_account_or_none(tmp_path, "ade")
+    assert stale.avatar_hash == sha256_hex(PNG)
+    assert store.read_avatar_or_none(tmp_path, "ade") == GIF
+    healed = store.set_account_avatar(tmp_path, "ade", JPEG,
+                                      timestamp=CLOCK)
+    assert healed.avatar_hash == sha256_hex(JPEG)
+    assert store.read_avatar_or_none(tmp_path, "ade") == JPEG
+
+
+def test_concurrent_account_writes_do_not_collide(tmp_path: Path) -> None:
+    """Each write gets its own temporary sibling.
+
+    With one fixed .tmp sibling, two concurrent writers race on
+    it: the loser's os.replace raises and a reader can read a
+    torn document. The barrier starts the writers together, thus
+    the earlier shape did not survive its first iteration here.
+    """
+    import threading
+
+    count = 8
+    errors: list[Exception] = []
+    barrier = threading.Barrier(count)
+
+    def write(index: int) -> None:
+        try:
+            barrier.wait()
+            for _ in range(25):
+                store.set_account_description(
+                    tmp_path, "ade", f"text {index}", timestamp=CLOCK)
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=write, args=(index,))
+               for index in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    stored = store.read_account_or_none(tmp_path, "ade")
+    assert stored is not None and stored.description.startswith("text ")
+    # No temporary sibling survives the storm.
+    leftovers = [path.name for path in store.accounts_dir(tmp_path).iterdir()
+                 if path.name.endswith(".tmp")]
+    assert leftovers == []
+
+
 def test_an_account_file_is_not_a_phantom_player(tmp_path: Path) -> None:
     """The spec A1 phantom player: list_players and any_player read
     each .json name below store/players/ as a player, thus the

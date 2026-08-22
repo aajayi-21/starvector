@@ -48,6 +48,30 @@ describe("the Account screen (spec A1 §3)", () => {
     expect(sent).toEqual(["I sketch coastlines."]);
   });
 
+  it("resyncs the draft when the stored description moves", async () => {
+    // The server canonicalizes, and a second tab can save behind
+    // this one — the editor must follow the stored value rather
+    // than silently overwrite it with a stale draft (the review
+    // of 2026-08-21).
+    let stored = "";
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...mock,
+      getMe: async () => ({ ...(await mock.getMe()), description: stored }),
+      putAccount: (text) => {
+        stored = text.toUpperCase();
+        return Promise.resolve({ description: stored });
+      },
+    };
+    renderAt("/account", api);
+    const editor = (await screen.findByLabelText(
+      "account description",
+    )) as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "hello" } });
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(editor.value).toBe("HELLO"));
+  });
+
   it("shows the stored picture and removes it", async () => {
     const removed: number[] = [];
     const mock = makeMockApi({ today: HARNESS_TODAY });
