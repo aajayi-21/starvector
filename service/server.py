@@ -53,6 +53,9 @@ _NO_SUBMISSION = b'{"detail":"no submission"}'
 _DEV_OFF = b'{"detail":"not found"}'
 _NO_PRACTICE = b'{"detail":"no revealed day"}'
 _NOT_PRACTICE = b'{"detail":"not a practice day"}'
+# One constant body covers a player with no picture and a name
+# with no record (spec A1 section 3) - no roster oracle.
+_NO_AVATAR = b'{"detail":"no avatar"}'
 
 # The gated skill board (spec M1 section 8). Two properties, each
 # load-bearing. It carries each field the view declares, thus a
@@ -334,6 +337,72 @@ def create_app(service_config: ServiceConfig,
             "set-cookie": auth.session_cookie_header(
                 token, secure=cookie_secure)})
 
+    @app.get("/api/door")
+    def door_view(request: Request) -> Response:
+        """Is the open door on (spec A1 section 4). The gate screen
+        probes this one time. Without --dev the answer is the dev
+        surfaces' constant 404, thus production bytes do not move."""
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        return JSONResponse({"open": True})
+
+    @app.post("/api/door")
+    async def door_enter(request: Request) -> Response:
+        """The open door: a typed name becomes a session (spec A1
+        section 4).
+
+        Development alone, deliberately without a password. The
+        gate is dev_mode by itself and not the operator bearer -
+        the door is a player surface. An unknown name mints, an
+        active name turns its token (each other session of that
+        player stops at its next read), and a revoked name is
+        refused: the door cannot put a revoked player back.
+        """
+        from service import players
+
+        if not dev_mode:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body is not JSON"},
+                status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body must be an object"},
+                status_code=400)
+        name = body.get("player")
+        label = body.get("display_name") or name
+        try:
+            store.check_player_name(name, "player")
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-player",
+                                 "detail": str(error)}, status_code=400)
+        try:
+            store.check_display_name(label, "display_name")
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-display-name",
+                                 "detail": str(error)}, status_code=400)
+        record = store.read_player_or_none(root, name)
+        if record is None:
+            record, token = players.mint_player(
+                service_config, player=name, display_name=label)
+        elif record.status == "active":
+            record, token = players.rotate_player(service_config,
+                                                  player=name)
+        else:
+            return JSONResponse({"cause": "revoked"}, status_code=409)
+        return JSONResponse(
+            {"player": record.player,
+             "display_name": record.display_name},
+            headers={"set-cookie": auth.session_cookie_header(
+                token, secure=cookie_secure)})
+
     # The resident scoring context (P5 R1): wired lazily one time
     # for each process from the server's config, read by the close
     # endpoint, the dev surfaces, and practice. The lock stops a
@@ -393,22 +462,99 @@ def create_app(service_config: ServiceConfig,
             })
         return JSONResponse({"days": rows})
 
+    def _picked_player(name: str | None) -> str | Response:
+        """The named player, or the configured one - the spec A1
+        growth on the dev read surfaces. The check keeps the query
+        string out of the path arithmetic."""
+        if name is None:
+            return player
+        try:
+            store.check_player_name(name, "player")
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-player",
+                                 "detail": str(error)}, status_code=400)
+        return name
+
     @app.get("/api/dev/submission")
-    def dev_submission(request: Request,
-                       day: str | None = None) -> Response:
+    def dev_submission(request: Request, day: str | None = None,
+                       player: str | None = None) -> Response:
         if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         picked = _picked_day(day)
         if isinstance(picked, Response):
             return picked
+        picked_player = _picked_player(player)
+        if isinstance(picked_player, Response):
+            return picked_player
         stored = store.read_json_or_none(
-            store.submission_path(root, picked, player))
+            store.submission_path(root, picked, picked_player))
         if stored is None:
             return JSONResponse({"cause": "no-submission",
                                  "detail": "no stored submission this "
                                            "day"}, status_code=404)
         return JSONResponse(stored)
+
+    @app.get("/api/dev/players")
+    def dev_players(request: Request) -> Response:
+        """The roster (spec A1 section 5).
+
+        With no record stored the roster holds one row for the
+        configured player - the world of ruling 7, where that name
+        is the identity and nothing holds credentials.
+        """
+        if not (dev_mode and _operator_ok(request)):
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        names = store.list_players(root)
+        if not names:
+            rows = [{"player": player, "display_name": player,
+                     "status": "configured", "created_at": None}]
+        else:
+            rows = []
+            for name in names:
+                record = store.read_player_record(root, name)
+                rows.append({"player": record.player,
+                             "display_name": record.display_name,
+                             "status": record.status,
+                             "created_at": record.created_at})
+        return JSONResponse({"players": rows})
+
+    @app.get("/api/dev/history")
+    def dev_history(request: Request,
+                    player: str | None = None) -> Response:
+        """One player's full history (spec A1 section 5).
+
+        Each stored day, newest first, with the sent flag and the
+        stored trial row. The dev plane reads open days too - that
+        is what the plane is for, and the production answer stays
+        the constant 404.
+        """
+        if not (dev_mode and _operator_ok(request)):
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        picked_player = _picked_player(player)
+        if isinstance(picked_player, Response):
+            return picked_player
+        rows = []
+        for day in reversed(store.list_days(root)):
+            record = store.read_day_record(root, day)
+            stored = store.read_json_or_none(
+                store.trial_row_path(root, day, picked_player))
+            trial = None if stored is None else {
+                "p": stored["p"], "target_rank": stored["target_rank"],
+                "decoy_count": stored["decoy_count"],
+                "beaten": stored["beaten"], "tied": stored["tied"]}
+            rows.append({
+                "day": record.day,
+                "status": record.status,
+                "trial_code": record.trial_code,
+                "target_id": record.target_id,
+                "submitted": picked_player in store.list_submissions(
+                    root, day),
+                "trial": trial,
+            })
+        return JSONResponse({"player": picked_player, "days": rows})
 
     @app.get("/api/dev")
     def dev_view(request: Request) -> Response:
@@ -428,17 +574,20 @@ def create_app(service_config: ServiceConfig,
         })
 
     @app.get("/api/dev/rankings")
-    def dev_stored_rankings(request: Request,
-                            day: str | None = None) -> Response:
+    def dev_stored_rankings(request: Request, day: str | None = None,
+                            player: str | None = None) -> Response:
         if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         picked = _picked_day(day)
         if isinstance(picked, Response):
             return picked
+        picked_player = _picked_player(player)
+        if isinstance(picked_player, Response):
+            return picked_player
         record = store.read_day_record(root, picked)
         stored = store.read_json_or_none(
-            store.submission_path(root, picked, player))
+            store.submission_path(root, picked, picked_player))
         if stored is None:
             return JSONResponse({"cause": "no-submission",
                                  "detail": "no stored submission this "
@@ -804,6 +953,16 @@ def create_app(service_config: ServiceConfig,
         found = store.read_player_or_none(root, name)
         return name if found is None else found.display_name
 
+    def _avatar_of(name: str) -> str | None:
+        """The avatar digest for one store key, or None.
+
+        Joined at read time in the manner of _label_of (D5 as
+        ruled 2026-08-21: the boards hold avatars): one file
+        read, and a new picture wants no new board assembly.
+        """
+        found = store.read_account_or_none(root, name)
+        return None if found is None else found.avatar_hash
+
     @app.get("/api/leaderboard")
     def leaderboard_view(request: Request,
                          day: str | None = None) -> Response:
@@ -848,6 +1007,7 @@ def create_app(service_config: ServiceConfig,
         rows = [{
             "player": entry["player"],
             "display_name": _label_of(entry["player"]),
+            "avatar_hash": _avatar_of(entry["player"]),
             "p": entry["p"],
             "target_rank": entry["target_rank"],
             "decoy_count": entry["decoy_count"],
@@ -933,7 +1093,8 @@ def create_app(service_config: ServiceConfig,
         if prepared is None:
             return Response(content=_SKILL_INACTIVE, status_code=200,
                             media_type="application/json")
-        rows = [{**row, "display_name": _label_of(row["player"])}
+        rows = [{**row, "display_name": _label_of(row["player"]),
+                 "avatar_hash": _avatar_of(row["player"])}
                 for row in prepared["rows"]]
         served = {name: value for name, value in prepared.items()
                   if name not in _OPERATOR_ONLY}
@@ -949,12 +1110,98 @@ def create_app(service_config: ServiceConfig,
         # M1: ruling 4 removed the opt-out, thus the field was
         # correct for each player forever, and a value that cannot
         # change is a claim that waits for a reader to trust it.
+        account = store.read_account_or_none(root, caller)
         return JSONResponse({
             "player": caller,
             "display_name": _label_of(caller),
             "streak": _streak(root, caller, _newest_revealed(root)),
             "reminder": False,
+            "description": "" if account is None else account.description,
+            "avatar_hash": None if account is None
+            else account.avatar_hash,
         })
+
+    @app.put("/api/account")
+    async def account_update(request: Request) -> Response:
+        """Store the caller's description (spec A1 section 3).
+
+        The description check guards the boundary. The writer
+        writes for the resolved caller alone - no player parameter
+        on the player plane.
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body is not JSON"},
+                status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body must be an object"},
+                status_code=400)
+        try:
+            record = store.set_account_description(
+                root, caller, body.get("description"),
+                timestamp=store_received_at())
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-description",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse({"description": record.description})
+
+    @app.put("/api/account/avatar")
+    async def avatar_update(request: Request) -> Response:
+        """Store the caller's avatar (spec A1 section 3).
+
+        The body is the raw image bytes. The store writer checks
+        the cap and the magic bytes in that sequence, before a
+        write, and refuses everything else loudly.
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        data = await request.body()
+        try:
+            record = store.set_account_avatar(
+                root, caller, data, timestamp=store_received_at())
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-avatar",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse({"avatar_hash": record.avatar_hash})
+
+    @app.delete("/api/account/avatar")
+    def avatar_remove(request: Request) -> Response:
+        """Remove the caller's avatar. Legal with no picture too."""
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        record = store.clear_account_avatar(
+            root, caller, timestamp=store_received_at())
+        return JSONResponse({"avatar_hash": record.avatar_hash})
+
+    @app.get("/api/avatar/{player_name}")
+    def avatar_view(request: Request, player_name: str) -> Response:
+        """One player's avatar bytes, for each signed-in caller.
+
+        Display names face each player on the boards today, and
+        the avatar is the same class of fact. One constant 404
+        covers a player with no picture and a name with no record.
+        The pool path /image/{image_id} keeps its reveal gate -
+        this path serves no pool image.
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        data = store.read_avatar_or_none(root, player_name)
+        media_type = None if data is None else store.avatar_media_type(data)
+        if data is None or media_type is None:
+            return Response(content=_NO_AVATAR, status_code=404,
+                            media_type="application/json")
+        return Response(content=data, media_type=media_type)
 
     @app.get("/image/{image_id}")
     def image(request: Request, image_id: str) -> Response:

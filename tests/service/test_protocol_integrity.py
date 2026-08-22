@@ -62,7 +62,8 @@ _OPEN_DAY_PATHS = ("/", "/api/day", "/api/me", "/api/history",
                    "/api/reveal", f"/api/reveal?day={DAY}",
                    f"/api/leaderboard?day={DAY}",
                    f"/api/submission?day={DAY}",
-                   "/api/leaderboard/skill", "/api/practice")
+                   "/api/leaderboard/skill", "/api/practice",
+                   "/api/avatar/alice", "/api/avatar/bru")
 
 
 def test_no_open_day_answer_follows_the_other_players_sends(
@@ -126,6 +127,7 @@ def _length_walk(fixture, seed: str, tmp_path: Path,
              f"/api/reveal?day={DAY}", f"/api/leaderboard?day={DAY}",
              f"/api/submission?day={DAY}", "/api/history", "/api/me",
              "/api/practice", "/api/leaderboard/skill",
+             "/api/avatar/ade",
              f"/image/{fixture['image_ids'][0]}",
              "/join/not-a-token", f"/join/ade.{'s' * 43}")
     return ({path: len(client.get(path).content) for path in paths},

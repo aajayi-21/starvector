@@ -204,7 +204,7 @@ def test_a_minted_secret_has_the_pinned_shape() -> None:
 
 _PLAYER_SURFACES = ("/api/day", "/api/reveal", "/api/history",
                     "/api/submission", "/api/leaderboard", "/api/me",
-                    "/api/practice")
+                    "/api/practice", "/api/avatar/ade")
 
 
 def test_an_unknown_cookie_meets_the_constant_401(tmp_path) -> None:

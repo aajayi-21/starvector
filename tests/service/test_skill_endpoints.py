@@ -66,8 +66,8 @@ def test_the_daily_board_serves_each_player(tmp_path) -> None:
     scores = [row["p"] for row in rows]
     assert scores == sorted(scores, reverse=True)
     for row in rows:
-        assert set(row) == {"player", "display_name", "p", "target_rank",
-                            "decoy_count", "streak"}
+        assert set(row) == {"player", "display_name", "avatar_hash", "p",
+                            "target_rank", "decoy_count", "streak"}
 
 
 def _stored_target_ranks(fixture) -> dict[str, int]:
@@ -296,7 +296,8 @@ def test_the_me_surface_holds_no_flag_that_cannot_vary(tmp_path) -> None:
     """
     _fixture, client, tokens = _world(tmp_path)
     body = _as(client, tokens["ade"]).get("/api/me").json()
-    assert set(body) == {"player", "display_name", "streak", "reminder"}
+    assert set(body) == {"player", "display_name", "streak", "reminder",
+                         "description", "avatar_hash"}
 
 
 def test_the_skill_board_answers_the_constant_before_any_reveal(
