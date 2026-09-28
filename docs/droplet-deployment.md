@@ -83,11 +83,13 @@ not install here: it belongs to the optional `local-cuda` and
 `local-xpu` dependency groups, and the base `uv sync` stays near
 0.3 GB.
 
-Room for what follows: a 20,000-image production pool, fetched at
-768 px with rejected candidates pruned, is about 2.3 GB (measured
-estimate, 2026-08-17). Its resident arrays want 4 GB of memory or more
-at start, thus a production pool wants a larger plan and not a larger
-disk.
+Room for what follows: the production pool is 7,500 images (ruling
+2026-09-02, `docs/specs/production-pool.md`). Fetched at 768 px with
+rejected candidates pruned, it is about 0.9 GB — the 2026-08-17
+estimate of 2.3 GB for 20,000 images, scaled. Its resident arrays
+measure 1.1 GB at the development vocabulary and 1.4 GB at the
+projected production vocabulary (bench, 2026-09-02), thus the
+production pool wants the 4 GB plan and not a larger disk.
 
 ## 4. Keys and secrets
 
@@ -503,6 +505,13 @@ The last command is the traverse check from section 6. No answer there
 means Caddy answers 403 on each asset while `/api` keeps working, and
 no journal names the cause.
 
+*Note, 2026-09-24 (spec BR1, `docs/specs/beta-readiness.md` §4):*
+mint your own player (section 13) before the first start. A server
+with no player record refuses to start without `--dev`: with no
+record, each visitor plays as the configured player. The mint
+writes the store and needs no server. A private box with no sign-in
+starts with `--single-player` in the unit's `ExecStart` line.
+
 The uvicorn process binds `127.0.0.1` alone. The doors from the
 internet are Caddy's 80 and 443, and SSH on 22.
 
@@ -512,8 +521,8 @@ The home page asks you to test away from your own network. A home
 router can answer its own public address differently. A droplet has no
 such behaviour, thus each check here runs from anywhere.
 
-- `https://<domain>/` loads the app and shows the invite gate. The
-  gate is success: no cookie, no play.
+- `https://<domain>/` loads the landing page with its sign-in card.
+  That is success: no session, no play.
 - `curl -sI https://<domain>/join/bogus` answers 401 with a JSON
   content type. HTML here means the invite path fell to the app shell,
   and no invite URL can sign anybody in.
@@ -542,9 +551,29 @@ sudo -u starvector .venv/bin/python -m service.players \
     mint <name> --display-name "<Label>"
 ```
 
-The invite prints one time — send it, then forget it. `list` shows the
-roster with no secret in it. `rotate` replaces an invite nobody can
-find, `revoke` stops a player, and `restore` brings one back.
+The invite prints one time — send it, then forget it. `list` shows
+the roster with no secret in it.
+
+*Note, 2026-09-24 (spec BR1 §4):* the invite and the session are two
+different things from this date. The invite makes a session on each device that
+opens it, and the cookie holds that session and not the invite.
+
+- `rotate <name>` replaces an invite nobody can find. Each device
+  that is signed in stays signed in.
+- `revoke <name>` stops a player and ends each of their sessions.
+  `restore <name>` brings the player back with a new invite.
+- `sessions <name>` lists a player's signed-in devices, and
+  `signout <name>` ends each of them.
+- `prune` removes the sessions and device codes at the end of their
+  life. It is safe to run at each moment.
+
+A player adds a second device from their account screen: "Add a
+device" shows an 8-character code for ten minutes, and the new device
+types it on the landing page. An iPhone home-screen app keeps its
+cookies apart from Safari, thus this code is how a player signs that
+app in. A tester who signed in before this note holds a cookie with
+the invite in it. The server does not read that cookie, thus each
+such tester opens their invite address one more time.
 
 Mint your own player first, and open your own invite. The first mint
 switches access control on for the world. From then on, each player
@@ -589,11 +618,66 @@ sudo -u starvector .venv/bin/python -m service.day \
     --service-config /etc/starvector/service.json status
 ```
 
-A close at the development pool costs cents: some embedding posts for
-each submission, cached for repeats. The lifecycle is deliberately
-hand-driven. After the first week runs cleanly by hand, a systemd
-timer around the two `curl` commands can automate it. Read the close
-output for that first week.
+A close at the development pool costs cents: some embedding posts
+for each submission, cached for repeats. Do the close, the reveal,
+and the open in that sequence: an open refuses while the latest day is
+not revealed.
+
+### The automatic rollover
+
+*Note, 2026-09-24 (spec BR1 §3).* After the first week runs cleanly
+by hand, a timer does the day each day at one UTC hour: it closes
+the day that is due, reveals it, and opens the next.
+
+1. Put the hour in `/etc/starvector/service.json` as
+   `"closes_at_utc": "22:00"` (24-hour, UTC) and start the server
+   again with `sudo systemctl restart starvector`. The app shows the
+   countdown to that instant.
+2. Set the same hour in `deploy/starvector-day.timer`
+   (`OnCalendar=*-*-* 22:00:00 UTC`). Keep it clear of 04:30 (the
+   update reboot) and 05:00 (the backup).
+3. Optional: put `STARVECTOR_HEALTHCHECK_URL` in
+   `/etc/starvector/env`. Each rollover pings it, and a failure pings
+   it with `/fail` added, thus a missed day alerts you.
+4. Install and start the timer:
+
+```
+cd /srv/starvector/app
+sudo cp deploy/starvector-day.service deploy/starvector-day.timer \
+    /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now starvector-day.timer
+systemctl list-timers starvector-day.timer
+```
+
+To see what the next rollover does, with no move:
+
+```
+sudo -u starvector .venv/bin/python -m service.rollover \
+    --service-config /etc/starvector/service.json --plan
+```
+
+To read the last runs: the console's Automatic days tab shows each
+run with its outcome, and `journalctl -u starvector-day -n 50` has
+each line.
+
+The rollover closes a day only when its close time is here, thus a
+second start the same day does nothing. When the close meets a
+provider failure it tries again with a growing wait, and the day stays
+in `closing` — no send gets in — until a subsequent start finishes it. The
+timer does not catch up at boot: after a box was down at the hour,
+start the rollover by hand with
+`sudo systemctl start starvector-day`, or press `Do what is due now`
+in the console.
+
+*Note, 2026-09-24 (spec BR1 §7.2).* The console's Automatic days tab
+pauses the timer and resumes it. A paused timer starts at the hour,
+writes a `paused` run record, and moves no day. The `Do what is due
+now` button does the timer's work immediately and does not read the
+pause. The
+lock and the run records are in `store/rollover/`, thus the unit
+writes to the store. An install from before this note copies the two
+unit files again and runs `sudo systemctl daemon-reload`.
 
 ## 15. Backups
 
@@ -652,7 +736,7 @@ new artifacts, one `service.json` edit, and one `systemctl restart`.
 | surface | exposure |
 |---|---|
 | 80 and 443 (Caddy) | the internet — app shell, `/api`, `/image`, `/join` |
-| lifecycle, console, and mint paths | blocked at the edge (404) and bearer-gated in the process |
+| lifecycle, console, mint, and results paths | blocked at the edge (404) and bearer-gated in the process |
 | 8000 and 8001 (uvicorn) | `127.0.0.1` alone |
 | 22 (SSH) | the internet, keys alone, with a connection cap — and your address alone with a cloud firewall |
 | player surfaces | 401 with no invited session |
