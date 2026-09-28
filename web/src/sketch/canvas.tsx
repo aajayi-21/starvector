@@ -318,9 +318,9 @@ export function SketchCanvas(props: SketchCanvasProps): React.JSX.Element {
         position: "relative",
         aspectRatio: "1 / 1",
         width: "100%",
-        background: "#272c37",
-        border: "1px solid var(--color-divider)",
-        borderRadius: 8,
+        background: "var(--canvas, #1f2430)",
+        border: "1px solid var(--canvas-border, #2e3544)",
+        borderRadius: 12,
         overflow: "hidden",
         cursor: props.mode === "select" ? "pointer" : "crosshair",
       }}
@@ -417,8 +417,8 @@ export function ReplayCanvas(props: {
       style={{
         aspectRatio: "1 / 1",
         width: "100%",
-        background: "#272c37",
-        borderRadius: 8,
+        background: "var(--canvas, #1f2430)",
+        borderRadius: 12,
         overflow: "hidden",
       }}
     >

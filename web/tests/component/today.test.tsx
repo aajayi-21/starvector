@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "../../src/api/client";
@@ -14,10 +14,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function typeImpression(text: string): Promise<void> {
-  const input = await screen.findByPlaceholderText(
-    "one impression — Enter commits",
-  );
+const SEND = "Send today's session";
+
+async function typeWord(text: string): Promise<void> {
+  const input = await screen.findByLabelText("Add a word");
   fireEvent.change(input, { target: { value: text } });
   fireEvent.keyDown(input, { key: "Enter" });
 }
@@ -58,23 +58,30 @@ function firePointer(
 }
 
 describe("the Today screen", () => {
-  it("renders the open workspace with code cells and palette", async () => {
-    renderAt("/");
-    await screen.findByText("Send today's trial");
+  it("renders the code, the canvas, the colors, and one send button", async () => {
+    renderAt("/today");
+    await screen.findByText(SEND);
     const day = await makeMockApi({ today: HARNESS_TODAY }).getDay();
-    for (const cell of day.trial_code) {
-      expect(screen.getAllByText(cell).length).toBeGreaterThan(0);
-    }
-    expect(screen.getByLabelText("color ink")).toBeDefined();
-    expect(screen.getByLabelText("color teal")).toBeDefined();
-    expect(screen.getByText("Send today's trial")).toBeDefined();
+    expect(
+      screen.getByRole("img", {
+        name: `Code ${[...day.trial_code].join(" ")}`,
+      }),
+    ).toBeDefined();
+    expect(screen.getByLabelText("white ink")).toBeDefined();
+    expect(screen.getByLabelText("teal ink")).toBeDefined();
+    expect(screen.getByTestId("sketch-canvas")).toBeDefined();
+    expect(screen.getAllByText(SEND)).toHaveLength(1);
+    // No jargon on the player's screen.
+    expect(screen.queryByText(/commitment/i)).toBeNull();
+    expect(screen.queryByText(/impression/i)).toBeNull();
+    expect(screen.queryByText(/trial/i)).toBeNull();
   });
 
   // Spec A1 §9: the extracted intake cards serialize identically
   // to the inline cards they replaced. The literal below is the
-  // fixture — an extraction that moves one byte of the wire
-  // record fails here.
-  it("serializes the extracted cards to the pinned wire record", async () => {
+  // fixture — a change that moves one byte of the wire record
+  // fails here.
+  it("serializes the cards to the pinned wire record", async () => {
     const sent: unknown[] = [];
     const mock = makeMockApi({ today: HARNESS_TODAY });
     const api: Api = {
@@ -84,22 +91,22 @@ describe("the Today screen", () => {
         return mock.submit(record);
       },
     };
-    const view = renderAt("/", api);
-    await screen.findByText("Send today's trial");
+    const view = renderAt("/today", api);
+    await screen.findByText(SEND);
     const live = stubCanvasBox(view.container);
     firePointer(live, "pointerdown", 30, 30);
     firePointer(live, "pointermove", 150, 150);
     firePointer(live, "pointerup", 150, 150);
-    await typeImpression("tall vertical structure");
-    fireEvent.click(screen.getByText("Select strokes"));
+    await typeWord("tall vertical structure");
+    fireEvent.click(screen.getByText("Pick strokes"));
     firePointer(live, "pointerdown", 90, 90);
-    fireEvent.change(screen.getByPlaceholderText(/what is it/), {
+    fireEvent.change(screen.getByLabelText("Name the picked strokes"), {
       target: { value: "tower" },
     });
-    fireEvent.click(screen.getByText("Group"));
+    fireEvent.click(screen.getByText("Label"));
     await screen.findByText("tower");
-    fireEvent.click(screen.getByText("Send today's trial"));
-    await screen.findByText(/Sent\./);
+    fireEvent.click(screen.getByText(SEND));
+    await screen.findByText(/you're in for today/);
     expect(sent).toEqual([
       {
         impressions: ["tall vertical structure"],
@@ -120,13 +127,27 @@ describe("the Today screen", () => {
   });
 
   it("disables send until something is scoreable", async () => {
-    renderAt("/");
-    const send = (await screen.findByText(
-      "Send today's trial",
-    )) as HTMLButtonElement;
+    renderAt("/today");
+    const send = (await screen.findByText(SEND)) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
-    await typeImpression("tall vertical structure");
+    expect(
+      screen.getByText(/Draw something or add a word first/),
+    ).toBeDefined();
+    await typeWord("tall vertical structure");
     await waitFor(() => expect(send.disabled).toBe(false));
+    expect(screen.getByText(/You can send once/)).toBeDefined();
+  });
+
+  it("adds a word with the Add button, not only with Enter", async () => {
+    renderAt("/today");
+    const input = await screen.findByLabelText("Add a word");
+    fireEvent.change(input, { target: { value: "cold" } });
+    fireEvent.click(screen.getByText("Add"));
+    expect(await screen.findByLabelText("Remove cold")).toBeDefined();
+    fireEvent.click(screen.getByLabelText("Remove cold"));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Remove cold")).toBeNull(),
+    );
   });
 
   it("locks the button while the send is in flight", async () => {
@@ -141,19 +162,14 @@ describe("the Today screen", () => {
       ...makeMockApi({ today: HARNESS_TODAY }),
       submit: () => gate,
     };
-    renderAt("/", api);
-    await typeImpression("cold");
-    const send = (await screen.findByText(
-      "Send today's trial",
-    )) as HTMLButtonElement;
-    fireEvent.click(send);
+    renderAt("/today", api);
+    await typeWord("cold");
+    fireEvent.click(await screen.findByText(SEND));
     // In flight: the button is disabled — a second click cannot post.
     const sending = (await screen.findByText("Sending…")) as HTMLButtonElement;
     expect(sending.disabled).toBe(true);
     release({ trial_id: "ab".repeat(16), atom_count: 1 });
-    expect(await screen.findByText(/Sent\./)).toBeDefined();
-    expect(screen.getByText("ab".repeat(16))).toBeDefined();
-    expect(screen.getByText(/1 atoms/)).toBeDefined();
+    expect(await screen.findByText(/you're in for today/)).toBeDefined();
   });
 
   it("fires exactly one POST for a synchronous double-click", async () => {
@@ -172,32 +188,32 @@ describe("the Today screen", () => {
         return gate;
       },
     };
-    renderAt("/", api);
-    await typeImpression("cold");
-    const send = await screen.findByText("Send today's trial");
+    renderAt("/today", api);
+    await typeWord("cold");
+    const send = await screen.findByText(SEND);
     // isPending flips a task late — the ref guard must catch the
     // second click of the same task.
     fireEvent.click(send);
     fireEvent.click(send);
     release({ trial_id: "cd".repeat(16), atom_count: 1 });
-    await screen.findByText(/Sent\./);
+    await screen.findByText(/you're in for today/);
     expect(calls).toBe(1);
   });
 
-  it("shows friendly copy for an already-submitted 409, not the token", async () => {
+  it("shows the sent view for an already-submitted 409, not the token", async () => {
     const api: Api = {
       ...makeMockApi({ today: HARNESS_TODAY }),
       submit: () => Promise.reject(new ApiError(409, "already-submitted")),
     };
-    renderAt("/", api);
-    await typeImpression("cold");
-    fireEvent.click(await screen.findByText("Send today's trial"));
-    // The 409 locks the screen into the submitted view.
-    expect(await screen.findByText(/Sent\./)).toBeDefined();
+    renderAt("/today", api);
+    await typeWord("cold");
+    fireEvent.click(await screen.findByText(SEND));
+    // The 409 locks the screen into the sent view.
+    expect(await screen.findByText(/you're in for today/)).toBeDefined();
     expect(screen.queryByText("already-submitted")).toBeNull();
   });
 
-  it("renders a gate refusal's own detail", async () => {
+  it("renders a refusal in plain words", async () => {
     const detail =
       "no atom reads into a weighted channel - add an impression, a " +
       "labeled group, or strokes";
@@ -206,18 +222,18 @@ describe("the Today screen", () => {
       submit: () =>
         Promise.reject(new ApiError(400, "no-scoreable-atom", detail)),
     };
-    renderAt("/", api);
-    await typeImpression("cold");
-    fireEvent.click(await screen.findByText("Send today's trial"));
-    expect(await screen.findByRole("alert")).toHaveProperty(
-      "textContent",
-      detail,
+    renderAt("/today", api);
+    await typeWord("cold");
+    fireEvent.click(await screen.findByText(SEND));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(
+      "Add at least one word or a few strokes before you send.",
     );
   });
 
   it("autosaves the draft to localStorage, keyed by day", async () => {
-    renderAt("/");
-    await typeImpression("water nearby");
+    renderAt("/today");
+    await typeWord("water nearby");
     await waitFor(
       () => {
         const raw = window.localStorage.getItem(`sv:draft:${HARNESS_TODAY}`);
@@ -228,15 +244,40 @@ describe("the Today screen", () => {
     );
   });
 
-  it("shows the submitted view when the server says submitted", async () => {
+  it("shows the sent view when the server says sent", async () => {
     const base = makeMockApi({ today: HARNESS_TODAY });
     const api: Api = {
       ...base,
       getDay: async () => ({ ...(await base.getDay()), submitted: true }),
     };
-    renderAt("/", api);
-    expect(await screen.findByText(/Sent\./)).toBeDefined();
-    expect(screen.queryByText("Send today's trial")).toBeNull();
+    renderAt("/today", api);
+    expect(await screen.findByText(/you're in for today/)).toBeDefined();
+    expect(screen.queryByText(SEND)).toBeNull();
+  });
+
+  it("treats a closing day as closed", async () => {
+    const base = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...base,
+      getDay: async () => ({ ...(await base.getDay()), status: "closing" }),
+    };
+    renderAt("/today", api);
+    expect(await screen.findByText("Today's session has closed")).toBeDefined();
+    expect(screen.queryByText(SEND)).toBeNull();
+  });
+
+  it("points at practice when no day is open", async () => {
+    const api: Api = {
+      ...makeMockApi({ today: HARNESS_TODAY }),
+      getDay: () => Promise.reject(new ApiError(404, undefined, "no day open")),
+    };
+    renderAt("/today", api);
+    expect(
+      await screen.findByText("No session is open right now"),
+    ).toBeDefined();
+    expect(
+      within(screen.getByRole("main")).getByRole("link", { name: "Practice" }),
+    ).toBeDefined();
   });
 });
 
@@ -250,13 +291,21 @@ describe("the countdown", () => {
         closes_at: "2099-01-01T22:00:00+00:00",
       }),
     };
-    renderAt("/", api);
-    expect(await screen.findByText(/closes in \d+h \d+m/)).toBeDefined();
+    renderAt("/today", api);
+    expect(await screen.findByText(/Closes in \d+ h/)).toBeDefined();
   });
 
-  it("stays absent when closes_at is null", async () => {
-    renderAt("/");
-    await screen.findByText("Send today's trial");
-    expect(screen.queryByText(/closes in/)).toBeNull();
+  it("stays absent when closes_at is null or past", async () => {
+    const base = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...base,
+      getDay: async () => ({
+        ...(await base.getDay()),
+        closes_at: "2001-01-01T22:00:00+00:00",
+      }),
+    };
+    renderAt("/today", api);
+    await screen.findByText(SEND);
+    expect(screen.queryByText(/Closes in/)).toBeNull();
   });
 });

@@ -1,13 +1,13 @@
 /**
- * The impressions card (spec A1 §6): extracted from the daily
- * screen so practice mounts the same input. The list state stays
- * in the screen (the daily draft autosaves it); the in-progress
- * input line is this card's own.
+ * The words card (spec A1 §6, copy per spec BR1 §6): a word or short
+ * phrase for each thing that comes to mind. The list state stays in
+ * the screen (the daily draft saves it); the line being typed is this
+ * card's own. Enter adds, and so does the Add button — a phone
+ * keyboard does not always show that Enter adds.
  */
 
+import { X } from "@phosphor-icons/react";
 import { useState } from "react";
-
-import { Kicker } from "../ui/kicker";
 
 export function ImpressionsCard(props: {
   impressions: ReadonlyArray<string>;
@@ -26,69 +26,74 @@ export function ImpressionsCard(props: {
   };
 
   return (
-    <div className="card">
-      <Kicker>Impressions</Kicker>
-      <input
-        className="input"
-        placeholder="one impression — Enter commits"
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) {
-            return;
-          }
-          if (event.key === "Enter") {
-            event.preventDefault();
-            add();
-          }
-        }}
-      />
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {impressions.map((text, index) => (
-          <div
-            key={`${text}-${
-              // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
-              index
-            }`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 13,
-              padding: "6px 8px",
-              background: "var(--color-neutral-900)",
-              borderRadius: 6,
-            }}
-          >
-            <span
+    <section className="card" aria-labelledby="words-heading">
+      <div className="stack-sm">
+        <h3 id="words-heading">Words</h3>
+        <p className="hint" id="words-hint">
+          A word or short phrase for each thing that comes to mind.
+        </p>
+      </div>
+      <div className="row" style={{ flexWrap: "nowrap" }}>
+        <input
+          className="input"
+          aria-label="Add a word"
+          aria-describedby="words-hint"
+          placeholder="e.g. tall, cold, metal"
+          maxLength={200}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
+            if (event.key === "Enter") {
+              event.preventDefault();
+              add();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={input.trim() === ""}
+          onClick={add}
+        >
+          Add
+        </button>
+      </div>
+      {impressions.length === 0 ? null : (
+        <ul
+          className="row"
+          style={{ gap: 8, margin: 0, padding: 0, listStyle: "none" }}
+        >
+          {impressions.map((text, index) => (
+            <li
+              key={`${text}-${
+                // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
+                index
+              }`}
+              className="badge"
               style={{
-                width: 5,
-                height: 5,
-                borderRadius: "50%",
-                background: "var(--color-accent)",
-                flex: "none",
-              }}
-            />
-            <span style={{ flex: 1 }}>{text}</span>
-            <button
-              type="button"
-              title="remove"
-              aria-label={`remove impression ${text}`}
-              onClick={() => onRemoveAt(index)}
-              style={{
-                border: "none",
-                background: "none",
-                color: "var(--color-neutral-500)",
-                cursor: "pointer",
                 fontSize: 14,
-                padding: "0 2px",
+                fontWeight: 500,
+                color: "var(--text)",
+                padding: "4px 4px 4px 12px",
               }}
             >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
+              {text}
+              <button
+                type="button"
+                aria-label={`Remove ${text}`}
+                onClick={() => onRemoveAt(index)}
+                className="btn btn-ghost"
+                style={{ minHeight: 26, padding: 4, borderRadius: 999 }}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

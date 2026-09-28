@@ -4,11 +4,20 @@
  * fetch reads as the server not answering.
  */
 
+import type { AboutView } from "../api/types";
 import type {
+  DevDayDetail,
   DevDays,
+  DevDeviceCode,
   DevHistory,
+  DevIndexCheck,
+  DevIndexStatus,
+  DevPlayerDetail,
+  DevQueryResult,
   DevRankings,
+  DevRolloverResult,
   DevRoster,
+  DevSchedule,
   DevStored,
   LifecycleAck,
   MintedInvite,
@@ -47,13 +56,16 @@ function authorized(token: string, init?: RequestInit): RequestInit {
   };
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  let response: Response;
+async function send(url: string, init?: RequestInit): Promise<Response> {
   try {
-    response = await fetch(url, init);
+    return await fetch(url, init);
   } catch {
     throw new DevApiError(0, "the server did not answer");
   }
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await send(url, init);
   if (!response.ok) {
     let message = "refused";
     try {
@@ -82,6 +94,31 @@ export interface DevApi {
   postReveal(): Promise<LifecycleAck>;
   mintPlayer(player: string, displayName: string): Promise<MintedInvite>;
   imageUrl(imageId: string): string;
+
+  // ── spec BR1 §7 ──
+  /** The season facts; a public read with no session. */
+  getAbout(): Promise<AboutView>;
+  getDay(day: string): Promise<DevDayDetail>;
+  getSchedule(): Promise<DevSchedule>;
+  setPause(paused: boolean, note: string): Promise<DevSchedule>;
+  runRollover(): Promise<DevRolloverResult>;
+  getPlayer(player: string): Promise<DevPlayerDetail>;
+  /** Null when the player has no picture. */
+  getAvatar(player: string): Promise<Blob | null>;
+  rotatePlayer(player: string): Promise<MintedInvite>;
+  restorePlayer(player: string): Promise<MintedInvite>;
+  revokePlayer(player: string): Promise<{ player: string; status: string }>;
+  signOutPlayer(player: string): Promise<{ player: string; ended: number }>;
+  endSession(
+    player: string,
+    sessionId: string,
+  ): Promise<{ player: string; ended: number }>;
+  issueDeviceCode(player: string): Promise<DevDeviceCode>;
+  prune(): Promise<{ sessions: number; device_codes: number }>;
+  getIndex(): Promise<DevIndexStatus>;
+  buildIndex(): Promise<DevIndexStatus>;
+  verifyIndex(): Promise<DevIndexCheck>;
+  queryIndex(sql: string): Promise<DevQueryResult>;
 }
 
 /**
@@ -149,5 +186,102 @@ export function makeDevApi(token: TokenSource = () => ""): DevApi {
         }),
       ),
     imageUrl: (imageId) => `/image/${imageId}`,
+
+    getAbout: () => request<AboutView>("/api/about"),
+    getDay: (day) =>
+      request<DevDayDetail>(
+        `/api/dev/day?day=${encodeURIComponent(day)}`,
+        authorized(token()),
+      ),
+    getSchedule: () =>
+      request<DevSchedule>("/api/dev/schedule", authorized(token())),
+    setPause: (paused, note) =>
+      request<DevSchedule>(
+        "/api/dev/rollover/pause",
+        authorized(token(), jsonBody({ paused, note })),
+      ),
+    runRollover: () =>
+      request<DevRolloverResult>(
+        "/api/dev/rollover/run",
+        authorized(token(), { method: "POST" }),
+      ),
+    getPlayer: (player) =>
+      request<DevPlayerDetail>(playerPath(player), authorized(token())),
+    getAvatar: async (player) => {
+      // An <img> cannot send the bearer, so the bytes come through
+      // fetch and the caller shows them from an object URL.
+      const response = await send(
+        `${playerPath(player)}/avatar`,
+        authorized(token()),
+      );
+      if (response.status === 404) {
+        return null;
+      }
+      if (!response.ok) {
+        throw new DevApiError(response.status, "the picture did not load");
+      }
+      return response.blob();
+    },
+    rotatePlayer: (player) =>
+      request<MintedInvite>(
+        `${playerPath(player)}/rotate`,
+        authorized(token(), { method: "POST" }),
+      ),
+    restorePlayer: (player) =>
+      request<MintedInvite>(
+        `${playerPath(player)}/restore`,
+        authorized(token(), { method: "POST" }),
+      ),
+    revokePlayer: (player) =>
+      request(
+        `${playerPath(player)}/revoke`,
+        authorized(token(), { method: "POST" }),
+      ),
+    signOutPlayer: (player) =>
+      request(
+        `${playerPath(player)}/signout`,
+        authorized(token(), { method: "POST" }),
+      ),
+    endSession: (player, sessionId) =>
+      request(
+        `${playerPath(player)}/sessions/${encodeURIComponent(sessionId)}`,
+        authorized(token(), { method: "DELETE" }),
+      ),
+    issueDeviceCode: (player) =>
+      request<DevDeviceCode>(
+        `${playerPath(player)}/device-code`,
+        authorized(token(), { method: "POST" }),
+      ),
+    prune: () =>
+      request("/api/dev/prune", authorized(token(), { method: "POST" })),
+    getIndex: () =>
+      request<DevIndexStatus>("/api/dev/index", authorized(token())),
+    buildIndex: () =>
+      request<DevIndexStatus>(
+        "/api/dev/index/build",
+        authorized(token(), { method: "POST" }),
+      ),
+    verifyIndex: () =>
+      request<DevIndexCheck>(
+        "/api/dev/index/verify",
+        authorized(token(), { method: "POST" }),
+      ),
+    queryIndex: (sql) =>
+      request<DevQueryResult>(
+        "/api/dev/index/query",
+        authorized(token(), jsonBody({ sql })),
+      ),
+  };
+}
+
+function playerPath(player: string): string {
+  return `/api/dev/players/${encodeURIComponent(player)}`;
+}
+
+function jsonBody(value: unknown): RequestInit {
+  return {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(value),
   };
 }

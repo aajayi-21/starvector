@@ -8,8 +8,10 @@
 
 import type { Api } from "./client";
 import type {
+  AboutView,
   BaselineBandPoint,
   DayView,
+  DeviceCodeView,
   HistoryDayRow,
   HistoryView,
   LeaderboardRow,
@@ -20,6 +22,9 @@ import type {
   RankingHeadRow,
   ReportRow,
   RevealView,
+  SessionRow,
+  SessionsView,
+  SignInAck,
   SkillBoardRow,
   SkillBoardView,
   StoredSubmission,
@@ -127,6 +132,16 @@ export interface MockOptions {
   /** The anchor day — fixed so tests are byte-stable. */
   today?: string;
   player?: string;
+}
+
+/** The mock's photo credit: every revealed photo gets one. */
+function creditFor(imageId: string) {
+  const title = `Mock photo ${imageId.slice(0, 6)}`;
+  return {
+    source: "Wikimedia Commons",
+    title,
+    page: `https://commons.wikimedia.org/wiki/File:${title.replaceAll(" ", "_")}.jpg`,
+  };
 }
 
 // ── spec M1: a synthetic population for the skill board ─────────
@@ -392,6 +407,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
   function revealFor(day: string): RevealView {
     return {
       day,
+      credit: creditFor(targetId(day)),
       target_id: targetId(day),
       secret: seededHex(`secret:${day}`, 64),
       commitment: seededHex(`commitment:${day}`, 64),
@@ -410,6 +426,23 @@ export function makeMockApi(options: MockOptions = {}): Api {
   // deterministic with no hashing dependency.
   let description = "";
   let avatarHash: string | null = null;
+
+  // Full-mock sessions (spec BR1 §4): this device plus one phone.
+  let sessions: SessionRow[] = [
+    {
+      id: seededHex("session:this", 64),
+      label: "Chrome on Mac",
+      created_at: `${shiftDay(today, -12)}T09:14:00+00:00`,
+      current: true,
+    },
+    {
+      id: seededHex("session:phone", 64),
+      label: "Safari on iPhone",
+      created_at: `${shiftDay(today, -3)}T21:40:00+00:00`,
+      current: false,
+    },
+  ];
+  let codeCount = 0;
 
   return {
     // ── §6 surfaces: reachable only in full-mock mode ──────────
@@ -499,6 +532,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       return Promise.resolve({
         day,
         target_id: targetId(day),
+        credit: creditFor(targetId(day)),
         trial,
         target_position: targetPosition,
         ranking_head: head,
@@ -651,6 +685,58 @@ export function makeMockApi(options: MockOptions = {}): Api {
         `<text x="32" y="48" font-size="9" fill="#97a1b4" ` +
         `text-anchor="middle" font-family="monospace">${label}</text></svg>`;
       return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    },
+    getAbout(): Promise<AboutView> {
+      return Promise.resolve({
+        test_season: true,
+        photo_count: DECOY_COUNT + 1,
+        closes_at_utc: "22:00",
+      });
+    },
+    getSessions(): Promise<SessionsView> {
+      return Promise.resolve({ sessions: sessions.map((row) => ({ ...row })) });
+    },
+    removeSession(id: string): Promise<{ removed: number }> {
+      const before = sessions.length;
+      sessions = sessions.filter((row) => row.id !== id || row.current);
+      if (sessions.length === before) {
+        return Promise.reject(new ApiError(404, undefined, "no session"));
+      }
+      return Promise.resolve({ removed: 1 });
+    },
+    signOutOthers(): Promise<{ removed: number }> {
+      const removed = sessions.filter((row) => !row.current).length;
+      sessions = sessions.filter((row) => row.current);
+      return Promise.resolve({ removed });
+    },
+    signOut(): Promise<{ signed_out: boolean }> {
+      sessions = sessions.filter((row) => !row.current);
+      return Promise.resolve({ signed_out: true });
+    },
+    issueDeviceCode(): Promise<DeviceCodeView> {
+      codeCount += 1;
+      const code = fromAlphabet(
+        `device-code:${codeCount}`,
+        "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
+        8,
+      );
+      // The one clock read in the mock: a code's expiry is a live
+      // countdown, and a fixed instant reads as expired in each
+      // session after it. Nothing byte-compares this field.
+      return Promise.resolve({
+        code: `${code.slice(0, 4)}-${code.slice(4)}`,
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      });
+    },
+    redeemDeviceCode(code: string): Promise<SignInAck> {
+      const compact = code.replaceAll(/[\s-]/g, "").toUpperCase();
+      if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{8}$/.test(compact)) {
+        return Promise.reject(new ApiError(400, "bad-code"));
+      }
+      return Promise.resolve({ player, display_name: player });
+    },
+    exportUrl(): string {
+      return "data:application/json,%7B%7D";
     },
     getDoor(): Promise<{ open: boolean }> {
       // The full-mock world is a dev world, thus the door is on.

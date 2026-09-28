@@ -7,9 +7,11 @@
 
 import type { Api } from "./client";
 import type {
+  AboutView,
   AccountAck,
   AvatarAck,
   DayView,
+  DeviceCodeView,
   DoorAck,
   DoorView,
   HistoryView,
@@ -19,6 +21,8 @@ import type {
   PracticeScore,
   RefusalBody,
   RevealView,
+  SessionsView,
+  SignInAck,
   SkillBoardView,
   StoredSubmission,
   SubmissionAck,
@@ -134,6 +138,33 @@ export function makeRealApi(): Api {
         player,
         ...(displayName === undefined ? {} : { display_name: displayName }),
       });
+    },
+    getAbout(): Promise<AboutView> {
+      return request<AboutView>("/api/about");
+    },
+    getSessions(): Promise<SessionsView> {
+      return request<SessionsView>("/api/sessions");
+    },
+    removeSession(id: string): Promise<{ removed: number }> {
+      return request<{ removed: number }>(
+        `/api/sessions/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      );
+    },
+    signOutOthers(): Promise<{ removed: number }> {
+      return postJson<{ removed: number }>("/api/sessions/others/signout", {});
+    },
+    signOut(): Promise<{ signed_out: boolean }> {
+      return postJson<{ signed_out: boolean }>("/api/session/signout", {});
+    },
+    issueDeviceCode(): Promise<DeviceCodeView> {
+      return postJson<DeviceCodeView>("/api/device-code", {});
+    },
+    redeemDeviceCode(code: string): Promise<SignInAck> {
+      return postJson<SignInAck>("/api/device-code/redeem", { code });
+    },
+    exportUrl(): string {
+      return "/api/me/export";
     },
   };
 }

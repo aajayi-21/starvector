@@ -1,0 +1,439 @@
+/*
+ * The player app's theme (spec BR1 §6): light by default, dark when
+ * the device asks. Semantic tokens only — a component names a role
+ * (surface, muted text, primary action), never a raw color, so the
+ * two themes swap in one place. Each text color clears WCAG AA
+ * (4.5:1) on each surface it sits on; the numbers are in the spec.
+ *
+ * The drawing surface stays dark in both themes: the stroke palette
+ * (spec C1 §5) was chosen against a dark ground and the scorer reads
+ * those exact colors, so the ground moves and the ink does not.
+ *
+ * The operator console keeps nocturne.css.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --border: #dbe1ea;
+  --border-strong: #c2cad7;
+  --text: #141a26;
+  --text-2: #475063;
+  --text-3: #5c6577;
+  --accent: #2856c7;
+  --accent-hover: #2149ad;
+  --accent-soft: #e8eefc;
+  --accent-text: #2451bd;
+  --on-accent: #ffffff;
+  --good: #17784a;
+  --good-soft: #e3f3ea;
+  --warn: #8a5800;
+  --warn-soft: #fbf0d9;
+  --bad: #b42318;
+  --bad-soft: #fce8e6;
+  --chance: #8a93a3;
+
+  --canvas: #1f2430;
+  --canvas-border: #2e3544;
+
+  --shadow-sm:
+    0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.07);
+  --shadow-md:
+    0 6px 16px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.05);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --tabbar-height: 64px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116;
+    --surface: #161b23;
+    --surface-2: #1e2530;
+    --border: #29303c;
+    --border-strong: #3a4352;
+    --text: #e7eaf0;
+    --text-2: #b3bccb;
+    --text-3: #949eaf;
+    --accent: #7ba3ff;
+    --accent-hover: #93b4ff;
+    --accent-soft: #1b2944;
+    --accent-text: #93b4ff;
+    --on-accent: #0b1020;
+    --good: #56c795;
+    --good-soft: #13291e;
+    --warn: #e3b152;
+    --warn-soft: #2d2413;
+    --bad: #ff8f85;
+    --bad-soft: #331b19;
+    --chance: #6f788a;
+    --canvas: #1f2430;
+    --canvas-border: #353d4d;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-weight: 650;
+}
+h1 {
+  font-size: 28px;
+}
+h2 {
+  font-size: 20px;
+}
+h3 {
+  font-size: 17px;
+}
+p {
+  margin: 0;
+}
+a {
+  color: var(--accent-text);
+  text-underline-offset: 3px;
+}
+img {
+  display: block;
+  max-width: 100%;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* — text roles — */
+.muted {
+  color: var(--text-2);
+}
+.subtle {
+  color: var(--text-3);
+}
+.small {
+  font-size: 14px;
+}
+.tiny {
+  font-size: 13px;
+}
+.eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* — surfaces — */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.card-quiet {
+  box-shadow: none;
+}
+.card-hero {
+  padding: 28px;
+  box-shadow: var(--shadow-md);
+}
+.divider {
+  height: 1px;
+  background: var(--border);
+  border: 0;
+  margin: 4px 0;
+}
+
+/* — buttons — */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .btn {
+    transition:
+      background-color 0.12s,
+      border-color 0.12s,
+      color 0.12s;
+  }
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.btn-secondary {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.btn-ghost {
+  color: var(--accent-text);
+  padding-inline: 10px;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+.btn-danger {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--border));
+  color: var(--bad);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--bad-soft);
+}
+.btn-large {
+  min-height: 52px;
+  padding: 12px 22px;
+  font-size: 17px;
+  border-radius: 12px;
+}
+.btn-block {
+  width: 100%;
+}
+.btn-icon {
+  min-height: 40px;
+  min-width: 40px;
+  padding: 8px;
+}
+
+/* — forms — */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.hint {
+  font-size: 14px;
+  color: var(--text-3);
+}
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.input:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+.input:focus-visible {
+  border-color: var(--accent);
+  outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: 0;
+}
+.input:disabled {
+  opacity: 0.6;
+}
+textarea.input {
+  min-height: 88px;
+  resize: vertical;
+}
+select.input {
+  cursor: pointer;
+}
+
+/* — badges — */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.badge-accent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.badge-good {
+  background: var(--good-soft);
+  color: var(--good);
+}
+.badge-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+/* — notices — */
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 14px;
+}
+.notice-bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.notice-good {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+/* — tables — */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.table th {
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.table tr.is-you td {
+  background: var(--accent-soft);
+}
+
+/* — disclosure — */
+details.disclosure > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  min-height: 32px;
+}
+details.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+details.disclosure > summary::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text-3);
+  border-bottom: 2px solid var(--text-3);
+  transform: rotate(-45deg);
+  flex: none;
+  margin-right: 2px;
+}
+details.disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+details.disclosure > .disclosure-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}

@@ -6,13 +6,24 @@ export const OPERATOR_TOKEN = "e2e-operator-token";
 export const OPERATOR_HEADERS = {
   Authorization: `Bearer ${OPERATOR_TOKEN}`,
 };
+/** The invite tokens the fixture mints (the /join paths). */
 export const TOKENS = {
   ade: `ade.${"1".repeat(43)}`,
   bru: `bru.${"2".repeat(43)}`,
 };
 
 /**
- * Plant the session cookie, in the manner the invite gate does.
+ * The sessions the fixture plants, with pinned secrets (spec BR1
+ * §4: the cookie holds a session and never the invite). Kept equal
+ * to serve_fixture.py SESSION_SECRETS by hand.
+ */
+export const SESSIONS = {
+  ade: `ade.${"3".repeat(43)}`,
+  bru: `bru.${"4".repeat(43)}`,
+};
+
+/**
+ * Plant a session cookie, in the manner the invite gate does.
  *
  * The fixture mints players, so every player surface refuses
  * without one. Cookies ignore ports, thus a single 127.0.0.1 entry
@@ -20,17 +31,17 @@ export const TOKENS = {
  * `page.request` calls at the server keep working.
  *
  * This is the ambient path. One spec walks GET /join/{token} for
- * real, which is the only place the server's own Set-Cookie is
- * exercised in a browser.
+ * real, and one signs a second browser in with a device code:
+ * the two places the server's own Set-Cookie is exercised.
  */
 export async function signIn(
   page: Page,
-  token: string = TOKENS.ade,
+  session: string = SESSIONS.ade,
 ): Promise<void> {
   await page.context().addCookies([
     {
       name: "sv_session",
-      value: token,
+      value: session,
       domain: "127.0.0.1",
       path: "/",
     },

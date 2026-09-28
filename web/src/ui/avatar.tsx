@@ -39,12 +39,12 @@ export function AvatarCircle(props: {
         width: size,
         height: size,
         borderRadius: "50%",
-        background: "var(--color-neutral-800)",
-        color: "var(--color-neutral-200)",
+        background: "var(--accent-soft)",
+        color: "var(--accent-text)",
         display: "grid",
         placeItems: "center",
         fontSize: Math.max(9, Math.round(size * 0.4)),
-        fontWeight: 500,
+        fontWeight: 650,
         flex: "none",
       }}
     >

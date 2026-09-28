@@ -1,0 +1,430 @@
+/*
+ * The operator console's layout (spec BR1 §7). The console keeps the
+ * Nocturne tokens (spec W1 §3, BR1 §6.1): it is a tool for one
+ * operator, and the dark ground keeps it apart from the player app at
+ * a glance. Everything here is layout and state color — no new palette.
+ */
+
+.dev-shell {
+  --dev-good: #a3be8c;
+  --dev-warn: #ebcb8b;
+  --dev-bad: #d98a91;
+  --dev-muted: color-mix(in srgb, var(--color-text) 62%, transparent);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* — header and tabs — */
+.dev-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--color-divider);
+  background: color-mix(in srgb, var(--color-surface) 60%, var(--color-bg));
+}
+.dev-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dev-brand-name {
+  font-size: 17px;
+  font-weight: 600;
+}
+.dev-badge {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dev-bad);
+  color: var(--dev-bad);
+}
+.dev-season {
+  font-size: 13px;
+  color: var(--dev-muted);
+}
+.dev-link {
+  font-size: 14px;
+}
+.dev-token {
+  width: 200px;
+}
+.dev-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-divider);
+  overflow-x: auto;
+}
+.dev-tab {
+  font: inherit;
+  font-size: 14px;
+  color: var(--dev-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 12px 14px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dev-tab:hover {
+  color: var(--color-text);
+}
+.dev-tab[aria-selected="true"] {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+.dev-main {
+  padding: 20px 24px 48px;
+  max-width: 1280px;
+  width: 100%;
+}
+
+/* — layout helpers — */
+.dev-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dev-stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.dev-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dev-wrap {
+  flex-wrap: wrap;
+}
+.dev-top {
+  align-items: flex-start;
+}
+.dev-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dev-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.dev-card {
+  gap: 10px;
+  padding: 16px;
+}
+.dev-card p {
+  margin: 0;
+}
+.dev-card-warn {
+  box-shadow: inset 0 0 0 1px var(--dev-warn);
+}
+.dev-h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.dev-big {
+  font-size: 22px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.dev-subhead {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dev-muted);
+  margin-top: 6px;
+}
+
+/* — text roles — */
+.dev-muted {
+  color: var(--dev-muted);
+  font-size: 13px;
+}
+.dev-hint {
+  color: var(--dev-muted);
+  font-size: 12px;
+}
+.dev-small {
+  font-size: 13px;
+}
+.dev-mono,
+.dev-code,
+.dev-device-code,
+.dev-sql,
+.dev-pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.dev-mono {
+  font-size: 12px;
+}
+.dev-break {
+  word-break: break-all;
+}
+.dev-code {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+.dev-alert {
+  margin: 0;
+  color: var(--dev-bad);
+  font-size: 14px;
+}
+.dev-good {
+  margin: 0;
+  color: var(--dev-good);
+  font-size: 14px;
+}
+.dev-danger {
+  color: var(--dev-bad);
+  border-color: color-mix(in srgb, var(--dev-bad) 60%, transparent);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* — state marks — */
+.dev-status {
+  display: inline-block;
+  font-size: 12px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.dev-status-open,
+.dev-status-active {
+  color: var(--dev-good);
+}
+.dev-status-closing,
+.dev-status-closed {
+  color: var(--dev-warn);
+}
+.dev-status-revealed,
+.dev-status-configured {
+  color: var(--color-accent);
+}
+.dev-status-revoked {
+  color: var(--dev-bad);
+}
+.dev-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.dev-dot-on {
+  background: var(--dev-good);
+}
+.dev-dot-warn {
+  background: var(--dev-warn);
+}
+.dev-dot-off {
+  background: var(--color-neutral-600);
+}
+.dev-outcome {
+  font-size: 13px;
+}
+.dev-outcome-moved {
+  color: var(--dev-good);
+}
+.dev-outcome-paused {
+  color: var(--dev-warn);
+}
+.dev-outcome-failed {
+  color: var(--dev-bad);
+}
+.dev-outcome-nothing-due {
+  color: var(--dev-muted);
+}
+
+/* — tables — */
+.dev-table {
+  font-size: 13px;
+}
+.dev-table td {
+  vertical-align: top;
+}
+.dev-num,
+.dev-table th.dev-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dev-picked td {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.dev-cell-button {
+  padding: 2px 6px;
+  font-size: 13px;
+}
+.dev-scroll {
+  overflow: auto;
+  max-height: 60vh;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+}
+.dev-results th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface);
+}
+.dev-results td {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dev-null {
+  color: var(--dev-muted);
+  font-style: italic;
+}
+
+/* — the day card — */
+.dev-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.dev-facts dt {
+  color: var(--dev-muted);
+}
+.dev-facts dd {
+  margin: 0;
+  min-width: 0;
+}
+.dev-target {
+  border-radius: var(--radius-md);
+}
+
+/* — automatic days — */
+.dev-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dev-pre {
+  margin: 6px 0 0;
+  padding: 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  max-height: 280px;
+  overflow: auto;
+}
+
+/* — players — */
+.dev-account {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg) 45%, transparent);
+}
+.dev-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+.dev-avatar-empty {
+  display: grid;
+  place-items: center;
+  background: var(--color-neutral-800);
+  font-weight: 600;
+}
+.dev-name {
+  font-size: 17px;
+}
+.dev-description {
+  margin: 0;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+.dev-printed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px dashed var(--color-accent);
+  border-radius: var(--radius-md);
+}
+.dev-device-code {
+  font-size: 28px;
+  letter-spacing: 0.15em;
+}
+
+/* — results database — */
+.dev-sql {
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 140px;
+}
+.dev-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dev-chip {
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+.dev-schema {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.dev-schema dd {
+  margin: 2px 0 0;
+}
+
+.dev-help summary {
+  cursor: pointer;
+  font-size: 14px;
+}
+.dev-help ol {
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .dev-header,
+  .dev-tabs,
+  .dev-main {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .dev-grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .dev-token {
+    width: 100%;
+  }
+}

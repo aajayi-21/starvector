@@ -35,12 +35,12 @@ describe("the leaderboard screen", () => {
       },
     };
     const view = renderAt("/leaderboard", withAvatar);
-    await screen.findByText("The day's board");
-    // One 20 px picture for the row with a hash; the others fall
+    await screen.findByText("Latest day");
+    // One 24 px picture for the row with a hash; the others fall
     // back to initials and render no image.
     await waitFor(() =>
       expect(
-        view.container.querySelectorAll('table img[width="20"]').length,
+        view.container.querySelectorAll('table img[width="24"]').length,
       ).toBeGreaterThanOrEqual(1),
     );
   });
@@ -48,9 +48,9 @@ describe("the leaderboard screen", () => {
   it("serves the day's board and the ranked skill board", async () => {
     const board = await api().getSkillLeaderboard();
     renderAt("/leaderboard");
-    expect(await screen.findByText("The day's board")).toBeDefined();
-    expect(await screen.findByText("The skill board")).toBeDefined();
-    expect(await screen.findByText("Ranked")).toBeDefined();
+    expect(await screen.findByText("Latest day")).toBeDefined();
+    expect(await screen.findByText("Skill ranking")).toBeDefined();
+    expect(await screen.findByText("Ranked players")).toBeDefined();
     // The cut is stated, never silent.
     expect(
       await screen.findByText(
@@ -62,7 +62,7 @@ describe("the leaderboard screen", () => {
   it("draws one dot for every player, ranked or not", async () => {
     const board = await api().getSkillLeaderboard();
     const view = renderAt("/leaderboard");
-    await screen.findByText("The skill board");
+    await screen.findByText("Skill ranking");
     const chart = view.container.querySelector("svg[role='img']");
     expect(chart).not.toBeNull();
     expect(chart?.querySelectorAll("circle")).toHaveLength(board.rows.length);
@@ -75,7 +75,7 @@ describe("the leaderboard screen", () => {
     renderAt("/leaderboard");
     const table = await screen.findByTestId("ranked-table");
     for (const cell of table.querySelectorAll("td")) {
-      expect(cell.className).not.toContain("text-muted");
+      expect(cell.className).not.toMatch(/muted|subtle|small|tiny/);
       expect(cell.getAttribute("style") ?? "").not.toContain("font-size");
       expect(cell.getAttribute("style") ?? "").not.toContain("opacity");
     }
@@ -106,8 +106,10 @@ describe("the leaderboard screen", () => {
         : row,
     );
     renderAt("/leaderboard", serving({ ...board, rows }));
-    expect(await screen.findByText(/12 of 30 trials/)).toBeDefined();
-    expect(screen.getByText(/join the ranking at 30/)).toBeDefined();
+    expect(
+      await screen.findByText(/You've sent 12 of the 30 results/),
+    ).toBeDefined();
+    expect(screen.getByText(/Until 30 results/)).toBeDefined();
   });
 
   it("gates itself with the two floors from the wire", async () => {
@@ -124,11 +126,13 @@ describe("the leaderboard screen", () => {
         discovery: null,
       }),
     );
+    // The two floors, each said as what it is: results for each
+    // player, and players for the population.
     expect(
-      await screen.findByText(/opens when a player has 30 trials/),
+      await screen.findByText(/starts once a player has sent 30 results/),
     ).toBeDefined();
-    expect(screen.getByText(/0 of 30 eligible players/)).toBeDefined();
-    expect(screen.queryByText("Ranked")).toBeNull();
+    expect(screen.getByText(/After 30 players reach 30 results/)).toBeDefined();
+    expect(screen.queryByText("Ranked players")).toBeNull();
   });
 
   it("publishes a fitted spread of zero as a real answer", async () => {
@@ -148,9 +152,8 @@ describe("the leaderboard screen", () => {
         },
       }),
     );
-    expect(
-      await screen.findByText(/not distinguishable at this time/),
-    ).toBeDefined();
+    expect(await screen.findByText(/can't be told apart yet/)).toBeDefined();
+    expect(screen.getByText(/a real answer, not a missing one/)).toBeDefined();
   });
 
   it("refuses to read a missed level as sameness", async () => {
@@ -168,17 +171,17 @@ describe("the leaderboard screen", () => {
         },
       }),
     );
-    const note = await screen.findByText(/does not clear its level/);
-    expect(note.textContent).toContain("not evidence that the players are");
+    const note = await screen.findByText(/doesn't clear its level/);
+    expect(note.textContent).toContain("isn't evidence that players are");
     expect(note.textContent).not.toMatch(/players are the same\.?$/);
   });
 
   it("says the site-wide claim as a natural frequency", async () => {
     const board = await api().getSkillLeaderboard();
     renderAt("/leaderboard");
-    const claim = await screen.findByText(/flagged by luck alone/);
+    const claim = await screen.findByText(/stand out by luck alone/);
     expect(claim.textContent).toContain(
-      `of ${board.discovery?.tested} players are flagged`,
+      `of ${board.discovery?.tested} players stand out above chance`,
     );
   });
 
@@ -188,7 +191,7 @@ describe("the leaderboard screen", () => {
     const board = await api().getSkillLeaderboard();
     renderAt("/leaderboard");
     const table = await screen.findByTestId("ranked-table");
-    expect(within(table).queryAllByText("you").length).toBeLessThanOrEqual(1);
+    expect(within(table).queryAllByText("You").length).toBeLessThanOrEqual(1);
     expect(board.rows.filter((row) => row.player === "ade")).toHaveLength(1);
   });
 });
@@ -203,6 +206,7 @@ describe("the evidence sentence", () => {
     expect(evidenceSentence(0.001)).toContain("1,000");
     // No skill shown reads as no skill shown, not as a small number.
     expect(evidenceSentence(1)).toMatch(/what no skill at all produces/);
+    expect(evidenceSentence(1)).toMatch(/^Your results so far/);
     expect(evidenceSentence(0.9)).toMatch(/close to what no skill/);
   });
 });

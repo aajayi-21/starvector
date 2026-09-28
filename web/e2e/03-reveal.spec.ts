@@ -9,14 +9,13 @@ import {
 
 const LIVE_SECRET = "d".repeat(64);
 
-test("close and reveal over HTTP, then the report renders", async ({
+test("close and reveal over HTTP, then the results render", async ({
   page,
   request,
 }) => {
   // The operator side, driven over HTTP against the fixture
   // server. The standalone `request` fixture holds its own empty
-  // cookie jar, thus these two carry the bearer explicitly - a
-  // session planted on `page` would not reach them.
+  // cookie jar, thus these two carry the bearer explicitly.
   const closed = await request.post(`${SERVER}/api/day/close`, {
     timeout: 120_000,
     headers: OPERATOR_HEADERS,
@@ -30,38 +29,40 @@ test("close and reveal over HTTP, then the report renders", async ({
 
   await signIn(page);
   await blockExternalHosts(page);
-  await page.goto("/reveal");
-  await expect(page.getByText("Trial score")).toBeVisible();
-  // The hero p is a 4-decimal number derived from the trial row —
-  // scoped to the score card (the leaderboard holds more of them).
+  // Home sends the revealed day to its results.
+  await page.goto("/");
+  await page
+    .getByRole("link", { name: /^See (your result|the photo)$/ })
+    .click();
+  await expect(page).toHaveURL(/\/reveal$/);
+
   await expect(
-    page
-      .locator(".card")
-      .filter({ hasText: "Trial score" })
-      .getByText(/^[01]\.\d{4}$/),
+    page.getByRole("heading", { name: /^You beat \d+% of the photos$/ }),
   ).toBeVisible();
-  await expect(page.getByText(/You beat/)).toBeVisible();
-  await expect(page.getByText(LIVE_SECRET)).toBeVisible();
   await expect(
-    page.getByText("printf '%s:%s' TARGET SECRET | sha256sum"),
+    page.getByText(/matched the hidden photo better than/),
   ).toBeVisible();
-  await expect(page.getByText("What matched")).toBeVisible();
-  // The live leaderboard serves both players who sent (spec M1
-  // B8): the caller as "you", the other by display name. The row
-  // count is read from the wire rather than written down, so a
-  // fixture that grows does not need this edited.
-  await expect(page.getByText("Today's leaderboard")).toBeVisible();
+  await expect(page.getByText("What connected")).toBeVisible();
+
+  // The fairness check folds away and holds the command to run.
+  await page.getByText("Check that this day was fair").click();
+  await expect(page.getByText(LIVE_SECRET).first()).toBeVisible();
+  await expect(page.getByText(/\| sha256sum$/)).toBeVisible();
+
+  // The live board serves both players who sent (spec M1 B8): the
+  // caller as "You", the other by display name.
   const wire = await (
     await page.request.get(`${SERVER}/api/leaderboard`)
   ).json();
   expect(wire.rows.length).toBe(2);
-  const board = page.locator(".card").filter({
-    hasText: "Today's leaderboard",
-  });
+  const board = page
+    .locator("section")
+    .filter({ hasText: "Everyone this day" });
   await expect(board.locator("tbody tr")).toHaveCount(wire.rows.length);
-  await expect(board.getByText("you")).toBeVisible();
+  await expect(board.getByText("You", { exact: true })).toBeVisible();
   await expect(board.getByText("Bru Lin")).toBeVisible();
+
   // The sketch replays from the live stored submission.
-  await expect(page.getByText("Your sketch")).toBeVisible();
-  await expect(page.getByText(/No stored sketch/)).toBeHidden();
+  await expect(page.locator(".picture-frame canvas")).toHaveCount(1);
+  await expect(page.getByText(/isn't stored on this device/)).toBeHidden();
 });

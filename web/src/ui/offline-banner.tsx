@@ -23,17 +23,8 @@ export function OfflineBanner(): React.JSX.Element | null {
     return null;
   }
   return (
-    <div
-      role="status"
-      style={{
-        padding: "6px 16px",
-        background: "var(--color-neutral-900)",
-        color: "var(--color-neutral-300)",
-        fontSize: 12,
-        textAlign: "center",
-      }}
-    >
-      Offline — the page works, but sending and scoring need the network.
+    <div role="status" className="season-note">
+      You're offline. You can keep sketching — sending needs a connection.
     </div>
   );
 }

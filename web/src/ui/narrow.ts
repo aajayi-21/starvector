@@ -15,7 +15,7 @@
 import { useEffect, useState } from "react";
 
 /** Kept equal to the max-width in app.css by hand. */
-export const NARROW_QUERY = "(max-width: 720px)";
+export const NARROW_QUERY = "(max-width: 760px)";
 
 export function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(false);

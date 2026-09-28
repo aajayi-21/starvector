@@ -4,6 +4,7 @@ import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import "../nocturne.css";
 import "../app.css";
+import "./dev.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

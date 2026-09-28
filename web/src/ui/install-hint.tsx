@@ -57,20 +57,12 @@ export function InstallHint(): React.JSX.Element | null {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "6px 16px",
-        background: "var(--color-neutral-900)",
-        fontSize: 12,
-        color: "var(--color-neutral-300)",
-      }}
-    >
+    <div className="season-note" style={{ display: "flex", gap: 10 }}>
       {prompt === null ? (
         <span style={{ flex: 1 }}>
-          Add Starvector to your Home Screen: Share → Add to Home Screen.
+          Add Starvector to your Home Screen: tap Share, then Add to Home
+          Screen. The app opens signed out the first time — sign in with a
+          device code from your Account page.
         </span>
       ) : (
         <>
@@ -90,7 +82,7 @@ export function InstallHint(): React.JSX.Element | null {
       <button
         type="button"
         className="btn btn-ghost"
-        aria-label="dismiss install hint"
+        aria-label="Dismiss"
         onClick={dismiss}
       >
         ×
