@@ -1,104 +1,433 @@
-/* App-level layout on top of the vendored Nocturne classes. The
-   mobile pass (spec W1 B10) extends this file. */
+/*
+ * App layout on top of the theme (theme.css for the player app,
+ * nocturne.css for the operator console). One breakpoint, 760 px:
+ * below it the top navigation hides and a bottom tab bar takes over,
+ * so a phone keeps one row of chrome and the thumb reaches the tabs.
+ */
 
-.today-columns {
-  display: grid;
-  grid-template-columns: 1fr 372px;
-  gap: 20px;
-  padding: 0 28px 28px;
-  flex: 1;
-  align-items: start;
-}
-
-.reveal-columns {
-  display: grid;
-  grid-template-columns: 1fr 340px 300px;
-  gap: 20px;
-  padding: 12px 28px 20px;
-  align-items: start;
-}
-
-.reveal-tables {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  padding: 0 28px 28px;
-  align-items: start;
-}
-
-.history-columns {
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 20px;
-  padding: 24px 28px 28px;
-  align-items: start;
-}
-
-/* The leaderboard (spec M1 §9). The chart column leads: the funnel
-   is the screen's primary shape and it wants the width. */
-.leaderboard-columns {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 20px;
-  padding: 24px 28px 28px;
-  align-items: start;
-}
-
-/* The target code row (mock 1a / 1f). */
-.target-code-row {
+/* — the shell — */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 60px;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.brand-mark {
+  color: var(--accent);
+  flex: none;
+}
+.topnav {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  height: 100%;
+}
+.topnav a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--text-2);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.topnav a:hover {
+  color: var(--text);
+}
+.topnav a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.topbar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.avatar-link {
+  display: inline-flex;
+  border-radius: 50%;
+  text-decoration: none;
+}
+
+.season-note {
+  padding: 7px 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+
+.page {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 24px 56px;
+}
+.page-narrow {
+  max-width: 680px;
+}
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+
+.tabbar {
+  display: none;
+}
+
+/* — generic layout helpers — */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.stack-sm {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
-.target-code-cell {
-  flex: 1 1 0;
-  max-width: 58px;
-  height: 74px;
+.stack-lg {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.spacer {
+  flex: 1;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+/* — the target code — */
+.code-cells {
+  display: flex;
+  gap: 6px;
+}
+.code-cell {
+  width: 44px;
+  height: 56px;
   display: grid;
   place-items: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  font-size: 28px;
+  font-weight: 650;
+  font-family: var(--mono);
+  color: var(--text);
+}
+.code-cells-small .code-cell {
+  width: 30px;
+  height: 38px;
+  font-size: 19px;
   border-radius: 8px;
-  font-size: 36px;
-  font-weight: 500;
+}
+
+/* — home — */
+.home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.step-number {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+/* — the session workspace (today and practice) — */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+}
+.canvas-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.canvas-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  /* The square canvas fits the window height on a laptop: the top
+     bar, the test-season line, the session header, the toolbar, and
+     the hint take about 350 px. */
+  max-width: max(320px, calc(100dvh - 350px));
+  margin: 0 auto;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.side-panel {
+  position: sticky;
+  top: 76px;
+}
+
+/* — results — */
+.result-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+.pictures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.picture {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.picture-frame {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.picture-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.big-number {
+  font-size: 64px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 
-/* The 390 px pass (spec W1 B10, mock 1f). */
-@media (max-width: 720px) {
-  .today-columns,
-  .reveal-columns,
-  .reveal-tables,
-  .history-columns,
-  .leaderboard-columns {
-    grid-template-columns: 1fr;
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-  /* Five columns of numbers do not fit 390 px. The table scrolls
-     inside its own card rather than pushing the page sideways. */
-  .leaderboard-columns .table {
-    display: block;
-    overflow-x: auto;
-  }
-  .nav {
-    flex-wrap: wrap;
-    row-gap: var(--space-2);
-  }
-  .target-code-cell {
-    max-width: none;
+.meter {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: visible;
+}
+.meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.meter-chance {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  background: var(--chance);
+  left: 50%;
+  transform: translateX(-1px);
+}
+.meter-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.bars {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 140px;
+  padding-left: 36px;
+}
+.bars-axis {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.bars-axis span {
+  position: absolute;
+  right: 4px;
+  transform: translateY(-50%);
+}
+.bars-chance {
+  position: absolute;
+  left: 36px;
+  right: 0;
+  border-top: 2px dashed var(--chance);
+}
+.bar {
+  flex: 1;
+  min-width: 6px;
+  max-width: 36px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.bar-below {
+  background: color-mix(in srgb, var(--accent) 35%, var(--surface-2));
+}
+
+.two-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+}
+/* The landing page: sign-in is first in the source (first on a
+   phone), and the right-hand column on a wide screen. */
+.welcome-grid > .welcome-signin {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* — the phone pass — */
+@media (max-width: 760px) {
+  .topbar {
     height: 56px;
-    font-size: 26px;
+    padding: 0 16px;
+    gap: 12px;
   }
-  .btn {
-    min-height: 44px;
+  .topnav,
+  .topbar .hide-narrow {
+    display: none;
   }
-  .nav-mark {
-    width: 16px;
-    height: 16px;
+  .page {
+    padding: 20px 16px
+      calc(var(--tabbar-height) + 32px + env(safe-area-inset-bottom));
+  }
+  .tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    height: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+  .tabbar a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--text-3);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .tabbar a[aria-current="page"] {
+    color: var(--accent-text);
+  }
+  .home-hero,
+  .workspace,
+  .result-hero,
+  .two-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .welcome-grid > .welcome-signin {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .side-panel {
+    position: static;
+  }
+  .canvas-panel {
+    padding: 12px;
+  }
+  .canvas-column {
+    max-width: 100%;
+  }
+  .code-cell {
+    width: 40px;
+    height: 50px;
+    font-size: 24px;
+  }
+  .big-number {
+    font-size: 52px;
+  }
+  .card-hero {
+    padding: 20px;
+  }
+  h1 {
+    font-size: 24px;
+  }
+  .table-scroll {
+    overflow-x: auto;
   }
 }
 
-/* The operator console's ranking table (spec S2 B6). */
+/* — the operator console's ranking table (spec S2 B6) — */
 .dev-rankings img {
   display: block;
   transition: transform 0.12s;

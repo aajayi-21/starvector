@@ -7,7 +7,9 @@ mint, and the display name that joins at read time.
 import json
 from pathlib import Path
 
-from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
+from svc_fixture import (FIXED_CLOCK, build_service_fixture,
+                         mixed_wire_record, pinned_session_value,
+                         plant_session)
 
 from core import aggregate
 from service import auth, players, rollup, store
@@ -31,6 +33,7 @@ def _world(tmp_path, *, cast=CAST, played=CAST):
             config, player=name, display_name=label,
             clock=lambda: FIXED_CLOCK, secret=secret)
         tokens[name] = token
+        plant_session(fixture["store"], token)
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)
     for index, (name, _label, _secret) in enumerate(played):
@@ -48,7 +51,7 @@ def _world(tmp_path, *, cast=CAST, played=CAST):
 def _as(client: TestClient, token: str | None) -> TestClient:
     client.cookies.clear()
     if token is not None:
-        client.cookies.set(auth.SESSION_COOKIE, token)
+        client.cookies.set(auth.SESSION_COOKIE, pinned_session_value(token))
     return client
 
 
@@ -247,6 +250,7 @@ def test_each_gated_body_is_a_complete_view(tmp_path) -> None:
     config = fixture["service_config"]
     players.mint_player(config, player="ade", display_name="Ade",
                         clock=lambda: FIXED_CLOCK, secret="1" * 43)
+    plant_session(fixture["store"], f"ade.{'1' * 43}")
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)
     constant = TestClient(create_app(config, operator_token=TOKEN))
@@ -306,6 +310,7 @@ def test_the_skill_board_answers_the_constant_before_any_reveal(
     config = fixture["service_config"]
     players.mint_player(config, player="ade", display_name="Ade",
                         clock=lambda: FIXED_CLOCK, secret="1" * 43)
+    plant_session(fixture["store"], f"ade.{'1' * 43}")
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)
     client = TestClient(create_app(config, operator_token=TOKEN))
@@ -323,6 +328,7 @@ def test_the_daily_board_refuses_before_the_reveal(tmp_path) -> None:
     for name, label, secret in CAST:
         players.mint_player(config, player=name, display_name=label,
                             clock=lambda: FIXED_CLOCK, secret=secret)
+        plant_session(fixture["store"], f"{name}.{secret}")
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)
     for index, (name, _label, _secret) in enumerate(CAST):
@@ -434,5 +440,6 @@ def test_the_new_surfaces_leave_the_store_byte_equal(tmp_path) -> None:
     for path in (f"/api/leaderboard?day={DAY}", "/api/leaderboard/skill",
                  "/api/me", "/api/history", f"/api/submission?day={DAY}"):
         client.get(path)
-    client.get(f"/join/{tokens['bru']}", follow_redirects=False)
+    # The invite gate writes one session deliberately (spec BR1), thus
+    # it is not a read. test_player_access pins what it writes.
     assert snapshot() == before

@@ -22,13 +22,13 @@ test("the leaderboard serves the day's board and gates the skill board", async (
     "page",
   );
 
-  await expect(page.getByText("The day's board")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Latest day" })).toBeVisible();
   const wire = await (
     await page.request.get(`${SERVER}/api/leaderboard`)
   ).json();
-  const board = page.locator(".card").filter({ hasText: "The day's board" });
+  const board = page.locator("section").filter({ hasText: "Latest day" });
   await expect(board.locator("tbody tr")).toHaveCount(wire.rows.length);
-  await expect(board.getByText("you")).toBeVisible();
+  await expect(board.getByText("You", { exact: true })).toBeVisible();
 
   // One revealed day means nobody is near the 30-trial floor, so
   // the skill board gates itself with no operator step. That is
@@ -39,9 +39,11 @@ test("the leaderboard serves the day's board and gates the skill board", async (
   ).json();
   expect(skill.active).toBe(false);
   await expect(
-    page.getByText(/opens when a player has 30 trials/),
+    page.getByText(/starts once a player has sent 30 results/),
   ).toBeVisible();
-  await expect(page.getByText(/of 30 eligible players/)).toBeVisible();
+  await expect(
+    page.getByText(/After 30 players reach 30 results/),
+  ).toBeVisible();
 });
 
 test("an invite link signs the browser in", async ({ browser }) => {
@@ -57,17 +59,17 @@ test("an invite link signs the browser in", async ({ browser }) => {
   const page = await context.newPage();
   await page.goto(`/join/${TOKENS.bru}`);
 
-  // It lands on the app, not on the invite gate.
+  // It lands on the app, not on the landing page.
   expect(new URL(page.url()).pathname).toBe("/");
-  await expect(page.getByText("Starvector")).toBeVisible();
-  await expect(page.getByText(/not signed in/)).toBeHidden();
+  await expect(page.getByText(/, Bru Lin$/)).toBeVisible();
+  await expect(page.getByText("A new hidden photo every day.")).toBeHidden();
 
-  // The cookie the server set is the one riding: this browser
-  // reads bru's identity and not the configured player's.
+  // The cookie the server set is the one riding: a new session of
+  // bru's, and never the invite itself (spec BR1 §4).
   const cookies = await context.cookies();
-  expect(cookies.find((one) => one.name === "sv_session")?.value).toBe(
-    TOKENS.bru,
-  );
+  const session = cookies.find((one) => one.name === "sv_session")?.value;
+  expect(session?.startsWith("bru.")).toBe(true);
+  expect(session).not.toBe(TOKENS.bru);
   const me = await (await page.request.get(`${SERVER}/api/me`)).json();
   expect(me.player).toBe("bru");
   expect(me.display_name).toBe("Bru Lin");
@@ -114,13 +116,16 @@ test("an operator mints an invite that signs a new browser in", async ({
   await context.close();
 });
 
-test("a browser with no invite meets the gate", async ({ browser }) => {
+test("a browser with no session meets the landing page", async ({
+  browser,
+}) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto("/");
-  await expect(page.getByText(/not signed in/)).toBeVisible();
-  await expect(page.getByText(/invite link/)).toBeVisible();
-  // The gate replaces the app rather than sitting beside it.
+  await page.goto("/history");
+  await expect(page.getByText("A new hidden photo every day.")).toBeVisible();
+  await expect(page.getByText(/open the invite link/)).toBeVisible();
+  await expect(page.getByLabel("Signed in on another device?")).toBeVisible();
+  // The landing replaces the app rather than sitting beside it.
   await expect(page.getByRole("link", { name: "Today" })).toBeHidden();
   await context.close();
 });

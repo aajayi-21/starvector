@@ -31,7 +31,8 @@ import type { MintedInvite } from "./types";
 /** Where the invite origin is kept between visits. */
 export const ORIGIN_KEY = "sv:dev:origin";
 
-function storedOrigin(): string {
+/** The invite origin the operator last typed, or this page's own. */
+export function storedOrigin(): string {
   try {
     return window.localStorage.getItem(ORIGIN_KEY) ?? window.location.origin;
   } catch {
@@ -39,7 +40,11 @@ function storedOrigin(): string {
   }
 }
 
-export function InvitePanel(props: { api: DevApi }): React.JSX.Element {
+export function InvitePanel(props: {
+  api: DevApi;
+  /** Tells the roster a player was added. */
+  onMinted?: () => void;
+}): React.JSX.Element {
   const [player, setPlayer] = useState("");
   const [label, setLabel] = useState("");
   const [origin, setOrigin] = useState(storedOrigin);
@@ -55,6 +60,7 @@ export function InvitePanel(props: { api: DevApi }): React.JSX.Element {
       setMinted(await props.api.mintPlayer(player, label || player));
       setPlayer("");
       setLabel("");
+      props.onMinted?.();
     } catch (error) {
       setNote(error instanceof DevApiError ? error.message : "refused");
     } finally {
@@ -63,9 +69,9 @@ export function InvitePanel(props: { api: DevApi }): React.JSX.Element {
   };
 
   return (
-    <div className="card" style={{ gap: 10 }} id="invite-panel">
+    <div className="card dev-card" id="invite-panel">
       <span className="card-kicker">Invite a player</span>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="dev-row dev-wrap">
         <input
           className="input"
           aria-label="player name"
@@ -107,39 +113,27 @@ export function InvitePanel(props: { api: DevApi }): React.JSX.Element {
         </button>
       </div>
       {note === "" ? null : (
-        <p className="text-muted" role="alert" style={{ margin: 0 }}>
+        <p className="dev-alert" role="alert">
           {note}
         </p>
       )}
       {minted === null ? null : (
-        <div
-          style={{
-            border: "1px dashed var(--color-accent)",
-            borderRadius: 8,
-            padding: "10px 12px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
+        <div className="dev-printed">
           <div style={{ fontSize: 13 }}>
             {minted.player} · {minted.display_name}
           </div>
-          <code
-            style={{ wordBreak: "break-all", fontSize: 13 }}
-            data-testid="invite-url"
-          >
+          <code className="dev-break" data-testid="invite-url">
             {origin.replace(/\/+$/, "")}
             {minted.join_path}
           </code>
-          <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+          <span className="dev-hint">
             This is the one time the invite prints. Send it, then forget it —
             the store keeps only its digest, so a lost invite wants a rotate and
             not a lookup.
           </span>
         </div>
       )}
-      <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+      <span className="dev-hint">
         The origin names the site the player will open, which is not this
         console's address when you reach it through the tunnel.
       </span>

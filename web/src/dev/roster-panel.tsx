@@ -1,18 +1,24 @@
 /**
- * The roster and the player history (spec A1 §5).
+ * The roster and the player history (spec A1 §5, grown by spec BR1
+ * §7.4).
  *
- * Clicking a player opens their full history: each stored day with
- * the sent flag and the stored trial row. Clicking a day row opens
- * that player's stored submission through the standing
- * SubmissionView, and "Score and rank" serves their record through
- * the grown rankings read. The day browser keeps its shape — this
- * panel is the second axis, by player rather than by day.
+ * Each row counts the player's signed-in devices, their last sign-in,
+ * and their sends. Clicking a player opens their account (devices,
+ * access controls) and their full history: each stored day with the
+ * sent flag and the stored trial row. Clicking a day row opens that
+ * player's stored submission through the standing SubmissionView,
+ * and "Score and rank" serves their record through the grown rankings
+ * read. The day browser keeps its shape — this panel is the second
+ * axis, by player rather than by day.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError } from "./api";
+import { refusedRead } from "./days-tab";
+import { utcStamp } from "./format";
+import { PlayerAccount } from "./player-account";
 import { RankingsView } from "./rankings";
 import { SubmissionView } from "./submission-view";
 import type {
@@ -56,12 +62,7 @@ export function RosterPanel(props: {
       setPlayers([]);
       // The same wording rule as the day browser: a refused
       // operator check reads as no --dev flag, on purpose.
-      setNote(
-        error instanceof DevApiError && error.status === 404
-          ? "not found: start the server with --dev, or the operator " +
-              "token is missing or wrong"
-          : messageOf(error),
-      );
+      setNote(refusedRead(error));
     }
   }, [api]);
 
@@ -148,19 +149,22 @@ export function RosterPanel(props: {
   };
 
   return (
-    <div className="card" style={{ gap: 10 }} id="roster-panel">
+    <div className="card dev-card" id="roster-panel">
       <span className="card-kicker">Players</span>
       {players === null ? (
-        <p className="text-muted" style={{ fontSize: 13 }} role="status">
+        <p className="dev-muted" role="status">
           loading…
         </p>
       ) : (
-        <table className="table" style={{ fontSize: 13 }}>
+        <table className="table dev-table">
           <thead>
             <tr>
               <th>player</th>
               <th>label</th>
               <th>status</th>
+              <th className="dev-num">devices</th>
+              <th>last sign-in</th>
+              <th className="dev-num">sends</th>
               <th>created</th>
             </tr>
           </thead>
@@ -168,32 +172,47 @@ export function RosterPanel(props: {
             {players.map((row) => (
               <tr
                 key={row.player}
-                style={
-                  row.player === selected
-                    ? { color: "var(--color-accent-300)" }
-                    : undefined
-                }
+                className={row.player === selected ? "dev-picked" : undefined}
               >
                 <td>
                   <button
                     type="button"
-                    className="btn btn-ghost"
-                    style={{ padding: "2px 8px" }}
+                    className="btn btn-ghost dev-cell-button"
+                    aria-pressed={row.player === selected}
                     onClick={() => void showPlayer(row.player)}
                   >
                     {row.player}
                   </button>
                 </td>
                 <td>{row.display_name}</td>
-                <td>{row.status}</td>
-                <td>{row.created_at ?? "—"}</td>
+                <td>
+                  <span
+                    className={`dev-status dev-status-${
+                      row.status === "active" ? "open" : row.status
+                    }`}
+                  >
+                    {row.status}
+                  </span>
+                </td>
+                <td className="dev-num">
+                  {row.devices}
+                  {row.device_codes > 0 ? (
+                    <span className="dev-muted" title="device codes that wait">
+                      {" "}
+                      +{row.device_codes} code
+                    </span>
+                  ) : null}
+                </td>
+                <td>{utcStamp(row.last_signed_in)}</td>
+                <td className="dev-num">{row.sends}</td>
+                <td>{utcStamp(row.created_at)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
       {note === "" ? null : (
-        <p className="text-muted" role="status" style={{ margin: 0 }}>
+        <p className="dev-muted" role="status">
           {note}
         </p>
       )}
@@ -201,17 +220,30 @@ export function RosterPanel(props: {
       {selected === null ? null : (
         <>
           <div className="hr" style={{ margin: 0 }} />
+          {players?.find((row) => row.player === selected)?.status ===
+          "configured" ? (
+            <p className="dev-muted">
+              No stored record: this server runs with no sign-in, and each
+              caller is the configured player. Mint an invite to turn sign-in
+              on.
+            </p>
+          ) : (
+            <PlayerAccount
+              key={selected}
+              api={api}
+              player={selected}
+              onChanged={() => void loadPlayers()}
+            />
+          )}
           <span className="card-kicker">{selected} — history</span>
           {history === null ? (
-            <p className="text-muted" style={{ fontSize: 13 }} role="status">
+            <p className="dev-muted" role="status">
               loading…
             </p>
           ) : history.days.length === 0 ? (
-            <p className="text-muted" style={{ fontSize: 13 }}>
-              no stored day yet
-            </p>
+            <p className="dev-muted">no stored day yet</p>
           ) : (
-            <table className="table" style={{ fontSize: 13 }}>
+            <table className="table dev-table">
               <thead>
                 <tr>
                   <th>day</th>
@@ -226,35 +258,25 @@ export function RosterPanel(props: {
                 {history.days.map((row) => (
                   <tr
                     key={row.day}
-                    style={
-                      row.day === openedDay
-                        ? { color: "var(--color-accent-300)" }
-                        : undefined
-                    }
+                    className={row.day === openedDay ? "dev-picked" : undefined}
                   >
                     <td>
                       <button
                         type="button"
-                        className="btn btn-ghost"
-                        style={{ padding: "2px 8px" }}
+                        className="btn btn-ghost dev-cell-button"
+                        aria-pressed={row.day === openedDay}
                         onClick={() => void showDay(row)}
                       >
                         {row.day}
                       </button>
                     </td>
-                    <td
-                      style={{
-                        fontFamily: "ui-monospace, Menlo, monospace",
-                      }}
-                    >
-                      {row.trial_code}
-                    </td>
+                    <td className="dev-mono">{row.trial_code}</td>
                     <td>{row.status}</td>
                     <td>{row.submitted ? "sent" : "—"}</td>
-                    <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                    <td className="dev-num">
                       {row.trial === null ? "—" : row.trial.p.toFixed(4)}
                     </td>
-                    <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                    <td className="dev-num">
                       {row.trial === null
                         ? "—"
                         : `${row.trial.target_rank} of ${
@@ -270,13 +292,13 @@ export function RosterPanel(props: {
       )}
 
       {openedDay === null ? null : stored === null ? (
-        <p className="text-muted" style={{ fontSize: 13 }} role="status">
+        <p className="dev-muted" role="status">
           {dayNote === "" ? "loading…" : dayNote}
         </p>
       ) : (
         <>
           <SubmissionView stored={stored} />
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="dev-row">
             {rankings === null ? (
               <button
                 type="button"
@@ -286,7 +308,7 @@ export function RosterPanel(props: {
                 Score and rank the submission
               </button>
             ) : null}
-            <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+            <span className="dev-hint">
               {rankNote === ""
                 ? "Scores the stored submission through the production " +
                   "path. Before close it is a preview; after close it " +

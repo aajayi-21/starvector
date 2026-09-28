@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from svc_fixture import FIXED_CLOCK, build_service_fixture
+from svc_fixture import (FIXED_CLOCK, build_service_fixture,
+                         plant_session, pinned_session_value)
 
 from service import auth, store
 from service.day import open_day
@@ -35,11 +36,18 @@ def _mint(root: Path, player: str, display_name: str, secret: str) -> str:
 
 
 def _sign_in(client: TestClient, token: str | None) -> TestClient:
-    """Put the session cookie on the client, in the manner a browser
-    does after the invite gate answers. None clears it."""
+    """Put the player's pinned session on the client, in the manner a
+    browser holds one after the invite gate answers. None clears it."""
     client.cookies.clear()
     if token is not None:
-        client.cookies.set(auth.SESSION_COOKIE, token)
+        client.cookies.set(auth.SESSION_COOKIE, pinned_session_value(token))
+    return client
+
+
+def _raw_cookie(client: TestClient, value: str) -> TestClient:
+    """Put an arbitrary value in the cookie - the refusal tests."""
+    client.cookies.clear()
+    client.cookies.set(auth.SESSION_COOKIE, value)
     return client
 
 
@@ -47,6 +55,8 @@ def _world(tmp_path, *, players=(("ade", "Ade", ALICE_SECRET),)):
     fixture = build_service_fixture(tmp_path)
     tokens = {name: _mint(fixture["store"], name, label, secret)
               for name, label, secret in players}
+    for token in tokens.values():
+        plant_session(fixture["store"], token)
     open_day(fixture["service_config"], date=DAY,
              clock=lambda: FIXED_CLOCK, pick_seed="a" * 32,
              secret="b" * 64)
@@ -79,19 +89,37 @@ def test_the_mint_stores_a_digest_and_not_the_secret(tmp_path) -> None:
                                                       errors="replace")
 
 
-def test_the_join_gate_agrees_and_sets_the_cookie(tmp_path) -> None:
-    _fixture, client, tokens = _world(tmp_path)
+def test_the_join_gate_agrees_and_sets_a_session_cookie(tmp_path) -> None:
+    fixture, client, tokens = _world(tmp_path)
+    client.cookies.clear()
     answer = client.get(f"/join/{tokens['ade']}", follow_redirects=False)
     assert answer.status_code == 302
     assert answer.headers["location"] == "/"
-    assert client.cookies.get(auth.SESSION_COOKIE) == tokens["ade"]
+    value = client.cookies.get(auth.SESSION_COOKIE)
+    # The cookie holds a session and not the invite (spec BR1).
+    assert value is not None and value != tokens["ade"]
+    assert ALICE_SECRET not in value
+    parsed = auth.parse_token(value)
+    assert parsed is not None and parsed[0] == "ade"
+    digest = auth.token_hash(parsed[1])
+    assert store.read_session_or_none(fixture["store"], "ade",
+                                      digest) is not None
+    assert client.get("/api/me").json()["player"] == "ade"
+
+
+def test_the_invite_in_a_cookie_signs_nobody_in(tmp_path) -> None:
+    _fixture, client, tokens = _world(tmp_path)
+    answer = _raw_cookie(client, tokens["ade"]).get("/api/me")
+    assert answer.status_code == 401
 
 
 def test_the_cookie_attributes_are_the_specified_ones(tmp_path) -> None:
     _fixture, client, tokens = _world(tmp_path)
+    client.cookies.clear()
     answer = client.get(f"/join/{tokens['ade']}", follow_redirects=False)
     header = answer.headers["set-cookie"]
-    assert header.startswith(f"{auth.SESSION_COOKIE}={tokens['ade']}")
+    assert header.startswith(f"{auth.SESSION_COOKIE}=ade.")
+    assert ALICE_SECRET not in header
     for attribute in ("Path=/", "Secure", "HttpOnly", "SameSite=Lax",
                       f"Max-Age={auth.SESSION_MAX_AGE}"):
         assert attribute in header
@@ -159,8 +187,8 @@ def test_a_replaced_token_stops_the_earlier_invite(tmp_path) -> None:
                       follow_redirects=False).status_code == 302
 
 
-def test_the_join_path_writes_nothing(tmp_path) -> None:
-    """No session table is built, thus nothing accumulates."""
+def test_the_join_path_writes_one_session_and_nothing_else(
+        tmp_path) -> None:
     fixture, client, tokens = _world(tmp_path)
 
     def snapshot() -> dict:
@@ -169,9 +197,18 @@ def test_the_join_path_writes_nothing(tmp_path) -> None:
                 if path.is_file()}
 
     before = snapshot()
+    client.cookies.clear()
     client.get(f"/join/{tokens['ade']}", follow_redirects=False)
     client.get("/join/not-a-token", follow_redirects=False)
-    assert snapshot() == before
+    after = snapshot()
+    added = set(after) - set(before)
+    assert len(added) == 1
+    (only,) = added
+    assert Path(only).parent == Path(fixture["store"]) / "sessions" / "ade"
+    assert {name: after[name] for name in before} == before
+    # A second visit from the signed-in browser keeps its session.
+    client.get(f"/join/{tokens['ade']}", follow_redirects=False)
+    assert snapshot() == after
 
 
 def test_the_constant_time_compare_holds_odd_input() -> None:
@@ -210,8 +247,11 @@ _PLAYER_SURFACES = ("/api/day", "/api/reveal", "/api/history",
 def test_an_unknown_cookie_meets_the_constant_401(tmp_path) -> None:
     _fixture, client, _tokens = _world(tmp_path)
     bodies, statuses = set(), set()
-    for token in (None, "garbage", f"ade.{'9' * 43}"):
-        _sign_in(client, token)
+    for token in (None, "garbage", f"ade.{'9' * 43}", f"ade.{ALICE_SECRET}"):
+        if token is None:
+            client.cookies.clear()
+        else:
+            _raw_cookie(client, token)
         for path in _PLAYER_SURFACES:
             for _ in range(2):
                 answer = client.get(path)

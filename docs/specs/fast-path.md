@@ -63,6 +63,14 @@ speed work.
    50 ms budget, measured at a synthetic 20,000-image pool. The
    end-to-end 50 ms question reopens with the encoder decision at
    the production pool.
+   *Note, 2026-09-02 (spec PP1, `docs/specs/production-pool.md`):*
+   the production pool count is 7,500, thus the 50 ms line applies
+   at 7,500 from this date. Measured on the bench at that count:
+   47.8 ms local at the development vocabulary of 1,379 entries,
+   239 ms at the projected production vocabulary of 26,770 entries,
+   with the similarity table alone at 208 ms of that. The
+   vocabulary, not the pool count, is the open budget item. Spec PP1
+   §4 has the numbers and §7 the build item.
 4. **Practice is ephemeral.** Score, show, discard — the
    `dev_rankings` pattern. Nothing lands in the store, thus the I6
    fence is structural: practice trials are live-player data with

@@ -7,7 +7,11 @@
 
 // ── §6: live today ──────────────────────────────────────────────
 
-export type DayStatus = "open" | "closed" | "revealed";
+/**
+ * "closing" sits between open and closed (spec BR1 §3): the close
+ * stops new sends before it scores. A screen treats it like closed.
+ */
+export type DayStatus = "open" | "closing" | "closed" | "revealed";
 
 export interface DayView {
   day: string;
@@ -76,8 +80,18 @@ export interface ReportRow {
   rarity: number;
 }
 
+/** Where a revealed photo comes from (spec BR1 §6). */
+export interface ImageCredit {
+  source: string;
+  title: string;
+  /** The file page, which names the author and the license. */
+  page: string;
+}
+
 export interface RevealView {
   day: string;
+  /** Null when the server holds no release manifest. */
+  credit: ImageCredit | null;
   target_id: string;
   secret: string;
   commitment: string;
@@ -105,6 +119,7 @@ export interface RankingHeadRow {
 export interface PracticeScore {
   day: string;
   target_id: string;
+  credit: ImageCredit | null;
   trial: TrialValue;
   target_position: number;
   ranking_head: RankingHeadRow[];
@@ -165,6 +180,40 @@ export interface MeView {
   description: string;
   /** The stored avatar's digest, or null - the cache-busting key. */
   avatar_hash: string | null;
+}
+
+// ── spec BR1: the season facts, sessions, and device codes ─────
+
+/** GET /api/about — no session needed (spec BR1 §6). */
+export interface AboutView {
+  /** A development pool: the numbers are test numbers (R13). */
+  test_season: boolean;
+  photo_count: number;
+  /** The daily rollover hour, "HH:MM" UTC, or null when unset. */
+  closes_at_utc: string | null;
+}
+
+export interface SessionRow {
+  /** A one-way digest: the handle for signing that device out. */
+  id: string;
+  label: string;
+  created_at: string;
+  current: boolean;
+}
+
+export interface SessionsView {
+  sessions: SessionRow[];
+}
+
+export interface DeviceCodeView {
+  /** "ABCD-EFGH". */
+  code: string;
+  expires_at: string;
+}
+
+export interface SignInAck {
+  player: string;
+  display_name: string;
 }
 
 // ── spec A1: the account writers and the open door ──────────────
@@ -319,9 +368,22 @@ export class ApiError extends Error {
 }
 
 const CAUSE_COPY: Record<string, string> = {
-  "already-submitted": "Already sent — one send per day.",
-  "day-closed": "The day has closed. Scores arrive at the reveal.",
-  "bad-shape": "The sketch could not be encoded. Try again.",
+  "already-submitted": "You've already sent today's session.",
+  "day-closed": "Today's session has closed. Your results come soon.",
+  "bad-shape": "Something went wrong sending your sketch. Try again.",
+  "bad-code":
+    "That code didn't work. A code works once and expires after 10 minutes.",
+  "too-many-attempts": "Too many tries. Wait a few minutes, then try again.",
+  "no-accounts": "This server has no accounts, so there's nothing to add.",
+  "no-scoreable-atom":
+    "Add at least one word or a few strokes before you send.",
+  // The Layer 0 gates (core/types.py INTAKE_CAUSES), in plain words.
+  "min-ink": "Your sketch is too small to read. Draw a little more.",
+  "min-strokes":
+    "A sketch needs at least two strokes. Add another, or clear it and send words only.",
+  "text-length": "One of your words or your notes is too long. Shorten it.",
+  "atom-count":
+    "That's more than one send can hold. Remove a few words or labels.",
 };
 
 /** True for the server's deliberate constant refusals (404s). */
@@ -342,11 +404,10 @@ export function isUnauthorized(error: unknown): boolean {
 }
 
 /**
- * Player-facing copy for a failed call. Known causes map to full
- * sentences; a refusal with its own player-facing detail (the
- * intake gates write these) shows that detail; a network failure
- * reads as the server not answering. The raw cause token is never
- * shown.
+ * Player-facing copy for a failed call. Known causes — the intake
+ * gates among them — map to plain sentences; another refusal shows
+ * its detail; a network failure reads as no connection. The raw
+ * cause token is never shown.
  */
 export function friendlyMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -355,12 +416,12 @@ export function friendlyMessage(error: unknown): string {
       if (mapped !== undefined) {
         return mapped;
       }
-      return error.detail ?? "The server refused the request.";
+      return error.detail ?? "Something went wrong. Try again.";
     }
     if (error.status === 0) {
-      return "The server did not answer.";
+      return "Can't reach Starvector. Check your connection and try again.";
     }
-    return error.detail ?? "The server refused the request.";
+    return error.detail ?? "Something went wrong. Try again.";
   }
-  return "The server did not answer.";
+  return "Can't reach Starvector. Check your connection and try again.";
 }

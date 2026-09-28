@@ -7,9 +7,11 @@
 
 import { createContext, useContext } from "react";
 import type {
+  AboutView,
   AccountAck,
   AvatarAck,
   DayView,
+  DeviceCodeView,
   DoorAck,
   DoorView,
   HistoryView,
@@ -18,6 +20,8 @@ import type {
   PracticeDays,
   PracticeScore,
   RevealView,
+  SessionsView,
+  SignInAck,
   SkillBoardView,
   StoredSubmission,
   SubmissionAck,
@@ -67,13 +71,32 @@ export interface DoorApi {
   postDoor(player: string, displayName?: string): Promise<DoorAck>;
 }
 
+/** The season facts (spec BR1 §6): no session needed. */
+export interface AboutApi {
+  getAbout(): Promise<AboutView>;
+}
+
+/** Sessions, device codes, sign-out, and the data export (BR1 §4–5). */
+export interface SessionApi {
+  getSessions(): Promise<SessionsView>;
+  removeSession(id: string): Promise<{ removed: number }>;
+  signOutOthers(): Promise<{ removed: number }>;
+  signOut(): Promise<{ signed_out: boolean }>;
+  issueDeviceCode(): Promise<DeviceCodeView>;
+  redeemDeviceCode(code: string): Promise<SignInAck>;
+  /** A same-origin URL the browser downloads as a file. */
+  exportUrl(): string;
+}
+
 export type Api = DayApi &
   PracticeApi &
   HistoryApi &
   LeaderboardApi &
   ArchiveApi &
   AccountApi &
-  DoorApi;
+  DoorApi &
+  AboutApi &
+  SessionApi;
 
 export type ApiMode = "composite" | "mock";
 

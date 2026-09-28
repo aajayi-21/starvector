@@ -139,6 +139,14 @@ The cookie holds the same token. Revocation replaces the hash in
 the record, which stops the cookie at the read that follows. No
 session table is built, thus nothing accumulates.
 
+*Note, 2026-09-24 (spec BR1 §4) — superseded:* the cookie holds a
+session and not the invite. `GET /join/{token}` makes a session file
+below `store/sessions/<player>/`, named by the digest of its secret,
+thus the lookup continues to read one file. A `rotate` turns the
+invite and keeps each session, and a revoke ends each session.
+Sign-out, the devices of a player, and device codes are spec BR1
+§4.2.
+
 ### The operator plane
 
 The day lifecycle POSTs and the dev surfaces want

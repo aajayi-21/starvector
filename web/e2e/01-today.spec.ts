@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { blockExternalHosts, canvasPoint, drawStroke, signIn } from "./helpers";
 
-test("the daily flow: draw, group, send, lock", async ({ page }) => {
+test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await signIn(page);
   await blockExternalHosts(page);
   let posts = 0;
@@ -15,11 +15,14 @@ test("the daily flow: draw, group, send, lock", async ({ page }) => {
     }
   });
 
+  // Home points at today with one primary step.
   await page.goto("/");
-  await expect(page.locator(".target-code-cell")).toHaveCount(6);
+  await page.getByRole("link", { name: "Start today's session" }).click();
+  await expect(page).toHaveURL(/\/today$/);
+  await expect(page.locator(".code-cell")).toHaveCount(6);
 
   // The fixture config sets the close time — the day view carries
-  // the computed timestamp while open (spec S2 B1).
+  // the computed timestamp while open (spec S2 B1, spec BR1 §3).
   const dayView = await (
     await page.request.get("http://127.0.0.1:8199/api/day")
   ).json();
@@ -28,32 +31,32 @@ test("the daily flow: draw, group, send, lock", async ({ page }) => {
   // Two strokes: a vertical mast and a second line beside it.
   await drawStroke(page, [0.2, 0.7], [0.25, 0.2]);
   await drawStroke(page, [0.35, 0.7], [0.33, 0.25]);
-  await expect(page.getByText("2 strokes", { exact: true })).toBeVisible();
+  await expect(page.getByText("0 words · 2 strokes")).toBeVisible();
 
-  await page
-    .getByPlaceholder("one impression — Enter commits")
-    .fill("tall vertical structure");
-  await page.keyboard.press("Enter");
+  const word = page.getByLabel("Add a word");
+  await word.fill("tall vertical structure");
+  await word.press("Enter");
+  await expect(page.getByText("1 word · 2 strokes")).toBeVisible();
 
-  // Explicit select mode: pick the first stroke at its midpoint.
-  await page.getByRole("button", { name: "Select strokes" }).click();
+  // Label the first stroke as a part of the sketch.
+  await page.getByText("Label parts of your sketch").click();
+  await page.getByRole("button", { name: "Pick strokes" }).click();
   const [x, y] = await canvasPoint(page, [0.225, 0.45]);
   await page.mouse.click(x, y);
-  await expect(page.getByText(/1 selected/)).toBeVisible();
-  await page.getByPlaceholder("what is it? e.g. tower").fill("tower");
-  await page.getByRole("button", { name: "Group", exact: true }).click();
-  await expect(page.getByText(/g1 ·/)).toBeVisible();
+  await expect(page.getByText(/1 stroke picked/)).toBeVisible();
+  await page.getByLabel("Name the picked strokes").fill("tower");
+  await page.getByRole("button", { name: "Label", exact: true }).click();
+  await expect(page.getByText(/1 labeled part/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Send today's trial" }).click();
-  await expect(
-    page.getByText("Sent. The reveal opens after the day closes."),
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/^[0-9a-f]{32}$/)).toBeVisible();
+  await page.getByRole("button", { name: "Send today's session" }).click();
+  await expect(page.getByText("Sent — you're in for today")).toBeVisible({
+    timeout: 30_000,
+  });
 
-  // Server truth survives a reload.
+  // Server truth survives a reload, and home agrees.
   await page.reload();
-  await expect(
-    page.getByText("Sent. The reveal opens after the day closes."),
-  ).toBeVisible();
+  await expect(page.getByText("Sent — you're in for today")).toBeVisible();
+  await page.getByRole("link", { name: "Back to home" }).click();
+  await expect(page.getByText("You're in for today")).toBeVisible();
   expect(posts).toBe(1);
 });

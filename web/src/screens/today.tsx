@@ -1,20 +1,25 @@
 /**
- * The daily trial screen (mock 1a, spec W1 B6). Five views: no day,
- * open, submitted, closed, revealed (hand-off to the reveal
- * screen). The send is a mutation with an in-flight lock; drafts
- * stay in localStorage as disposable caches (§8).
+ * Today's session (mock 1a, spec W1 B6; layout and copy per spec
+ * BR1 §6). The eye goes to two places: the canvas, and the one Send
+ * button. Words sit beside the canvas; labeling parts and notes are
+ * optional and fold away. Views: no day, open, sent, closing or
+ * closed, and revealed (hand-off to the results screen).
+ *
+ * The send is a mutation with an in-flight lock; drafts stay in
+ * localStorage as disposable caches (W1 §8).
  */
 
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Navigate } from "@tanstack/react-router";
+import { CheckCircle } from "@phosphor-icons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
-import type { SubmissionAck, WireRecord } from "../api/types";
+import type { DayView, WireRecord } from "../api/types";
 import { ApiError, friendlyMessage, isRefusal } from "../api/types";
+import { CanvasPanel } from "../intake/canvas-panel";
 import { GroupControls } from "../intake/groups-card";
 import { ImpressionsCard } from "../intake/impressions-card";
-import { SketchCanvas } from "../sketch/canvas";
 import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
   addRelation,
@@ -32,9 +37,9 @@ import {
   serialize,
   undo,
 } from "../sketch/core";
-import { Kicker } from "../ui/kicker";
-import { PaletteRow } from "../ui/palette-row";
-import { TargetCode } from "../ui/target-code";
+import { CodeCells } from "../ui/code-cells";
+import { ClosesIn, ClosesInBadge } from "../ui/countdown";
+import { formatDay } from "../ui/format";
 
 const DRAFT_DEBOUNCE_MS = 500;
 
@@ -76,20 +81,20 @@ function writeStorage(key: string, value: unknown): void {
   }
 }
 
-function shortHash(value: string): string {
-  return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
-function CenteredCard(props: {
-  kicker: string;
-  children: React.ReactNode;
+function MessageCard(props: {
+  title: string;
+  children?: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div style={{ padding: 28, maxWidth: 520 }}>
-      <div className="card elev-sm">
-        <span className="card-kicker">{props.kicker}</span>
+    <div className="page-narrow" style={{ margin: "0 auto" }}>
+      <section className="card card-hero">
+        <h2>{props.title}</h2>
         {props.children}
-      </div>
+      </section>
     </div>
   );
 }
@@ -103,24 +108,33 @@ export function TodayScreen(): React.JSX.Element {
   });
 
   if (day.isPending) {
-    return <CenteredCard kicker="Today">Loading…</CenteredCard>;
+    return (
+      <p className="subtle" aria-busy="true">
+        Loading today's session…
+      </p>
+    );
   }
   if (day.isError || day.data === undefined) {
     if (!isRefusal(day.error)) {
       return (
-        <CenteredCard kicker="Today">
-          <p className="text-muted" role="alert">
+        <MessageCard title="Today's session">
+          <div className="notice notice-bad" role="alert">
             {friendlyMessage(day.error)}
-          </p>
-        </CenteredCard>
+          </div>
+        </MessageCard>
       );
     }
     return (
-      <CenteredCard kicker="No day">
-        <p className="text-muted">
-          No trial is open. The operator opens the next day.
+      <MessageCard title="No session is open right now">
+        <p className="muted">
+          The next day starts soon. Meanwhile, you can practice on a past photo.
         </p>
-      </CenteredCard>
+        <div>
+          <Link to="/practice" className="btn btn-secondary">
+            Practice
+          </Link>
+        </div>
+      </MessageCard>
     );
   }
   const view = day.data;
@@ -128,52 +142,53 @@ export function TodayScreen(): React.JSX.Element {
     return <Navigate to="/reveal" />;
   }
   if (view.submitted) {
-    return <SubmittedView ack={null} />;
+    return <SentView closesAt={view.closes_at} />;
   }
-  if (view.status === "closed") {
+  if (view.status === "closing" || view.status === "closed") {
     return (
-      <CenteredCard kicker="Closed">
-        <p className="text-muted">
-          The day has closed. The reveal opens when the operator scores it.
+      <MessageCard title="Today's session has closed">
+        <p className="muted">
+          Results are being worked out. Check back in a few minutes to see the
+          photo.
         </p>
-      </CenteredCard>
+      </MessageCard>
     );
   }
   return <OpenWorkspace key={view.day} view={view} />;
 }
 
-function SubmittedView(props: {
-  ack: SubmissionAck | null;
+function SentView(props: {
+  closesAt?: string | null | undefined;
 }): React.JSX.Element {
   return (
-    <CenteredCard kicker="Submitted">
-      <p>Sent. The reveal opens after the day closes.</p>
-      {props.ack === null ? null : (
-        <p className="text-muted" style={{ fontSize: 13 }}>
-          trial{" "}
-          <span style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>
-            {props.ack.trial_id}
-          </span>{" "}
-          · {props.ack.atom_count} atoms
+    <div className="page-narrow" style={{ margin: "0 auto" }}>
+      <section className="card card-hero" aria-labelledby="sent-heading">
+        <div className="row" style={{ color: "var(--good)" }}>
+          <CheckCircle size={32} weight="fill" aria-hidden="true" />
+          <h2 id="sent-heading" style={{ color: "var(--text)" }}>
+            Sent — you're in for today
+          </h2>
+        </div>
+        <p className="muted">
+          Your sketch is locked in. The photo is revealed when the day closes
+          <ClosesIn closesAt={props.closesAt} prefix=" — in" />.
         </p>
-      )}
-      <p className="text-muted" style={{ fontSize: 12 }}>
-        One send per day — it locked when it landed.
-      </p>
-    </CenteredCard>
+        <div className="row">
+          <Link to="/" className="btn btn-primary">
+            Back to home
+          </Link>
+          <Link to="/practice" className="btn btn-secondary">
+            Practice while you wait
+          </Link>
+        </div>
+      </section>
+    </div>
   );
 }
 
-function OpenWorkspace(props: {
-  view: {
-    day: string;
-    trial_code: string;
-    commitment: string;
-    relation_vocabulary: string[];
-    closes_at?: string | null;
-  };
-}): React.JSX.Element {
+function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const api = useApi();
+  const queryClient = useQueryClient();
   const { view } = props;
 
   const restored = useMemo(() => readDraft(view.day), [view.day]);
@@ -214,6 +229,8 @@ function OpenWorkspace(props: {
       } catch {
         // Disposable cache.
       }
+      // The day now reads "sent" on each screen that shows it.
+      void queryClient.invalidateQueries({ queryKey: ["day"] });
     },
     onSettled: () => {
       sendingRef.current = false;
@@ -244,11 +261,8 @@ function OpenWorkspace(props: {
     return () => clearTimeout(timer);
   }, [doc, impressions, pastedText, view.day, sent]);
 
-  if (send.isSuccess) {
-    return <SubmittedView ack={send.data} />;
-  }
   if (sent) {
-    return <SubmittedView ack={null} />;
+    return <SentView closesAt={view.closes_at} />;
   }
 
   const scoreable =
@@ -281,6 +295,12 @@ function OpenWorkspace(props: {
     });
   };
 
+  const resetPicks = () => {
+    setSelection(new Set());
+    setRelationFirst("");
+    setRelationSecond("");
+  };
+
   const makeGroupWith = (label: string) => {
     if (label === "" || selection.size === 0) {
       return;
@@ -293,15 +313,16 @@ function OpenWorkspace(props: {
   const groupExists = (id: string): boolean =>
     doc.groups.some((group) => group.id === id);
 
+  const relationReady =
+    relationFirst !== "" &&
+    relationSecond !== "" &&
+    relationFirst !== relationSecond &&
+    relationName !== "" &&
+    groupExists(relationFirst) &&
+    groupExists(relationSecond);
+
   const addRelationNow = () => {
-    if (
-      relationFirst === "" ||
-      relationSecond === "" ||
-      relationFirst === relationSecond ||
-      relationName === "" ||
-      !groupExists(relationFirst) ||
-      !groupExists(relationSecond)
-    ) {
+    if (!relationReady) {
       // Undo can rewind a group out from under the selects.
       setRelationFirst("");
       setRelationSecond("");
@@ -310,153 +331,74 @@ function OpenWorkspace(props: {
     commit(addRelation(doc, relationName, [relationFirst, relationSecond]));
   };
 
-  const groupName = (id: string): string => {
-    const group = doc.groups.find((row) => row.id === id);
-    return group === undefined || group.label === ""
-      ? id
-      : `${group.label} (${id})`;
-  };
+  const groupName = (id: string): string =>
+    doc.groups.find((row) => row.id === id)?.label || "a part";
 
-  const summary = [
-    `${impressions.length} impression${impressions.length === 1 ? "" : "s"}`,
-    `${doc.strokes.length} stroke${doc.strokes.length === 1 ? "" : "s"}`,
-    `${doc.groups.length} group${doc.groups.length === 1 ? "" : "s"}`,
-    `${doc.relations.length} relation${doc.relations.length === 1 ? "" : "s"}`,
-    ...(pastedText.trim() !== "" ? ["pasted notes"] : []),
-  ].join(" · ");
+  const labeled = doc.groups.length;
+  const summaryParts = [
+    plural(impressions.length, "word", "words"),
+    plural(doc.strokes.length, "stroke", "strokes"),
+    ...(labeled > 0 ? [plural(labeled, "labeled part", "labeled parts")] : []),
+    ...(pastedText.trim() !== "" ? ["notes"] : []),
+  ];
 
   const sketchHint =
     mode === "select"
       ? selection.size > 0
-        ? `${selection.size} selected — name the group, then Group.`
-        : "Click a stroke to select it — it gets an accent halo."
-      : "Each drag is one stroke. Use Select strokes to group them.";
+        ? `${plural(selection.size, "stroke", "strokes")} picked — name them on the right.`
+        : "Tap the strokes that belong together."
+      : doc.strokes.length === 0
+        ? "Draw whatever comes to mind. Each line you draw is one stroke."
+        : "Keep going, or add words on the right.";
 
   return (
-    <div
-      style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          gap: 24,
-          padding: "22px 28px 18px",
-          flexWrap: "wrap",
-        }}
-      >
-        <TargetCode code={view.trial_code} />
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 8,
-            paddingBottom: 4,
-          }}
-        >
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span className="tag tag-outline">Open</span>
-            {typeof view.closes_at === "string" ? (
-              <ClosesIn closesAt={view.closes_at} />
-            ) : null}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
-            trial {view.day} · commitment{" "}
-            <span
-              title={view.commitment}
-              style={{
-                fontFamily: "ui-monospace, Menlo, monospace",
-                fontSize: 11,
-              }}
-            >
-              {shortHash(view.commitment)}
-            </span>
+    <div className="stack-lg">
+      <header className="row-between" style={{ alignItems: "flex-end" }}>
+        <div className="stack-sm">
+          <div className="eyebrow">Today's session · {formatDay(view.day)}</div>
+          <div className="row" style={{ gap: 16 }}>
+            <CodeCells code={view.trial_code} />
+            <p className="muted" style={{ maxWidth: 360 }}>
+              A photo is hidden behind this code. Sketch and describe whatever
+              comes to mind.{" "}
+              <Link to="/how" className="small">
+                How it works
+              </Link>
+            </p>
           </div>
         </div>
-      </div>
+        <ClosesInBadge closesAt={view.closes_at} />
+      </header>
 
-      <div className="today-columns">
-        <div
-          style={{
-            background: "var(--color-surface)",
-            borderRadius: "var(--radius-md)",
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
+      <div className="workspace">
+        <CanvasPanel
+          doc={doc}
+          selection={selection}
+          mode={mode}
+          colorIndex={colorIndex}
+          onPickColor={setColorIndex}
+          onCommitStroke={onCommitStroke}
+          onPickStroke={onPickStroke}
+          canUndo={canUndo(history)}
+          canRedo={canRedo(history)}
+          onUndo={() => {
+            setHistory((h) => undo(h));
+            resetPicks();
           }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <Kicker>Sketch</Kicker>
-            <PaletteRow colorIndex={colorIndex} onPick={setColorIndex} />
-            <span style={{ flex: 1 }} />
-            <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
-              {doc.strokes.length} strokes
-            </span>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canUndo(history)}
-              onClick={() => {
-                setHistory((h) => undo(h));
-                setSelection(new Set());
-                setRelationFirst("");
-                setRelationSecond("");
-              }}
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canRedo(history)}
-              onClick={() => {
-                setHistory((h) => redo(h));
-                setSelection(new Set());
-                setRelationFirst("");
-                setRelationSecond("");
-              }}
-            >
-              Redo
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={doc.strokes.length === 0}
-              onClick={() => {
-                commit(clearSketch(doc));
-                setSelection(new Set());
-                setRelationFirst("");
-                setRelationSecond("");
-              }}
-            >
-              Clear
-            </button>
-          </div>
-          <SketchCanvas
-            doc={doc}
-            selection={selection}
-            mode={mode}
-            colorIndex={colorIndex}
-            onCommitStroke={onCommitStroke}
-            onPickStroke={onPickStroke}
-            disabled={send.isPending}
-          />
-          <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
-            {sketchHint}
-          </div>
-        </div>
+          onRedo={() => {
+            setHistory((h) => redo(h));
+            resetPicks();
+          }}
+          onClear={() => {
+            commit(clearSketch(doc));
+            resetPicks();
+            setMode("draw");
+          }}
+          disabled={send.isPending}
+          hint={sketchHint}
+        />
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <aside className="stack side-panel" aria-label="Your answer">
           <ImpressionsCard
             impressions={impressions}
             onAdd={(text) => setImpressions((rows) => [...rows, text])}
@@ -465,142 +407,144 @@ function OpenWorkspace(props: {
             }
           />
 
-          <div className="card">
-            <GroupControls
-              doc={doc}
-              mode={mode}
-              selectionSize={selection.size}
-              onToggleSelect={() => {
-                setMode((old) => (old === "select" ? "draw" : "select"));
-                setSelection(new Set());
-              }}
-              onMakeGroup={makeGroupWith}
-            />
-            <div className="hr" style={{ margin: 0 }} />
-            <Kicker>How things sit</Kicker>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr auto",
-                gap: 6,
-              }}
-            >
-              <select
-                className="input"
-                aria-label="first group"
-                disabled={doc.groups.length < 2}
-                value={relationFirst}
-                onChange={(event) => setRelationFirst(event.target.value)}
-                style={{ minHeight: 32, padding: "4px 6px", fontSize: 12 }}
-              >
-                <option value="">first…</option>
-                {doc.groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {groupName(group.id)}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="input"
-                aria-label="relation"
-                disabled={doc.groups.length < 2}
-                value={relationName}
-                onChange={(event) => setRelationName(event.target.value)}
-                style={{ minHeight: 32, padding: "4px 6px", fontSize: 12 }}
-              >
-                {view.relation_vocabulary.map((name) => (
-                  <option key={name} value={name}>
-                    {wordingOf(name)}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="input"
-                aria-label="second group"
-                disabled={doc.groups.length < 2}
-                value={relationSecond}
-                onChange={(event) => setRelationSecond(event.target.value)}
-                style={{ minHeight: 32, padding: "4px 6px", fontSize: 12 }}
-              >
-                <option value="">second…</option>
-                {doc.groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {groupName(group.id)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={
-                  doc.groups.length < 2 ||
-                  relationFirst === "" ||
-                  relationSecond === "" ||
-                  relationFirst === relationSecond ||
-                  !groupExists(relationFirst) ||
-                  !groupExists(relationSecond)
-                }
-                onClick={addRelationNow}
-              >
-                Add
-              </button>
-            </div>
-            {doc.relations.map((relation, index) => (
-              <div
-                key={`${relation.relation}-${relation.of[0]}-${relation.of[1]}-${
-                  // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
-                  index
-                }`}
-                style={{
-                  fontSize: 13,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
+          <details className="card disclosure">
+            <summary>
+              Label parts of your sketch{" "}
+              <span className="subtle" style={{ fontWeight: 500 }}>
+                (optional)
+              </span>
+            </summary>
+            <div className="disclosure-body">
+              <GroupControls
+                doc={doc}
+                mode={mode}
+                selectionSize={selection.size}
+                onToggleSelect={() => {
+                  setMode((old) => (old === "select" ? "draw" : "select"));
+                  setSelection(new Set());
                 }}
-              >
-                <span style={{ color: "var(--color-accent-300)" }}>
-                  {groupName(relation.of[0])} {wordingOf(relation.relation)}{" "}
-                  {groupName(relation.of[1])}
-                </span>
-                <button
-                  type="button"
-                  title="remove"
-                  aria-label="remove relation"
-                  onClick={() => commit(removeRelation(doc, index))}
-                  style={{
-                    border: "none",
-                    background: "none",
-                    color: "var(--color-neutral-500)",
-                    cursor: "pointer",
-                    fontSize: 14,
-                    padding: "0 2px",
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="card">
-            <Kicker>Notes</Kicker>
-            <textarea
-              className="input"
-              placeholder="optional pasted notes"
-              value={pastedText}
-              onChange={(event) => setPastedText(event.target.value)}
-              style={{ minHeight: 64 }}
-            />
-          </div>
-
-          <div className="card elev-sm">
-            <div style={{ fontSize: 13, color: "var(--color-neutral-400)" }}>
-              {summary}
+                onMakeGroup={makeGroupWith}
+              />
+              {labeled < 2 ? null : (
+                <>
+                  <hr className="divider" />
+                  <div className="label">Where things are</div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1fr",
+                      gap: 6,
+                    }}
+                  >
+                    <select
+                      className="input"
+                      aria-label="first part"
+                      value={relationFirst}
+                      onChange={(event) => setRelationFirst(event.target.value)}
+                    >
+                      <option value="">Pick…</option>
+                      {doc.groups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="input"
+                      aria-label="position"
+                      value={relationName}
+                      onChange={(event) => setRelationName(event.target.value)}
+                    >
+                      {view.relation_vocabulary.map((name) => (
+                        <option key={name} value={name}>
+                          {wordingOf(name)}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="input"
+                      aria-label="second part"
+                      value={relationSecond}
+                      onChange={(event) =>
+                        setRelationSecond(event.target.value)
+                      }
+                    >
+                      <option value="">Pick…</option>
+                      {doc.groups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={!relationReady}
+                      onClick={addRelationNow}
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {doc.relations.length === 0 ? null : (
+                    <ul
+                      className="stack-sm"
+                      style={{ margin: 0, padding: 0, listStyle: "none" }}
+                    >
+                      {doc.relations.map((relation, index) => (
+                        <li
+                          key={`${relation.relation}-${relation.of[0]}-${relation.of[1]}-${
+                            // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
+                            index
+                          }`}
+                          className="row-between"
+                        >
+                          <span>
+                            {groupName(relation.of[0])}{" "}
+                            {wordingOf(relation.relation)}{" "}
+                            {groupName(relation.of[1])}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            aria-label="Remove this position"
+                            onClick={() => commit(removeRelation(doc, index))}
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
             </div>
+          </details>
+
+          <details className="card disclosure">
+            <summary>
+              Notes{" "}
+              <span className="subtle" style={{ fontWeight: 500 }}>
+                (optional)
+              </span>
+            </summary>
+            <div className="disclosure-body">
+              <textarea
+                className="input"
+                aria-label="Notes"
+                placeholder="Paste or type longer notes here."
+                value={pastedText}
+                onChange={(event) => setPastedText(event.target.value)}
+              />
+            </div>
+          </details>
+
+          <section className="card" aria-label="Send">
+            <p className="muted small">{summaryParts.join(" · ")}</p>
             <button
               type="button"
-              className="btn btn-primary btn-block"
-              style={{ minHeight: 44 }}
+              className="btn btn-primary btn-large btn-block"
               disabled={!scoreable || send.isPending}
               onClick={() => {
                 if (sendingRef.current) {
@@ -610,42 +554,22 @@ function OpenWorkspace(props: {
                 send.mutate(serialize(doc, impressions, pastedText));
               }}
             >
-              {send.isPending ? "Sending…" : "Send today's trial"}
+              {send.isPending ? "Sending…" : "Send today's session"}
             </button>
-            <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+            <p className="hint">
               {scoreable
-                ? "One send per day — it locks when it lands."
-                : "Add an impression, strokes, or pasted notes first."}
-              {draftSaved ? " · draft saved" : ""}
-            </div>
+                ? "You can send once, and you can't change it after."
+                : "Draw something or add a word first."}
+              {draftSaved ? " Your draft is saved on this device." : ""}
+            </p>
             {send.isError && !sent ? (
-              <div style={{ fontSize: 13, color: "#bf616a" }} role="alert">
+              <div className="notice notice-bad" role="alert">
                 {friendlyMessage(send.error)}
               </div>
             ) : null}
-          </div>
-        </div>
+          </section>
+        </aside>
       </div>
     </div>
-  );
-}
-
-function ClosesIn(props: { closesAt: string }): React.JSX.Element | null {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    // A fixed one-minute tick: content-independent cadence (§8).
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-  const remainingMs = Date.parse(props.closesAt) - now;
-  if (Number.isNaN(remainingMs) || remainingMs <= 0) {
-    return null;
-  }
-  const hours = Math.floor(remainingMs / 3_600_000);
-  const minutes = Math.floor((remainingMs % 3_600_000) / 60_000);
-  return (
-    <span style={{ fontSize: 13, color: "var(--color-neutral-500)" }}>
-      closes in {hours}h {minutes}m
-    </span>
   );
 }

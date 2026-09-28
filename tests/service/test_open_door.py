@@ -81,22 +81,31 @@ def test_the_first_door_mint_flips_access_control_on(tmp_path) -> None:
     assert client.get("/api/me").status_code == 401
 
 
-def test_the_door_turns_an_active_players_token(tmp_path) -> None:
+def test_the_door_adds_a_session_and_keeps_the_others(tmp_path) -> None:
+    """Spec BR1 section 4: the door turns no token. A sign-in on a
+    second device leaves the first one signed in."""
     fixture, client = _world(
         tmp_path, dev_mode=True,
         minted=(("ade", "Ade", "1" * 43),))
-    earlier = f"ade.{'1' * 43}"
-    client.cookies.set(auth.SESSION_COOKIE, earlier)
-    assert client.get("/api/me").status_code == 200
+    root = fixture["store"]
+    first = client.post("/api/door", json={"player": "ade"})
+    assert first.status_code == 200
+    first_value = client.cookies.get(auth.SESSION_COOKIE)
+    digest_before = store.read_player_record(root, "ade").token_hash
     client.cookies.clear()
-    answer = client.post("/api/door", json={"player": "ade"})
-    assert answer.status_code == 200
+    second = client.post("/api/door", json={"player": "ade"})
+    assert second.status_code == 200
     # The label stays the minted one - the door edits no record.
-    assert answer.json()["display_name"] == "Ade"
-    assert client.get("/api/me").json()["player"] == "ade"
-    # Each other session of that player stops at its next read.
+    assert second.json()["display_name"] == "Ade"
+    assert store.read_player_record(root, "ade").token_hash == digest_before
+    assert len(store.list_sessions(root, "ade")) == 2
+    # The first device continues to read as ade.
     client.cookies.clear()
-    client.cookies.set(auth.SESSION_COOKIE, earlier)
+    client.cookies.set(auth.SESSION_COOKIE, first_value)
+    assert client.get("/api/me").json()["player"] == "ade"
+    # The invite itself is not a cookie credential.
+    client.cookies.clear()
+    client.cookies.set(auth.SESSION_COOKIE, f"ade.{'1' * 43}")
     assert client.get("/api/me").status_code == 401
 
 

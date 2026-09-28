@@ -69,6 +69,15 @@ A second set of rulings, same day — theming and the logo:
    the production navs") is taken. v1 is vendored, on hand.
    The favicon keeps the rayless reduction.
 
+*Note, 2026-09-24 (spec BR1 §6):* ruling 5 is superseded for the
+player app. `web/src/theme.css` holds a light and a dark theme with
+semantic tokens, and the operator console keeps `nocturne.css`. The
+nav mark draws the v2 mini inline in the theme's accent color. Ruling
+6 stands: the sketch palette and the dark drawing surface do not
+change. The home screen is `/`, the drawing screen is `/today`, the
+landing page replaces the invite gate, and a bottom tab bar replaces
+the wrapped nav below 760 px.
+
 ## 3. The mockup source of truth
 
 The mockup project is canonical for the look: `nocturne.css` (the

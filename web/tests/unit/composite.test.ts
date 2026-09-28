@@ -53,26 +53,39 @@ describe("the composite client", () => {
 describe("friendlyMessage", () => {
   it("maps known causes and hides the raw token", () => {
     const copy = friendlyMessage(new ApiError(409, "already-submitted"));
-    expect(copy).toBe("Already sent — one send per day.");
+    expect(copy).toBe("You've already sent today's session.");
     expect(copy).not.toContain("already-submitted");
     expect(friendlyMessage(new ApiError(409, "day-closed"))).toContain(
       "closed",
     );
   });
 
-  it("prefers the refusal's own detail for gate causes", () => {
-    const detail =
-      "no atom reads into a weighted channel - add an impression, a " +
-      "labeled group, or strokes";
-    expect(
-      friendlyMessage(new ApiError(400, "no-scoreable-atom", detail)),
-    ).toBe(detail);
+  it("says each intake refusal in plain words, not the server's detail", () => {
+    const detail = "min-strokes: 1 strokes, minimum 2";
+    for (const cause of [
+      "min-ink",
+      "min-strokes",
+      "text-length",
+      "atom-count",
+      "no-scoreable-atom",
+      "bad-shape",
+    ]) {
+      const copy = friendlyMessage(new ApiError(400, cause, detail));
+      expect(copy).not.toContain(cause);
+      expect(copy).not.toContain(detail);
+      expect(copy).not.toMatch(/atom|channel|gate/);
+    }
   });
 
-  it("reads network failure as the server not answering", () => {
-    expect(friendlyMessage(new ApiError(0))).toBe("The server did not answer.");
-    expect(friendlyMessage(new TypeError("fetch failed"))).toBe(
-      "The server did not answer.",
-    );
+  it("falls back to the refusal's detail for an unknown cause", () => {
+    expect(
+      friendlyMessage(new ApiError(400, "something-new", "Plain detail.")),
+    ).toBe("Plain detail.");
+  });
+
+  it("reads a network failure as no connection", () => {
+    const copy = "Can't reach Starvector. Check your connection and try again.";
+    expect(friendlyMessage(new ApiError(0))).toBe(copy);
+    expect(friendlyMessage(new TypeError("fetch failed"))).toBe(copy);
   });
 });

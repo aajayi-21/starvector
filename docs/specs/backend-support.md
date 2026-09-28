@@ -54,6 +54,11 @@ read-only against the store, and the rescore byte equality
    view serves the computed timestamp for an open day and null
    when the day is not open or the time is not set. Closing stays
    the operator's manual action.
+   *Note, 2026-09-24 (spec BR1 §3):* `closes_at_utc` is also the
+   rollover hour of the daily timer, and the close instant follows
+   the calendar rule of spec BR1 §3.3. For an hour of 12:00 or
+   after, the served string is unchanged. The countdown closes
+   nothing: the `closing` status stops the sends.
 4. **The operator console is a second build entry, reached
    locally or through the tunnel.** `web/dev.html` builds with
    the player app, is not precached by the worker, and is
@@ -204,6 +209,12 @@ Access: the entry is out of the worker's precache and out of the
 SPA navigation fallback, the proxy answers 404 for it, and the
 operator opens it through `pnpm dev` locally or through the SSH
 tunnel against the VPS.
+
+*Note, 2026-09-24 (spec BR1 §7):* the console has four tabs: Days
+(this section's function set, with each player's send), Automatic
+days, Players (devices and access), and Results database (read-only
+SQL). The new paths are below `/api/dev/` and keep this section's
+access rules.
 
 ## 6. Build items
 

@@ -18,7 +18,9 @@ randomness that makes the bytes different.
 import dataclasses
 from pathlib import Path
 
-from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
+from svc_fixture import (FIXED_CLOCK, build_service_fixture,
+                         mixed_wire_record, pinned_session_value,
+                         plant_session)
 
 from service import players, store
 from service.day import close_day, open_day, reveal_day
@@ -35,7 +37,7 @@ def _sign_in(client: TestClient, token: str) -> TestClient:
     from service import auth
 
     client.cookies.clear()
-    client.cookies.set(auth.SESSION_COOKIE, token)
+    client.cookies.set(auth.SESSION_COOKIE, pinned_session_value(token))
     return client
 
 
@@ -47,6 +49,7 @@ def _two_player_world(tmp_path, *, bru_sent: bool):
                                 ("bru", "Bru", BRU)):
         players.mint_player(config, player=name, display_name=label,
                             clock=lambda: FIXED_CLOCK, secret=secret)
+        plant_session(fixture["store"], f"{name}.{secret}")
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64, trial_code="AAAAAA")
     if bru_sent:

@@ -1,10 +1,12 @@
 """The day lifecycle commands: open, close, reveal, status, rescore.
 
-Spec: S1 (in docs/specs/) section 6. Each status move is deliberate,
-repeatable, and refuses to run out of sequence. Open publishes the
-commitment and spends nothing (R5). Close is the one live step.
-Reveal publishes the secret. No command prints score information
-while the day is open (R3 covers the terminal).
+Spec: S1 (in docs/specs/) section 6, with the BR1 amendments of
+docs/specs/beta-readiness.md section 3. Each status move is
+deliberate, repeatable, and refuses to run out of sequence. Open
+publishes the commitment and spends nothing (R5). Close is the one
+live step: it moves the day to "closing" before it scores, thus a
+late send refuses. Reveal publishes the secret. No command prints
+score information while the day is open (R3 covers the terminal).
 """
 
 import argparse
@@ -17,7 +19,7 @@ from pathlib import Path
 
 from core.canonical import canonical_json_pretty, sha256_hex
 from pipeline.config import ConfigError, load_scoring_config
-from service import scoring, store
+from service import schedule, scoring, store
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from validation import harness
@@ -48,9 +50,48 @@ def make_trial_code() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(6))
 
 
-def _local_day() -> str:
-    """The owner machine's local date, ISO shape (D8)."""
-    return datetime.date.today().isoformat()
+def utc_now() -> datetime.datetime:
+    """The current instant in UTC - one seam for the tests to pin.
+
+    The day calendar reads UTC alone (spec BR1 section 3). The local
+    date of the D8 ruling put the label and the countdown on two
+    clocks.
+    """
+    return datetime.datetime.now(datetime.UTC)
+
+
+def choose_open_date(service_config: ServiceConfig,
+                     instant: datetime.datetime) -> str:
+    """The label the next open takes (spec BR1 section 3).
+
+    The current day by the UTC calendar, or the day after the latest
+    stored day when that one holds the current label. The status
+    rule - the latest day must be revealed - is open_day's to check.
+    """
+    latest = store.latest_day(Path(service_config.store_root))
+    return schedule.next_open_label(latest, instant,
+                                    service_config.closes_at_utc)
+
+
+def _check_open_sequence(root: Path, day: str) -> None:
+    """Refuse an open out of sequence: one active day at a time.
+
+    The latest stored day must be revealed, and the new label must
+    come after it. An open adjacent to a closed day strands that day:
+    the reveal endpoint acts on the latest day alone.
+    """
+    latest = store.latest_day(root)
+    if latest is None:
+        return
+    status = store.read_day_record(root, latest).status
+    if status != "revealed":
+        raise store.StoreError(
+            f"day {latest} has status {status!r} - reveal it before a new "
+            "day opens")
+    if day <= latest:
+        raise store.StoreError(
+            f"day {day} is not after the latest stored day {latest} - "
+            "open refuses to go back")
 
 
 def _resolve_day(service_config: ServiceConfig, date: str | None) -> str:
@@ -69,13 +110,29 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
              clock: Callable[[], str] | None = None,
              pick_seed: str | None = None,
              secret: str | None = None,
-             trial_code: str | None = None) -> store.DayRecord:
-    """Open one day: wire warm, pick, commit, write (spec section 6)."""
+             trial_code: str | None = None,
+             now: Callable[[], datetime.datetime] | None = None,
+             ) -> store.DayRecord:
+    """Open one day: wire warm, pick, commit, write (spec section 6).
+
+    With no date the label comes from choose_open_date. A named date
+    must be a calendar date after the latest stored day, and with a
+    rollover hour configured it must not be more than one day after
+    the current day. The latest stored day must be revealed.
+    """
     clock = clock or harness.default_clock
-    day = date or _local_day()
+    instant = (now or utc_now)()
     root = Path(service_config.store_root)
+    day = date if date is not None \
+        else choose_open_date(service_config, instant)
+    try:
+        schedule.check_open_label(day, instant,
+                                  service_config.closes_at_utc)
+    except schedule.ScheduleError as error:
+        raise store.StoreError(str(error)) from error
     if store.day_record_path(root, day).is_file():
         raise store.StoreError(f"day {day} exists - open refuses a rewrite")
+    _check_open_sequence(root, day)
     config_path = scoring_config_path or service_config.scoring_config
     config = load_scoring_config(Path(config_path))
     wired = scoring.wire_for_open(config, config_path,
@@ -101,24 +158,33 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
               providers: Mapping[str, object] | None = None,
               clock: Callable[[], str] | None = None,
               wired: scoring.WiredScoring | None = None) -> int:
-    """Close one day: score each stored submission, flip the status.
+    """Close one day: stop the sends, score each one, flip the status.
 
-    Repeatable after a stop: a stored trial row that equals the
-    recomputation is kept, a different one raises, and the status
-    flip is the completeness marker. The output is the count of
-    trial rows. A caller with a resident context hands it in through
-    wired (P5 R1) - the day record's hash guard runs the same, thus
-    a context that does not match the pinned config refuses loudly.
-    With no wired context the wiring comes from the day record's
-    pinned config path, as before.
+    The sequence (spec BR1 section 3): wire and check the pinned
+    hash, move "open" to "closing" with the day's write lock held, read
+    the submissions, score, write the rows, move "closing" to
+    "closed". The wiring comes first, thus a missing provider key or
+    a moved config refuses while the day is open. A send that
+    held the lock before the move is in the submissions this close
+    reads, and a send after it meets "closing" and refuses.
+
+    Repeatable after a stop: a day in "closing" continues, a stored
+    trial row that equals the recomputation is kept, a different one
+    raises, and the move to "closed" is the completeness marker. The
+    output is the count of trial rows. A caller with a resident
+    context hands it in through wired (P5 R1) - the day record's
+    hash guard runs the same, thus a context that does not match the
+    pinned config refuses loudly. With no wired context the wiring
+    comes from the day record's pinned config path, as before.
     """
     clock = clock or harness.default_clock
     root = Path(service_config.store_root)
     day = _resolve_day(service_config, date)
     record = store.read_day_record(root, day)
-    if record.status != "open":
+    if record.status not in ("open", "closing"):
         raise store.StoreError(
-            f"day {day} has status {record.status!r} - close needs 'open'")
+            f"day {day} has status {record.status!r} - close needs 'open' "
+            "or 'closing'")
     if wired is None:
         config = load_scoring_config(Path(record.scoring_config_path))
         wired = scoring.wire_for_close(config, record.scoring_config_path,
@@ -130,6 +196,11 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
             f"({wired.scoring_hash[:8]} against "
             f"{record.scoring_config_hash[:8]}) - the config file changed "
             "after the day opened")
+    if record.status == "open":
+        with store.day_write_lock(root, day):
+            store.update_day_status(root, day, expect_status="open",
+                                    new_status="closing",
+                                    timestamp_field=None, timestamp=None)
     # Read and check each submission first, then one batched encode
     # across the day (P5 R7): each cold atom rides a shared batch.
     # A submission that does not parse stops the close before a row
@@ -162,7 +233,7 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
         else:
             store.write_once_json(row_path, value)
         count += 1
-    store.update_day_status(root, day, expect_status="open",
+    store.update_day_status(root, day, expect_status="closing",
                             new_status="closed",
                             timestamp_field="closed_at", timestamp=clock())
     return count
@@ -212,8 +283,8 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
     different config the rows land adjacent
     (trials/<player>.<hash8>.json), repeatable, and the stored rows
     and day records stay untouched (architecture section 21:
-    rescore, do not migrate). Open days are skipped with a count -
-    they hold no row at this time.
+    rescore, do not migrate). Open and closing days are skipped with
+    one count - they hold no complete set of rows at this time.
     """
     import json
 
@@ -230,7 +301,7 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
         if to_date is not None and day > to_date:
             continue
         record = store.read_day_record(root, day)
-        if record.status == "open":
+        if record.status in ("open", "closing"):
             counts["skipped_open"] += 1
             continue
         if record.preparation_version_id != wired.preparation_version_id:

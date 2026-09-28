@@ -1,0 +1,47 @@
+# The daily rollover (spec BR1 section 3): close the due day, reveal
+# it, open the next. The timer starts it; it is safe to start by hand
+# too - it moves nothing that is not due. Install:
+#   cp deploy/starvector-day.service deploy/starvector-day.timer \
+#       /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now starvector-day.timer
+#
+# It reads the store and drives the public process's operator
+# endpoints on the loopback address, thus the close uses the
+# server's resident scoring context and provider key. It writes two
+# things itself, both under store/rollover/: its lock, which the
+# console's "Do what is due now" holds too, and one run record for
+# each start. It reads the operator's pause there (spec BR1 section
+# 7.2).
+
+[Unit]
+Description=Starvector day rollover (close, reveal, open)
+After=starvector.service
+Requires=starvector.service
+
+[Service]
+Type=oneshot
+User=starvector
+Group=starvector
+WorkingDirectory=/srv/starvector/app
+# STARVECTOR_OPERATOR_TOKEN, and the optional
+# STARVECTOR_HEALTHCHECK_URL that each run pings (the /fail suffix
+# on a failure).
+EnvironmentFile=/etc/starvector/env
+ExecStart=/srv/starvector/app/.venv/bin/python -m service.rollover \
+    --service-config /etc/starvector/service.json \
+    --base-url http://127.0.0.1:8000 \
+    --source timer
+# A close retries a failing provider with backoff; the whole run
+# stays below this.
+TimeoutStartSec=45min
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# The lock and the run records live in the store.
+ReadWritePaths=/srv/starvector/app/store
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true

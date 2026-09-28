@@ -41,7 +41,7 @@ import type {
 import { friendlyMessage, isRefusal } from "../api/types";
 import { boardSlice, funnelGeometry } from "../board/core";
 import { AvatarCircle } from "../ui/avatar";
-import { Kicker } from "../ui/kicker";
+import { formatDay, ordinal, percentBeaten } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
 
 /** How many ranked rows the table shows before the caller's own. */
@@ -70,8 +70,8 @@ const NARROW_PLOT = {
   bottom: 46,
 };
 
-const YOU = "var(--color-accent-400)";
-const OTHERS = "var(--color-neutral-600)";
+const YOU = "var(--accent)";
+const OTHERS = "var(--text-3)";
 
 export function LeaderboardScreen(): React.JSX.Element {
   const api = useApi();
@@ -86,35 +86,40 @@ export function LeaderboardScreen(): React.JSX.Element {
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
   const self = me.data?.player ?? "";
   return (
-    <div className="leaderboard-columns">
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        {skill.isPending ? (
-          <p className="text-muted">Loading…</p>
-        ) : skill.isError || skill.data === undefined ? (
-          <div className="card">
-            <span className="card-kicker">Skill board</span>
-            <p className="text-muted" role="alert">
-              {friendlyMessage(skill.error)}
-            </p>
-          </div>
-        ) : (
-          <SkillBoard view={skill.data} self={self} />
-        )}
+    <div className="stack-lg">
+      <div className="page-header" style={{ marginBottom: 0 }}>
+        <h1>Leaderboard</h1>
+        <p className="muted">
+          The latest day's results, and the skill ranking across many days.
+        </p>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <DailyBoard
-          view={daily.data}
-          self={self}
-          pending={daily.isPending}
-          error={daily.isError ? daily.error : null}
-        />
-        {skill.data === undefined ? null : (
-          <Population
-            population={skill.data.population}
-            variation={skill.data.variation}
-            discovery={skill.data.discovery}
+      <div className="two-columns">
+        <div className="stack-lg">
+          {skill.isPending ? (
+            <p className="subtle">Loading…</p>
+          ) : skill.isError || skill.data === undefined ? (
+            <div className="notice notice-bad" role="alert">
+              {friendlyMessage(skill.error)}
+            </div>
+          ) : (
+            <SkillBoard view={skill.data} self={self} />
+          )}
+        </div>
+        <div className="stack-lg">
+          <DailyBoard
+            view={daily.data}
+            self={self}
+            pending={daily.isPending}
+            error={daily.isError ? daily.error : null}
           />
-        )}
+          {skill.data === undefined ? null : (
+            <Population
+              population={skill.data.population}
+              variation={skill.data.variation}
+              discovery={skill.data.discovery}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -128,45 +133,43 @@ function DailyBoard(props: {
 }): React.JSX.Element {
   const { view, self, pending, error } = props;
   return (
-    <div className="card" style={{ gap: 10 }}>
-      <Kicker>The day's board</Kicker>
+    <section className="card" aria-labelledby="daily-heading">
+      <div className="stack-sm">
+        <h2 id="daily-heading">Latest day</h2>
+        {view === undefined ? null : (
+          <span className="subtle small">{formatDay(view.day)}</span>
+        )}
+      </div>
       {pending ? (
-        <p className="text-muted">Loading…</p>
+        <p className="subtle">Loading…</p>
       ) : view === undefined ? (
         isRefusal(error) ? (
-          <p className="text-muted">
-            No day has been revealed yet. The board opens after the first
-            reveal.
+          <p className="muted">
+            No day has been revealed yet. This board fills in after the first
+            one.
           </p>
         ) : (
-          <p className="text-muted" role="alert">
+          <div className="notice notice-bad" role="alert">
             {friendlyMessage(error)}
-          </p>
+          </div>
         )
       ) : (
-        <>
-          <div style={{ fontSize: 13 }}>{view.day}</div>
+        <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>player</th>
-                <th>score</th>
-                <th>rank</th>
-                <th>streak</th>
+                <th>Player</th>
+                <th className="num">Result</th>
+                <th className="num">Photo's rank</th>
+                <th className="num">Streak</th>
               </tr>
             </thead>
             <tbody>
-              {view.rows.map((row, index) => (
+              {view.rows.map((row) => (
                 <tr
                   key={row.player}
-                  style={
-                    row.player === self
-                      ? { color: "var(--color-accent-300)" }
-                      : undefined
-                  }
+                  className={row.player === self ? "is-you" : undefined}
                 >
-                  <td>{index + 1}</td>
                   <td>
                     <PlayerCell
                       player={row.player}
@@ -175,18 +178,18 @@ function DailyBoard(props: {
                       self={self}
                     />
                   </td>
-                  <td>{row.p.toFixed(4)}</td>
-                  <td>
-                    {row.target_rank} of {row.decoy_count + 1}
+                  <td className="num">{percentBeaten(row.p)}%</td>
+                  <td className="num">
+                    {ordinal(row.target_rank)} of {row.decoy_count + 1}
                   </td>
-                  <td>{row.streak}</td>
+                  <td className="num">{row.streak}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </>
+        </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -203,14 +206,21 @@ function PlayerCell(props: {
 }): React.JSX.Element {
   const { player, displayName, avatarHash, self } = props;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        fontWeight: player === self ? 650 : 400,
+      }}
+    >
       <AvatarCircle
         player={player}
         displayName={displayName}
         avatarHash={avatarHash}
-        size={20}
+        size={24}
       />
-      {player === self ? "you" : displayName}
+      <span>{player === self ? "You" : displayName}</span>
     </span>
   );
 }
@@ -227,20 +237,26 @@ function SkillBoard(props: {
   const own = view.rows.find((row) => row.player === self) ?? null;
   return (
     <>
-      <div className="card" style={{ gap: 12 }}>
-        <Kicker>The skill board</Kicker>
+      <section className="card" aria-labelledby="skill-heading">
+        <div className="stack-sm">
+          <h2 id="skill-heading">Skill ranking</h2>
+          <p className="hint">
+            Each dot is a player: their skill number against how many results
+            they've sent.
+          </p>
+        </div>
         {view.provisional ? <Provisional view={view} /> : null}
         <Funnel view={view} self={self} />
         <Legend />
-      </div>
+      </section>
       {own !== null && !own.eligible ? (
         <NotYetRanked row={own} floor={view.eligibility_floor} />
       ) : null}
-      {own !== null && own.eligible ? <OwnEvidence row={own} /> : null}
-      <div className="card" style={{ gap: 10 }}>
-        <Kicker>Ranked</Kicker>
+      {own?.eligible ? <OwnEvidence row={own} /> : null}
+      <section className="card" aria-labelledby="ranked-heading">
+        <h2 id="ranked-heading">Ranked players</h2>
         <RankedTable slice={slice} self={self} />
-      </div>
+      </section>
     </>
   );
 }
@@ -248,27 +264,30 @@ function SkillBoard(props: {
 function GatedBoard(props: { view: SkillBoardView }): React.JSX.Element {
   const { view } = props;
   return (
-    <div className="card" style={{ gap: 10 }}>
-      <Kicker>The skill board</Kicker>
-      <p style={{ margin: 0 }}>
-        The skill board opens when a player has {view.eligibility_floor} trials.
+    <section className="card card-hero" aria-labelledby="skill-heading">
+      <h2 id="skill-heading">Skill ranking</h2>
+      <p>
+        The skill ranking starts once a player has sent {view.eligibility_floor}{" "}
+        results. Nobody has yet.
       </p>
-      <p className="text-muted" style={{ margin: 0 }}>
-        {view.eligible_count} of {view.fit_floor} eligible players so far. A
-        ranking wants enough trials behind each number to mean anything, and
-        nobody has that yet.
+      <p className="muted small">
+        A ranking needs that many results behind each number to mean anything.
+        Until then, each day's results are on the right. After {view.fit_floor}{" "}
+        players reach {view.eligibility_floor} results, the ranking stops being
+        provisional.
       </p>
-    </div>
+    </section>
   );
 }
 
 function Provisional(props: { view: SkillBoardView }): React.JSX.Element {
   const { view } = props;
   return (
-    <p className="tag tag-outline" style={{ alignSelf: "flex-start" }}>
-      Provisional — {view.eligible_count} of {view.fit_floor} eligible players,
-      so the population is assumed rather than fitted
-    </p>
+    <div className="notice" role="note">
+      Provisional — fewer than {view.fit_floor} players have{" "}
+      {view.eligibility_floor} results ({view.eligible_count} so far), so the
+      ranking assumes a typical spread between players instead of measuring it.
+    </div>
   );
 }
 
@@ -280,7 +299,7 @@ function Funnel(props: {
   const plot = useNarrow() ? NARROW_PLOT : WIDE_PLOT;
   const geometry = funnelGeometry(view.rows, view.baseline_band, self);
   if (geometry.empty) {
-    return <p className="text-muted">No players to draw yet.</p>;
+    return <p className="muted">No players to draw yet.</p>;
   }
   const width = plot.width - plot.left - plot.right;
   const height = plot.height - plot.top - plot.bottom;
@@ -302,11 +321,11 @@ function Funnel(props: {
         style={{ width: "100%", height: "auto" }}
         role="img"
         aria-label={
-          `Skill number against trial count for ${geometry.points.length} ` +
-          "players, with the range no-skill play produces at each trial count."
+          `Skill number against results sent for ${geometry.points.length} ` +
+          "players, with the range play with no skill produces at each count."
         }
       >
-        <title>Skill number against trial count</title>
+        <title>Skill number against results sent</title>
         {geometry.skillTicks.map((tick) => (
           <g key={`skill-${tick.value}`}>
             <line
@@ -314,19 +333,15 @@ function Funnel(props: {
               x2={plot.left + width}
               y1={py(tick.position)}
               y2={py(tick.position)}
-              stroke={
-                tick.value === 1
-                  ? "var(--color-neutral-600)"
-                  : "var(--color-divider)"
-              }
-              strokeWidth={1}
+              stroke={tick.value === 1 ? "var(--chance)" : "var(--border)"}
+              strokeWidth={tick.value === 1 ? 2 : 1}
             />
             <text
               x={plot.left - 8}
               y={py(tick.position) + 4}
               textAnchor="end"
               fontSize={11}
-              fill="var(--color-neutral-500)"
+              fill="var(--text-3)"
             >
               {tick.label}
             </text>
@@ -339,7 +354,7 @@ function Funnel(props: {
             y={plot.height - 26}
             textAnchor="middle"
             fontSize={11}
-            fill="var(--color-neutral-500)"
+            fill="var(--text-3)"
           >
             {tick.label}
           </text>
@@ -347,9 +362,9 @@ function Funnel(props: {
         {geometry.band.length > 1 ? (
           <polygon
             points={outline}
-            fill="var(--color-neutral-800)"
-            fillOpacity={0.55}
-            stroke="var(--color-neutral-700)"
+            fill="var(--surface-2)"
+            fillOpacity={0.9}
+            stroke="var(--border-strong)"
             strokeWidth={1}
           />
         ) : null}
@@ -366,9 +381,9 @@ function Funnel(props: {
             {/* An SVG title is an element. The HTML title attribute
                 does not carry over. */}
             <title>
-              {point.self ? "you" : point.display_name} — skill number{" "}
-              {point.theta.toFixed(3)} over {point.n}{" "}
-              {point.n === 1 ? "trial" : "trials"}
+              {point.self ? "You" : point.display_name} — skill number{" "}
+              {point.theta.toFixed(2)} after {point.n}{" "}
+              {point.n === 1 ? "result" : "results"}
               {point.eligible ? "" : " (not ranked yet)"}
             </title>
           </circle>
@@ -378,9 +393,9 @@ function Funnel(props: {
           y={plot.height - 6}
           textAnchor="middle"
           fontSize={11}
-          fill="var(--color-neutral-400)"
+          fill="var(--text-3)"
         >
-          trials
+          results sent
         </text>
       </svg>
     </figure>
@@ -389,30 +404,24 @@ function Funnel(props: {
 
 function Legend(): React.JSX.Element {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 16,
-        fontSize: 13,
-        alignItems: "center",
-      }}
-    >
-      <Swatch fill={YOU} stroke={YOU}>
-        you
-      </Swatch>
-      <Swatch fill={OTHERS} stroke={OTHERS}>
-        ranked
-      </Swatch>
-      <Swatch fill="transparent" stroke={OTHERS}>
-        not ranked yet
-      </Swatch>
-      <span style={{ color: "var(--color-neutral-400)" }}>
-        The brighter line at 1.00 is chance. The shaded range is what play with
-        no skill produces at that trial count — it narrows to the right because
-        more trials pin a number down, which is why a high dot on the left says
-        much less than a high dot on the right.
-      </span>
+    <div className="stack-sm">
+      <div className="row" style={{ gap: 16 }}>
+        <Swatch fill={YOU} stroke={YOU}>
+          You
+        </Swatch>
+        <Swatch fill={OTHERS} stroke={OTHERS}>
+          Ranked
+        </Swatch>
+        <Swatch fill="transparent" stroke={OTHERS}>
+          Not ranked yet
+        </Swatch>
+      </div>
+      <p className="hint">
+        The line at 1.00 is chance. The shaded band is where players with no
+        skill land. It narrows to the right because more results pin a number
+        down — so a high dot on the left means less than a high dot on the
+        right.
+      </p>
     </div>
   );
 }
@@ -423,7 +432,10 @@ function Swatch(props: {
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+    <span
+      className="small"
+      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+    >
       <svg width={14} height={14} aria-hidden="true">
         <circle
           cx={7}
@@ -452,25 +464,24 @@ function Swatch(props: {
 function OwnEvidence(props: { row: SkillBoardRow }): React.JSX.Element {
   const { row } = props;
   return (
-    <div className="card" style={{ gap: 8 }}>
-      <Kicker>Your evidence</Kicker>
-      <p style={{ margin: 0 }}>{evidenceSentence(row.anytime_significance)}</p>
-      <p className="text-muted" style={{ margin: 0 }}>
-        This holds however many times you look and whenever you stop, which a
-        fixed-count significance value does not. E = {evidenceE(row)}, and 1 is
-        no evidence at all.
+    <section className="card" aria-labelledby="evidence-heading">
+      <h2 id="evidence-heading">How unusual your results are</h2>
+      <p>{evidenceSentence(row.anytime_significance)}</p>
+      <p className="hint">
+        This holds however often you check and whenever you stop. Evidence
+        score: {evidenceE(row)} (1 means no evidence at all).
       </p>
-    </div>
+    </section>
   );
 }
 
 export function evidenceSentence(significance: number): string {
   if (significance >= 1) {
-    return "Your play so far is what no skill at all produces.";
+    return "Your results so far are what no skill at all produces.";
   }
   const inN = Math.round(1 / significance);
   if (inN < 2) {
-    return "Your play so far is close to what no skill at all produces.";
+    return "Your results so far are close to what no skill at all produces.";
   }
   return `Fewer than 1 player in ${inN.toLocaleString()} with no skill ever gets to where you are.`;
 }
@@ -487,16 +498,16 @@ function NotYetRanked(props: {
 }): React.JSX.Element {
   const { row, floor } = props;
   return (
-    <div className="card" style={{ gap: 8 }}>
-      <Kicker>Where you stand</Kicker>
-      <p style={{ margin: 0 }}>
-        {row.n} of {floor} trials. You join the ranking at {floor}.
+    <section className="card" aria-labelledby="standing-heading">
+      <h2 id="standing-heading">Where you stand</h2>
+      <p>
+        You've sent {row.n} of the {floor} results a ranking needs.
       </p>
-      <p className="text-muted" style={{ margin: 0 }}>
-        Your dot is on the chart already. Until then the range around it is wide
-        enough that a rank would say more than the trials support.
+      <p className="hint">
+        Your dot is on the chart already. Until {floor} results, the range
+        around it is too wide for a rank to mean much.
       </p>
-    </div>
+    </section>
   );
 }
 
@@ -507,37 +518,39 @@ function RankedTable(props: {
   const { slice, self } = props;
   return (
     <>
-      <table className="table" data-testid="ranked-table">
-        <thead>
-          <tr>
-            <th>rank</th>
-            <th>player</th>
-            <th>skill</th>
-            <th>range</th>
-            <th>trials</th>
-          </tr>
-        </thead>
-        <tbody>
-          {slice.shown.map((row) => (
-            <RankedRow key={row.player} row={row} self={self} />
-          ))}
-          {slice.pinned === null ? null : (
-            <>
-              <tr>
-                <td colSpan={5} style={{ padding: 0 }}>
-                  <div className="hr" />
-                </td>
-              </tr>
-              <RankedRow row={slice.pinned} self={self} />
-            </>
-          )}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="table" data-testid="ranked-table">
+          <thead>
+            <tr>
+              <th className="num">Rank</th>
+              <th>Player</th>
+              <th className="num">Skill</th>
+              <th className="num">Likely rank</th>
+              <th className="num">Results</th>
+            </tr>
+          </thead>
+          <tbody>
+            {slice.shown.map((row) => (
+              <RankedRow key={row.player} row={row} self={self} />
+            ))}
+            {slice.pinned === null ? null : (
+              <>
+                <tr>
+                  <td colSpan={5} style={{ padding: 0 }}>
+                    <hr className="divider" />
+                  </td>
+                </tr>
+                <RankedRow row={slice.pinned} self={self} />
+              </>
+            )}
+          </tbody>
+        </table>
+      </div>
       {slice.total > slice.shown.length ? (
-        <div style={{ fontSize: 13 }}>
+        <p className="hint">
           Showing {slice.shown.length} of {slice.total.toLocaleString()} ranked
           players.
-        </div>
+        </p>
       ) : null}
     </>
   );
@@ -549,12 +562,12 @@ function RankedRow(props: {
 }): React.JSX.Element {
   const { row, self } = props;
   const mine = row.player === self;
+  // The rank, the range, and the result count carry equal weight
+  // (spec M1 §9): no muted colour and no smaller size on any of them.
   return (
-    <tr style={mine ? { color: "var(--color-accent-300)" } : undefined}>
+    <tr className={mine ? "is-you" : undefined}>
       {/* Fractional: a posterior expectation, not a position. */}
-      <td style={{ fontVariantNumeric: "tabular-nums" }}>
-        {row.expected_rank?.toFixed(1) ?? "—"}
-      </td>
+      <td className="num">{row.expected_rank?.toFixed(1) ?? "—"}</td>
       <td>
         <PlayerCell
           player={row.player}
@@ -563,14 +576,13 @@ function RankedRow(props: {
           self={self}
         />
       </td>
-      <td style={{ fontVariantNumeric: "tabular-nums" }}>
-        {row.shrunk === null ? "—" : Math.exp(row.shrunk).toFixed(3)}
+      <td className="num">
+        {row.shrunk === null ? "—" : Math.exp(row.shrunk).toFixed(2)}
       </td>
-      {/* No muted colour and no smaller size on these two. */}
-      <td style={{ fontVariantNumeric: "tabular-nums" }}>
+      <td className="num">
         {row.rank_low ?? "—"} to {row.rank_high ?? "—"}
       </td>
-      <td style={{ fontVariantNumeric: "tabular-nums" }}>{row.n}</td>
+      <td className="num">{row.n}</td>
     </tr>
   );
 }
@@ -585,67 +597,74 @@ function Population(props: {
     return null;
   }
   return (
-    <div className="card" style={{ gap: 10 }}>
-      <Kicker>The population</Kicker>
+    <section className="card" aria-labelledby="population-heading">
+      <h2 id="population-heading">All players</h2>
       {population.tau === 0 ? (
-        <p style={{ margin: 0 }}>
-          The players are not distinguishable at this time. The spread between
-          them is estimated at zero, which is a real answer and not a missing
-          one: what the scores show so far is what chance alone produces.
+        <p>
+          Players can't be told apart yet. The spread between them is estimated
+          at zero — a real answer, not a missing one: so far the results look
+          like chance alone.
         </p>
       ) : (
-        <p style={{ margin: 0 }}>
-          Player to player, skill numbers span about{" "}
+        <p>
+          From player to player, skill numbers differ by about{" "}
           {variation === null
             ? "—"
             : `${variation.tau_multiplicative.toFixed(2)}×`}
           .
         </p>
       )}
-      {variation === null ? null : (
-        <table className="table">
-          <tbody>
-            <tr>
-              <td>spread between players</td>
-              <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                {population.tau.toFixed(3)} ({variation.tau_low.toFixed(3)} to{" "}
-                {variation.tau_high === null
-                  ? "unbounded"
-                  : variation.tau_high.toFixed(3)}
-                )
-              </td>
-            </tr>
-            <tr>
-              <td>variation statistic</td>
-              <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                {variation.q_statistic.toFixed(1)} on {variation.dof} degrees of
-                freedom, significance {variation.q_significance.toFixed(4)}
-              </td>
-            </tr>
-            <tr>
-              <td>where a new player is likely to land</td>
-              <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                {Math.exp(variation.prediction_low).toFixed(3)} to{" "}
-                {Math.exp(variation.prediction_high).toFixed(3)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      )}
-      {variation !== null && variation.q_significance > 0.05 ? (
-        <p className="text-muted" style={{ margin: 0 }}>
-          The variation statistic does not clear its level. That is not evidence
-          that the players are the same — it means the scores so far do not
-          settle the question either way.
-        </p>
-      ) : null}
       {discovery === null ? null : (
-        <p style={{ margin: 0 }}>
-          {discovery.flagged} of {discovery.tested} players are flagged above
-          the baseline. About {discovery.expected_by_luck.toFixed(1)} of those
-          are flagged by luck alone.
+        <p>
+          {discovery.flagged} of {discovery.tested} players stand out above
+          chance. About {discovery.expected_by_luck.toFixed(1)} of those would
+          stand out by luck alone.
         </p>
       )}
-    </div>
+      {variation === null ? null : (
+        <details className="disclosure">
+          <summary>The numbers</summary>
+          <div className="disclosure-body">
+            <table className="table">
+              <tbody>
+                <tr>
+                  <td>Spread between players</td>
+                  <td className="num">
+                    {population.tau.toFixed(3)} ({variation.tau_low.toFixed(3)}{" "}
+                    to{" "}
+                    {variation.tau_high === null
+                      ? "no upper limit"
+                      : variation.tau_high.toFixed(3)}
+                    )
+                  </td>
+                </tr>
+                <tr>
+                  <td>Variation test</td>
+                  <td className="num">
+                    {variation.q_statistic.toFixed(1)} on {variation.dof}{" "}
+                    degrees of freedom, p ={" "}
+                    {variation.q_significance.toFixed(4)}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Where a new player is likely to land</td>
+                  <td className="num">
+                    {Math.exp(variation.prediction_low).toFixed(2)} to{" "}
+                    {Math.exp(variation.prediction_high).toFixed(2)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            {variation.q_significance > 0.05 ? (
+              <p className="hint">
+                The variation test doesn't clear its level. That isn't evidence
+                that players are the same — the results so far don't settle it
+                either way.
+              </p>
+            ) : null}
+          </div>
+        </details>
+      )}
+    </section>
   );
 }

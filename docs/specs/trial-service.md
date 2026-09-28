@@ -210,6 +210,14 @@ uv run python -m service.day rescore  --config <scoring config> [--from ... --to
 - **reveal** — refuses unless the status is `closed`. Sets the status
   to `revealed`. From here the server answers the reveal page with
   the target, the score, the report, and the secret (R4).
+
+*Note, 2026-09-24 (spec BR1, `docs/specs/beta-readiness.md` §3):*
+close moves the day to a fourth status, `closing`, before it scores,
+and the send path checks the status again with the day's write lock
+held. A send during the encode thus refuses, where before it landed
+with no trial row. Open refuses unless the latest day is `revealed`.
+The date of a day (D8) comes from the UTC calendar of spec BR1 §3.3,
+not from the local date of the owner's machine.
 - **status** — prints the current day, its status, and if a
   submission is stored. No score information while open (R3 applies
   to each surface, the terminal included).

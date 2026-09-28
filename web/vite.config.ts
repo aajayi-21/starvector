@@ -34,12 +34,12 @@ export default defineConfig({
       manifest: {
         name: "Starvector",
         short_name: "Starvector",
-        description: "The daily sketch trial.",
+        description: "A new hidden photo every day. Sketch what comes to mind.",
         start_url: "/",
         scope: "/",
         display: "standalone",
-        background_color: "#2e3440",
-        theme_color: "#2e3440",
+        background_color: "#f4f6f9",
+        theme_color: "#f4f6f9",
         icons: [
           {
             src: "icons/appicon-192.png",

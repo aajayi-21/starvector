@@ -187,6 +187,10 @@ surface. The door thus lives at its own path, `/api/door`.
   - A revoked record: 409 `{cause: "revoked"}`. The door cannot
     put a revoked player back.
 
+  *Note, 2026-09-24 (spec BR1 §4.3):* the door turns no token. For
+  an active record it makes a new session, and each other device
+  stays signed in.
+
 The name goes through `check_player_name` and the label through
 `check_display_name` — the same boundary checks as the mint
 endpoint.

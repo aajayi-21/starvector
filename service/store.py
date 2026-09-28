@@ -9,13 +9,17 @@ record has one sanctioned edit path, the guarded status move.
 
 import os
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from core.canonical import JsonValue, canonical_json_pretty, sha256_hex
-from pool.artifacts import write_json_pretty
 
-DAY_STATUSES = ("open", "closed", "revealed")
+# "closing" sits between "open" and "closed": the close moves the day
+# to it before the scores start, thus a send that arrives while the
+# encoder works meets a day that refuses it (spec BR1 section 3).
+DAY_STATUSES = ("open", "closing", "closed", "revealed")
 PLAYER_STATUSES = ("active", "revoked")
 
 # The account limits (spec A1 in docs/specs/, D1 and D2 as ruled
@@ -59,6 +63,11 @@ section 5). It is not a cache - nothing here is rebuildable from
 elsewhere, and Rule 4 of CLAUDE.md applies: raw submissions are
 stored forever. Keep it in every backup. The directory sits in
 .gitignore because play records are data, not code.
+
+sessions/ and device-codes/ hold sign-in credentials, not play
+records: deleting them signs devices out and loses no play.
+rollover/ holds the automatic days' pause, their run records, and
+their lock: operations records, and not play records either.
 """
 
 
@@ -173,25 +182,80 @@ def latest_day(store: Path) -> str | None:
     return days[-1] if days else None
 
 
+def _temporary_sibling(path: Path) -> Path:
+    """A new, empty temporary file adjacent to path, unique to this write.
+
+    mkstemp names it, thus two writers of one destination do not share
+    a temporary file, and one writer cannot read the half-written bytes
+    of the other. The name ends in .tmp, and the directory readers skip
+    it.
+    """
+    import tempfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".",
+                                    suffix=".tmp")
+    os.close(handle)
+    return Path(name)
+
+
 def write_once_json(path: Path, value: JsonValue) -> None:
     """Write one JSON document atomically, refusing a second write.
 
     The document lands in a temporary sibling, and an atomic claim
     then takes the destination - a primitive that refuses an
     existing file - thus two racing writers get one file and one
-    StoreError, with no half-written file in each outcome.
+    StoreError, with no half-written file in each outcome. Each write
+    has its own sibling, thus two racing writers cannot break the
+    document of the other before the claim.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.parent / (path.name + ".tmp")
-    temporary.write_text(canonical_json_pretty(value) + "\n",
-                         encoding="utf-8")
+    temporary = _temporary_sibling(path)
     try:
+        temporary.write_text(canonical_json_pretty(value) + "\n",
+                             encoding="utf-8")
         os.link(temporary, path)
     except FileExistsError as error:
         raise StoreError(
             f"{path}: the store is one-write and the file exists") from error
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _replace_json(path: Path, value: JsonValue) -> None:
+    """Replace one JSON document atomically, last writer wins.
+
+    The bytes are the ones write_json_pretty writes. The difference is
+    the temporary file: write_json_pretty names one fixed sibling, and
+    two processes that move one record at the same moment can collide
+    on it. Each write here has its own.
+    """
+    text = canonical_json_pretty(value) + "\n"
+    _write_bytes_replacing(path, text.encode("utf-8"))
+
+
+@contextmanager
+def day_write_lock(store: Path, day: str) -> Iterator[None]:
+    """Hold the day's write lock: an exclusive advisory file lock.
+
+    The send path holds it for its last status check and its write,
+    and the close holds it for the move to "closing". A send thus
+    lands before the close reads the submissions, or it meets the
+    moved status and refuses. The lock is a file lock, thus it also
+    covers a close from a second process - the console unit or the
+    command line - and not only a second thread.
+    """
+    import fcntl
+
+    directory = day_dir(store, day)
+    directory.mkdir(parents=True, exist_ok=True)
+    handle = os.open(directory / ".write.lock", os.O_RDWR | os.O_CREAT,
+                     0o644)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        os.close(handle)
 
 
 def _day_to_value(record: DayRecord) -> dict[str, JsonValue]:
@@ -260,27 +324,34 @@ def read_day_record(store: Path, day: str) -> DayRecord:
 
 
 def update_day_status(store: Path, day: str, *, expect_status: str,
-                      new_status: str, timestamp_field: str,
-                      timestamp: str) -> DayRecord:
+                      new_status: str, timestamp_field: str | None,
+                      timestamp: str | None) -> DayRecord:
     """The one sanctioned day-record edit: the guarded status move.
 
     Reads the stored record again, refuses unless its status equals
     expect_status (the out-of-sequence guard), then writes the moved
     record atomically. Submissions and trial rows have no edit path
     at all (R2).
+
+    The move to "closing" sets no timestamp: timestamp_field and
+    timestamp are then None, and the record keeps its field set.
     """
     if new_status not in DAY_STATUSES:
         raise StoreError(f"unknown status: {new_status!r}")
-    if timestamp_field not in ("closed_at", "revealed_at"):
+    if timestamp_field is None:
+        if timestamp is not None:
+            raise StoreError("a timestamp with no timestamp field")
+    elif timestamp_field not in ("closed_at", "revealed_at"):
         raise StoreError(f"unknown timestamp field: {timestamp_field!r}")
     record = read_day_record(store, day)
     if record.status != expect_status:
         raise StoreError(
             f"day {day} has status {record.status!r} and the move needs "
             f"{expect_status!r}")
-    moved = replace(record, status=new_status,
-                    **{timestamp_field: timestamp})
-    write_json_pretty(day_record_path(store, day), _day_to_value(moved))
+    moved = replace(record, status=new_status) if timestamp_field is None \
+        else replace(record, status=new_status,
+                     **{timestamp_field: timestamp})
+    _replace_json(day_record_path(store, day), _day_to_value(moved))
     return moved
 
 
@@ -488,8 +559,7 @@ def replace_player_token(store: Path, player: str, *, expect_status: str,
             f"player {player} has status {record.status!r} and the move "
             f"needs {expect_status!r}")
     moved = replace(record, token_hash=new_token_hash)
-    write_json_pretty(player_record_path(store, player),
-                      _player_to_value(moved))
+    _replace_json(player_record_path(store, player), _player_to_value(moved))
     return moved
 
 
@@ -511,8 +581,7 @@ def set_player_status(store: Path, player: str, *, expect_status: str,
             f"player {player} has status {record.status!r} and the move "
             f"needs {expect_status!r}")
     moved = replace(record, status=new_status)
-    write_json_pretty(player_record_path(store, player),
-                      _player_to_value(moved))
+    _replace_json(player_record_path(store, player), _player_to_value(moved))
     return moved
 
 
@@ -756,3 +825,391 @@ def clear_account_avatar(store: Path, player: str, *,
                     avatar_hash=None, updated_at=timestamp)
     write_account_record(store, moved)
     return moved
+
+
+# -- sessions and device codes (spec BR1 section 4) --------------------
+#
+# Two credential classes, in directories of their own. The two are
+# not play records: a session or a code can be deleted, and a deleted one
+# stops at its next read. The file name of each is the digest of its
+# secret, thus the store holds no secret and a read finds a record by
+# its digest alone, with no walk.
+
+_SESSION_FIELDS = ("player", "label", "created_at")
+_DEVICE_CODE_FIELDS = ("player", "created_at", "expires_at")
+_SESSION_LABEL_LIMIT = 40
+
+
+@dataclass(frozen=True, slots=True)
+class SessionRecord:
+    """One signed-in device of one player (spec BR1 section 4).
+
+    label names the device on the player's account screen ("Safari on
+    iPhone"). created_at starts the session's fixed life.
+    """
+
+    player: str
+    label: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceCodeRecord:
+    """One code that signs a second device in, one time (BR1 section 4)."""
+
+    player: str
+    created_at: str
+    expires_at: str
+
+
+def _check_digest(value: object, where: str) -> str:
+    if not isinstance(value, str) or not _TOKEN_HASH_RULE.fullmatch(value):
+        raise StoreError(f"{where}: expected 64 lowercase hex characters")
+    return value
+
+
+def sessions_dir(store: Path, player: str) -> Path:
+    """The player's session directory. Not below store/players/: a
+    second file class there reads as a phantom player (spec A1)."""
+    return store / "sessions" / player
+
+
+def session_path(store: Path, player: str, digest: str) -> Path:
+    return sessions_dir(store, player) / f"{digest}.json"
+
+
+def _session_to_value(record: SessionRecord) -> dict[str, JsonValue]:
+    return {"player": record.player, "label": record.label,
+            "created_at": record.created_at}
+
+
+def write_session_record(store: Path, digest: str,
+                         record: SessionRecord) -> None:
+    """Store one new session - one write, the digest as the name."""
+    check_player_name(record.player, "player")
+    _check_digest(digest, "session digest")
+    if not isinstance(record.label, str) \
+            or not 1 <= len(record.label) <= _SESSION_LABEL_LIMIT \
+            or not record.label.isprintable():
+        raise StoreError(
+            f"label: expected 1 to {_SESSION_LABEL_LIMIT} printable "
+            "characters")
+    if not record.created_at:
+        raise StoreError("created_at: expected a non-empty string")
+    write_once_json(session_path(store, record.player, digest),
+                    _session_to_value(record))
+
+
+def _read_record(path: Path, fields: tuple[str, ...]) -> dict:
+    import json
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise StoreError(f"{path}: cannot read: {error}") from error
+    if not isinstance(raw, dict) or set(raw) != set(fields):
+        raise StoreError(f"{path}: expected the fields {sorted(fields)}")
+    for name in fields:
+        if not isinstance(raw[name], str) or not raw[name]:
+            raise StoreError(f"{path}.{name}: expected a non-empty string")
+    return raw
+
+
+def read_session_or_none(store: Path, player: str,
+                         digest: str) -> SessionRecord | None:
+    """One stored session, or None when there is none by that digest.
+
+    A name or a digest of a bad shape is None too: the caller
+    turns each of them into the one constant refusal.
+    """
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    if not isinstance(digest, str) or not _TOKEN_HASH_RULE.fullmatch(digest):
+        return None
+    path = session_path(store, player, digest)
+    if not path.is_file():
+        return None
+    raw = _read_record(path, _SESSION_FIELDS)
+    if raw["player"] != player:
+        raise StoreError(f"{path}.player: the record names {raw['player']!r}")
+    return SessionRecord(**raw)
+
+
+def list_sessions(store: Path,
+                  player: str) -> tuple[tuple[str, SessionRecord], ...]:
+    """The player's sessions as (digest, record), oldest first."""
+    check_player_name(player, "player")
+    root = sessions_dir(store, player)
+    if not root.is_dir():
+        return ()
+    found = []
+    for entry in root.iterdir():
+        name = entry.name
+        if not (entry.is_file() and name.endswith(".json")):
+            continue
+        digest = name[:-5]
+        if not _TOKEN_HASH_RULE.fullmatch(digest):
+            continue
+        record = read_session_or_none(store, player, digest)
+        if record is not None:
+            found.append((digest, record))
+    return tuple(sorted(found, key=lambda pair: (pair[1].created_at,
+                                                 pair[0])))
+
+
+def delete_session(store: Path, player: str, digest: str) -> bool:
+    """Remove one session, and say if there was one to remove."""
+    check_player_name(player, "player")
+    _check_digest(digest, "session digest")
+    try:
+        session_path(store, player, digest).unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def delete_player_sessions(store: Path, player: str, *,
+                           keep: str | None = None) -> int:
+    """Remove each session of one player but keep, and count them."""
+    removed = 0
+    for digest, _record in list_sessions(store, player):
+        if digest != keep and delete_session(store, player, digest):
+            removed += 1
+    return removed
+
+
+def device_codes_dir(store: Path) -> Path:
+    return store / "device-codes"
+
+
+def device_code_path(store: Path, digest: str) -> Path:
+    return device_codes_dir(store) / f"{digest}.json"
+
+
+def write_device_code(store: Path, digest: str,
+                      record: DeviceCodeRecord) -> None:
+    """Store one new device code - one write, the digest as the name."""
+    check_player_name(record.player, "player")
+    _check_digest(digest, "device code digest")
+    if not record.created_at or not record.expires_at:
+        raise StoreError("a device code needs its two timestamps")
+    write_once_json(device_code_path(store, digest),
+                    {"player": record.player,
+                     "created_at": record.created_at,
+                     "expires_at": record.expires_at})
+
+
+def claim_device_code(store: Path, digest: str) -> DeviceCodeRecord | None:
+    """Remove one device code from the store, and answer it.
+
+    The read comes first and the removal second, and the removal is
+    the claim: of two redeemers that read the same code, one removes
+    the file and the other meets FileNotFoundError and gets None. A
+    code thus signs one device in at most. The caller checks the
+    expiry of the claimed record.
+    """
+    if not isinstance(digest, str) or not _TOKEN_HASH_RULE.fullmatch(digest):
+        return None
+    path = device_code_path(store, digest)
+    if not path.is_file():
+        return None
+    raw = _read_record(path, _DEVICE_CODE_FIELDS)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return None
+    check_player_name(raw["player"], f"{path}.player")
+    return DeviceCodeRecord(**raw)
+
+
+def list_device_codes(store: Path) -> tuple[tuple[str, DeviceCodeRecord],
+                                             ...]:
+    """Each stored device code as (digest, record) - for the prune."""
+    root = device_codes_dir(store)
+    if not root.is_dir():
+        return ()
+    found = []
+    for entry in sorted(root.iterdir()):
+        name = entry.name
+        if not (entry.is_file() and name.endswith(".json")):
+            continue
+        digest = name[:-5]
+        if not _TOKEN_HASH_RULE.fullmatch(digest):
+            continue
+        found.append((digest, DeviceCodeRecord(
+            **_read_record(entry, _DEVICE_CODE_FIELDS))))
+    return tuple(found)
+
+
+def remove_device_code(store: Path, digest: str) -> bool:
+    """Remove one device code, and say if it was there."""
+    _check_digest(digest, "device code digest")
+    try:
+        device_code_path(store, digest).unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+# The rollover's records (spec BR1 section 7.2): the operator's pause,
+# one record for each rollover, and the lock. Operations records, not
+# play: removing them loses no play.
+ROLLOVER_SOURCES = ("timer", "command-line", "console")
+ROLLOVER_OUTCOMES = ("moved", "nothing due", "paused", "failed")
+ROLLOVER_STEPS = ("open", "close", "reveal")
+ROLLOVER_NOTE_LIMIT = 200
+_CONTROL_FIELDS = ("paused", "changed_at", "note")
+_RUN_FIELDS = ("started_at", "finished_at", "source", "outcome", "steps",
+               "detail")
+
+
+@dataclass(frozen=True, slots=True)
+class RolloverControl:
+    """The operator's pause of the automatic days.
+
+    changed_at is None when no pause was ever set - the store holds no
+    control file then.
+    """
+
+    paused: bool
+    changed_at: str | None
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
+class RolloverRun:
+    """One rollover: when, from where, what it moved, and how it ended."""
+
+    started_at: str
+    finished_at: str
+    source: str
+    outcome: str
+    steps: tuple[str, ...]
+    detail: str
+
+
+def rollover_dir(store: Path) -> Path:
+    return store / "rollover"
+
+
+def rollover_lock_path(store: Path) -> Path:
+    """The lock that the timer's rollover and the console's hold."""
+    return rollover_dir(store) / ".lock"
+
+
+def _control_path(store: Path) -> Path:
+    return rollover_dir(store) / "control.json"
+
+
+def _runs_dir(store: Path) -> Path:
+    return rollover_dir(store) / "runs"
+
+
+def check_rollover_note(value: object, where: str) -> None:
+    """A pause note: printable text, ROLLOVER_NOTE_LIMIT characters at
+    most. An empty note is legal."""
+    if not isinstance(value, str) or len(value) > ROLLOVER_NOTE_LIMIT \
+            or not value.isprintable():
+        raise StoreError(f"{where}: expected printable text of at most "
+                         f"{ROLLOVER_NOTE_LIMIT} characters")
+
+
+def read_rollover_control(store: Path) -> RolloverControl:
+    """The pause. With no control file, automatic days are not paused."""
+    import json
+
+    path = _control_path(store)
+    if not path.is_file():
+        return RolloverControl(paused=False, changed_at=None, note="")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise StoreError(f"{path}: cannot read: {error}") from error
+    if not isinstance(raw, dict) or set(raw) != set(_CONTROL_FIELDS):
+        raise StoreError(f"{path}: expected the fields "
+                         f"{sorted(_CONTROL_FIELDS)}")
+    if not isinstance(raw["paused"], bool):
+        raise StoreError(f"{path}.paused: expected true or false")
+    if not isinstance(raw["changed_at"], str) or not raw["changed_at"]:
+        raise StoreError(f"{path}.changed_at: expected a non-empty string")
+    check_rollover_note(raw["note"], f"{path}.note")
+    return RolloverControl(paused=raw["paused"],
+                           changed_at=raw["changed_at"], note=raw["note"])
+
+
+def write_rollover_control(store: Path, control: RolloverControl) -> None:
+    """Replace the pause as one unit, last writer wins."""
+    if not isinstance(control.paused, bool):
+        raise StoreError("paused: expected true or false")
+    if not control.changed_at:
+        raise StoreError("changed_at: expected a non-empty string")
+    check_rollover_note(control.note, "note")
+    ensure_store(store)
+    _replace_json(_control_path(store), {
+        "paused": control.paused, "changed_at": control.changed_at,
+        "note": control.note})
+
+
+def _check_run(run: RolloverRun) -> None:
+    if run.source not in ROLLOVER_SOURCES:
+        raise StoreError(f"source: expected one of {ROLLOVER_SOURCES}")
+    if run.outcome not in ROLLOVER_OUTCOMES:
+        raise StoreError(f"outcome: expected one of {ROLLOVER_OUTCOMES}")
+    if not all(step in ROLLOVER_STEPS for step in run.steps):
+        raise StoreError(f"steps: expected steps from {ROLLOVER_STEPS}")
+    if not run.started_at or not run.finished_at:
+        raise StoreError("a rollover run needs its two timestamps")
+    if not isinstance(run.detail, str):
+        raise StoreError("detail: expected a string")
+
+
+def write_rollover_run(store: Path, run: RolloverRun) -> None:
+    """Store one run record - one write.
+
+    The file name starts with the start instant in a fixed-width UTC
+    shape, thus the names sort in time sequence. A random suffix keeps
+    two runs of one microsecond apart.
+    """
+    import datetime
+    import secrets
+
+    _check_run(run)
+    moment = datetime.datetime.fromisoformat(run.started_at)
+    if moment.tzinfo is None:
+        raise StoreError("started_at: expected a timestamp with a zone")
+    stamp = moment.astimezone(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    ensure_store(store)
+    write_once_json(_runs_dir(store) / f"{stamp}-{secrets.token_hex(4)}.json",
+                    {"started_at": run.started_at,
+                     "finished_at": run.finished_at, "source": run.source,
+                     "outcome": run.outcome, "steps": list(run.steps),
+                     "detail": run.detail})
+
+
+def _read_run(path: Path) -> RolloverRun:
+    import json
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise StoreError(f"{path}: cannot read: {error}") from error
+    if not isinstance(raw, dict) or set(raw) != set(_RUN_FIELDS) \
+            or not isinstance(raw["steps"], list):
+        raise StoreError(f"{path}: expected the fields {sorted(_RUN_FIELDS)}")
+    run = RolloverRun(started_at=raw["started_at"],
+                      finished_at=raw["finished_at"], source=raw["source"],
+                      outcome=raw["outcome"], steps=tuple(raw["steps"]),
+                      detail=raw["detail"])
+    _check_run(run)
+    return run
+
+
+def list_rollover_runs(store: Path, limit: int) -> tuple[RolloverRun, ...]:
+    """The newest run records, newest first, limit of them at most."""
+    base = _runs_dir(store)
+    if not base.is_dir():
+        return ()
+    names = sorted((entry.name for entry in base.iterdir()
+                    if entry.is_file() and entry.name.endswith(".json")),
+                   reverse=True)
+    return tuple(_read_run(base / name) for name in names[:limit])

@@ -55,8 +55,9 @@ opens the other file as the `starvector` user, thus the group
 needs read permission on it.
 
 `service.json` holds `config_version`, `player`, `scoring_config`,
-`data_root`, `store_root`, `port`, and (optional) `closes_at_utc`
-for the countdown. Paths are relative to the unit's working
+`data_root`, `store_root`, `port`, and (optional) `closes_at_utc`,
+the daily rollover hour in UTC: the countdown shows it, and the
+rollover timer closes each day at it (spec BR1 §3). Paths are relative to the unit's working
 directory (`/srv/starvector/app`).
 
 ## 4. The units and the edge
@@ -74,6 +75,26 @@ fetches the certificate when the first browser arrives.
 
 `starvector-dev.service` stays stopped. §7 starts it when the
 operator needs the console.
+
+Mint the first player (§7) before the first start: a server with no
+player record refuses to start without `--dev` or `--single-player`
+(spec BR1 §4).
+
+The daily rollover, after a week of days moved by hand:
+
+```
+cp deploy/starvector-day.service deploy/starvector-day.timer \
+   /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now starvector-day.timer
+```
+
+Keep the timer's `OnCalendar` hour equal to `closes_at_utc`. The
+deployment guides (section 14) have the full procedure. The console's
+Automatic days tab pauses and resumes the timer and shows its runs,
+and its `Do what is due now` button does the due steps at the moment
+you press it. The unit keeps its lock and its run
+records in `store/rollover/` (spec BR1 §7.2), thus it has write
+access to the store.
 
 ## 5. Firewall and updates
 
@@ -124,7 +145,8 @@ diff -r /srv/starvector/app/store /tmp/restore-drill/srv/starvector/app/store
 The public process runs without `--dev`, thus its console
 surfaces answer 404 and `/image` serves revealed targets alone.
 The proxy also answers 404 on `/dev.html`, `/api/dev`,
-`/api/dev/*`, the three day lifecycle paths, and the player mint.
+`/api/dev/*`, the three day lifecycle paths, the player mint, and
+the results reader `/api/ops/*`.
 It keeps refusing `/dev` and `/ui/dev.js`, which name nothing in
 the server since the hand-written pages retired. A caller that
 tries a console-shaped path meets a 404 and not the app shell.
@@ -188,8 +210,31 @@ cd /srv/starvector/app
 
 The invite prints one time. The store keeps its digest alone, thus
 an invite nobody can find wants `rotate` and not a lookup. `list`
-shows the roster with no secret in it, `revoke` stops a player,
-and `restore` puts one back with a new invite.
+shows the roster with no secret in it, `revoke` stops a player and
+ends their sessions, and `restore` puts one back with a new invite.
+`sessions <name>`, `signout <name>`, and `prune` read and end
+sessions (spec BR1 §4). A `rotate` leaves each signed-in device
+signed in.
+
+### The results index
+
+The results index is a SQLite copy of the store for programs to
+read (spec BR1 §5). It lives in `data/index/` and a command makes it
+again from the store at each moment, thus it needs no backup:
+
+```
+.venv/bin/python -m service.index \
+    --service-config /etc/starvector/service.json build
+.venv/bin/python -m service.index \
+    --service-config /etc/starvector/service.json verify
+STARVECTOR_EXPORT_SALT=<a secret> .venv/bin/python -m service.index \
+    --service-config /etc/starvector/service.json \
+    export --out /tmp/research --format csv
+```
+
+`sqlite3 -readonly` reads the file directly. Through the tunnel, a
+script reads the revealed trial rows with the bearer:
+`GET /api/ops/trials?from=2026-09-01&to=2026-09-30&player=<name>`.
 
 ## 8. The smoke checklist
 
@@ -199,7 +244,7 @@ and `restore` puts one back with a new invite.
   HTML.
 - `curl -s -o /dev/null -w "%{http_code}" https://<domain>/dev.html`
   → 404. The same for `/api/dev`, `/api/dev/days`,
-  `/api/day/close`, and `/api/players`.
+  `/api/day/close`, `/api/players`, and `/api/ops/trials`.
 - `curl https://<domain>/image/<an unrevealed image id>` → 404.
 - **`curl -sI https://<domain>/join/bogus` → the server's 401, and
   the content type is JSON and not `text/html`.** HTML here means
@@ -207,8 +252,9 @@ and `restore` puts one back with a new invite.
   invite, and no invite URL can sign anybody in. No test in the
   repository sees this one, because it lives in the edge
   configuration alone.
-- With the dev unit started and the tunnel up, the console lists
-  the days.
+- With the dev unit started and the tunnel up, the console shows
+  the days, the automatic days, the players with their devices, and
+  the results database (spec BR1 §7).
 - `systemctl reboot` → the site is back with no hand work.
 - `restic snapshots` shows the daily entries, and the `restore`
   drill passes.
