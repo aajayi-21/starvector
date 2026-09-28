@@ -103,7 +103,10 @@ Numbers in this section come from the architecture and are not negotiable.
   the highest rarity weights (§5).
 - **R4** — Vocabulary normalization is light: lowercase, strip articles,
   singularize (§5). The architecture's estimate at full pool scale is
-  10,000 to 20,000 entries.
+  10,000 to 20,000 entries. *Projection, 2026-09-02 (spec PP1 §4):* a
+  Heaps fit on the development element lists gives about 26,800
+  entries at the production count of 7,500 — above the estimate. The
+  preparation record carries the measured count.
 - **R5** — Each vocabulary entry is encoded one time with the text
   encoder, giving a matrix of shape `|V| × d` (§5).
 - **R6** — The incidence table is a dense padded array of shape `N × 20`:

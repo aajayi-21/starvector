@@ -52,7 +52,7 @@ Every specialized term used in this document, defined once. Terms are used consi
 
 ### Data objects
 
-**Pool** — The fixed, curated set of images the system uses. Written `P`. Its size is written `N`. Every ranking is against the pool. Around 20,000 images.
+**Pool** — The fixed, curated set of images the system uses. Written `P`. Its size is written `N`. Every ranking is against the pool. Around 20,000 images. *Production ruling, 2026-09-02 (`docs/specs/production-pool.md`):* `N = 7,500`. The 20,000 figure stays as the ceiling the tiers of §18 are sized for.
 
 **Target** — The single hidden image chosen for a given day's trial. Written `t`. Always a member of the pool.
 
@@ -166,8 +166,8 @@ A submission is a set of atoms. Text-only, sketch-only, and mixed submissions al
 | Name | What it is | Size |
 |---|---|---|
 | Source corpus | Wikipedia-Image-Text, as downloaded | ~11 million |
-| **Pool** | The curated, fixed, versioned working set. **This is what "pool" means everywhere in this document.** | ~20,000 |
-| Decoy set | The pool minus the target's near-duplicates, optionally filtered by frontload | ≈ 20,000 |
+| **Pool** | The curated, fixed, versioned working set. **This is what "pool" means everywhere in this document.** | ~20,000 ceiling, **7,500** on the production ruling of 2026-09-02 |
+| Decoy set | The pool minus the target's near-duplicates, optionally filtered by frontload | ≈ N |
 
 **The daily target is drawn uniformly from the pool, never from the source corpus.** Images outside the pool do not exist as far as the system is concerned.
 
@@ -176,6 +176,8 @@ A submission is a set of atoms. Text-only, sketch-only, and mixed submissions al
 **Preparation cost.** Each image needs a VLM pass, a line-drawing pass, and encoding. At 20,000 that is one overnight job on your hardware. At 11 million it is months of compute, repeated every time you change an encoder.
 
 **Scoring cost.** The outline channel scales freely — it is one matrix multiplication regardless of pool size. The element channel does not: it requires a matching computation per image. §18 describes a three-tier structure that makes 20,000 comfortable and around 100,000 the practical ceiling. **The element channel is what bounds pool size.**
+
+**Ruling, 2026-09-02 (spec PP1, `docs/specs/production-pool.md`) — the production pool is `N = 7,500`.** The 20,000 above is a ceiling set by preparation cost and the element channel, not a floor. The only formulas in this document with `N` in them are the resolution `1/D` (§16) and the top of the rarity range, `ln N`, which moves from 9.9 to 8.9 nats. The arithmetic of the ruling — the funnel, the cost, the fast-path measurement at 7,500, the repetition horizon — is in the spec.
 
 **Rule 3.** Drawing the target uniformly from the pool and ranking against that same pool satisfies indistinguishability by construction. Drawing from a larger corpus and ranking against a smaller one breaks it.
 
@@ -904,7 +906,7 @@ Practice mode — replaying past targets for immediate feedback — is the only 
 
 ### The fast path budget
 
-Target: **under 50 ms** for Layers 0 through 8, with a pool of 20,000.
+Target: **under 50 ms** for Layers 0 through 8, with a pool of 20,000. (The production pool is 7,500 — spec PP1 records the measurement at that count. The 20,000 numbers below stay as the sizing ceiling.)
 
 | Step | Time | Notes |
 |---|---|---|

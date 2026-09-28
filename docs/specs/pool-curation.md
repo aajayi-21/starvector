@@ -401,7 +401,9 @@ encoder slots).
 - Cost: with one `POST` for each image and each slot, a 20,000-image run
   at middle-tier VLM prices lands in the $10–$30 range — the same scale
   the architecture gives for element lists through OpenRouter (§24). The
-  funnel report includes the `POST` count.
+  funnel report includes the `POST` count. Spec PP1
+  (`docs/specs/production-pool.md` §5) costs the production run at
+  `N = 7,500` from the measured funnel.
 
 ## 9. Configuration
 
