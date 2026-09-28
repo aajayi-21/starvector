@@ -1,7 +1,9 @@
-"""The operator's player commands (spec M1 section 4).
+"""The operator's player commands (spec M1 section 4, spec BR1
+section 4).
 
-Mint an invite, turn a token, revoke a player, put one back, and
-show the roster. The mint answers the invite one time: the store
+Mint an invite, turn a token, revoke a player, put one back, show
+the roster, show and end a player's sessions, and prune the expired
+sign-in records. The mint answers the invite one time: the store
 keeps the digest alone, thus a token nobody can find wants a turn
 and not a lookup.
 
@@ -15,7 +17,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from service import auth, store
+from service import access, auth, store
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 
@@ -59,8 +61,9 @@ def rotate_player(service_config: ServiceConfig, *, player: str,
                   ) -> tuple[store.PlayerRecord, str]:
     """Turn one player's invite and answer the new token.
 
-    The earlier token stops at the next read, and so does each
-    cookie that holds it.
+    The earlier invite stops at its next use. The player's sessions
+    do not: a session is not the invite (spec BR1 section 4). To end
+    them too, run signout_player.
     """
     root = Path(service_config.store_root)
     token, digest = auth.mint_token(player, secret=secret)
@@ -84,8 +87,13 @@ def revoke_player(service_config: ServiceConfig, *,
     _token, digest = auth.mint_token(player)
     store.replace_player_token(root, player, expect_status="active",
                                new_token_hash=digest)
-    return store.set_player_status(root, player, expect_status="active",
-                                   new_status="revoked")
+    record = store.set_player_status(root, player, expect_status="active",
+                                     new_status="revoked")
+    # The status alone stops each session at its next read. The files
+    # go too, thus the devices of before stay signed out after the
+    # player is put back.
+    store.delete_player_sessions(root, player)
+    return record
 
 
 def restore_player(service_config: ServiceConfig, *,
@@ -99,6 +107,23 @@ def restore_player(service_config: ServiceConfig, *,
     store.set_player_status(root, player, expect_status="revoked",
                             new_status="active")
     return rotate_player(service_config, player=player)
+
+
+def signout_player(service_config: ServiceConfig, *, player: str) -> int:
+    """End each session of one player, and answer the count ended."""
+    root = Path(service_config.store_root)
+    store.read_player_record(root, player)
+    return store.delete_player_sessions(root, player)
+
+
+def session_lines(service_config: ServiceConfig, *, player: str,
+                  instant) -> list[str]:
+    """One line for each live session of one player. No secret."""
+    root = Path(service_config.store_root)
+    store.read_player_record(root, player)
+    rows = access.session_rows(root, player, None, instant)
+    return [f"{row['id'][:12]}  {row['created_at']}  {row['label']}"
+            for row in rows] or ["no live sessions"]
 
 
 def player_lines(service_config: ServiceConfig) -> list[str]:
@@ -139,7 +164,15 @@ def main(argv: list[str] | None = None) -> int:
     restore_parser = commands.add_parser("restore")
     restore_parser.add_argument("player")
     commands.add_parser("list")
+    sessions_parser = commands.add_parser("sessions")
+    sessions_parser.add_argument("player")
+    signout_parser = commands.add_parser("signout")
+    signout_parser.add_argument("player")
+    commands.add_parser("prune")
     arguments = parser.parse_args(argv)
+    import datetime
+
+    instant = datetime.datetime.now(datetime.UTC)
 
     try:
         service_config = load_service_config(Path(arguments.service_config))
@@ -165,6 +198,18 @@ def main(argv: list[str] | None = None) -> int:
         elif arguments.command == "list":
             for line in player_lines(service_config):
                 print(line)
+        elif arguments.command == "sessions":
+            for line in session_lines(service_config,
+                                      player=arguments.player,
+                                      instant=instant):
+                print(line)
+        elif arguments.command == "signout":
+            count = signout_player(service_config, player=arguments.player)
+            print(f"player {arguments.player} sessions ended: {count}")
+        elif arguments.command == "prune":
+            counts = access.prune(Path(service_config.store_root), instant)
+            print(f"pruned sessions={counts['sessions']} "
+                  f"device_codes={counts['device_codes']}")
     except (ServiceConfigError, store.StoreError, ValueError) as error:
         print(f"refused: {error}", file=sys.stderr)
         return 1

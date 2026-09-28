@@ -1,0 +1,18 @@
+# The rollover hour. Keep it equal to closes_at_utc in
+# /etc/starvector/service.json: the server shows that instant as the
+# countdown, and the rollover closes a day only once it is due.
+# Keep it clear of 04:30 (the unattended-upgrade reboot) and 05:00
+# (the backup timer).
+
+[Unit]
+Description=Starvector day rollover at the close hour
+
+[Timer]
+OnCalendar=*-*-* 22:00:00 UTC
+AccuracySec=1s
+# No catch-up at boot: a box that was down at the hour does not fire
+# a stale close when it comes back. Start the service by hand then.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -12,7 +12,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from svc_fixture import FIXED_CLOCK, build_service_fixture
+from svc_fixture import (FIXED_CLOCK, build_service_fixture,
+                         pinned_session_value, plant_session)
 
 from service import auth, store
 from service.day import open_day
@@ -30,13 +31,14 @@ def _mint(root: Path, player: str, label: str, secret: str) -> str:
     store.write_player_record(root, store.PlayerRecord(
         player=player, display_name=label, token_hash=digest,
         created_at=FIXED_CLOCK, status="active"))
+    plant_session(root, token)
     return token
 
 
 def _sign_in(client: TestClient, token: str | None) -> TestClient:
     client.cookies.clear()
     if token is not None:
-        client.cookies.set(auth.SESSION_COOKIE, token)
+        client.cookies.set(auth.SESSION_COOKIE, pinned_session_value(token))
     return client
 
 

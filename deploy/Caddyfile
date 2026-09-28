@@ -29,7 +29,9 @@ game.example.com {
 	# reaches the mint through the tunnel to the dev unit and the
 	# command-line path runs on the box, thus nothing wants it
 	# here.
-	@blocked path /dev.html /dev /ui/dev.js /api/dev /api/dev/* /api/day/open /api/day/close /api/day/reveal /api/players
+	# /api/ops is the operator's results reader (spec BR1 section 5):
+	# bearer-gated in the process, and not public at the edge.
+	@blocked path /dev.html /dev /ui/dev.js /api/dev /api/dev/* /api/day/open /api/day/close /api/day/reveal /api/players /api/ops /api/ops/*
 	handle @blocked {
 		respond 404
 	}

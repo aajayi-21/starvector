@@ -121,3 +121,44 @@ def mixed_wire_record() -> dict:
         "relations": [{"relation": "left-of", "of": ["g1", "g2"]}],
         "pasted_text": None,
     }
+
+
+def pinned_session_value(token: str) -> str:
+    """The session cookie value a test world pins for an invite token.
+
+    A pure function of the token, thus a helper that signs a client
+    in needs no store path. plant_session writes the matching
+    record. The secret is a digest prefix: 43 characters from the
+    URL-safe alphabet, the session secret's shape.
+    """
+    from core.canonical import sha256_hex
+    from service import auth
+
+    parsed = auth.parse_token(token)
+    if parsed is None:
+        raise ValueError(f"not an invite token: {token!r}")
+    player, _secret = parsed
+    value, _digest = auth.mint_session(
+        player, secret=sha256_hex(f"test-session:{token}")[:43])
+    return value
+
+
+def plant_session(store_root: Path, token: str) -> str:
+    """Write the session record pinned_session_value names, one time.
+
+    The creation time is the wall clock, thus the session stays in
+    its fixed life for each run of the suite. A world plants its
+    sessions at setup, before a test takes a byte snapshot.
+    """
+    import datetime
+
+    from service import auth, store
+
+    value = pinned_session_value(token)
+    player, secret = auth.parse_token(value)
+    digest = auth.token_hash(secret)
+    if store.read_session_or_none(store_root, player, digest) is None:
+        store.write_session_record(store_root, digest, store.SessionRecord(
+            player=player, label="Test device",
+            created_at=datetime.datetime.now(datetime.UTC).isoformat()))
+    return value

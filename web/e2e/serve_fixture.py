@@ -7,12 +7,14 @@ the fake encoder slots. Playwright's webServer starts this script
 and waits on the port.
 
 Two players are minted, which switches access control on for the
-full world: each spec plants the session cookie and the operator
-calls hold the bearer. Their secrets and the operator token are
-constants here on purpose. The store is a temporary directory
-built for one test run and thrown away, and a browser cannot plant
-a cookie nobody gave it, so a spec that wants a session must
-name one.
+full world: each spec plants a session cookie and the operator
+calls hold the bearer. Each player also gets one session with a
+pinned secret (spec BR1 section 4: the cookie holds a session and
+not the invite). The invite secrets, the session secrets, and
+the operator token are constants here on purpose. The store is a
+temporary directory built for one test run and thrown away, and a
+browser cannot plant a cookie nobody gave it, so a spec that wants
+a session must name one.
 
 Two arguments the deployed server does not get:
 
@@ -41,12 +43,13 @@ sys.path.insert(0, str(REPO / "tests"))
 sys.path.insert(0, str(REPO / "tests" / "service"))
 
 import dataclasses  # noqa: E402
+import datetime  # noqa: E402
 
 import uvicorn  # noqa: E402
 from svc_fixture import (FIXED_CLOCK, build_service_fixture,  # noqa: E402
                          mixed_wire_record)
 
-from service import players, store  # noqa: E402
+from service import access, players, store  # noqa: E402
 from service.day import close_day, open_day, reveal_day  # noqa: E402
 from service.server import create_app  # noqa: E402
 
@@ -57,6 +60,9 @@ OPERATOR_TOKEN = "e2e-operator-token"
 # fallback world and this one resolve to the same identity and no
 # stored path moves.
 CAST = (("ade", "Ade", "1" * 43), ("bru", "Bru Lin", "2" * 43))
+# The pinned session secrets: web/e2e/helpers.ts SESSIONS holds the
+# same values, kept equal by hand.
+SESSION_SECRETS = {"ade": "3" * 43, "bru": "4" * 43}
 
 
 def main() -> None:
@@ -74,6 +80,9 @@ def main() -> None:
     for name, label, secret in CAST:
         players.mint_player(config, player=name, display_name=label,
                             clock=clock, secret=secret)
+        access.open_session(root / "store", name, user_agent="Playwright",
+                            instant=datetime.datetime.now(datetime.UTC),
+                            secret=SESSION_SECRETS[name])
 
     # A revealed, played day: the live history, leaderboard, and
     # stored-submission surfaces then hold one honest row.

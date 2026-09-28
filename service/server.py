@@ -14,16 +14,18 @@ here and the app owns each path a person types.
 """
 
 import argparse
+import datetime
 import json
 import math
 import os
 import secrets
+import sqlite3
 import sys
 import threading
 from datetime import date, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from core import aggregate
@@ -35,7 +37,8 @@ from pipeline.config import (fusion_weights, intake_gates,
 from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
-from service import auth, rollup, store
+from service import (access, auth, console, credits, limits, rollover,
+                     rollup, schedule, store)
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 
@@ -56,6 +59,13 @@ _NOT_PRACTICE = b'{"detail":"not a practice day"}'
 # One constant body covers a player with no picture and a name
 # with no record (spec A1 section 3) - no roster oracle.
 _NO_AVATAR = b'{"detail":"no avatar"}'
+# The sign-in refusals (spec BR1 section 4): one body for each
+# condition that stops a code, and one for a session id that is not
+# the caller's.
+_BAD_CODE = b'{"cause":"bad-code"}'
+_TOO_MANY = b'{"cause":"too-many-attempts"}'
+_NO_SESSION = b'{"detail":"no session"}'
+_NO_ACCOUNTS = b'{"cause":"no-accounts"}'
 
 # The gated skill board (spec M1 section 8). Two properties, each
 # load-bearing. It carries each field the view declares, thus a
@@ -247,11 +257,20 @@ def create_app(service_config: ServiceConfig,
         Path(scoring_config.input.preparation_record))
     canvas_px = load_preparation_config(
         Path(record.config_path)).linedraw.canvas_px
+    # The season facts (spec BR1 section 6): a pool with the dev_only
+    # flag is a test season, and its numbers stay off each public
+    # surface (spec P1a R13). The app labels them as test numbers.
+    about_value = {"test_season": record.dev_only,
+                   "photo_count": record.image_count,
+                   "closes_at_utc": service_config.closes_at_utc}
+    image_credits = credits.load_credits(
+        Path(record.pool_release_record_path), Path(service_config.data_root))
     root = Path(service_config.store_root)
     data_root = Path(service_config.data_root)
     player = service_config.player
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    code_limiter = limits.FailureLimiter()
 
     def _unauthorized() -> Response:
         return Response(content=_UNAUTHORIZED, status_code=401,
@@ -308,34 +327,157 @@ def create_app(service_config: ServiceConfig,
         Ruling 7 of spec M1: with no player record stored the
         identity is the configured player and nothing holds
         credentials, thus a box that plays alone answers as it does
-        today. With records stored the session cookie names the
-        player, and the token in it meets the stored digest at each
-        read. A revoked or a replaced token thus stops at the next
-        read, and no session table accumulates.
+        today. With records stored the session cookie names a session
+        record (spec BR1 section 4), read for each answer. A deleted
+        session, a session at the end of its life, and a revoked player
+        thus
+        stop at the next read.
         """
         if not store.any_player(root):
             return player
-        token = request.cookies.get(auth.SESSION_COOKIE)
-        if token is None:
-            return _unauthorized()
-        return _resolve_token(token)
+        resolved = access.resolve_session(
+            root, request.cookies.get(auth.SESSION_COOKIE), utc_now())
+        return _unauthorized() if resolved is None else resolved
+
+    def _session_cookie(value: str) -> dict[str, str]:
+        return {"set-cookie": auth.session_cookie_header(
+            value, secure=cookie_secure)}
 
     @app.get("/join/{token}")
-    def join(token: str) -> Response:
-        """The invite gate (spec M1 section 4).
+    def join(request: Request, token: str) -> Response:
+        """The invite gate (spec M1 section 4, spec BR1 section 4).
 
         On agreement the answer moves the browser to the app and
-        sets the session cookie. A refusal is one constant body,
-        equal for a token that does not parse, an unknown player,
-        an incorrect secret, and a revoked record.
+        sets a new session cookie - the invite itself does not ride in
+        a cookie. A browser that holds a live session of the same
+        player keeps it, thus a second visit to the invite adds no
+        session. A refusal is one constant body, equal for a token
+        that does not parse, an unknown player, an incorrect secret,
+        and a revoked record.
         """
         resolved = _resolve_token(token)
         if isinstance(resolved, Response):
             return resolved
-        return Response(status_code=302, headers={
-            "location": "/",
-            "set-cookie": auth.session_cookie_header(
-                token, secure=cookie_secure)})
+        instant = utc_now()
+        headers = {"location": "/"}
+        current = access.resolve_session(
+            root, request.cookies.get(auth.SESSION_COOKIE), instant)
+        if current != resolved:
+            value = access.open_session(
+                root, resolved,
+                user_agent=request.headers.get("user-agent"),
+                instant=instant)
+            headers.update(_session_cookie(value))
+        return Response(status_code=302, headers=headers)
+
+    @app.post("/api/session/signout")
+    def sign_out(request: Request) -> Response:
+        """Sign this device out: delete its session, clear its cookie.
+
+        The answer is the same with a live session, a dead one, and
+        none - the device is signed out in each of them.
+        """
+        access.close_session(root, request.cookies.get(auth.SESSION_COOKIE))
+        return JSONResponse(
+            {"signed_out": True},
+            headers={"set-cookie": auth.clear_cookie_header(
+                secure=cookie_secure)})
+
+    def _current_digest(request: Request) -> str | None:
+        key = access.session_key(request.cookies.get(auth.SESSION_COOKIE))
+        return None if key is None else key[1]
+
+    @app.get("/api/sessions")
+    def sessions_view(request: Request) -> Response:
+        """The caller's signed-in devices (spec BR1 section 4)."""
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        if not store.any_player(root):
+            return JSONResponse({"sessions": []})
+        return JSONResponse({"sessions": access.session_rows(
+            root, caller, _current_digest(request), utc_now())})
+
+    @app.delete("/api/sessions/{session_id}")
+    def session_remove(request: Request, session_id: str) -> Response:
+        """Sign one of the caller's devices out. A session id that is
+        not one of the caller's answers the constant 404."""
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        try:
+            removed = store.any_player(root) \
+                and store.delete_session(root, caller, session_id)
+        except store.StoreError:
+            removed = False
+        if not removed:
+            return Response(content=_NO_SESSION, status_code=404,
+                            media_type="application/json")
+        return JSONResponse({"removed": 1})
+
+    @app.post("/api/sessions/others/signout")
+    def sessions_others_signout(request: Request) -> Response:
+        """Sign each of the caller's other devices out."""
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        if not store.any_player(root):
+            return JSONResponse({"removed": 0})
+        removed = store.delete_player_sessions(
+            root, caller, keep=_current_digest(request))
+        return JSONResponse({"removed": removed})
+
+    @app.post("/api/device-code")
+    def device_code_issue(request: Request) -> Response:
+        """A one-time code that signs one more device in (BR1 section 4).
+
+        With no player records there is no sign-in to extend, thus
+        the answer is the constant refusal.
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        if not store.any_player(root):
+            return Response(content=_NO_ACCOUNTS, status_code=409,
+                            media_type="application/json")
+        code, expires_at = access.issue_device_code(root, caller, utc_now())
+        return JSONResponse({"code": auth.display_device_code(code),
+                             "expires_at": expires_at})
+
+    @app.post("/api/device-code/redeem")
+    async def device_code_redeem(request: Request) -> Response:
+        """Trade a device code for a session on this device.
+
+        The failure limiter stands before the store read: a client
+        at its cap gets the 429 with no work done. Each condition a
+        code does not succeed on answers one constant body, and each
+        failure
+        counts. The handler is async with no await after the body
+        read, thus the claim runs on the loop thread in one piece.
+        """
+        key = limits.client_key(
+            request.client.host if request.client else None,
+            request.headers.get("x-forwarded-for"))
+        if not code_limiter.allowed(key):
+            return Response(content=_TOO_MANY, status_code=429,
+                            media_type="application/json")
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        text = body.get("code") if isinstance(body, dict) else None
+        instant = utc_now()
+        redeemed = access.redeem_device_code(root, text, instant)
+        if redeemed is None:
+            code_limiter.record_failure(key)
+            return Response(content=_BAD_CODE, status_code=400,
+                            media_type="application/json")
+        value = access.open_session(
+            root, redeemed, user_agent=request.headers.get("user-agent"),
+            instant=instant)
+        return JSONResponse({"player": redeemed,
+                             "display_name": _label_of(redeemed)},
+                            headers=_session_cookie(value))
 
     @app.get("/api/door")
     def door_view(request: Request) -> Response:
@@ -391,14 +533,20 @@ def create_app(service_config: ServiceConfig,
         record = store.read_player_or_none(root, name)
         try:
             if record is None:
-                record, token = players.mint_player(
+                # The mint's invite is not answered: the door hands
+                # out a session and nothing else.
+                record, _invite = players.mint_player(
                     service_config, player=name, display_name=label)
-            elif record.status == "active":
-                record, token = players.rotate_player(service_config,
-                                                      player=name)
-            else:
+            elif record.status != "active":
                 return JSONResponse({"cause": "revoked"}, status_code=409)
-        except store.StoreError as error:
+            # A new session for a known name, and no token turn: a
+            # sign-in on a second device leaves the first signed in
+            # (spec BR1 section 4 supersedes the A1 turn).
+            value = access.open_session(
+                root, record.player,
+                user_agent=request.headers.get("user-agent"),
+                instant=utc_now())
+        except (store.StoreError, access.AccessError) as error:
             # The read above and the write here can straddle a mint
             # or a revoke from a different process - the CLI on the
             # box. The store's own guards refuse, and the door says
@@ -408,8 +556,7 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse(
             {"player": record.player,
              "display_name": record.display_name},
-            headers={"set-cookie": auth.session_cookie_header(
-                token, secure=cookie_secure)})
+            headers=_session_cookie(value))
 
     # The resident scoring context (P5 R1): wired lazily one time
     # for each process from the server's config, read by the close
@@ -467,6 +614,7 @@ def create_app(service_config: ServiceConfig,
                 "target_id": record.target_id,
                 "commitment": record.commitment,
                 "submitted": player in store.list_submissions(root, day),
+                "sends": len(store.list_submissions(root, day)),
             })
         return JSONResponse({"days": rows})
 
@@ -505,7 +653,7 @@ def create_app(service_config: ServiceConfig,
 
     @app.get("/api/dev/players")
     def dev_players(request: Request) -> Response:
-        """The roster (spec A1 section 5).
+        """The roster (spec A1 section 5, grown by spec BR1 section 7).
 
         With no record stored the roster holds one row for the
         configured player - the world of ruling 7, where that name
@@ -514,19 +662,10 @@ def create_app(service_config: ServiceConfig,
         if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
-        names = store.list_players(root)
-        if not names:
-            rows = [{"player": player, "display_name": player,
-                     "status": "configured", "created_at": None}]
-        else:
-            rows = []
-            for name in names:
-                record = store.read_player_record(root, name)
-                rows.append({"player": record.player,
-                             "display_name": record.display_name,
-                             "status": record.status,
-                             "created_at": record.created_at})
-        return JSONResponse({"players": rows})
+        # Spec BR1 section 7.4 adds the live devices, the last sign-in,
+        # the device codes that wait, and the send count.
+        return JSONResponse({"players": console.roster_rows(
+            root, player, utc_now())})
 
     @app.get("/api/dev/history")
     def dev_history(request: Request,
@@ -614,6 +753,329 @@ def create_app(service_config: ServiceConfig,
                                  "detail": str(error)}, status_code=400)
         return JSONResponse(value)
 
+    # ── the console's growth (spec BR1 section 7) ──────────────────
+    #
+    # Each path below answers the constant 404 without --dev or with
+    # a bearer that does not agree, as the dev reads above do, and the
+    # edge refuses the /api/dev prefix.
+
+    def _dev_refused(request: Request) -> Response | None:
+        if dev_mode and _operator_ok(request):
+            return None
+        return Response(content=_DEV_OFF, status_code=404,
+                        media_type="application/json")
+
+    async def _json_object_body(request: Request) -> dict | Response:
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"cause": "bad-shape",
+                                 "detail": "the body is not JSON"},
+                                status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse({"cause": "bad-shape",
+                                 "detail": "the body must be an object"},
+                                status_code=400)
+        return body
+
+    def _stored_player(name: str) -> store.PlayerRecord | Response:
+        """The record a path names, or the refusal that says why."""
+        try:
+            store.check_player_name(name, "player")
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-player",
+                                 "detail": str(error)}, status_code=400)
+        record = store.read_player_or_none(root, name)
+        if record is None:
+            return JSONResponse({"cause": "no-such-player",
+                                 "detail": f"no stored player {name!r}"},
+                                status_code=404)
+        return record
+
+    def _invite_value(record: store.PlayerRecord, token: str) -> dict:
+        # The same shape as the mint: a path and not an address, and
+        # the token one time.
+        return {"player": record.player,
+                "display_name": record.display_name,
+                "token": token, "join_path": f"/join/{token}"}
+
+    @app.get("/api/dev/day")
+    def dev_day(request: Request, day: str | None = None) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        picked = _picked_day(day)
+        if isinstance(picked, Response):
+            return picked
+        return JSONResponse(console.day_detail(
+            root, picked, closes_at_utc=service_config.closes_at_utc,
+            credits=image_credits))
+
+    def _schedule_value() -> dict:
+        return console.schedule_view(
+            root, closes_at_utc=service_config.closes_at_utc,
+            instant=utc_now(),
+            lock_held=rollover.lock_is_held(store.rollover_lock_path(root)))
+
+    @app.get("/api/dev/schedule")
+    def dev_schedule(request: Request) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return JSONResponse(_schedule_value())
+
+    @app.post("/api/dev/rollover/pause")
+    async def dev_rollover_pause(request: Request) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        body = await _json_object_body(request)
+        if isinstance(body, Response):
+            return body
+        paused = body.get("paused")
+        if not isinstance(paused, bool):
+            return JSONResponse({"cause": "bad-shape",
+                                 "detail": "paused: expected true or false"},
+                                status_code=400)
+        try:
+            store.write_rollover_control(root, store.RolloverControl(
+                paused=paused, changed_at=utc_now().isoformat(),
+                note=body.get("note", "")))
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-note", "detail": str(error)},
+                                status_code=400)
+        return JSONResponse(_schedule_value())
+
+    def _local_post(path: str, _timeout: float) -> rollover.Answer:
+        """The rollover's poster in this process: the step is the last
+        part of the day path, and _day_move makes the move."""
+        status, body = _day_move(path.rsplit("/", 1)[-1])
+        return rollover.Answer(status=status, body=body)
+
+    @app.post("/api/dev/rollover/run")
+    def dev_rollover_run(request: Request) -> Response:
+        """Do the steps due at this instant, as the timer does (spec
+        BR1 section 7.2).
+
+        No retries: the operator reads a failure immediately. The
+        pause does not apply - the operator starts this by hand.
+        """
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        closes_at_utc = service_config.closes_at_utc
+        if closes_at_utc is None:
+            return JSONResponse(
+                {"cause": "no-schedule",
+                 "detail": "automatic days are off: closes_at_utc is not "
+                           "in the server config"}, status_code=409)
+        handle = rollover.hold_lock(store.rollover_lock_path(root))
+        if handle is None:
+            return JSONResponse({"cause": "locked",
+                                 "detail": "a rollover holds the lock"},
+                                status_code=409)
+        try:
+            run = rollover.run_and_record(
+                root=root, closes_at_utc=closes_at_utc, post=_local_post,
+                now=lambda: utc_now(), source="console", retries=0,
+                backoff_seconds=0.0, sleep=lambda _seconds: None)
+        finally:
+            os.close(handle)
+        return JSONResponse({"run": console.run_value(run),
+                             "schedule": _schedule_value()})
+
+    @app.get("/api/dev/players/{name}")
+    def dev_player(request: Request, name: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        return JSONResponse(console.player_detail(root, name, utc_now()))
+
+    @app.get("/api/dev/players/{name}/avatar")
+    def dev_player_avatar(request: Request, name: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        data = store.read_avatar_or_none(root, name)
+        media_type = None if data is None else store.avatar_media_type(data)
+        if data is None or media_type is None:
+            return Response(content=_NO_AVATAR, status_code=404,
+                            media_type="application/json")
+        return Response(content=data, media_type=media_type)
+
+    def _player_command(name: str, command: str) -> Response:
+        """The commands of the players module, and a device code."""
+        from service import players
+
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        try:
+            match command:
+                case "rotate":
+                    turned, token = players.rotate_player(service_config,
+                                                          player=name)
+                    return JSONResponse(_invite_value(turned, token))
+                case "restore":
+                    turned, token = players.restore_player(service_config,
+                                                           player=name)
+                    return JSONResponse(_invite_value(turned, token))
+                case "revoke":
+                    revoked = players.revoke_player(service_config,
+                                                    player=name)
+                    return JSONResponse({"player": revoked.player,
+                                         "status": revoked.status})
+                case "signout":
+                    ended = players.signout_player(service_config,
+                                                   player=name)
+                    return JSONResponse({"player": name, "ended": ended})
+                case "device-code":
+                    if record.status != "active":
+                        raise store.StoreError(
+                            f"player {name!r} is {record.status} - a "
+                            "device code is for an active player")
+                    code, expires_at = access.issue_device_code(
+                        root, name, utc_now())
+                    return JSONResponse({
+                        "player": name, "code": code,
+                        "display": auth.display_device_code(code),
+                        "expires_at": expires_at})
+                case _:
+                    raise ValueError(f"unknown command {command!r}")
+        except store.StoreError as error:
+            return JSONResponse({"cause": "refused", "detail": str(error)},
+                                status_code=409)
+
+    @app.post("/api/dev/players/{name}/rotate")
+    def dev_player_rotate(request: Request, name: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return _player_command(name, "rotate")
+
+    @app.post("/api/dev/players/{name}/revoke")
+    def dev_player_revoke(request: Request, name: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return _player_command(name, "revoke")
+
+    @app.post("/api/dev/players/{name}/restore")
+    def dev_player_restore(request: Request, name: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return _player_command(name, "restore")
+
+    @app.post("/api/dev/players/{name}/signout")
+    def dev_player_signout(request: Request, name: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return _player_command(name, "signout")
+
+    @app.post("/api/dev/players/{name}/device-code")
+    def dev_player_device_code(request: Request, name: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return _player_command(name, "device-code")
+
+    @app.delete("/api/dev/players/{name}/sessions/{session_id}")
+    def dev_player_session_end(request: Request, name: str,
+                               session_id: str) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        try:
+            ended = store.delete_session(root, name, session_id)
+        except store.StoreError:
+            # An id that is not a digest names no session.
+            ended = False
+        if not ended:
+            return JSONResponse({"cause": "no-session",
+                                 "detail": "no live session by that id"},
+                                status_code=404)
+        return JSONResponse({"player": name, "ended": 1})
+
+    @app.post("/api/dev/prune")
+    def dev_prune(request: Request) -> Response:
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return JSONResponse(access.prune(root, utc_now()))
+
+    @app.get("/api/dev/index")
+    def dev_index(request: Request) -> Response:
+        from service import index
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        return JSONResponse(index.describe(root, index.index_path(data_root)))
+
+    @app.post("/api/dev/index/build")
+    def dev_index_build(request: Request) -> Response:
+        from service import index
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        target = index.index_path(data_root)
+        try:
+            index.build(root, target)
+        except (index.ResultsIndexError, store.StoreError,
+                sqlite3.Error) as error:
+            return JSONResponse({"cause": "index-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse(index.describe(root, target))
+
+    @app.post("/api/dev/index/verify")
+    def dev_index_verify(request: Request) -> Response:
+        from service import index
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        try:
+            problems = index.verify(root, index.index_path(data_root))
+        except (index.ResultsIndexError, store.StoreError,
+                sqlite3.Error) as error:
+            return JSONResponse({"cause": "index-failed",
+                                 "detail": str(error)}, status_code=400)
+        return JSONResponse({"agrees": not problems, "problems": problems})
+
+    @app.post("/api/dev/index/query")
+    async def dev_index_query(request: Request) -> Response:
+        from service import index
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        body = await _json_object_body(request)
+        if isinstance(body, Response):
+            return body
+        try:
+            # The query reads a current index: a store write since the
+            # last build builds it again. That writes the cache file,
+            # not the store.
+            target = index.ensure_current(root, index.index_path(data_root))
+            answer = index.read_only_query(target, body.get("sql"))
+        except (index.ResultsIndexError, store.StoreError,
+                sqlite3.Error) as error:
+            return JSONResponse({"cause": "bad-query", "detail": str(error)},
+                                status_code=400)
+        return JSONResponse(answer)
+
     @app.get("/api/practice")
     def practice_days(request: Request) -> Response:
         caller = _caller(request)
@@ -699,7 +1161,8 @@ def create_app(service_config: ServiceConfig,
         except Exception as error:
             return JSONResponse({"cause": "practice-score-failed",
                                  "detail": str(error)}, status_code=400)
-        return JSONResponse({"day": day, **value})
+        return JSONResponse({"day": day, **value,
+                             "credit": image_credits.get(record.target_id)})
 
     @app.get("/api/day")
     def day_view(request: Request) -> Response:
@@ -711,14 +1174,16 @@ def create_app(service_config: ServiceConfig,
             return Response(content=_NO_DAY, status_code=404,
                             media_type="application/json")
         record = store.read_day_record(root, day)
-        # closes_at is display-only (spec S2 ruling 3): a pure
-        # function of the day string and the config, with no target
-        # dependence, thus R3 holds by construction.
+        # closes_at is a pure function of the day label and the
+        # config, with no target dependence, thus R3 holds by
+        # construction. The calendar rule of spec BR1 section 3
+        # names the instant. The close itself stays the operator's
+        # or the rollover command's move.
         closes_at = None
         if (record.status == "open"
                 and service_config.closes_at_utc is not None):
-            closes_at = (f"{record.day}T"
-                         f"{service_config.closes_at_utc}:00+00:00")
+            closes_at = schedule.closes_at_text(
+                record.day, service_config.closes_at_utc)
         value = {
             "day": record.day,
             "trial_code": record.trial_code,
@@ -769,104 +1234,126 @@ def create_app(service_config: ServiceConfig,
                            "an impression, a labeled group, or strokes"},
                 status_code=400)
         trial_id = secrets.token_hex(16)
-        try:
-            store.write_once_json(
-                store.submission_path(root, day, caller),
-                {"day": day, "player": caller, "trial_id": trial_id,
-                 "received_at": store_received_at(),
-                 "record": wire_record})
-        except store.StoreError:
-            return JSONResponse({"cause": "already-submitted"},
-                                status_code=409)
+        # The status check again, with the day's write lock held: the
+        # body read above lasts until the client stops sending, and a
+        # close can move the day in that time. A close holds the same
+        # lock for its move, thus this write lands before the close
+        # reads the submissions, or it refuses (spec BR1 section 3).
+        with store.day_write_lock(root, day):
+            if store.read_day_record(root, day).status != "open":
+                return JSONResponse({"cause": "day-closed"},
+                                    status_code=409)
+            try:
+                store.write_once_json(
+                    store.submission_path(root, day, caller),
+                    {"day": day, "player": caller, "trial_id": trial_id,
+                     "received_at": store_received_at(),
+                     "record": wire_record})
+            except store.StoreError:
+                return JSONResponse({"cause": "already-submitted"},
+                                    status_code=409)
         return JSONResponse({"trial_id": trial_id,
                              "atom_count": len(submission.atoms)})
+
+    # One lifecycle move at a time in this process: the three day
+    # endpoints run in the thread pool, and two of them on one day
+    # can race the guarded moves. A second process meets the store's
+    # guards and the rollover command's lock.
+    lifecycle_lock = threading.Lock()
+
+    def _day_move(step: str) -> tuple[int, dict]:
+        """One lifecycle move as (HTTP status, body).
+
+        The three day endpoints answer it, and so does the console's
+        rollover (spec BR1 section 7.2), thus the two paths refuse
+        alike. A StoreError is the store refusing the move (409), and
+        each other error is the move not completing (400).
+        """
+        from service.day import close_day, open_day, reveal_day
+
+        try:
+            with lifecycle_lock:
+                match step:
+                    case "open":
+                        # The label comes from the UTC calendar (spec
+                        # BR1 section 3): the current day, or the day
+                        # after the latest stored day. open_day refuses
+                        # unless the latest day is revealed - one
+                        # active day at a time, and no closed day left
+                        # behind.
+                        record = open_day(service_config)
+                        return 200, {"day": record.day,
+                                     "trial_code": record.trial_code,
+                                     "commitment": record.commitment}
+                    case "close":
+                        # The one live step (R5): the server process
+                        # needs the provider key in its environment for
+                        # a live config. The answer names the row count
+                        # and no score (R3). The resident context serves
+                        # the close when the day's pinned config path is
+                        # the server's own - a day opened with a
+                        # different config wires anew from its pinned
+                        # path (P5 R1).
+                        wired = None
+                        day = store.latest_day(root)
+                        if day is not None:
+                            record = store.read_day_record(root, day)
+                            if record.status in ("open", "closing") \
+                                    and record.scoring_config_path \
+                                    == service_config.scoring_config:
+                                wired = _resident()
+                        return 200, {"trial_rows": close_day(
+                            service_config, wired=wired)}
+                    case "reveal":
+                        record = reveal_day(service_config)
+                        return 200, {"day": record.day}
+                    case _:
+                        raise ValueError(f"unknown day step {step!r}")
+        except store.StoreError as error:
+            return 409, {"cause": "refused", "detail": str(error)}
+        except Exception as error:
+            return 400, {"cause": f"{step}-failed", "detail": str(error)}
 
     @app.post("/api/day/open")
     def day_open(request: Request) -> Response:
         if not _operator_ok(request):
             return _unauthorized()
-        import datetime
-
-        from service.day import open_day
-
-        # The next free date: today, or the day after the latest
-        # stored day - the test flow runs many days back to back
-        # (section 14b). One active day at a time:
-        # an open latest day refuses.
-        latest = store.latest_day(root)
-        date = None
-        if latest is not None:
-            if store.read_day_record(root, latest).status == "open":
-                return JSONResponse(
-                    {"cause": "refused",
-                     "detail": f"day {latest} is open - close it first"},
-                    status_code=409)
-            today = datetime.date.today().isoformat()
-            if latest >= today:
-                date = (datetime.date.fromisoformat(latest)
-                        + datetime.timedelta(days=1)).isoformat()
-        try:
-            record = open_day(service_config, date=date)
-        except store.StoreError as error:
-            return JSONResponse({"cause": "refused",
-                                 "detail": str(error)}, status_code=409)
-        except Exception as error:
-            return JSONResponse({"cause": "open-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse({"day": record.day,
-                             "trial_code": record.trial_code,
-                             "commitment": record.commitment})
+        status, body = _day_move("open")
+        return JSONResponse(body, status_code=status)
 
     @app.post("/api/day/close")
     def day_close(request: Request) -> Response:
         if not _operator_ok(request):
             return _unauthorized()
-        from service.day import close_day
-
-        # The one live step (R5): the server process needs the
-        # provider key in its environment for a live config. The
-        # answer names the row count and no score (R3). The resident
-        # context serves the close when the day's pinned config path
-        # is the server's own - a day opened with a different config
-        # wires anew from its pinned path (P5 R1).
-        try:
-            wired = None
-            day = store.latest_day(root)
-            if day is not None:
-                record = store.read_day_record(root, day)
-                if record.status == "open" \
-                        and record.scoring_config_path \
-                        == service_config.scoring_config:
-                    wired = _resident()
-            count = close_day(service_config, wired=wired)
-        except store.StoreError as error:
-            return JSONResponse({"cause": "refused",
-                                 "detail": str(error)}, status_code=409)
-        except Exception as error:
-            return JSONResponse({"cause": "close-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse({"trial_rows": count})
+        status, body = _day_move("close")
+        return JSONResponse(body, status_code=status)
 
     @app.post("/api/day/reveal")
     def day_reveal(request: Request) -> Response:
         if not _operator_ok(request):
             return _unauthorized()
-        from service.day import reveal_day
+        status, body = _day_move("reveal")
+        return JSONResponse(body, status_code=status)
 
-        try:
-            record = reveal_day(service_config)
-        except store.StoreError as error:
-            return JSONResponse({"cause": "refused",
-                                 "detail": str(error)}, status_code=409)
-        except Exception as error:
-            return JSONResponse({"cause": "reveal-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse({"day": record.day})
+    @app.get("/api/about")
+    def about_view() -> Response:
+        """The season facts the home screen and the landing page show.
+
+        No session: the facts name the pool and the calendar, not a
+        player, and a signed-out visitor reads them on the landing
+        page. Constant for each start of the server (R3).
+        """
+        return JSONResponse(about_value)
 
     def _reveal_value(record: store.DayRecord, row: dict | None) -> dict:
-        """The reveal document for one revealed day (spec S2 B2)."""
+        """The reveal document for one revealed day (spec S2 B2).
+
+        credit names the source of the target image (spec BR1
+        section 6), or null when the server holds no manifest.
+        """
         return {
             "day": record.day,
+            "credit": image_credits.get(record.target_id),
             "target_id": record.target_id,
             "secret": record.secret,
             "commitment": record.commitment,
@@ -1214,6 +1701,92 @@ def create_app(service_config: ServiceConfig,
             root, caller, timestamp=store_received_at())
         return JSONResponse({"avatar_hash": record.avatar_hash})
 
+    @app.get("/api/me/export")
+    def me_export(request: Request) -> Response:
+        """The caller's own data, as one JSON file (spec BR1 section 5).
+
+        Read from the store and not from the index: the player's copy
+        is the source itself. Each day the caller sent on, with the
+        raw submission, and for a revealed day the trial row and the
+        target. No other player's fact enters it, and a day that is
+        not revealed holds no score (I7).
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        days = []
+        for day in store.list_days(root):
+            stored = store.read_json_or_none(
+                store.submission_path(root, day, caller))
+            if stored is None:
+                continue
+            record = store.read_day_record(root, day)
+            revealed = record.status == "revealed"
+            row = store.read_json_or_none(
+                store.trial_row_path(root, day, caller)) if revealed else None
+            days.append({
+                "day": day,
+                "trial_code": record.trial_code,
+                "status": record.status,
+                "submission": {"trial_id": stored["trial_id"],
+                               "received_at": stored["received_at"],
+                               "record": stored["record"]},
+                "target_id": record.target_id if revealed else None,
+                "result": None if row is None else {
+                    "p": row["p"], "target_rank": row["target_rank"],
+                    "decoy_count": row["decoy_count"],
+                    "beaten": row["beaten"], "tied": row["tied"],
+                    "report": row["report"]},
+            })
+        account = store.read_account_or_none(root, caller)
+        exported_at = utc_now()
+        body = {
+            "player": caller,
+            "display_name": _label_of(caller),
+            "description": "" if account is None else account.description,
+            "exported_at": exported_at.isoformat(),
+            "days": days,
+        }
+        name = f"starvector-{caller}-{exported_at.date().isoformat()}.json"
+        return JSONResponse(body, headers={
+            "content-disposition": f'attachment; filename="{name}"'})
+
+    @app.get("/api/ops/trials")
+    def ops_trials(request: Request,
+                   day_from: str | None = Query(None, alias="from"),
+                   day_to: str | None = Query(None, alias="to"),
+                   player_name: str | None = Query(None, alias="player"),
+                   ) -> Response:
+        """Revealed trial rows for the operator's programs (BR1 section 5).
+
+        The operator gate stands in front, and the edge blocks the
+        path. The index answers, made current first: a store write
+        since the last build builds it again. The query names days
+        with from and to, and a player with player.
+        """
+        from service import index
+
+        if not _operator_ok(request):
+            return _unauthorized()
+        for value in (day_from, day_to):
+            if value is not None:
+                try:
+                    schedule.parse_label(value)
+                except schedule.ScheduleError as error:
+                    return JSONResponse({"cause": "bad-day",
+                                         "detail": str(error)},
+                                        status_code=400)
+        if player_name is not None:
+            try:
+                store.check_player_name(player_name, "player")
+            except store.StoreError as error:
+                return JSONResponse({"cause": "bad-player",
+                                     "detail": str(error)}, status_code=400)
+        target = index.ensure_current(root, index.index_path(data_root))
+        rows = index.revealed_trial_rows(target, from_day=day_from,
+                                         to_day=day_to, player=player_name)
+        return JSONResponse({"rows": rows, "count": len(rows)})
+
     @app.get("/api/avatar/{player_name}")
     def avatar_view(request: Request, player_name: str) -> Response:
         """One player's avatar bytes, for each signed-in caller.
@@ -1261,6 +1834,44 @@ def store_received_at() -> str:
     return default_clock()
 
 
+def utc_now() -> datetime.datetime:
+    """The instant the sign-in rules read - one seam for the tests."""
+    return datetime.datetime.now(datetime.UTC)
+
+
+def start_refusal(*, dev_mode: bool, cookie_insecure: bool,
+                  single_player: bool) -> str | None:
+    """The flag combinations the server refuses, or None.
+
+    A cookie with no Secure flag rides plain HTTP, which a public box
+    must not give, thus the flag needs the dev surfaces - and the edge
+    does not proxy those (spec S2 ruling 4).
+    """
+    if cookie_insecure and not dev_mode:
+        return ("--cookie-insecure needs --dev: a cookie with no Secure "
+                "flag is for a test box on plain HTTP")
+    if single_player and dev_mode:
+        return "--single-player and --dev: pick one"
+    return None
+
+
+def open_world_refusal(*, has_players: bool, dev_mode: bool,
+                       single_player: bool) -> str | None:
+    """Refuse a public start with no player records (spec BR1 section 4).
+
+    With no record stored each caller is the configured player (spec
+    M1 ruling 7), thus a public box in that condition lets each
+    visitor play as the owner. The dev server and an explicit
+    --single-player keep that world on purpose.
+    """
+    if has_players or dev_mode or single_player:
+        return None
+    return ("the store holds no player records, thus each visitor would "
+            "play as the configured player - mint one first (python -m "
+            "service.players mint <name>), or start with --single-player "
+            "for a private box")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="service.server")
     parser.add_argument("--service-config",
@@ -1269,14 +1880,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dev", action="store_true",
                         help="the section 14b dev surfaces - target "
                              "readable, draft scoring, all images")
+    parser.add_argument("--cookie-insecure", action="store_true",
+                        help="drop the cookie's Secure flag, for a test "
+                             "box on plain HTTP; needs --dev")
+    parser.add_argument("--single-player", action="store_true",
+                        help="serve with no player records: each caller "
+                             "is the configured player, with no sign-in")
     arguments = parser.parse_args(argv)
+    refusal = start_refusal(dev_mode=arguments.dev,
+                            cookie_insecure=arguments.cookie_insecure,
+                            single_player=arguments.single_player)
+    if refusal is not None:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 1
     # create_app sits in the try: it refuses to start when the
     # store holds players and no operator token is set, and that
     # refusal must print as one line and not as a traceback.
     try:
         service_config = load_service_config(Path(arguments.service_config))
+        world_refusal = open_world_refusal(
+            has_players=store.any_player(Path(service_config.store_root)),
+            dev_mode=arguments.dev, single_player=arguments.single_player)
+        if world_refusal is not None:
+            raise ServiceConfigError(world_refusal)
         app = create_app(
             service_config, dev_mode=arguments.dev,
+            cookie_secure=not arguments.cookie_insecure,
             operator_token=os.environ.get("STARVECTOR_OPERATOR_TOKEN"))
     except Exception as error:
         print(f"refused: {error}", file=sys.stderr)

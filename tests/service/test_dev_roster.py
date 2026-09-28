@@ -66,7 +66,8 @@ def test_the_roster_serves_each_stored_player(tmp_path) -> None:
     assert [row["player"] for row in rows] == ["ade", "bru"]
     for row in rows:
         assert set(row) == {"player", "display_name", "status",
-                            "created_at"}
+                            "created_at", "devices", "last_signed_in",
+                            "device_codes", "sends"}
     assert rows[1]["display_name"] == "Bru Lin"
     assert {row["status"] for row in rows} == {"active"}
 
@@ -77,7 +78,9 @@ def test_the_roster_holds_the_configured_player_with_no_record(
     rows = client.get("/api/dev/players",
                       headers=HEADERS).json()["players"]
     assert rows == [{"player": "ade", "display_name": "ade",
-                     "status": "configured", "created_at": None}]
+                     "status": "configured", "created_at": None,
+                     "devices": 0, "last_signed_in": None,
+                     "device_codes": 0, "sends": 1}]
 
 
 def test_the_history_serves_each_stored_day_newest_first(
