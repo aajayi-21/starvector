@@ -67,6 +67,7 @@ cp deploy/starvector.service deploy/starvector-dev.service \
    /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now starvector
 cp deploy/Caddyfile /etc/caddy/Caddyfile   # set the real domain
+caddy validate --config /etc/caddy/Caddyfile   # the build box has no Caddy
 systemctl reload caddy
 ```
 
@@ -84,11 +85,13 @@ The daily rollover, after a week of days moved by hand:
 
 ```
 cp deploy/starvector-day.service deploy/starvector-day.timer \
-   /etc/systemd/system/
+   deploy/starvector-day-failed.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now starvector-day.timer
 ```
 
-Keep the timer's `OnCalendar` hour equal to `closes_at_utc`. The
+The timer fires each hour, and most firings move nothing (spec PL1 §3).
+Keep `closes_at_utc` on the hour. A close that does not complete gets a new
+try at the next firing, and `starvector-day-failed.service` alerts when a run dies. The
 deployment guides (section 14) have the full procedure. The console's
 Automatic days tab pauses and resumes the timer and shows its runs,
 and its `Do what is due now` button does the due steps at the moment
@@ -208,7 +211,8 @@ cd /srv/starvector/app
     mint <name> --display-name "<label>"
 ```
 
-The invite prints one time. The store keeps its digest alone, thus
+The invite prints one time and stays good until `rotate` or `revoke`,
+with no end date (spec PL1 §5). The store keeps its digest alone, thus
 an invite nobody can find wants `rotate` and not a lookup. `list`
 shows the roster with no secret in it, `revoke` stops a player and
 ends their sessions, and `restore` puts one back with a new invite.

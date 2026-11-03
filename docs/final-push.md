@@ -410,6 +410,10 @@ Three notes on the outline:
 a stale close at boot. Close by hand in that condition. The next-free-
 date rule then opens today's date, with a shorter window that day.
 
+*Note, 2026-11-03 (spec PL1 §3):* superseded. The timer fires each hour
+with `Persistent=true`, because the command closes a day only when it is
+due. With the earlier timer, a failure held a day in `closing` for 24 hours.
+
 The commands:
 
 ```bash
