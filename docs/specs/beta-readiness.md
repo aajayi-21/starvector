@@ -247,7 +247,8 @@ on each surface it sits on. The measured ratios, light and dark:
 The drawing surface stays `#1f2430` in the two themes. The stroke
 palette of spec C1 §5 is unchanged, thus the scorer reads the colors
 it read before, and each stroke color clears 3:1 on that surface. The
-operator console keeps `nocturne.css`.
+operator console keeps `nocturne.css`. *Note, 2026-09-27 (§7.6):* the
+console takes this theme too.
 
 ### 6.2 The screens
 
@@ -394,6 +395,39 @@ trial row of a day before its reveal, and no credential.
 | `GET /api/dev/index` | The index file: its build time, if it agrees with the store, and each table with its columns and row count |
 | `POST /api/dev/index/build` and `/verify` | A build, and the compare of `python -m service.index verify` |
 | `POST /api/dev/index/query` | Read-only SQL, `{"sql": "..."}` |
+| `POST /api/dev/day/close` and `/reveal` | Moves the day that `{"day": "..."}` names (§7.6). The status rules of `close_day` and `reveal_day` apply |
+
+### 7.6 The review of 2026-09-27
+
+The owner reported that the console's close and reveal did not work,
+and that a player's view had no "New invite address". The server
+moved the days correctly in each test. The console did not show what
+it did:
+
+- A refused close showed as small text in the hint position. A close
+  with no provider key in the server's environment refuses before the
+  day moves, and that refusal was easy to miss. A long close showed no
+  sign of work.
+- A browser can stop the native confirmation dialog from showing, and
+  that dialog then answers "no" with no sign.
+- A closed day behind a newer day had no control, as days 14 to 16 of
+  the local store show.
+- With no player record, the Players tab showed one row with no
+  account view and did not say why.
+
+The changes:
+
+- Each control shows its work while it runs, and each refusal shows in
+  a red box with the server's words. The confirmations are part of the
+  page, not browser dialogs.
+- `POST /api/dev/day/close` and `/reveal` move the day that the body
+  names. The Days tab offers them for a day behind the latest one.
+- The Players tab says when the server holds no player record, and
+  each row has a Manage button that opens the account view.
+- A 404 from a console path that the server does not have means the
+  server has older code than the console, and the console says so.
+- The console takes the player app's theme (`theme.css`): light by
+  default, dark when the device asks. The drawing surface stays dark.
 
 ---
 
@@ -401,8 +435,8 @@ trial row of a day before its reveal, and no credential.
 
 | Gate | Result |
 |---|---|
-| `uv run pytest` | 1280 passed (1139 before this spec, 1256 before §7) |
-| `pnpm exec vitest run` | 176 passed (125 before, 154 before §7) |
-| `pnpm exec playwright test` | 17 passed (14 before, 15 before §7) |
+| `uv run pytest` | 1282 passed (1139 before this spec, 1256 before §7, 1280 before §7.6) |
+| `pnpm exec vitest run` | 187 passed (125 before, 154 before §7, 176 before §7.6) |
+| `pnpm exec playwright test` | 18 passed (14 before, 15 before §7, 17 before §7.6) |
 | `pnpm exec tsc --noEmit` and `biome ci` | clean |
 | Vale, error level, on the lines this spec adds | 0 |

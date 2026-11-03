@@ -5,6 +5,8 @@ dimension. The chat-slot instruction rule stays, the fake encoder
 stays for tests, and no other provider clears the gate.
 """
 
+from pathlib import Path
+
 import pytest
 
 from conftest import base_config_dict, make_config
@@ -112,3 +114,25 @@ def test_input_canvas_px_is_absent_from_the_document_at_none() -> None:
     moved = curation_config_hash(
         make_config(**{"providers.encoder": sized}), hashes)
     assert moved != plain
+
+
+def test_a_voyage_encoder_needs_its_model() -> None:
+    slot = dict(OPENROUTER_ENCODER)
+    slot["provider"] = "voyage"
+    slot["model"] = None
+    with pytest.raises(ConfigError, match="model"):
+        make_config(**{"providers.encoder": slot})
+
+
+def test_the_voyage_curation_config_wires_a_voyage_encoder(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from pool.curation.config import load_curation_config
+    from pool.curation.run import _slot_hash, wire_slot
+    from providers.voyage.embeddings import VoyageImageEncoder
+
+    monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+    config = load_curation_config(Path("configs/curation/dev-wit-voyage.json"))
+    encoder = wire_slot("encoder", config, tmp_path)
+    assert isinstance(encoder, VoyageImageEncoder)
+    assert encoder.config_hash == _slot_hash(
+        "encoder", config.providers.encoder, config)

@@ -14,6 +14,7 @@ here and the app owns each path a person types.
 """
 
 import argparse
+import asyncio
 import datetime
 import json
 import math
@@ -884,6 +885,38 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"run": console.run_value(run),
                              "schedule": _schedule_value()})
 
+    async def _named_day_move(request: Request, step: str) -> Response:
+        """Close or reveal the day the body names (spec BR1 section 7.6).
+
+        For a day behind the latest one, for example a closed day that no
+        reveal reached. The status rules of close_day and reveal_day
+        apply.
+        """
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        body = await _json_object_body(request)
+        if isinstance(body, Response):
+            return body
+        named = body.get("day")
+        if not isinstance(named, str):
+            return JSONResponse({"cause": "bad-shape",
+                                 "detail": "day: expected a stored day"},
+                                status_code=400)
+        picked = _picked_day(named)
+        if isinstance(picked, Response):
+            return picked
+        status, answer = await asyncio.to_thread(_day_move, step, picked)
+        return JSONResponse(answer, status_code=status)
+
+    @app.post("/api/dev/day/close")
+    async def dev_day_close(request: Request) -> Response:
+        return await _named_day_move(request, "close")
+
+    @app.post("/api/dev/day/reveal")
+    async def dev_day_reveal(request: Request) -> Response:
+        return await _named_day_move(request, "reveal")
+
     @app.get("/api/dev/players/{name}")
     def dev_player(request: Request, name: str) -> Response:
         refused = _dev_refused(request)
@@ -1261,13 +1294,15 @@ def create_app(service_config: ServiceConfig,
     # guards and the rollover command's lock.
     lifecycle_lock = threading.Lock()
 
-    def _day_move(step: str) -> tuple[int, dict]:
+    def _day_move(step: str, day: str | None = None) -> tuple[int, dict]:
         """One lifecycle move as (HTTP status, body).
 
-        The three day endpoints answer it, and so does the console's
-        rollover (spec BR1 section 7.2), thus the two paths refuse
-        alike. A StoreError is the store refusing the move (409), and
-        each other error is the move not completing (400).
+        The three day endpoints answer it, and so do the console's
+        rollover (spec BR1 section 7.2) and its moves of a named day
+        (section 7.6), thus each path refuses alike. With no day, a
+        close or a reveal moves the latest stored day. A StoreError is
+        the store refusing the move (409), and each other error is the
+        move not completing (400).
         """
         from service.day import close_day, open_day, reveal_day
 
@@ -1295,17 +1330,17 @@ def create_app(service_config: ServiceConfig,
                         # different config wires anew from its pinned
                         # path (P5 R1).
                         wired = None
-                        day = store.latest_day(root)
-                        if day is not None:
-                            record = store.read_day_record(root, day)
+                        target = day or store.latest_day(root)
+                        if target is not None:
+                            record = store.read_day_record(root, target)
                             if record.status in ("open", "closing") \
                                     and record.scoring_config_path \
                                     == service_config.scoring_config:
                                 wired = _resident()
                         return 200, {"trial_rows": close_day(
-                            service_config, wired=wired)}
+                            service_config, date=day, wired=wired)}
                     case "reveal":
-                        record = reveal_day(service_config)
+                        record = reveal_day(service_config, date=day)
                         return 200, {"day": record.day}
                     case _:
                         raise ValueError(f"unknown day step {step!r}")

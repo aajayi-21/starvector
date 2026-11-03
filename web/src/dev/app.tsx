@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AboutView } from "../api/types";
+import { LogoMark } from "../ui/logo";
 import type { DevApi } from "./api";
 import { makeDevApi } from "./api";
 import { DaysTab } from "./days-tab";
@@ -104,11 +105,12 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
   return (
     <div className="dev-shell">
       <header className="dev-header">
-        <div className="dev-brand">
-          <span className="dev-brand-name">Starvector console</span>
-          <span className="dev-badge">development only</span>
-        </div>
-        <span className="dev-season">
+        <span className="brand">
+          <LogoMark />
+          Starvector
+        </span>
+        <span className="badge badge-warn">Console · development only</span>
+        <span className="dev-season subtle small">
           {about === null
             ? ""
             : [
@@ -119,15 +121,14 @@ export function DevApp(props: { api?: DevApi }): React.JSX.Element {
                   : `days close ${about.closes_at_utc} UTC`,
               ].join(" · ")}
         </span>
-        <span style={{ flex: 1 }} />
-        <a className="dev-link" href="/">
+        <a className="small" href="/">
           Player app
         </a>
         <input
           className="input dev-token"
           type="password"
           aria-label="operator token"
-          placeholder="operator token"
+          placeholder="Operator token"
           value={token}
           onChange={(event) => {
             setToken(event.target.value);

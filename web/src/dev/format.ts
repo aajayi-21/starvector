@@ -19,6 +19,12 @@ export function utcStamp(iso: string | null | undefined): string {
   return `${moment.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
+/** "2026-09-24 22:00" — for table cells under a "(UTC)" header. */
+export function utcShort(iso: string | null | undefined): string {
+  const stamp = utcStamp(iso);
+  return stamp.endsWith(" UTC") ? stamp.slice(0, -4) : stamp;
+}
+
 /** "in 3 h 12 min" or "12 min ago", measured from `now` (ms). */
 export function relative(iso: string, now: number): string {
   const moment = new Date(iso).getTime();

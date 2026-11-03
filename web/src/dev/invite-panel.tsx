@@ -26,6 +26,7 @@ import { useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError } from "./api";
+import { ErrorNote } from "./controls";
 import type { MintedInvite } from "./types";
 
 /** Where the invite origin is kept between visits. */
@@ -68,75 +69,92 @@ export function InvitePanel(props: {
     }
   };
 
+  // An invite that names the console's own address works for nobody:
+  // the console is reached through a tunnel at localhost.
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(
+    origin.trim(),
+  );
+  const invite =
+    minted === null
+      ? ""
+      : `${origin.trim().replace(/\/+$/, "")}${minted.join_path}`;
+
   return (
-    <div className="card dev-card" id="invite-panel">
-      <span className="card-kicker">Invite a player</span>
+    <div className="card" id="invite-panel">
+      <div className="eyebrow">Invite a player</div>
+      <div className="dev-form">
+        <label className="field">
+          <span className="label">Player name</span>
+          <input
+            className="input"
+            placeholder="lowercase letters, digits, hyphens"
+            value={player}
+            onChange={(event) => setPlayer(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="label">
+            Display name <span className="subtle">(optional)</span>
+          </span>
+          <input
+            className="input"
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+          />
+        </label>
+        <label className="field dev-form-wide">
+          <span className="label">Site address in the invite</span>
+          <input
+            className="input"
+            placeholder="https://your-site"
+            value={origin}
+            onChange={(event) => {
+              setOrigin(event.target.value);
+              try {
+                window.localStorage.setItem(ORIGIN_KEY, event.target.value);
+              } catch {
+                // Storage refused: the origin still holds this visit.
+              }
+            }}
+          />
+        </label>
+      </div>
+      {local ? (
+        <div className="notice" role="note">
+          This is the console's own address. Players can't open it — put the
+          public address of your site here, like https://your-domain.com.
+        </div>
+      ) : null}
       <div className="dev-row dev-wrap">
-        <input
-          className="input"
-          aria-label="player name"
-          placeholder="player name (a-z, 0-9, -)"
-          style={{ width: 220 }}
-          value={player}
-          onChange={(event) => setPlayer(event.target.value)}
-        />
-        <input
-          className="input"
-          aria-label="display name"
-          placeholder="display name (optional)"
-          style={{ width: 220 }}
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-        />
-        <input
-          className="input"
-          aria-label="invite origin"
-          placeholder="https://the-site"
-          style={{ width: 240 }}
-          value={origin}
-          onChange={(event) => {
-            setOrigin(event.target.value);
-            try {
-              window.localStorage.setItem(ORIGIN_KEY, event.target.value);
-            } catch {
-              // Storage refused: the origin still holds this visit.
-            }
-          }}
-        />
         <button
           type="button"
           className="btn btn-primary"
           disabled={player.trim() === "" || working}
           onClick={() => void mint()}
         >
-          {working ? "minting…" : "Mint the invite"}
+          {working ? "Minting…" : "Mint the invite"}
         </button>
+        <span className="subtle small">
+          The invite prints one time. Copy it and send it to the player.
+        </span>
       </div>
-      {note === "" ? null : (
-        <p className="dev-alert" role="alert">
-          {note}
-        </p>
-      )}
+      <ErrorNote text={note} />
       {minted === null ? null : (
-        <div className="dev-printed">
-          <div style={{ fontSize: 13 }}>
-            {minted.player} · {minted.display_name}
-          </div>
+        <div className="dev-printed" role="status">
+          <span className="small">
+            Invite for {minted.display_name}
+            {minted.display_name === minted.player ? "" : ` (${minted.player})`}
+            :
+          </span>
           <code className="dev-break" data-testid="invite-url">
-            {origin.replace(/\/+$/, "")}
-            {minted.join_path}
+            {invite}
           </code>
-          <span className="dev-hint">
-            This is the one time the invite prints. Send it, then forget it —
-            the store keeps only its digest, so a lost invite wants a rotate and
-            not a lookup.
+          <span className="subtle small">
+            This is the one time it prints: the store keeps only a digest. If it
+            gets lost, open the player below and make a new invite address.
           </span>
         </div>
       )}
-      <span className="dev-hint">
-        The origin names the site the player will open, which is not this
-        console's address when you reach it through the tunnel.
-      </span>
     </div>
   );
 }

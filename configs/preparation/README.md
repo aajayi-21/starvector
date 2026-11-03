@@ -26,8 +26,9 @@ does not touch a slot reuses that slot's responses at zero cost (U1).
   `providers.image_encoder.model` name an OpenRouter embeddings model
   (spec U2 as amended — the embeddings endpoint was checked live
   2026-08-07). One multimodal model for the two slots keeps text and
-  image vectors in one shared space. `provider` can also be `local`
-  (a SigLIP checkpoint through the torch stack) or `fake`.
+  image vectors in one shared space. `provider` can also be `voyage`
+  (spec VE1, `model` and `dimension` required), `local` (a SigLIP
+  checkpoint through the torch stack), or `fake`.
 
 ## Field notes
 

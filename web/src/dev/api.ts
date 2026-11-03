@@ -64,6 +64,19 @@ async function send(url: string, init?: RequestInit): Promise<Response> {
   }
 }
 
+/**
+ * The message a path answers with when the server has no such route at
+ * all — FastAPI's own 404 body. The server's refusals say "not found"
+ * in lower case, so the two never collide.
+ */
+const UNKNOWN_ROUTE = "Not Found";
+
+/** Said when the console knows a path and the server does not. */
+export const OLDER_SERVER =
+  "The server runs older code than this console. Update the server " +
+  "(git pull, uv sync) and restart it — on the box, restart " +
+  "starvector-dev.";
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await send(url, init);
   if (!response.ok) {
@@ -73,7 +86,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
         detail?: string;
         cause?: string;
       };
-      message = body.detail ?? body.cause ?? "refused";
+      message =
+        response.status === 404 && body.detail === UNKNOWN_ROUTE
+          ? OLDER_SERVER
+          : (body.detail ?? body.cause ?? "refused");
     } catch {
       // A non-JSON error body keeps the generic message.
     }
@@ -92,6 +108,9 @@ export interface DevApi {
   postOpen(): Promise<LifecycleAck>;
   postClose(): Promise<LifecycleAck>;
   postReveal(): Promise<LifecycleAck>;
+  /** Close or reveal a named day — one behind the latest (BR1 §7.6). */
+  closeDay(day: string): Promise<LifecycleAck>;
+  revealDay(day: string): Promise<LifecycleAck>;
   mintPlayer(player: string, displayName: string): Promise<MintedInvite>;
   imageUrl(imageId: string): string;
 
@@ -172,6 +191,16 @@ export function makeDevApi(token: TokenSource = () => ""): DevApi {
       request<LifecycleAck>(
         "/api/day/reveal",
         authorized(token(), { method: "POST" }),
+      ),
+    closeDay: (day) =>
+      request<LifecycleAck>(
+        "/api/dev/day/close",
+        authorized(token(), jsonBody({ day })),
+      ),
+    revealDay: (day) =>
+      request<LifecycleAck>(
+        "/api/dev/day/reveal",
+        authorized(token(), jsonBody({ day })),
       ),
     mintPlayer: (player, displayName) =>
       request<MintedInvite>(

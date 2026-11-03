@@ -1,7 +1,9 @@
 /**
  * The stored-submission viewer: received time, trial id, the SVG
  * stroke replay (stroke color, else the group hue, else ink), the
- * impressions, groups and relations, and the pasted text.
+ * impressions, groups and relations, and the pasted text. The replay
+ * keeps the dark drawing surface in both themes (spec BR1 §6.1): the
+ * stroke colors were chosen against it.
  */
 
 import type { WireRecord } from "../api/types";
@@ -23,34 +25,17 @@ export function SubmissionView(props: {
   const { stored } = props;
   const record = stored.record;
   return (
-    <div className="card" style={{ gap: 8 }}>
-      <div
-        style={{
-          fontSize: 11,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "var(--color-neutral-500)",
-        }}
-      >
-        Stored submission
-      </div>
-      <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+    <div className="card">
+      <div className="eyebrow">Stored submission</div>
+      <div className="subtle small">
         received {stored.received_at} · trial{" "}
-        <span style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>
-          {stored.trial_id}
-        </span>
+        <span className="dev-mono">{stored.trial_id}</span>
       </div>
       <svg
         role="img"
         aria-label="stored sketch replay"
         viewBox="0 0 100 100"
-        style={{
-          width: 256,
-          maxWidth: "100%",
-          aspectRatio: "1 / 1",
-          background: "#272c37",
-          borderRadius: 8,
-        }}
+        className="dev-replay"
       >
         {record.canvas_strokes.map((stroke, index) => (
           <polyline
@@ -73,7 +58,7 @@ export function SubmissionView(props: {
           />
         ))}
       </svg>
-      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+      <ul className="dev-record-list">
         {record.impressions.map((text) => (
           <li key={text}>impression: {text}</li>
         ))}
@@ -89,7 +74,7 @@ export function SubmissionView(props: {
         ))}
       </ul>
       {record.pasted_text === null ? null : (
-        <div style={{ fontSize: 13 }}>pasted: {record.pasted_text}</div>
+        <div className="small">pasted: {record.pasted_text}</div>
       )}
     </div>
   );

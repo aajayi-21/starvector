@@ -9,7 +9,16 @@ the owner's command line.
 import json
 from pathlib import Path
 
+import pytest
+
 from pipeline.config import load_scoring_config
+from pool.preparation.config import (load_preparation_config,
+                                     preparation_config_hash)
+from pool.preparation.manifest import parse_release_record
+from pool.preparation.run import provider_config_hashes
+from pool.preparation.stages.release import (release_label,
+                                             release_preparation_version_id)
+from validation import harness
 from validation.fitconfig import fit_config_hash, load_fit_config
 
 
@@ -78,3 +87,47 @@ def test_the_stitched_boundary_config_forks_on_two_fields() -> None:
     base["validation"].pop("tag")
     variant["validation"].pop("tag")
     assert base == variant
+
+
+@pytest.mark.parametrize("name", ["inst", "plain"])
+def test_the_voyage_scoring_configs_name_their_precomputed_record(name: str) -> None:
+    """Spec VE1 section 6: the record names are known before the run."""
+    preparation_path = Path(f"configs/preparation/dev-wit-voyage-{name}.json")
+    preparation = load_preparation_config(preparation_path)
+    release = parse_release_record(Path(preparation.input.release_record))
+    version = release_preparation_version_id(
+        release.pool_version_id,
+        preparation_config_hash(preparation, provider_config_hashes(preparation)))
+    expected = (f"pool/preparations/"
+                f"{release_label(preparation.release.tag, version)}.json")
+    tags = {"inst": ("dev-wit-voyage-inst-sym", "dev-wit-voyage-inst-mixed",
+                     "dev-wit-voyage-text"),
+            "plain": ("dev-wit-voyage-plain-sym", "dev-wit-voyage-plain-mixed")}
+    for tag in tags[name]:
+        config = load_scoring_config(Path(f"configs/scoring/{tag}.json"))
+        assert config.input.preparation_record == expected
+        assert config.validation.tag == tag
+        assert config.report.dev_only
+        assert config.providers.sketch_encoder.provider == "voyage"
+        assert config.providers.text_encoder.provider == "voyage"
+        harness.check_outline_space(config, preparation)
+        # The same frozen weights as the baseline, thus the numbers
+        # compare directly.
+        assert dict(config.fusion.weights) == {"element": 0.45, "outline": 0.55}
+
+
+def test_the_bakeoff_cells_differ_by_the_instruction_alone() -> None:
+    baseline = json.loads(
+        Path("configs/preparation/dev-wit-photo-inst-2.json").read_text())
+    voyage = json.loads(
+        Path("configs/preparation/dev-wit-voyage-inst.json").read_text())
+    assert voyage["providers"]["image_encoder"]["instruction_template"] \
+        == baseline["providers"]["image_encoder"]["instruction_template"]
+    plain = json.loads(
+        Path("configs/preparation/dev-wit-voyage-plain.json").read_text())
+    assert plain["providers"]["image_encoder"]["instruction_template"] is None
+    for document in (baseline, voyage, plain):
+        for slot in ("image_encoder", "text_encoder"):
+            document["providers"].pop(slot)
+        document["release"].pop("tag")
+    assert baseline == voyage == plain

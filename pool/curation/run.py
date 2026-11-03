@@ -88,8 +88,24 @@ def _encoder_slot_config(slot: SlotSection):
     )
 
 
+def _voyage_encoder_slot_config(slot: SlotSection):
+    """The Voyage parameters of the encoder slot (spec VE1)."""
+    from providers.voyage.embeddings import VoyageSlotConfig
+
+    return VoyageSlotConfig(
+        slot="encoder",
+        model=slot.model or "",
+        dimension=slot.dimension or 0,
+        instruction=slot.instruction_template,
+    )
+
+
 def _slot_hash(slot_name: str, slot: SlotSection, config: CurationConfig) -> str:
     """The config hash of one slot, computable with no client and no key."""
+    if slot.provider == "voyage" and slot_name == "encoder":
+        from providers.voyage.embeddings import voyage_config_hash
+
+        return voyage_config_hash(_voyage_encoder_slot_config(slot))
     if slot.provider == "openrouter":
         # The encoder branches before the chat-slot hash: an
         # embeddings slot keyed by the chat hash gives the artifact
@@ -189,9 +205,22 @@ def wire_corpus(config: CurationConfig) -> SourceCorpus:
     )
 
 
+def wire_slot(slot_name: str, config: CurationConfig, data_root: Path):
+    """Build one provider instance for a named slot of this config.
+
+    Public seam for the near-duplicate calibration (spec VE1 section
+    5), which reads the s06 vector space.
+    """
+    return _wire_slot(slot_name, config, data_root)
+
+
 def _wire_slot(slot_name: str, config: CurationConfig, data_root: Path):
     """Build one model provider instance right before its stage runs."""
     slot = getattr(config.providers, slot_name)
+    if slot.provider == "voyage" and slot_name == "encoder":
+        from providers.voyage import wiring
+
+        return wiring.image_encoder(_voyage_encoder_slot_config(slot), data_root)
     if slot.provider == "fake":
         if slot_name == "encoder":
             from providers.fake.encoder import FakeImageEncoder
