@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { blockExternalHosts } from "./helpers";
+import { blockExternalHosts, OPERATOR_TOKEN } from "./helpers";
 
 // Spec A1 §4: the open door. The fixture server runs --dev, thus
 // the landing page grows the name sign-in, and a typed name becomes
@@ -17,6 +17,15 @@ test("the name sign-in turns a typed name into a session", async ({ page }) => {
 
   await page.getByLabel("Player name").fill("walkin");
   await page.getByLabel(/Display name/).fill("Walk In");
+
+  // With no operator token the door stays shut (spec PL1 §5): the dev
+  // unit shares the production store.
+  await page.getByRole("button", { name: "Sign in by name" }).click();
+  await expect(
+    page.getByText("Name sign-in needs the operator token on this server."),
+  ).toBeVisible();
+
+  await page.getByLabel("Operator token").fill(OPERATOR_TOKEN);
   await page.getByRole("button", { name: "Sign in by name" }).click();
 
   // The cookie landed and the shell renders signed in.

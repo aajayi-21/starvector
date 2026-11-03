@@ -1,7 +1,10 @@
 /**
  * Plain-language formatting (spec BR1 §6). Day labels are UTC dates
- * (spec BR1 §3), so each date formats in UTC — a player west of
- * Greenwich must not see yesterday's weekday on today's session.
+ * (spec BR1 §3), so a label formats in UTC and keeps its one name. A
+ * label is an identifier and not the reader's calendar: a day that
+ * closes at 22:00 UTC starts its label's run on the evening before, in
+ * the Americas. So a screen about the day in play names its close in the
+ * reader's zone (formatCloseMoment), and a past day keeps its label.
  */
 
 const DAY_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -65,6 +68,45 @@ export function ordinal(n: number): string {
     default:
       return `${n}th`;
   }
+}
+
+const CLOSE_MOMENT_FORMAT = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+const CLOCK_FORMAT = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** An ISO instant → "closes Sat 6:00 PM", or null when there is none. */
+export function formatCloseMoment(
+  closesAt: string | null | undefined,
+): string | null {
+  if (typeof closesAt !== "string") {
+    return null;
+  }
+  const date = new Date(closesAt);
+  return Number.isNaN(date.getTime())
+    ? null
+    : `closes ${CLOSE_MOMENT_FORMAT.format(date)}`;
+}
+
+/** An ISO instant → "6:00 PM", in the reader's own zone. */
+export function formatLocalClock(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : CLOCK_FORMAT.format(date);
+}
+
+/**
+ * The skill number as the average result it stands for. With skill s, a
+ * result has the density s·p^(s−1) (architecture §17), and its mean is
+ * s/(s+1): 1.00 is 50%, the average of pure guessing.
+ */
+export function skillAsPercent(skill: number): number {
+  return Math.round((100 * skill) / (skill + 1));
 }
 
 /** Milliseconds → "5 h 12 min", "12 min", or "under a minute". */

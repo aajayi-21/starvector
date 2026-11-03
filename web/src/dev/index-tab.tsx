@@ -51,10 +51,12 @@ ORDER BY d.day DESC`,
   },
   {
     label: "Words that connected",
+    // pinned = 1: a rescore adds a row for each config, and the same word
+    // must not count once for each one.
     sql: `SELECT atom_text AS word, COUNT(*) AS uses,
        ROUND(AVG(similarity), 3) AS mean_similarity
 FROM trial_atoms
-WHERE atom_text IS NOT NULL
+WHERE atom_text IS NOT NULL AND pinned = 1
 GROUP BY atom_text
 ORDER BY uses DESC
 LIMIT 50`,

@@ -32,6 +32,10 @@ export function refusedRead(error: unknown): string {
     : messageOf(error);
 }
 
+/** The question before a ranking on an open day (spec PL1 §8). */
+export const SHOWS_TARGET =
+  "This day is open. The ranking shows the target, and that ends a blind run for this day. Nothing is stored.";
+
 type Variant = "primary" | "secondary" | "danger";
 
 /** A button that asks in place before it acts. */

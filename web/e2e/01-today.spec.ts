@@ -48,6 +48,12 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await page.getByRole("button", { name: "Label", exact: true }).click();
   await expect(page.getByText(/1 labeled part/)).toBeVisible();
 
+  // The review step lists the send, and a typed word that was not
+  // added comes with it (spec PL1 §8).
+  await word.fill("cold and bright");
+  await page.getByRole("button", { name: "Review and send" }).click();
+  await expect(page.getByText(/Include “cold and bright”/)).toBeVisible();
+  await expect(posts).toBe(0);
   await page.getByRole("button", { name: "Send today's session" }).click();
   await expect(page.getByText("Sent — you're in for today")).toBeVisible({
     timeout: 30_000,

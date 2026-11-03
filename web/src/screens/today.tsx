@@ -5,21 +5,36 @@
  * optional and fold away. Views: no day, open, sent, closing or
  * closed, and revealed (hand-off to the results screen).
  *
- * The send is a mutation with an in-flight lock; drafts stay in
- * localStorage as disposable caches (W1 §8).
+ * The send is a mutation with an in-flight lock, behind a review step
+ * (spec PL1 §8); drafts stay in localStorage as disposable caches (W1
+ * §8). A sketch outlives its day: when the day moves, the sketch stays
+ * on the canvas until the player says what to do with it (PL1 §4).
  */
 
 import { CheckCircle } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
-import type { DayView, WireRecord } from "../api/types";
+import { useDayQuery } from "../api/day-query";
+import type { DayView, SubmissionAck, WireRecord } from "../api/types";
 import { ApiError, friendlyMessage, isRefusal } from "../api/types";
 import { CanvasPanel } from "../intake/canvas-panel";
+import type { Draft } from "../intake/drafts";
+import {
+  draftKey,
+  findEarlierDraft,
+  hasContent,
+  readDraft,
+  removeEarlierDrafts,
+  removeStorage,
+  sentKey,
+  writeStorage,
+} from "../intake/drafts";
 import { GroupControls } from "../intake/groups-card";
 import { ImpressionsCard } from "../intake/impressions-card";
+import { sendBlock, sendBlockHint } from "../intake/send-gate";
 import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
   addRelation,
@@ -39,7 +54,7 @@ import {
 } from "../sketch/core";
 import { CodeCells } from "../ui/code-cells";
 import { ClosesIn, ClosesInBadge } from "../ui/countdown";
-import { formatDay } from "../ui/format";
+import { formatCloseMoment, formatDay } from "../ui/format";
 
 const DRAFT_DEBOUNCE_MS = 500;
 
@@ -52,34 +67,6 @@ const RELATION_WORDING: Record<string, string> = {
 
 const wordingOf = (name: string): string =>
   RELATION_WORDING[name] ?? `is ${name}`;
-
-interface Draft {
-  doc: SketchDoc;
-  impressions: string[];
-  pastedText: string;
-  nextStrokeId: number;
-}
-
-const draftKey = (day: string): string => `sv:draft:${day}`;
-const sentKey = (day: string): string => `sv:sent:${day}`;
-
-function readDraft(day: string): Draft | null {
-  try {
-    const raw = window.localStorage.getItem(draftKey(day));
-    return raw === null ? null : (JSON.parse(raw) as Draft);
-  } catch {
-    return null;
-  }
-}
-
-/** Drafts are disposable caches (§8) — a failed write is dropped. */
-function writeStorage(key: string, value: unknown): void {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage full or blocked: the draft note simply stays quiet.
-  }
-}
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -100,12 +87,7 @@ function MessageCard(props: {
 }
 
 export function TodayScreen(): React.JSX.Element {
-  const api = useApi();
-  const day = useQuery({
-    queryKey: ["day"],
-    queryFn: () => api.getDay(),
-    refetchOnWindowFocus: true,
-  });
+  const day = useDayQuery();
 
   if (day.isPending) {
     return (
@@ -142,22 +124,30 @@ export function TodayScreen(): React.JSX.Element {
     return <Navigate to="/reveal" />;
   }
   if (view.submitted) {
-    return <SentView closesAt={view.closes_at} />;
+    return <SentView day={view.day} closesAt={view.closes_at} />;
   }
   if (view.status === "closing" || view.status === "closed") {
+    const unsent = readDraft(view.day);
     return (
       <MessageCard title="Today's session has closed">
         <p className="muted">
-          Results are being worked out. Check back in a few minutes to see the
-          photo.
+          Results are being worked out. The photo appears here in a few minutes,
+          and this page updates by itself.
         </p>
+        {unsent !== null && hasContent(unsent) ? (
+          <p className="muted">
+            Your unsent sketch wasn't scored. It's saved on this device, and you
+            can use it for the next day.
+          </p>
+        ) : null}
       </MessageCard>
     );
   }
-  return <OpenWorkspace key={view.day} view={view} />;
+  return <OpenWorkspace view={view} />;
 }
 
 function SentView(props: {
+  day: string;
   closesAt?: string | null | undefined;
 }): React.JSX.Element {
   return (
@@ -170,7 +160,8 @@ function SentView(props: {
           </h2>
         </div>
         <p className="muted">
-          Your sketch is locked in. The photo is revealed when the day closes
+          Your sketch is locked in for the session of {formatDay(props.day)}.
+          The photo is revealed when the day closes
           <ClosesIn closesAt={props.closesAt} prefix=" — in" />.
         </p>
         <div className="row">
@@ -191,9 +182,18 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const queryClient = useQueryClient();
   const { view } = props;
 
-  const restored = useMemo(() => readDraft(view.day), [view.day]);
+  // Read one time: a draft for this day, or the newest unsent one from a
+  // day that has closed, which comes back with its day named.
+  const [restored] = useState(() => {
+    const own = readDraft(view.day);
+    return own !== null && hasContent(own)
+      ? { day: view.day, draft: own }
+      : findEarlierDraft(view.day);
+  });
+  const restoredDraft = restored?.draft ?? null;
+  const [draftDay, setDraftDay] = useState(restored?.day ?? view.day);
   const [history, setHistory] = useState<DocHistory>(() =>
-    historyOf(restored?.doc ?? EMPTY_DOC),
+    historyOf(restoredDraft?.doc ?? EMPTY_DOC),
   );
   const [selection, setSelection] = useState<ReadonlySet<number>>(
     () => new Set<number>(),
@@ -201,18 +201,23 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const [mode, setMode] = useState<"draw" | "select">("draw");
   const [colorIndex, setColorIndex] = useState(0);
   const [impressions, setImpressions] = useState<string[]>(
-    () => restored?.impressions ?? [],
+    () => restoredDraft?.impressions ?? [],
   );
   const [pastedText, setPastedText] = useState(
-    () => restored?.pastedText ?? "",
+    () => restoredDraft?.pastedText ?? "",
   );
+  const [typedWord, setTypedWord] = useState(
+    () => restoredDraft?.typedWord ?? "",
+  );
+  const [reviewing, setReviewing] = useState(false);
+  const [includeTyped, setIncludeTyped] = useState(true);
   const [relationFirst, setRelationFirst] = useState("");
   const [relationName, setRelationName] = useState(
     () => view.relation_vocabulary[0] ?? "",
   );
   const [relationSecond, setRelationSecond] = useState("");
   const [draftSaved, setDraftSaved] = useState(false);
-  const nextStrokeId = useRef(restored?.nextStrokeId ?? 1);
+  const nextStrokeId = useRef(restoredDraft?.nextStrokeId ?? 1);
 
   const doc = current(history);
   const commit = (next: SketchDoc) => setHistory((h) => pushDoc(h, next));
@@ -220,55 +225,149 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   // isPending flips a task late (the query notify scheduler), so the
   // double-POST lock lives in a ref the click handler checks first.
   const sendingRef = useRef(false);
-  const send = useMutation({
-    mutationFn: (record: WireRecord) => api.submit(record),
-    onSuccess: (_ack, record) => {
-      writeStorage(sentKey(view.day), record);
-      try {
-        window.localStorage.removeItem(draftKey(view.day));
-      } catch {
-        // Disposable cache.
-      }
+  const [sentDay, setSentDay] = useState<string | null>(null);
+
+  const forgetDraft = () => {
+    setHistory(historyOf(EMPTY_DOC));
+    setImpressions([]);
+    setPastedText("");
+    setTypedWord("");
+    setSelection(new Set());
+    setMode("draw");
+    setReviewing(false);
+    setIncludeTyped(true);
+  };
+
+  const send = useMutation<
+    SubmissionAck,
+    Error,
+    { day: string; record: WireRecord }
+  >({
+    mutationFn: ({ day, record }) => api.submit(day, record),
+    onSuccess: (_ack, { day, record }) => {
+      setSentDay(day);
+      writeStorage(sentKey(day), record);
+      removeStorage(draftKey(draftDay));
+      removeEarlierDrafts(day);
+      forgetDraft();
       // The day now reads "sent" on each screen that shows it.
       void queryClient.invalidateQueries({ queryKey: ["day"] });
+    },
+    onError: (error, { day }) => {
+      if (!(error instanceof ApiError)) {
+        return;
+      }
+      if (error.refusalCause === "already-submitted") {
+        setSentDay(day);
+        return;
+      }
+      if (
+        error.refusalCause === "day-moved" ||
+        error.refusalCause === "day-closed"
+      ) {
+        // The stale tab: nothing was spent, and the sketch stays. The
+        // screen follows the day as soon as the read comes back.
+        setReviewing(false);
+        void queryClient.invalidateQueries({ queryKey: ["day"] });
+      }
     },
     onSettled: () => {
       sendingRef.current = false;
     },
   });
 
-  const sent =
-    send.isSuccess ||
-    (send.error instanceof ApiError &&
-      send.error.refusalCause === "already-submitted");
+  const sent = sentDay === view.day;
+  const empty = !hasContent({ doc, impressions, pastedText, typedWord });
+  const dayMoved = draftDay !== view.day;
+
+  // An empty workspace has nothing to ask about, so it just follows the
+  // day. A sketch waits for the player's choice below.
+  useEffect(() => {
+    if (dayMoved && empty) {
+      setDraftDay(view.day);
+    }
+  }, [dayMoved, empty, view.day]);
+
+  // The draft as of this render, for the save at unmount: the workspace
+  // leaves the page when the day closes, and a timer does not fire then.
+  const latestDraft = useRef({
+    day: draftDay,
+    doc,
+    impressions,
+    pastedText,
+    typedWord,
+  });
+  latestDraft.current = {
+    day: draftDay,
+    doc,
+    impressions,
+    pastedText,
+    typedWord,
+  };
+  useEffect(
+    () => () => {
+      const { day, ...rest } = latestDraft.current;
+      if (hasContent(rest)) {
+        writeStorage(draftKey(day), {
+          ...rest,
+          nextStrokeId: nextStrokeId.current,
+        } satisfies Draft);
+      }
+    },
+    [],
+  );
 
   // Debounced draft autosave, cleared on send (§8). The sent gate
   // keeps a pending timer from writing the draft back after the
-  // send's onSuccess removed it.
+  // send's onSuccess removed it. The draft stays under the day it was
+  // drawn for until the player moves it.
   useEffect(() => {
     if (sent) {
       return;
     }
     const timer = setTimeout(() => {
-      writeStorage(draftKey(view.day), {
+      writeStorage(draftKey(draftDay), {
         doc,
         impressions,
         pastedText,
+        typedWord,
         nextStrokeId: nextStrokeId.current,
       } satisfies Draft);
       setDraftSaved(true);
     }, DRAFT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [doc, impressions, pastedText, view.day, sent]);
+  }, [doc, impressions, pastedText, typedWord, draftDay, sent]);
 
   if (sent) {
-    return <SentView closesAt={view.closes_at} />;
+    return <SentView day={view.day} closesAt={view.closes_at} />;
   }
 
-  const scoreable =
-    impressions.length > 0 ||
-    doc.strokes.length > 0 ||
-    pastedText.trim() !== "";
+  const typed = typedWord.trim();
+  const hasWords =
+    impressions.length > 0 || pastedText.trim() !== "" || typed !== "";
+  const block = sendBlock(doc.strokes.length, hasWords, view.min_strokes);
+  const scoreable = block === null;
+  const sendWords =
+    typed !== "" && includeTyped ? [...impressions, typed] : impressions;
+  const sendReady =
+    sendBlock(
+      doc.strokes.length,
+      sendWords.length > 0 || pastedText.trim() !== "",
+      view.min_strokes,
+    ) === null;
+
+  const keepForToday = () => {
+    removeStorage(draftKey(draftDay));
+    setDraftDay(view.day);
+    send.reset();
+  };
+
+  const startClean = () => {
+    removeStorage(draftKey(draftDay));
+    forgetDraft();
+    setDraftDay(view.day);
+    send.reset();
+  };
 
   const onCommitStroke = (points: Point[]) => {
     const id = nextStrokeId.current;
@@ -345,17 +444,20 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const sketchHint =
     mode === "select"
       ? selection.size > 0
-        ? `${plural(selection.size, "stroke", "strokes")} picked — name them on the right.`
+        ? `${plural(selection.size, "stroke", "strokes")} picked — name them under “Label parts of your sketch”.`
         : "Tap the strokes that belong together."
       : doc.strokes.length === 0
         ? "Draw whatever comes to mind. Each line you draw is one stroke."
-        : "Keep going, or add words on the right.";
+        : "Keep going, or add some words.";
 
   return (
     <div className="stack-lg">
       <header className="row-between" style={{ alignItems: "flex-end" }}>
         <div className="stack-sm">
-          <div className="eyebrow">Today's session · {formatDay(view.day)}</div>
+          <div className="eyebrow">
+            Today's session ·{" "}
+            {formatCloseMoment(view.closes_at) ?? formatDay(view.day)}
+          </div>
           <div className="row" style={{ gap: 16 }}>
             <CodeCells code={view.trial_code} />
             <p className="muted" style={{ maxWidth: 360 }}>
@@ -369,6 +471,36 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
         </div>
         <ClosesInBadge closesAt={view.closes_at} />
       </header>
+
+      {dayMoved && !empty ? (
+        <section
+          className="notice"
+          role="alert"
+          aria-label="Your earlier sketch"
+        >
+          <p>
+            You started this sketch for the session of {formatDay(draftDay)},
+            and that session has closed, so it wasn't scored. A new photo is now
+            hidden behind a new code.
+          </p>
+          <div className="row">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={keepForToday}
+            >
+              Keep it for today
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={startClean}
+            >
+              Start clean
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <div className="workspace">
         <CanvasPanel
@@ -394,13 +526,15 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
             resetPicks();
             setMode("draw");
           }}
-          disabled={send.isPending}
+          disabled={send.isPending || dayMoved}
           hint={sketchHint}
         />
 
         <aside className="stack side-panel" aria-label="Your answer">
           <ImpressionsCard
             impressions={impressions}
+            input={typedWord}
+            onInputChange={setTypedWord}
             onAdd={(text) => setImpressions((rows) => [...rows, text])}
             onRemoveAt={(index) =>
               setImpressions((rows) => rows.filter((_, at) => at !== index))
@@ -542,24 +676,63 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
 
           <section className="card" aria-label="Send">
             <p className="muted small">{summaryParts.join(" · ")}</p>
-            <button
-              type="button"
-              className="btn btn-primary btn-large btn-block"
-              disabled={!scoreable || send.isPending}
-              onClick={() => {
-                if (sendingRef.current) {
-                  return;
-                }
-                sendingRef.current = true;
-                send.mutate(serialize(doc, impressions, pastedText));
-              }}
-            >
-              {send.isPending ? "Sending…" : "Send today's session"}
-            </button>
+            {reviewing ? (
+              <ReviewPanel
+                words={impressions}
+                strokes={doc.strokes.length}
+                labeled={labeled}
+                notes={pastedText.trim() !== ""}
+                typed={typed}
+                includeTyped={includeTyped}
+                onIncludeTyped={setIncludeTyped}
+              />
+            ) : null}
+            {reviewing ? (
+              <div className="stack-sm">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-large btn-block"
+                  disabled={!sendReady || send.isPending || dayMoved}
+                  onClick={() => {
+                    if (sendingRef.current) {
+                      return;
+                    }
+                    sendingRef.current = true;
+                    send.mutate({
+                      day: view.day,
+                      record: serialize(doc, sendWords, pastedText),
+                    });
+                  }}
+                >
+                  {send.isPending ? "Sending…" : "Send today's session"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-block"
+                  disabled={send.isPending}
+                  onClick={() => setReviewing(false)}
+                >
+                  Keep editing
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary btn-large btn-block"
+                disabled={!scoreable || dayMoved}
+                onClick={() => {
+                  setIncludeTyped(true);
+                  send.reset();
+                  setReviewing(true);
+                }}
+              >
+                Review and send
+              </button>
+            )}
             <p className="hint">
               {scoreable
                 ? "You can send once, and you can't change it after."
-                : "Draw something or add a word first."}
+                : sendBlockHint(block, view.min_strokes)}
               {draftSaved ? " Your draft is saved on this device." : ""}
             </p>
             {send.isError && !sent ? (
@@ -571,5 +744,53 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** What this send holds, in the player's words (spec PL1 §8). */
+function ReviewPanel(props: {
+  words: ReadonlyArray<string>;
+  strokes: number;
+  labeled: number;
+  notes: boolean;
+  typed: string;
+  includeTyped: boolean;
+  onIncludeTyped: (include: boolean) => void;
+}): React.JSX.Element {
+  const { words, strokes, labeled, notes, typed, includeTyped } = props;
+  return (
+    <section className="stack-sm" aria-label="Review your send">
+      <h3>Check before you send</h3>
+      <p className="small">
+        <strong>Words:</strong> {words.length === 0 ? "none" : words.join(", ")}
+      </p>
+      <p className="small">
+        <strong>Sketch:</strong>{" "}
+        {strokes === 0
+          ? "none"
+          : `${plural(strokes, "stroke", "strokes")}${
+              labeled > 0
+                ? `, ${plural(labeled, "labeled part", "labeled parts")}`
+                : ""
+            }`}
+      </p>
+      {notes ? (
+        <p className="small">
+          <strong>Notes:</strong> included
+        </p>
+      ) : null}
+      {typed === "" ? null : (
+        <label className="small row" style={{ flexWrap: "nowrap", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={includeTyped}
+            onChange={(event) => props.onIncludeTyped(event.target.checked)}
+          />
+          <span>
+            Include “{typed}”. You typed it but didn't add it to your words.
+          </span>
+        </label>
+      )}
+    </section>
   );
 }

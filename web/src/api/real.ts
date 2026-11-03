@@ -62,8 +62,13 @@ export function makeRealApi(): Api {
     getDay(): Promise<DayView> {
       return request<DayView>("/api/day");
     },
-    submit(record: WireRecord): Promise<SubmissionAck> {
-      return postJson<SubmissionAck>("/api/submission", record);
+    submit(day: string, record: WireRecord): Promise<SubmissionAck> {
+      // The day rides the query and not the record: stored bytes stay
+      // as they were (spec PL1 §2).
+      return postJson<SubmissionAck>(
+        `/api/submission?day=${encodeURIComponent(day)}`,
+        record,
+      );
     },
     getReveal(day?: string): Promise<RevealView> {
       return request<RevealView>(
@@ -133,10 +138,23 @@ export function makeRealApi(): Api {
     getDoor(): Promise<DoorView> {
       return request<DoorView>("/api/door");
     },
-    postDoor(player: string, displayName?: string): Promise<DoorAck> {
-      return postJson<DoorAck>("/api/door", {
-        player,
-        ...(displayName === undefined ? {} : { display_name: displayName }),
+    postDoor(
+      player: string,
+      displayName?: string,
+      operatorToken?: string,
+    ): Promise<DoorAck> {
+      return request<DoorAck>("/api/door", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(operatorToken === undefined || operatorToken === ""
+            ? {}
+            : { Authorization: `Bearer ${operatorToken}` }),
+        },
+        body: JSON.stringify({
+          player,
+          ...(displayName === undefined ? {} : { display_name: displayName }),
+        }),
       });
     },
     getAbout(): Promise<AboutView> {

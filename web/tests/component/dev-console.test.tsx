@@ -487,6 +487,15 @@ describe("the operator console", () => {
     const preview = await screen.findByText("Score and rank the submission");
     expect(open.rankingsCalls).toEqual([]);
     fireEvent.click(preview);
+    // An open day: the first click asks, because the answer shows the
+    // target (spec PL1 §8). Cancel stays blind, and only a yes scores.
+    expect(await screen.findByText(/ends a blind run/)).toBeDefined();
+    expect(open.rankingsCalls).toEqual([]);
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByText(/ends a blind run/)).toBeNull();
+    expect(open.rankingsCalls).toEqual([]);
+    fireEvent.click(screen.getByText("Score and rank the submission"));
+    fireEvent.click(await screen.findByText("Yes, show the target"));
     await waitFor(() => expect(open.rankingsCalls).toEqual(["2026-08-12"]));
   });
 

@@ -16,7 +16,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError } from "./api";
-import { ErrorNote, refusedRead, StatusBadge } from "./controls";
+import {
+  ConfirmAction,
+  ErrorNote,
+  refusedRead,
+  SHOWS_TARGET,
+  StatusBadge,
+} from "./controls";
 import { utcShort } from "./format";
 import { PlayerAccount } from "./player-account";
 import { RankingsView } from "./rankings";
@@ -147,6 +153,11 @@ export function RosterPanel(props: {
       }
     }
   };
+
+  // A ranking of an open day shows the target, so it asks first.
+  const openedStatus = history?.days.find(
+    (row) => row.day === openedDay,
+  )?.status;
 
   // The world of spec M1 ruling 7: no record, one synthetic row.
   const noAccounts =
@@ -310,13 +321,23 @@ export function RosterPanel(props: {
           <SubmissionView stored={stored} />
           <div className="dev-row">
             {rankings === null ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => void loadRankings()}
-              >
-                Score and rank the submission
-              </button>
+              openedStatus === "open" ? (
+                <ConfirmAction
+                  label="Score and rank the submission"
+                  question={SHOWS_TARGET}
+                  confirmLabel="Yes, show the target"
+                  variant="secondary"
+                  onConfirm={() => void loadRankings()}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void loadRankings()}
+                >
+                  Score and rank the submission
+                </button>
+              )
             ) : null}
             <span className="subtle small">
               {rankNote === ""

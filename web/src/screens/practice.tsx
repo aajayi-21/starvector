@@ -4,19 +4,27 @@
  * nothing is shared with today's draft and nothing is stored. The
  * same canvas and word inputs as today. After a check, the result
  * takes the right column; the player goes back to edit or starts
- * over.
+ * over. The draft saves on this device with its own key (spec PL1 §8),
+ * and a word typed and not added goes in with the check.
  */
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
 import type { PracticeScore } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
 import { CanvasPanel } from "../intake/canvas-panel";
+import {
+  clearPracticeDraft,
+  hasContent,
+  readPracticeDraft,
+  writePracticeDraft,
+} from "../intake/drafts";
 import { GroupControls } from "../intake/groups-card";
 import { ImpressionsCard } from "../intake/impressions-card";
+import { sendBlock, sendBlockHint } from "../intake/send-gate";
 import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
   addStroke,
@@ -69,25 +77,39 @@ export function PracticeScreen(): React.JSX.Element {
       </div>
     );
   }
-  return <PracticeWorkspace days={days.data.days} />;
+  return (
+    <PracticeWorkspace
+      days={days.data.days}
+      minStrokes={days.data.min_strokes}
+    />
+  );
 }
 
 function PracticeWorkspace(props: {
   days: ReadonlyArray<{ day: string; trial_code: string }>;
+  minStrokes: number;
 }): React.JSX.Element {
   const api = useApi();
-  const [day, setDay] = useState(() => props.days[0]?.day ?? "");
+  const [restored] = useState(() => readPracticeDraft());
+  const [day, setDay] = useState(() =>
+    restored !== null && props.days.some((row) => row.day === restored.day)
+      ? restored.day
+      : (props.days[0]?.day ?? ""),
+  );
   const [history, setHistory] = useState<DocHistory>(() =>
-    historyOf(EMPTY_DOC),
+    historyOf(restored?.doc ?? EMPTY_DOC),
   );
   const [selection, setSelection] = useState<ReadonlySet<number>>(
     () => new Set<number>(),
   );
   const [mode, setMode] = useState<"draw" | "select">("draw");
   const [colorIndex, setColorIndex] = useState(0);
-  const [impressions, setImpressions] = useState<string[]>([]);
+  const [impressions, setImpressions] = useState<string[]>(
+    () => restored?.impressions ?? [],
+  );
+  const [typedWord, setTypedWord] = useState(() => restored?.typedWord ?? "");
   const [result, setResult] = useState<PracticeScore | null>(null);
-  const nextStrokeId = useRef(1);
+  const nextStrokeId = useRef(restored?.nextStrokeId ?? 1);
 
   const doc = current(history);
   const commit = (next: SketchDoc) => setHistory((h) => pushDoc(h, next));
@@ -96,7 +118,8 @@ function PracticeWorkspace(props: {
   // a task late, and two score POSTs would race.
   const scoringRef = useRef(false);
   const score = useMutation({
-    mutationFn: () => api.scorePractice(day, serialize(doc, impressions, "")),
+    mutationFn: (words: string[]) =>
+      api.scorePractice(day, serialize(doc, words, "")),
     onSuccess: (answer) => setResult(answer),
     onSettled: () => {
       scoringRef.current = false;
@@ -135,8 +158,32 @@ function PracticeWorkspace(props: {
     setMode("draw");
   };
 
-  // The mirror of the server's no-scoreable-atom refusal.
-  const scoreable = doc.strokes.length > 0 || impressions.length > 0;
+  // Saved as it changes: practice stores nothing on the server, and a
+  // draft on this device is the only copy.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const draft = {
+        day,
+        doc,
+        impressions,
+        typedWord,
+        nextStrokeId: nextStrokeId.current,
+      };
+      if (hasContent(draft)) {
+        writePracticeDraft(draft);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [day, doc, impressions, typedWord]);
+
+  // The mirror of the server's refusals: no-scoreable-atom, min-strokes.
+  const typed = typedWord.trim();
+  const block = sendBlock(
+    doc.strokes.length,
+    impressions.length > 0 || typed !== "",
+    props.minStrokes,
+  );
+  const scoreable = block === null;
 
   const pickDay = (next: string) => {
     setDay(next);
@@ -154,9 +201,11 @@ function PracticeWorkspace(props: {
   const startOver = () => {
     setHistory(historyOf(EMPTY_DOC));
     setImpressions([]);
+    setTypedWord("");
     setSelection(new Set());
     setMode("draw");
     setResult(null);
+    clearPracticeDraft();
   };
 
   return (
@@ -235,6 +284,8 @@ function PracticeWorkspace(props: {
             <>
               <ImpressionsCard
                 impressions={impressions}
+                input={typedWord}
+                onInputChange={setTypedWord}
                 onAdd={(text) => setImpressions((rows) => [...rows, text])}
                 onRemoveAt={(index) =>
                   setImpressions((rows) => rows.filter((_, at) => at !== index))
@@ -270,15 +321,21 @@ function PracticeWorkspace(props: {
                       return;
                     }
                     scoringRef.current = true;
-                    score.mutate();
+                    // A typed word counts: the player can see it on the
+                    // screen, and nothing here is final.
+                    const words =
+                      typed === "" ? impressions : [...impressions, typed];
+                    setImpressions(words);
+                    setTypedWord("");
+                    score.mutate(words);
                   }}
                 >
                   {score.isPending ? "Checking…" : "Check my practice"}
                 </button>
                 <p className="hint">
                   {scoreable
-                    ? "See the photo and how close you came. You can try as often as you like."
-                    : "Draw something or add a word first."}
+                    ? "See the photo and how close you came. You can try many times, up to an hourly limit. Your draft is saved on this device."
+                    : sendBlockHint(block, props.minStrokes)}
                 </p>
                 {score.isError ? (
                   <div className="notice notice-bad" role="alert">

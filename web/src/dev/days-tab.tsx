@@ -19,6 +19,7 @@ import {
   ErrorNote,
   messageOf,
   refusedRead,
+  SHOWS_TARGET,
   StatusBadge,
   WorkingNote,
 } from "./controls";
@@ -539,13 +540,13 @@ export function DaysTab(props: {
           <SubmissionView stored={stored} />
           <div className="dev-row dev-wrap">
             {rankings === null && status === "open" ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => void loadPreview()}
-              >
-                Score and rank the submission
-              </button>
+              <ConfirmAction
+                label="Score and rank the submission"
+                question={SHOWS_TARGET}
+                confirmLabel="Yes, show the target"
+                variant="secondary"
+                onConfirm={() => void loadPreview()}
+              />
             ) : null}
             <span className="subtle small">
               {rankNote === ""

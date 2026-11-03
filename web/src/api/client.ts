@@ -30,7 +30,8 @@ import type {
 
 export interface DayApi {
   getDay(): Promise<DayView>;
-  submit(record: WireRecord): Promise<SubmissionAck>;
+  /** The day it was composed for: a mismatch is a 409 (spec PL1 §2). */
+  submit(day: string, record: WireRecord): Promise<SubmissionAck>;
   /** No argument: the latest day. With a day: that day's reveal. */
   getReveal(day?: string): Promise<RevealView>;
   imageUrl(imageId: string): string;
@@ -68,7 +69,12 @@ export interface AccountApi {
 /** The open door (spec A1 §4): dev servers only, 404 elsewhere. */
 export interface DoorApi {
   getDoor(): Promise<DoorView>;
-  postDoor(player: string, displayName?: string): Promise<DoorAck>;
+  /** The server wants the operator token once a player exists. */
+  postDoor(
+    player: string,
+    displayName?: string,
+    operatorToken?: string,
+  ): Promise<DoorAck>;
 }
 
 /** The season facts (spec BR1 §6): no session needed. */

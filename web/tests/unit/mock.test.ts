@@ -102,10 +102,11 @@ describe("the full-mock day flow", () => {
 
   it("locks after one send with the already-submitted cause", async () => {
     const api = makeMockApi({ today: TODAY });
-    const ack = await api.submit(record);
+    const ack = await api.submit(TODAY, record);
+    expect(ack.day).toBe(TODAY);
     expect(ack.trial_id).toMatch(/^[0-9a-f]{32}$/);
     expect(ack.atom_count).toBe(1);
-    const again = api.submit(record);
+    const again = api.submit(TODAY, record);
     await expect(again).rejects.toMatchObject({
       status: 409,
       refusalCause: "already-submitted",

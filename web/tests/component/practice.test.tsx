@@ -1,11 +1,16 @@
-import { fireEvent, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "../../src/api/client";
 import { makeMockApi } from "../../src/api/mock";
 import { ApiError } from "../../src/api/types";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
+/** Two strokes: the fake server's floor is two (spec PL1 §8). */
 function drawOnCanvas(container: HTMLElement): void {
   const live = container.querySelectorAll("canvas")[1];
   if (live === undefined) {
@@ -15,6 +20,9 @@ function drawOnCanvas(container: HTMLElement): void {
     ["pointerdown", 30, 30],
     ["pointermove", 150, 150],
     ["pointerup", 150, 150],
+    ["pointerdown", 200, 30],
+    ["pointermove", 280, 30],
+    ["pointerup", 280, 30],
   ] as const) {
     const event = new MouseEvent(type, {
       bubbles: true,
@@ -165,5 +173,60 @@ describe("the Practice screen", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]?.[1].groups).toEqual([{ id: "g1", label: "tower" }]);
     expect(sent[0]?.[1].canvas_strokes[0]?.group_id).toBe("g1");
+  });
+});
+
+describe("the practice draft", () => {
+  it("comes back after the screen leaves, and Start over clears it", async () => {
+    const first = renderAt("/practice");
+    const input = await screen.findByLabelText("Add a word");
+    fireEvent.change(input, { target: { value: "kept word" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByText("kept word");
+    await waitFor(() =>
+      expect(window.localStorage.getItem("sv:practice-draft")).toContain(
+        "kept word",
+      ),
+    );
+    first.unmount();
+
+    renderAt("/practice");
+    expect(await screen.findByText("kept word")).toBeDefined();
+    fireEvent.click(screen.getByText("Check my practice"));
+    fireEvent.click(await screen.findByText("Start over"));
+    await waitFor(() => expect(screen.queryByText("kept word")).toBeNull());
+    expect(window.localStorage.getItem("sv:practice-draft")).toBeNull();
+  });
+
+  it("includes a word typed and not added", async () => {
+    const sent: string[][] = [];
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...mock,
+      scorePractice: (day, record) => {
+        sent.push(record.impressions);
+        return mock.scorePractice(day, record);
+      },
+    };
+    renderAt("/practice", api);
+    const input = await screen.findByLabelText("Add a word");
+    fireEvent.change(input, { target: { value: "typed only" } });
+    fireEvent.click(screen.getByText("Check my practice"));
+    await screen.findByText(/matched this photo better than/);
+    expect(sent).toEqual([["typed only"]]);
+  });
+
+  it("explains the practice limit", async () => {
+    const api: Api = {
+      ...makeMockApi({ today: HARNESS_TODAY }),
+      scorePractice: () => Promise.reject(new ApiError(429, "practice-limit")),
+    };
+    renderAt("/practice", api);
+    const input = await screen.findByLabelText("Add a word");
+    fireEvent.change(input, { target: { value: "cold" } });
+    fireEvent.click(screen.getByText("Check my practice"));
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /a lot of practice for one hour/,
+    );
   });
 });

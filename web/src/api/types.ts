@@ -22,6 +22,8 @@ export interface DayView {
   submitted: boolean;
   relation_vocabulary: string[];
   canvas_px: number;
+  /** The Layer 0 stroke floor: a sketch with fewer does not send. */
+  min_strokes: number;
   /** Revealed days only. */
   target_id?: string;
   secret?: string;
@@ -60,6 +62,8 @@ export interface WireRecord {
 
 export interface SubmissionAck {
   trial_id: string;
+  /** The day the send landed on (spec PL1 §2). */
+  day: string;
   atom_count: number;
 }
 
@@ -108,6 +112,7 @@ export interface PracticeDayRow {
 
 export interface PracticeDays {
   days: PracticeDayRow[];
+  min_strokes: number;
 }
 
 export interface RankingHeadRow {
@@ -370,6 +375,16 @@ export class ApiError extends Error {
 const CAUSE_COPY: Record<string, string> = {
   "already-submitted": "You've already sent today's session.",
   "day-closed": "Today's session has closed. Your results come soon.",
+  "day-moved":
+    "That day has closed, so this wasn't sent. Your sketch is still here.",
+  "day-required":
+    "This page is out of date. Reload it — your sketch is saved on this device.",
+  "too-much-drawing":
+    "That's more drawing than one send can hold. Clear some strokes and try again.",
+  "body-too-large":
+    "That's more than one send can hold. Clear some strokes and try again.",
+  "practice-limit":
+    "That's a lot of practice for one hour. Take a break and try again later.",
   "bad-shape": "Something went wrong sending your sketch. Try again.",
   "bad-code":
     "That code didn't work. A code works once and expires after 10 minutes.",

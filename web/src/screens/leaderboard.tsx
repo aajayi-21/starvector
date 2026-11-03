@@ -160,7 +160,7 @@ function DailyBoard(props: {
               <tr>
                 <th>Player</th>
                 <th className="num">Result</th>
-                <th className="num">Photo's rank</th>
+                <th className="num">Hidden photo's place</th>
                 <th className="num">Streak</th>
               </tr>
             </thead>
@@ -417,10 +417,10 @@ function Legend(): React.JSX.Element {
         </Swatch>
       </div>
       <p className="hint">
-        The line at 1.00 is chance. The shaded band is where players with no
-        skill land. It narrows to the right because more results pin a number
-        down — so a high dot on the left means less than a high dot on the
-        right.
+        The line at 1.00 is chance, the same thing as averaging 50%. Dots show
+        the plain skill number. The shaded band is where players with no skill
+        land. It narrows to the right because more results pin a number down —
+        so a high dot on the left means less than a high dot on the right.
       </p>
     </div>
   );
@@ -468,8 +468,9 @@ function OwnEvidence(props: { row: SkillBoardRow }): React.JSX.Element {
       <h2 id="evidence-heading">How unusual your results are</h2>
       <p>{evidenceSentence(row.anytime_significance)}</p>
       <p className="hint">
-        This holds however often you check and whenever you stop. Evidence
-        score: {evidenceE(row)} (1 means no evidence at all).
+        This holds however often you check and whenever you stop. Put another
+        way: a fair bet against pure luck would have turned 1 point into{" "}
+        {evidenceE(row)} points.
       </p>
     </section>
   );
@@ -505,7 +506,7 @@ function NotYetRanked(props: {
       </p>
       <p className="hint">
         Your dot is on the chart already. Until {floor} results, the range
-        around it is too wide for a rank to mean much.
+        around it is too wide for a place on the board to mean much.
       </p>
     </section>
   );
@@ -522,10 +523,10 @@ function RankedTable(props: {
         <table className="table" data-testid="ranked-table">
           <thead>
             <tr>
-              <th className="num">Rank</th>
+              <th className="num">Place</th>
               <th>Player</th>
-              <th className="num">Skill</th>
-              <th className="num">Likely rank</th>
+              <th className="num">Steadied skill</th>
+              <th className="num">Likely range</th>
               <th className="num">Results</th>
             </tr>
           </thead>
@@ -546,6 +547,12 @@ function RankedTable(props: {
           </tbody>
         </table>
       </div>
+      <p className="hint">
+        Place is an estimate, so it can be a fraction, and the likely range is
+        where a player's true place probably falls. Steadied skill stays near
+        the middle until enough results back it, so it can differ from the plain
+        number on your results page.
+      </p>
       {slice.total > slice.shown.length ? (
         <p className="hint">
           Showing {slice.shown.length} of {slice.total.toLocaleString()} ranked
@@ -641,8 +648,8 @@ function Population(props: {
                 <tr>
                   <td>Variation test</td>
                   <td className="num">
-                    {variation.q_statistic.toFixed(1)} on {variation.dof}{" "}
-                    degrees of freedom, p ={" "}
+                    Score {variation.q_statistic.toFixed(1)}, and luck alone
+                    gives about {variation.dof}. Chance of this by luck:{" "}
                     {variation.q_significance.toFixed(4)}
                   </td>
                 </tr>

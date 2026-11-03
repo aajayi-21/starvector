@@ -38,7 +38,7 @@ describe("the shell", () => {
     // Each pattern names something only that screen renders.
     const paths: Array<[string, RegExp]> = [
       ["/", /Today's photo is hidden behind this code/],
-      ["/today", /Send today's session/],
+      ["/today", /Review and send/],
       ["/practice", /Replay a past day's photo/],
       ["/history", /Each day you've played/],
       ["/leaderboard", /The latest day's results/],
