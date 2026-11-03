@@ -18,7 +18,9 @@ CONFIG_VERSION = 1
 SLOT_NAMES: tuple[str, ...] = ("text_coverage", "classifier", "object_size", "encoder")
 HASH_SLOT_NAMES: tuple[str, ...] = ("corpus",) + SLOT_NAMES
 CORPUS_PROVIDERS: tuple[str, ...] = ("huggingface", "fake")
-MODEL_SLOT_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
+MODEL_SLOT_PROVIDERS: tuple[str, ...] = ("openrouter", "screener", "fake")
+SCREENER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
+PERSON_REJECT_ROLES: tuple[str, ...] = ("main_subject",)
 # The U2 change (owner ruling 2026-08-12, spec section 8a): the
 # OpenRouter embeddings endpoint serves the encoder slot. Spec VE1 adds
 # the Voyage multimodal endpoint.
@@ -140,12 +142,32 @@ class SlotSection:
 
 
 @dataclass(frozen=True, slots=True)
+class ScreenerSection:
+    """The one-POST screener (spec PP1 B7): one slot for three screens."""
+
+    provider: str
+    model: str | None
+    instruction_template: str | None
+    input_canvas_px: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class PersonSection:
+    """The person rule of stage s05 (owner ruling 2026-11-03)."""
+
+    reject_role: str
+
+
+@dataclass(frozen=True, slots=True)
 class ProvidersSection:
     openrouter: OpenRouterSection
     text_coverage: SlotSection
     classifier: SlotSection
     object_size: SlotSection
     encoder: SlotSection
+    # Omitted from a config with three screen POSTs, thus each config
+    # released before the field keeps its document and hash.
+    screener: ScreenerSection | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +198,7 @@ class CurationConfig:
     providers: ProvidersSection
     seeds: SeedsSection
     release: ReleaseSection
+    person: PersonSection | None = None
 
 
 class _Node:
@@ -392,7 +415,47 @@ def _parse_providers(node: _Node) -> ProvidersSection:
         classifier=_parse_slot(node.child("classifier"), "classifier"),
         object_size=_parse_slot(node.child("object_size"), "object_size"),
         encoder=_parse_slot(node.child("encoder"), "encoder"),
+        screener=_parse_screener(node),
     )
+    node.finish()
+    screens = (section.text_coverage, section.classifier, section.object_size)
+    on_screener = [slot.provider == "screener" for slot in screens]
+    if section.screener is None and any(on_screener):
+        raise ConfigError(
+            "providers.screener: required for a slot with the screener provider")
+    if section.screener is not None and not all(on_screener):
+        raise ConfigError(
+            "providers.screener: the three screen slots must name the "
+            "screener provider")
+    return section
+
+
+def _parse_screener(providers: _Node) -> ScreenerSection | None:
+    """The optional section. Missing reads as a config with no screener."""
+    if "screener" not in providers._raw:
+        return None
+    node = providers.child("screener")
+    section = ScreenerSection(
+        provider=node.choice("provider", SCREENER_PROVIDERS),
+        model=node.opt_str("model"),
+        instruction_template=node.opt_str("instruction_template"),
+        input_canvas_px=node.absent_or_int("input_canvas_px", minimum=1),
+    )
+    node.finish()
+    if section.provider == "openrouter" and section.instruction_template is None:
+        raise ConfigError(
+            "providers.screener.instruction_template: required for the "
+            "openrouter provider")
+    return section
+
+
+def _parse_person(root: _Node) -> PersonSection | None:
+    """The optional section. Missing reads as a config with no person rule."""
+    if "person" not in root._raw:
+        return None
+    node = root.child("person")
+    section = PersonSection(
+        reject_role=node.choice("reject_role", PERSON_REJECT_ROLES))
     node.finish()
     return section
 
@@ -486,6 +549,7 @@ def parse_curation_config(raw: object, source: str = "config") -> CurationConfig
         diversity=diversity,
         review=review,
         providers=_parse_providers(root.child("providers")),
+        person=_parse_person(root),
         seeds=seeds,
         release=release,
     )
@@ -517,8 +581,31 @@ def _slot_to_json(slot: SlotSection) -> dict[str, JsonValue]:
     return document
 
 
+def _screener_to_json(section: ScreenerSection) -> dict[str, JsonValue]:
+    return {
+        "provider": section.provider,
+        "model": section.model,
+        "instruction_template": section.instruction_template,
+        "input_canvas_px": section.input_canvas_px,
+    }
+
+
 def config_to_json_value(config: CurationConfig) -> dict[str, JsonValue]:
-    """The JSON document for a config. The inverse of parsing."""
+    """The JSON document for a config. The inverse of parsing.
+
+    The screener and person sections are omitted when missing, thus a
+    config released before them keeps its document and its hash.
+    """
+    document = _base_document(config)
+    if config.providers.screener is not None:
+        document["providers"]["screener"] = _screener_to_json(  # type: ignore[index]
+            config.providers.screener)
+    if config.person is not None:
+        document["person"] = {"reject_role": config.person.reject_role}
+    return document
+
+
+def _base_document(config: CurationConfig) -> dict[str, JsonValue]:
     corpus = config.corpus
     providers = config.providers
     return {

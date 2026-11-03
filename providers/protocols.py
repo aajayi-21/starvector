@@ -122,6 +122,17 @@ class SalientObjectEstimator(Protocol):
         ...
 
 
+class PersonRoleEstimator(Protocol):
+    """s05 person slot. Marks an image of one person or one face."""
+
+    @property
+    def config_hash(self) -> str: ...
+
+    def person_is_main_subject(self, images: Sequence[bytes]) -> FloatArray:
+        """The output is float32 (B,), 1.0 for the main_subject role."""
+        ...
+
+
 class Box(NamedTuple):
     """One element box, each value normalized to [0, 1]."""
 

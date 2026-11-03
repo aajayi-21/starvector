@@ -50,6 +50,10 @@ pool lineage. That is correct behavior, not an accident — see
   label plus one confidence — the response schema pins the label to the
   requested set, thus an out-of-set answer cannot occur.
   `classify.label_template` must contain `{label}` one time.
+- `providers.screener` — optional, spec PP1 B7. One POST answers the
+  three screens and the person role. The three screen slots then name
+  the provider `"screener"`. With it, `person.reject_role` is optional,
+  and `"main_subject"` adds the `person-focus` cause at s05.
 - `providers.encoder` — `"openrouter"`, `"voyage"` (spec VE1), or
   `"fake"` (the U2 change of 2026-08-12). An openrouter encoder is an embeddings slot: `model` and
   `dimension` are required, `instruction_template` stays `null`, and the

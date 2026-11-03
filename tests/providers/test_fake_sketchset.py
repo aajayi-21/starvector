@@ -89,7 +89,7 @@ def test_the_description_names_the_photograph_elements_and_one_more() -> None:
     pair = pairs[1]
     fragments = split_pasted_text(pair.text)
     elements = normalize_elements(
-        FakeVlmDescriber().describe_images([pair.photo_bytes])[0])
+        FakeVlmDescriber().describe_images([pair.photo_bytes])[0], "d7-v1")
     # The frozen paste rule gives one atom for each named word group,
     # and the element strings are p02 fixed points, thus three of the
     # four atoms are accurately an element of this photograph.

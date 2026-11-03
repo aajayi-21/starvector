@@ -26,9 +26,9 @@ import numpy as np
 from core.canonical import canonical_json, sha256_hex
 from core.channels.element import (element_atoms, matched_scores,
                                    rarity_weights, shortlist_groups,
-                                   similarity_table, soft_matches,
-                                   tier1_scores)
-from core.channels.element import element_channel
+                                   soft_matches, tier1_scores)
+from core.channels.element import (element_channel, index_similarity_table,
+                                   vocabulary_pool_cache)
 from core.channels.outline import outline_pool_cache, outline_scores
 from core.fusion import fuse
 from core.intake import render_submission_strokes
@@ -74,6 +74,8 @@ def build_synthetic_index(count: int, dimension: int,
     frequency = tuple(int(max(value, 1)) for value in tally)
     image_ids = tuple(f"{number:064x}" for number in range(count))
     centered, norms = outline_pool_cache(outline_vectors, outline_space_mean)
+    vocabulary_centered, vocabulary_norms = vocabulary_pool_cache(
+        vocabulary_vectors, element_space_mean)
     return PoolIndex(
         index_id="b" * 64,
         image_ids=image_ids,
@@ -91,6 +93,8 @@ def build_synthetic_index(count: int, dimension: int,
         box_mask=np.zeros((count, ELEMENTS_FOR_EACH_IMAGE), dtype=bool),
         outline_centered=centered,
         outline_norms=norms,
+        vocabulary_centered=vocabulary_centered,
+        vocabulary_norms=vocabulary_norms,
     )
 
 
@@ -155,8 +159,7 @@ def run_bench(count: int, dimension: int, vocabulary_count: int,
     atom_vectors = np.stack(
         [submission.vectors[a.id] for a in element_atoms(submission)])
     stage_ms["similarity_table"], similarity = _timed(
-        lambda: similarity_table(atom_vectors, index.vocabulary_vectors,
-                                 index.element_space_mean), repeat)
+        lambda: index_similarity_table(atom_vectors, index), repeat)
     rarity = rarity_weights(similarity, index.pool_frequency, count)
 
     def tier1_step():
@@ -206,7 +209,8 @@ def run_bench(count: int, dimension: int, vocabulary_count: int,
 
     resident = sum(int(array.nbytes) for array in (
         index.outline_vectors, index.outline_centered, index.outline_norms,
-        index.vocabulary_vectors, index.incidence))
+        index.vocabulary_vectors, index.vocabulary_centered,
+        index.vocabulary_norms, index.incidence))
     cpu = platform.processor() or ""
     try:
         for line in Path("/proc/cpuinfo").read_text().splitlines():

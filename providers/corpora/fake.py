@@ -131,6 +131,8 @@ def _build_plan(content_class: str, index: int, spec_position: int) -> _RecordPl
             chunks["fake_object_fraction"] = "0.15"
         case "no_object":
             chunks["fake_object_fraction"] = "0.0"
+        case "person_main":
+            chunks["fake_person_main"] = "1"
         case "neardup_pair":
             # The two members of a pair have different pixel areas, and
             # thus the s06 keep rule is observable.

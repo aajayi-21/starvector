@@ -18,13 +18,13 @@ def _clock() -> str:
 def test_the_fake_rule_gives_p02_fixed_points() -> None:
     from pool.preparation.stages.normalize import normalize_element
 
-    table, kept = build_table(VOCABULARY, FakeGeneralizer())
+    table, kept = build_table(VOCABULARY, FakeGeneralizer(), "d7-v1")
     assert table == {"brass sextant": "general sextant",
                      "sea": "general sea",
                      "tall tower": "general tower"}
     assert kept == 0
     for phrase in table.values():
-        assert normalize_element(phrase) == phrase
+        assert normalize_element(phrase, "d7-v1") == phrase
 
 
 def test_an_emptying_normalization_keeps_the_entry() -> None:
@@ -33,7 +33,7 @@ def test_an_emptying_normalization_keeps_the_entry() -> None:
             # White space alone normalizes to the empty string.
             return ["   " for _ in texts]
 
-    table, kept = build_table(("sea", "sky"), _Empties())
+    table, kept = build_table(("sea", "sky"), _Empties(), "d7-v1")
     assert table == {"sea": "sea", "sky": "sky"}
     assert kept == 2
 

@@ -11,6 +11,8 @@ import math
 import numpy as np
 import pytest
 
+from core.channels.element import (index_similarity_table,
+                                   vocabulary_pool_cache)
 from core.channels.element import (element_atoms, element_channel,
                                    image_elements, match_report,
                                    matched_score, rarity_weights,
@@ -374,3 +376,55 @@ def test_the_match_report_of_a_sketch_submission_is_empty() -> None:
         atoms=(drawing,),
         vectors={"a1": np.zeros(DIMENSION, dtype=np.float32)})
     assert match_report(submission, _index(), 0, CONFIG) == ()
+
+
+def test_the_vocabulary_cache_gives_equal_bytes() -> None:
+    """The spec PP1 B3 gate: the resident path must not move a score."""
+    rng = np.random.default_rng(7)
+    vocabulary = rng.normal(size=(40, 32)).astype(np.float32)
+    vocabulary /= np.linalg.norm(vocabulary, axis=1, keepdims=True)
+    mean = (vocabulary.mean(axis=0) * 0.5).astype(np.float32)
+    atoms = rng.normal(size=(5, 32)).astype(np.float32)
+    atoms /= np.linalg.norm(atoms, axis=1, keepdims=True)
+    centered, norms = vocabulary_pool_cache(vocabulary, mean)
+
+    class Index:
+        vocabulary_vectors = vocabulary
+        element_space_mean = mean
+        vocabulary_centered = centered
+        vocabulary_norms = norms
+
+    class Plain(Index):
+        vocabulary_centered = None
+        vocabulary_norms = None
+
+    direct = similarity_table(atoms, vocabulary, mean)
+    assert index_similarity_table(atoms, Index).tobytes() == direct.tobytes()
+    assert index_similarity_table(atoms, Plain).tobytes() == direct.tobytes()
+
+
+def test_the_cached_path_keeps_the_channel_checks() -> None:
+    vocabulary = np.eye(4, dtype=np.float32)
+    atoms = np.ones((1, 4), dtype=np.float32) * 0.5
+
+    def index_with(rows: np.ndarray, mean: np.ndarray):
+        centered, norms = vocabulary_pool_cache(rows, mean)
+
+        class Index:
+            element_space_mean = mean
+            vocabulary_vectors = rows
+            vocabulary_centered = centered
+            vocabulary_norms = norms
+
+        return Index
+
+    zero_mean = np.zeros(4, dtype=np.float32)
+    broken = vocabulary.copy()
+    broken[1, 1] = np.nan
+    with pytest.raises(ValueError, match="non-finite"):
+        index_similarity_table(atoms, index_with(broken, zero_mean))
+    with pytest.raises(ValueError, match="zero vector norm"):
+        index_similarity_table(atoms, index_with(vocabulary, vocabulary[0]))
+    with pytest.raises(ValueError, match="atom_vectors"):
+        index_similarity_table(np.ones((1, 3), dtype=np.float32),
+                               index_with(vocabulary, zero_mean))

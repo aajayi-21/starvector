@@ -36,7 +36,11 @@ does not touch a slot reuses that slot's responses at zero cost (U1).
   pins these counts for each field, thus element lists keep a roughly
   constant length by construction.
 - `elements.normalize_rule` — the identifier of the D7 normalization
-  rule table. In the config, thus a rule change moves the hash.
+  rule table. In the config, thus a rule change moves the hash. `d7-v1`
+  is for stored lineages and `d8-v1` is for new ones (spec PP1 §5b).
+- `providers.element_boxes.provider` — `"deferred"` answers "not
+  located" with no POST (spec PP1 B8), and a scoring config with a
+  placement weight is then refused.
 - `linedraw` — the D5 canonical render parameters. These are shared
   constants with the future Layer 0 sketch render: pool drawings and
   player sketches must render identically, or the style difference the

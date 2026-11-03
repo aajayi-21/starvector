@@ -19,6 +19,7 @@ from typing import NamedTuple
 import numpy as np
 
 from core.canonical import sha256_hex
+from core.channels.element import vocabulary_pool_cache
 from core.channels.outline import outline_pool_cache
 from core.types import (ChannelName, ElementConfig, IntakeGates, OutlineConfig,
                         PlacementConfig, PoolIndex, PoolScores, RenderParams,
@@ -366,6 +367,8 @@ def build_pool_index(index_id: str, image_ids: tuple[str, ...],
     # and the V1 union - holds the centered outline matrix.
     outline_centered, outline_norms = outline_pool_cache(
         outline_vectors, outline_space_mean)
+    vocabulary_centered, vocabulary_norms = vocabulary_pool_cache(
+        elements.vocabulary_vectors, elements.element_space_mean)
     return PoolIndex(
         index_id=index_id,
         image_ids=image_ids,
@@ -373,6 +376,8 @@ def build_pool_index(index_id: str, image_ids: tuple[str, ...],
         outline_space_mean=outline_space_mean,
         outline_centered=outline_centered,
         outline_norms=outline_norms,
+        vocabulary_centered=vocabulary_centered,
+        vocabulary_norms=vocabulary_norms,
         group_ids=tuple(row.group_id for row in group_rows),
         pool_image_count=elements.pool_image_count,
         vocabulary=elements.vocabulary,
