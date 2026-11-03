@@ -17,6 +17,7 @@ from core.types import (IntakeGates, PlacementConfig, PoolIndex, RenderParams,
 from pipeline.config import SUBMISSION_MODES, ScoringConfig
 from pipeline.score import Encoders, encode_submissions
 from pool.artifacts import write_json_pretty
+from pool.preparation.config import PreparationConfig
 from providers.protocols import (SketchEncoder, SketchPair, SketchPairSource,
                                  TextEncoder)
 
@@ -64,6 +65,21 @@ def validation_dir(data_root: Path, harness: str, index_id: str,
     return data_root / "validation" / harness / index_id[:8] / harness_hash[:8]
 
 
+def _voyage_slot_config(slot_name: str, slot):
+    """The Voyage parameters of one scoring slot (spec VE1).
+
+    The config parser requires the model and the dimension.
+    """
+    from providers.voyage.embeddings import VoyageSlotConfig
+
+    return VoyageSlotConfig(
+        slot=slot_name,
+        model=slot.model or "",
+        dimension=slot.dimension or 0,
+        instruction=slot.instruction_template,
+    )
+
+
 def sketch_encoder_hash(config: ScoringConfig) -> str:
     """The sketch_encoder slot hash, computed without wiring.
 
@@ -72,39 +88,56 @@ def sketch_encoder_hash(config: ScoringConfig) -> str:
     the scoring lineage by construction.
     """
     slot = config.providers.sketch_encoder
-    if slot.provider == "openrouter":
-        from providers.openrouter.embeddings import (EmbeddingSlotConfig,
-                                                     embedding_config_hash)
+    match slot.provider:
+        case "openrouter":
+            from providers.openrouter.embeddings import (EmbeddingSlotConfig,
+                                                         embedding_config_hash)
 
-        return embedding_config_hash(EmbeddingSlotConfig(
-            slot="sketch_encoder",
-            model=slot.model or config.providers.openrouter.default_model,
-            dimension=slot.dimension or 0,
-            encoding_format="float",
-            instruction=slot.instruction_template,
-        ))
-    from providers.fake.sketch_encoder import FakeSketchEncoder
+            return embedding_config_hash(EmbeddingSlotConfig(
+                slot="sketch_encoder",
+                model=slot.model or config.providers.openrouter.default_model,
+                dimension=slot.dimension or 0,
+                encoding_format="float",
+                instruction=slot.instruction_template,
+            ))
+        case "voyage":
+            from providers.voyage.embeddings import voyage_config_hash
 
-    return FakeSketchEncoder(dimension=slot.dimension or 64,
-                             instruction=slot.instruction_template).config_hash
+            return voyage_config_hash(_voyage_slot_config("sketch_encoder", slot))
+        case "fake":
+            from providers.fake.sketch_encoder import FakeSketchEncoder
+
+            return FakeSketchEncoder(
+                dimension=slot.dimension or 64,
+                instruction=slot.instruction_template).config_hash
+        case unknown:
+            raise ValueError(f"unknown sketch_encoder provider: {unknown}")
 
 
 def text_encoder_hash(config: ScoringConfig) -> str:
     """The text_encoder slot hash, computed without wiring."""
     slot = config.providers.text_encoder
-    if slot.provider == "openrouter":
-        from providers.openrouter.embeddings import (EmbeddingSlotConfig,
-                                                     embedding_config_hash)
+    match slot.provider:
+        case "openrouter":
+            from providers.openrouter.embeddings import (EmbeddingSlotConfig,
+                                                         embedding_config_hash)
 
-        return embedding_config_hash(EmbeddingSlotConfig(
-            slot="text_encoder",
-            model=slot.model or config.providers.openrouter.default_model,
-            dimension=slot.dimension or 0,
-            encoding_format="float",
-        ))
-    from providers.fake.text_encoder import FakeTextEncoder
+            return embedding_config_hash(EmbeddingSlotConfig(
+                slot="text_encoder",
+                model=slot.model or config.providers.openrouter.default_model,
+                dimension=slot.dimension or 0,
+                encoding_format="float",
+            ))
+        case "voyage":
+            from providers.voyage.embeddings import voyage_config_hash
 
-    return FakeTextEncoder(dimension=slot.dimension or 64).config_hash
+            return voyage_config_hash(_voyage_slot_config("text_encoder", slot))
+        case "fake":
+            from providers.fake.text_encoder import FakeTextEncoder
+
+            return FakeTextEncoder(dimension=slot.dimension or 64).config_hash
+        case unknown:
+            raise ValueError(f"unknown text_encoder provider: {unknown}")
 
 
 def sketch_pairs_hash(config: ScoringConfig) -> str:
@@ -159,37 +192,48 @@ def wire_sketch_encoder(config: ScoringConfig,
     import os
 
     slot = config.providers.sketch_encoder
-    if slot.provider == "openrouter":
-        from providers.openrouter.client import (OpenRouterClient,
-                                                 OpenRouterClientConfig)
-        from providers.openrouter.embeddings import (EmbeddingSlotConfig,
-                                                     OpenRouterImageEncoder)
+    match slot.provider:
+        case "openrouter":
+            from providers.openrouter.client import (OpenRouterClient,
+                                                     OpenRouterClientConfig)
+            from providers.openrouter.embeddings import (EmbeddingSlotConfig,
+                                                         OpenRouterImageEncoder)
 
-        section = config.providers.openrouter
-        client = OpenRouterClient(
-            OpenRouterClientConfig(
-                max_concurrency=section.max_concurrency,
-                requests_per_second=section.requests_per_second,
-                timeout_seconds=section.timeout_seconds,
-                retry_limit=section.retry_limit,
-            ),
-            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-        )
-        return OpenRouterImageEncoder(
-            EmbeddingSlotConfig(
-                slot="sketch_encoder",
-                model=slot.model or section.default_model,
-                dimension=slot.dimension or 0,
-                encoding_format="float",
-                instruction=slot.instruction_template,
-            ),
-            client,
-            data_root / "cache" / "openrouter",
-        )
-    from providers.fake.sketch_encoder import FakeSketchEncoder
+            section = config.providers.openrouter
+            client = OpenRouterClient(
+                OpenRouterClientConfig(
+                    max_concurrency=section.max_concurrency,
+                    requests_per_second=section.requests_per_second,
+                    timeout_seconds=section.timeout_seconds,
+                    retry_limit=section.retry_limit,
+                ),
+                api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+            )
+            return OpenRouterImageEncoder(
+                EmbeddingSlotConfig(
+                    slot="sketch_encoder",
+                    model=slot.model or section.default_model,
+                    dimension=slot.dimension or 0,
+                    encoding_format="float",
+                    instruction=slot.instruction_template,
+                ),
+                client,
+                data_root / "cache" / "openrouter",
+            )
+        case "voyage":
+            from providers.voyage import wiring
 
-    return FakeSketchEncoder(dimension=slot.dimension or 64,
-                             instruction=slot.instruction_template)
+            return wiring.image_encoder(
+                _voyage_slot_config("sketch_encoder", slot), data_root)
+        case "fake":
+            from providers.fake.sketch_encoder import FakeSketchEncoder
+
+            return FakeSketchEncoder(dimension=slot.dimension or 64,
+                                     instruction=slot.instruction_template)
+        case unknown:
+            # No fall-through to a fake: its hash-derived vectors look
+            # ordinary (spec VE1 section 4).
+            raise ValueError(f"unknown sketch_encoder provider: {unknown}")
 
 
 def wire_text_encoder(config: ScoringConfig, data_root: Path) -> TextEncoder:
@@ -197,35 +241,44 @@ def wire_text_encoder(config: ScoringConfig, data_root: Path) -> TextEncoder:
     import os
 
     slot = config.providers.text_encoder
-    if slot.provider == "openrouter":
-        from providers.openrouter.client import (OpenRouterClient,
-                                                 OpenRouterClientConfig)
-        from providers.openrouter.embeddings import (EmbeddingSlotConfig,
-                                                     OpenRouterTextEncoder)
+    match slot.provider:
+        case "openrouter":
+            from providers.openrouter.client import (OpenRouterClient,
+                                                     OpenRouterClientConfig)
+            from providers.openrouter.embeddings import (EmbeddingSlotConfig,
+                                                         OpenRouterTextEncoder)
 
-        section = config.providers.openrouter
-        client = OpenRouterClient(
-            OpenRouterClientConfig(
-                max_concurrency=section.max_concurrency,
-                requests_per_second=section.requests_per_second,
-                timeout_seconds=section.timeout_seconds,
-                retry_limit=section.retry_limit,
-            ),
-            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-        )
-        return OpenRouterTextEncoder(
-            EmbeddingSlotConfig(
-                slot="text_encoder",
-                model=slot.model or section.default_model,
-                dimension=slot.dimension or 0,
-                encoding_format="float",
-            ),
-            client,
-            data_root / "cache" / "openrouter",
-        )
-    from providers.fake.text_encoder import FakeTextEncoder
+            section = config.providers.openrouter
+            client = OpenRouterClient(
+                OpenRouterClientConfig(
+                    max_concurrency=section.max_concurrency,
+                    requests_per_second=section.requests_per_second,
+                    timeout_seconds=section.timeout_seconds,
+                    retry_limit=section.retry_limit,
+                ),
+                api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+            )
+            return OpenRouterTextEncoder(
+                EmbeddingSlotConfig(
+                    slot="text_encoder",
+                    model=slot.model or section.default_model,
+                    dimension=slot.dimension or 0,
+                    encoding_format="float",
+                ),
+                client,
+                data_root / "cache" / "openrouter",
+            )
+        case "voyage":
+            from providers.voyage import wiring
 
-    return FakeTextEncoder(dimension=slot.dimension or 64)
+            return wiring.text_encoder(
+                _voyage_slot_config("text_encoder", slot), data_root)
+        case "fake":
+            from providers.fake.text_encoder import FakeTextEncoder
+
+            return FakeTextEncoder(dimension=slot.dimension or 64)
+        case unknown:
+            raise ValueError(f"unknown text_encoder provider: {unknown}")
 
 
 def wire_encoders(config: ScoringConfig, data_root: Path,
@@ -282,6 +335,36 @@ def check_element_space(record_provider_hashes: Mapping[str, str],
             f"{slot_hashes['text_encoder'][:8]} is not the preparation's "
             f"{str(prepared)[:8]} — the atom vectors and the element "
             "vectors would not share a space (R7)")
+
+
+def check_outline_space(config: ScoringConfig,
+                        prep_config: PreparationConfig) -> None:
+    """R7: the sketch encoder must fill the p06 vector space.
+
+    The outline channel compares the two, thus a provider, a model, or
+    a dimension that does not agree makes each cosine meaningless, and
+    the numbers look ordinary. A fake on one side has no model to agree
+    with, and the dimension check applies alone.
+    """
+    sketch = config.providers.sketch_encoder
+    image = prep_config.providers.image_encoder
+    if (sketch.dimension is not None and image.dimension is not None
+            and sketch.dimension != image.dimension):
+        raise ValueError(
+            f"R7: sketch_encoder dimension {sketch.dimension} does not "
+            f"agree with the p06 image_encoder dimension {image.dimension}")
+    if "fake" in (sketch.provider, image.provider):
+        return
+    if sketch.provider != image.provider:
+        raise ValueError(
+            f"R7: sketch_encoder provider {sketch.provider!r} does not "
+            f"agree with the p06 image_encoder provider {image.provider!r}")
+    sketch_model = sketch.model or config.providers.openrouter.default_model
+    image_model = image.model or prep_config.providers.openrouter.default_model
+    if sketch_model != image_model:
+        raise ValueError(
+            f"R7: sketch_encoder model {sketch_model!r} does not "
+            f"agree with the p06 image_encoder model {image_model!r}")
 
 
 def pair_keys_of(source: SketchPairSource) -> list[str]:

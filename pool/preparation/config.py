@@ -22,7 +22,7 @@ SLOT_NAMES: tuple[str, ...] = (
     "element_boxes",
 )
 DESCRIBER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
-ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "local", "fake")
+ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "voyage", "local", "fake")
 LINE_DRAWER_PROVIDERS: tuple[str, ...] = ("local", "fake")
 BOXES_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
 RESPONSE_FORMAT_MODES: tuple[str, ...] = ("json_schema", "json_object")
@@ -331,11 +331,11 @@ def _parse_slot(node: _Node, slot: str) -> SlotSection:
                 f"{slot} slot implements no instruction"
             )
     if slot in ("text_encoder", "image_encoder"):
-        if section.provider in ("openrouter", "fake") and section.dimension is None:
+        if section.provider in ("openrouter", "voyage", "fake") and section.dimension is None:
             raise ConfigError(
                 f"{path}.dimension: required for the {section.provider} provider"
             )
-        if section.provider in ("openrouter", "local") and section.model is None:
+        if section.provider in ("openrouter", "voyage", "local") and section.model is None:
             raise ConfigError(
                 f"{path}.model: required for the {section.provider} provider"
             )

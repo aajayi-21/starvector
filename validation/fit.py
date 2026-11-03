@@ -41,7 +41,7 @@ from validation.fitconfig import FitConfig, fit_config_hash, load_fit_config
 from validation.generalize import table_hash, vocabulary_digest
 from validation.generator import generator_config_hash, synthetic_set
 from validation.splits import selection_key, split_of
-from validation.v1 import _check_shared_space, build_union_index
+from validation.v1 import build_union_index
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,7 +263,7 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
     loaded = load_pool_index(Path(scoring.input.preparation_record),
                              data_root, dev_only=scoring.report.dev_only)
     prep_config = load_preparation_config(Path(loaded.record.config_path))
-    _check_shared_space(scoring, prep_config)
+    harness.check_outline_space(scoring, prep_config)
 
     source = providers.get("sketch_pairs") or harness.wire_sketch_pairs(
         scoring, data_root)

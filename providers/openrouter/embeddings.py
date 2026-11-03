@@ -7,16 +7,15 @@ incorrect row count, an incorrect dimension, a non-finite value, or a
 zero-norm row raises (R14).
 """
 
-import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
-import numpy as np
-
 from core.canonical import JsonValue, canonical_json, sha256_hex
 from core.types import Vectors
-from providers.openrouter.cache import load_cached_response, response_cache_path, store_response
+from providers.embedding_rows import (Row, RowRules, float_list_codec,
+                                      placed_rows, resolved_rows,
+                                      unit_norm_vectors, validated_row)
 from providers.openrouter.client import OpenRouterClient
 from providers.openrouter.errors import (OpenRouterResponseError,
                                          OpenRouterTimeoutError)
@@ -63,218 +62,35 @@ def embedding_config_hash(config: EmbeddingSlotConfig) -> str:
     return sha256_hex(canonical_json(document))
 
 
-def _validated_row(
-    embedding: object, dimension: int, key: str, model: str
-) -> list[float]:
-    """One embedding row as finite floats of the configured dimension."""
-    if not isinstance(embedding, list):
-        raise OpenRouterResponseError(
-            f"item {key} (model {model}): embedding is not an array: {embedding!r}"
-        )
-    if len(embedding) != dimension:
-        raise OpenRouterResponseError(
-            f"item {key} (model {model}): embedding has {len(embedding)} values, "
-            f"the config pins {dimension}"
-        )
-    row: list[float] = []
-    for value in embedding:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise OpenRouterResponseError(
-                f"item {key} (model {model}): embedding value is not a number: {value!r}"
-            )
-        number = float(value)
-        if not math.isfinite(number):
-            raise OpenRouterResponseError(
-                f"item {key} (model {model}): embedding value is not finite: {number!r}"
-            )
-        row.append(number)
-    return row
+def _row_rules(config: EmbeddingSlotConfig) -> RowRules:
+    """The shared row rules with the OpenRouter errors bound."""
+    return RowRules(
+        model=config.model,
+        dimension=config.dimension,
+        response_error=OpenRouterResponseError,
+        timeout_error=OpenRouterTimeoutError,
+        byte_limit=_BATCH_BYTE_LIMIT,
+    )
 
 
-def _item_byte_size(item: JsonValue) -> int:
-    """The byte count one input item adds to a POST body."""
-    if isinstance(item, str):
-        return len(item.encode("utf-8"))
-    return len(canonical_json(item).encode("utf-8"))
+def _post_items(
+    config: EmbeddingSlotConfig, client: OpenRouterClient
+) -> Callable[[Sequence[str], Sequence[JsonValue]], Sequence[Row]]:
+    """The POST step of the shared rows: one body, rows placed by index."""
+    rules = _row_rules(config)
 
+    def row_of(embedding: object, key: str) -> Row:
+        return validated_row(embedding, key, rules)
 
-def _batched_keys(
-    keys: Sequence[str], sizes: dict[str, int], batch_size: int
-) -> list[list[str]]:
-    """Split keys into POST groups by count and by accumulated bytes."""
-    batches: list[list[str]] = []
-    current: list[str] = []
-    current_bytes = 0
-    for key in keys:
-        size = sizes[key]
-        if current and (
-            len(current) >= batch_size or current_bytes + size > _BATCH_BYTE_LIMIT
-        ):
-            batches.append(current)
-            current = []
-            current_bytes = 0
-        current.append(key)
-        current_bytes += size
-    if current:
-        batches.append(current)
-    return batches
-
-
-def _placed_rows(
-    response_body: dict[str, object],
-    group: Sequence[str],
-    config: EmbeddingSlotConfig,
-) -> list[list[float]]:
-    """The validated rows of one embeddings response, placed by index.
-
-    Each "data" row has an "index" field. The index values must be
-    0 through k-1 with no repeats for a k-item group, and each row's
-    embedding must be finite floats of the configured dimension.
-    """
-    prefix = f"embeddings response for item {group[0]} (model {config.model})"
-    data = response_body.get("data")
-    if not isinstance(data, list):
-        raise OpenRouterResponseError(f'{prefix}: "data" is not an array')
-    if len(data) != len(group):
-        raise OpenRouterResponseError(
-            f"{prefix}: {len(data)} rows came back for {len(group)} inputs"
-        )
-    placed: list[list[float] | None] = [None] * len(group)
-    for row in data:
-        if not isinstance(row, dict) or "index" not in row or "embedding" not in row:
-            raise OpenRouterResponseError(
-                f'{prefix}: a data row has no "index" or no "embedding"'
-            )
-        position = row["index"]
-        if (
-            isinstance(position, bool)
-            or not isinstance(position, int)
-            or not 0 <= position < len(group)
-            or placed[position] is not None
-        ):
-            raise OpenRouterResponseError(
-                f'{prefix}: "index" values are not exactly 0 through {len(group) - 1}'
-            )
-        placed[position] = _validated_row(
-            row["embedding"], config.dimension, group[position], config.model
-        )
-    return [row for row in placed if row is not None]
-
-
-def _resolved_rows(
-    keys: Sequence[str],
-    item_at: Callable[[int], JsonValue],
-    input_kind: str,
-    config: EmbeddingSlotConfig,
-    config_hash: str,
-    client: OpenRouterClient,
-    cache_root: Path,
-    clock: Callable[[], str],
-    batch_size: int,
-    entry_extra: Mapping[str, JsonValue] | None = None,
-) -> tuple[list[list[float]], int]:
-    """Cache-first resolution of one embedding row for each input index.
-
-    A cache hit is validated again (length and finiteness). Misses are
-    deduplicated by key, batched by count and by accumulated bytes,
-    sent through client.post_embeddings, validated, and then stored
-    one entry for each item — with the entry_extra fields merged in
-    when that mapping is not None. The first output is index-aligned
-    with keys. The second output is the cache hit count across
-    deduplicated keys.
-    """
-    rows_by_key: dict[str, list[float]] = {}
-    items_by_key: dict[str, JsonValue] = {}
-    sizes: dict[str, int] = {}
-    miss_keys: list[str] = []
-    cache_hits = 0
-    for index, key in enumerate(keys):
-        if key in rows_by_key or key in items_by_key:
-            continue
-        path = response_cache_path(cache_root, config_hash, key)
-        entry = load_cached_response(path)
-        if entry is not None:
-            if "embedding" not in entry:
-                raise OpenRouterResponseError(f"{path}: cache entry has no embedding")
-            rows_by_key[key] = _validated_row(
-                entry["embedding"], config.dimension, key, config.model
-            )
-            cache_hits += 1
-            continue
-        item = item_at(index)
-        items_by_key[key] = item
-        sizes[key] = _item_byte_size(item)
-        miss_keys.append(key)
-    def post_group(group: Sequence[str]) -> None:
+    def post(group: Sequence[str], items: Sequence[JsonValue]) -> Sequence[Row]:
         body: dict[str, JsonValue] = {
             "model": config.model,
-            "input": [items_by_key[key] for key in group],
+            "input": list(items),
             "encoding_format": config.encoding_format,
         }
-        try:
-            response_body = client.post_embeddings(body)
-        except OpenRouterTimeoutError:
-            # A batch the endpoint cannot finish in the timeout
-            # splits in half and goes again, down to one item. The
-            # rows cannot change - each item embeds on its own and
-            # lands by index - and the batch shape is not part of a
-            # hash. A one-item timeout is an unrepairable failure
-            # and raises.
-            if len(group) <= 1:
-                raise
-            middle = len(group) // 2
-            post_group(group[:middle])
-            post_group(group[middle:])
-            return
-        rows = _placed_rows(response_body, group, config)
-        for key, row in zip(group, rows, strict=True):
-            entry = {
-                "key": key,
-                "config_hash": config_hash,
-                "model": config.model,
-                "input_kind": input_kind,
-                "embedding": row,
-                "created_at": clock(),
-            }
-            if entry_extra is not None:
-                entry.update(entry_extra)
-            store_response(response_cache_path(cache_root, config_hash, key), entry)
-            rows_by_key[key] = row
+        return placed_rows(client.post_embeddings(body), group, rules, row_of)
 
-    for group in _batched_keys(miss_keys, sizes, batch_size):
-        post_group(group)
-    return [rows_by_key[key] for key in keys], cache_hits
-
-
-def _unit_norm_vectors(
-    rows: Sequence[Sequence[float]],
-    keys: Sequence[str],
-    dimension: int,
-    model: str,
-) -> Vectors:
-    """Stack rows to (B, d) float64, check, unit-normalize, cast float32.
-
-    A non-finite value or a zero-norm row raises - a normalized zero
-    row is a silent fallback (R14).
-    """
-    if not rows:
-        return np.zeros((0, dimension), dtype=np.float32)
-    stacked = np.asarray(rows, dtype=np.float64)  # (B, d)
-    bad_rows = np.where(~np.isfinite(stacked).all(axis=1))[0]
-    if bad_rows.size:
-        raise OpenRouterResponseError(
-            f"item {keys[int(bad_rows[0])]} (model {model}): "
-            "embedding row is not finite"
-        )
-    norms = np.linalg.norm(stacked, axis=1)  # (B,)
-    zero_rows = np.where(norms == 0.0)[0]
-    if zero_rows.size:
-        raise OpenRouterResponseError(
-            f"item {keys[int(zero_rows[0])]} (model {model}): "
-            "embedding row has zero norm and cannot be unit-normalized"
-        )
-    unit = stacked / norms[:, np.newaxis]  # (B, d)
-    return unit.astype(np.float32)
+    return post
 
 
 class OpenRouterTextEncoder:
@@ -325,21 +141,21 @@ class OpenRouterTextEncoder:
         def item_at(index: int) -> JsonValue:
             return texts[index]
 
-        rows, hits = _resolved_rows(
+        rules = _row_rules(self._slot_config)
+        rows, hits = resolved_rows(
             keys,
             item_at,
             "text",
-            self._slot_config,
             self._config_hash,
-            self._client,
+            rules,
+            float_list_codec(rules),
+            _post_items(self._slot_config, self._client),
             self._cache_root,
             self._clock,
             self._batch_size,
         )
         self._cache_hit_count += hits
-        return _unit_norm_vectors(
-            rows, keys, self._slot_config.dimension, self._slot_config.model
-        )
+        return unit_norm_vectors(rows, keys, rules)
 
 
 class OpenRouterImageEncoder:
@@ -403,13 +219,15 @@ class OpenRouterImageEncoder:
                 ]
             }
 
-        rows, hits = _resolved_rows(
+        rules = _row_rules(self._slot_config)
+        rows, hits = resolved_rows(
             keys,
             item_at,
             "image",
-            self._slot_config,
             self._config_hash,
-            self._client,
+            rules,
+            float_list_codec(rules),
+            _post_items(self._slot_config, self._client),
             self._cache_root,
             self._clock,
             self._batch_size,
@@ -418,6 +236,4 @@ class OpenRouterImageEncoder:
             ),
         )
         self._cache_hit_count += hits
-        return _unit_norm_vectors(
-            rows, keys, self._slot_config.dimension, self._slot_config.model
-        )
+        return unit_norm_vectors(rows, keys, rules)

@@ -112,7 +112,7 @@ ones, with a recommendation for each:
 | 5, calibration | 20 shards, tag `dev-wit-003` | accept. It replaces the 5% near-duplicate allowance with a measurement. |
 | 6, diversity | unchanged, cap 15 | accept. Keep cap 18 as the lever if calibration shows a tight budget. |
 | 7, vocabulary | build B3 before the bench | accept. It is the one item that can miss the 50 ms line. |
-| 8, encoder | `google/gemini-embedding-2` | accept |
+| 8, encoder | `google/gemini-embedding-2` | accept. *Note, 2026-11-03: open again, spec VE1 has a bake-off with `voyage-multimodal-3.5`.* |
 | 9, provider rate | 2 `POST`/s | increase it if the OpenRouter account permits. Wall-clock time falls in proportion. |
 | 11, the two budget changes | one screening `POST` for each candidate, boxes deferred | accept. Without it, USD 20 buys about 3,770 images. |
 

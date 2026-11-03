@@ -141,7 +141,10 @@ says yes with a measured caveat that belongs to the vocabulary, not to
 3. **The repetition horizon.** One target for each day: 7,500 days is
    20.5 years before a target repeats. Practice replays revealed
    targets only (P5 ruling 2), thus practice does not consume the
-   pool.
+   pool. *Correction, 2026-11-03:* `pick_target` draws with replacement,
+   thus 20.5 years is the mean wait for one image to come back, and a
+   second use of one image is more likely than not by about day 102.
+   This rule stays: it keeps the chance guarantee accurate.
 4. **Cost, disk, and time.** §5: about USD 45 for one clean run,
    about 23 GB on the build machine, about 0.9 GB on the serving
    box, and about 27 hours of posts at the current provider rate of
@@ -282,6 +285,13 @@ With the two changes and the diversity rule unchanged:
 | generalize | 26,800 | 0.40 |
 | **total** | | **19.10** |
 
+*Note, 2026-11-03:* the code encodes the s05 survivors, about 26,700,
+not 38,000. If spec VE1 moves the encoder slots, the two embedding rows
+(USD 8.20) go to the Voyage credits, and USD 10.90 stays. The rule
+against images of one person or one face (plan of 2026-11-03) lowers
+the yield, and the calibration run
+measures by how much.
+
 The materialize cap 38,000 is the cost fence: 38,000 × 0.197 gives
 7,490 pool images, and the cap stops the fetch before the screening
 spend can go above USD 12.2. The margin is USD 0.90, thin. Two
@@ -407,7 +417,7 @@ green offline.
 | 5 | The calibration run | 20 shards (392,000 rows, about 11,800 sampled, about 7,600 materialized, about USD 6), tag `dev-wit-003` | Measures the near-duplicate rate and the s07 yield at 10 times the development count before the full spend. Its pool of about 1,400 is a dev pool, and it is not prepared. Replaces the 5% allowance of §3 with a measurement. |
 | 6 | Diversity rule | Unchanged: divisor 50, cap 15 | A higher cap raises the yield and changes the pool's structure — the property V1 and V2 were gated on. Fund the funnel and keep the rule. |
 | 7 | The vocabulary term | Build B3 before the production bench | §4 row 5. The other levers — device placement, half precision on the outline matrix — stay standing items. |
-| 8 | Encoder | `google/gemini-embedding-2` through OpenRouter, unchanged | The P2c ladder adopted it. A local encoder reopens the end-to-end 50 ms question (P5 ruling 3) and is a lineage of its own. Park. |
+| 8 | Encoder | `google/gemini-embedding-2` through OpenRouter, unchanged. *Note, 2026-11-03: open again. Spec VE1 compares `voyage-multimodal-3.5` by a bake-off on the development pool, and the verdict there decides this row.* | The P2c ladder adopted it. A local encoder reopens the end-to-end 50 ms question (P5 ruling 3) and is a lineage of its own. Park. |
 | 9 | Provider rate | 2.0 `POST`/s, unchanged, or raised if the account allows | Sets the hours of §5 and §5a. Provider config, not a scoring change. |
 | 11 | The two budget changes | Merge the three screens into one `POST` (B7) and defer the boxes (B8) | §5a. Without the two, USD 20 buys about 3,770 images on the unchanged pipeline, and the config-only path to 7,500 is a cluster cap near 50, which switches the diversity rule off. |
 

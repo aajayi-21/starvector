@@ -28,8 +28,8 @@ MATCHING_RULES: tuple[str, ...] = ("sinkhorn-slack-v1",)
 CHECK_RULES: tuple[str, ...] = ("axis-ramp-v1",)
 RELATION_VOCABULARY: tuple[str, ...] = ("left-of", "right-of", "above",
                                         "below")
-SKETCH_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
-TEXT_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
+SKETCH_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "voyage", "fake")
+TEXT_ENCODER_PROVIDERS: tuple[str, ...] = ("openrouter", "voyage", "fake")
 SKETCH_PAIR_PROVIDERS: tuple[str, ...] = ("fscoco", "fake")
 RESPONSE_FORMAT_MODES: tuple[str, ...] = ("json_schema", "json_object")
 SUBMISSION_MODES: tuple[str, ...] = ("sketch", "text", "mixed")
@@ -408,8 +408,11 @@ def _parse_encoder_slot(node: _Node, path: str,
     if section.dimension is None:
         raise ConfigError(
             f"{path}.dimension: required for the {section.provider} provider")
-    if section.provider == "openrouter" and section.model is None:
-        raise ConfigError(f"{path}.model: required for the openrouter provider")
+    # The openrouter default model is a chat model, and it must not
+    # fill a voyage slot (spec VE1 section 4).
+    if section.provider in ("openrouter", "voyage") and section.model is None:
+        raise ConfigError(
+            f"{path}.model: required for the {section.provider} provider")
     return section
 
 

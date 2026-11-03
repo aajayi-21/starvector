@@ -50,8 +50,8 @@ pool lineage. That is correct behavior, not an accident — see
   label plus one confidence — the response schema pins the label to the
   requested set, thus an out-of-set answer cannot occur.
   `classify.label_template` must contain `{label}` one time.
-- `providers.encoder` — `"openrouter"` or `"fake"` (the U2 change of
-  2026-08-12). An openrouter encoder is an embeddings slot: `model` and
+- `providers.encoder` — `"openrouter"`, `"voyage"` (spec VE1), or
+  `"fake"` (the U2 change of 2026-08-12). An openrouter encoder is an embeddings slot: `model` and
   `dimension` are required, `instruction_template` stays `null`, and the
   chat `default_model` does not apply. The fake stays for tests.
   `dev-wit.json` released the first pool with the fake encoder — s06
