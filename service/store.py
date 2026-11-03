@@ -199,6 +199,23 @@ def _temporary_sibling(path: Path) -> Path:
     return Path(name)
 
 
+def _write_synced(path: Path, data: bytes) -> None:
+    """Write bytes to a file, and sync them to the disk."""
+    with path.open("wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _sync_directory(directory: Path) -> None:
+    """Sync a directory, thus a new name in it survives a power cut."""
+    handle = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(handle)
+    finally:
+        os.close(handle)
+
+
 def write_once_json(path: Path, value: JsonValue) -> None:
     """Write one JSON document atomically, refusing a second write.
 
@@ -208,12 +225,17 @@ def write_once_json(path: Path, value: JsonValue) -> None:
     StoreError, with no half-written file in each outcome. Each write
     has its own sibling, thus two racing writers cannot break the
     document of the other before the claim.
+
+    The bytes go to the disk before the claim and the name after it
+    (spec PL1 section 5): a power cut leaves the record full or
+    missing, and a torn permanent record can stop each close of its day.
     """
     temporary = _temporary_sibling(path)
     try:
-        temporary.write_text(canonical_json_pretty(value) + "\n",
-                             encoding="utf-8")
+        _write_synced(temporary,
+                      (canonical_json_pretty(value) + "\n").encode("utf-8"))
         os.link(temporary, path)
+        _sync_directory(path.parent)
     except FileExistsError as error:
         raise StoreError(
             f"{path}: the store is one-write and the file exists") from error
@@ -672,7 +694,8 @@ def _write_bytes_replacing(path: Path, data: bytes) -> None:
     collide on it - the loser's os.replace raises and a reader can
     read a torn temporary. Each write here gets its own sibling
     from mkstemp, thus concurrent writers end in last-writer-wins
-    with complete documents in each interleaving.
+    with complete documents in each interleaving. The bytes go to the
+    disk before the replace and the name after it (spec PL1 section 5).
     """
     import tempfile
 
@@ -683,7 +706,10 @@ def _write_bytes_replacing(path: Path, data: bytes) -> None:
     try:
         with os.fdopen(handle, "wb") as sibling:
             sibling.write(data)
+            sibling.flush()
+            os.fsync(sibling.fileno())
         os.replace(temporary, path)
+        _sync_directory(path.parent)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise

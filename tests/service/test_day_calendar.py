@@ -274,7 +274,7 @@ def test_a_send_meets_a_closing_day_with_a_constant_refusal(
     store.update_day_status(fixture["store"], DAY, expect_status="open",
                             new_status="closing", timestamp_field=None,
                             timestamp=None)
-    answer = client.post("/api/submission", json=mixed_wire_record())
+    answer = client.post(f"/api/submission?day={DAY}", json=mixed_wire_record())
     assert answer.status_code == 409
     assert answer.json() == {"cause": "day-closed"}
     assert client.get("/api/day").json()["status"] == "closing"
@@ -294,7 +294,7 @@ def test_a_send_that_races_the_close_refuses(tmp_path,
     original = day_module.harness.prewarm_records
 
     def sending_during_the_encode(*arguments, **keywords):
-        answers.append(client.post("/api/submission",
+        answers.append(client.post(f"/api/submission?day={DAY}",
                                    json=mixed_wire_record()))
         return original(*arguments, **keywords)
 

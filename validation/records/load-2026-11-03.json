@@ -1,0 +1,126 @@
+{
+  "active_players": 877,
+  "best_rate": 51.2,
+  "budget_ms": 500.0,
+  "close_seconds": 2.801,
+  "date": "2026-11-03",
+  "levels": [
+    {
+      "by_kind_p95_ms": {
+        "day": 9.1,
+        "history": 10.6,
+        "me": 9.4,
+        "practice": 26.6,
+        "send": 11.6
+      },
+      "concurrency": 1,
+      "errors": 0,
+      "first_error": null,
+      "p50_ms": 7.1,
+      "p95_ms": 9.8,
+      "p99_ms": 22.7,
+      "rate": 132.9,
+      "requests": 1330,
+      "seconds": 10.01
+    },
+    {
+      "by_kind_p95_ms": {
+        "day": 15.4,
+        "history": 20.4,
+        "me": 16.1,
+        "practice": 36.1,
+        "send": 16.3
+      },
+      "concurrency": 2,
+      "errors": 0,
+      "first_error": null,
+      "p50_ms": 10.6,
+      "p95_ms": 17.6,
+      "p99_ms": 32.3,
+      "rate": 173.5,
+      "requests": 1736,
+      "seconds": 10.01
+    },
+    {
+      "by_kind_p95_ms": {
+        "day": 56.8,
+        "history": 57.7,
+        "me": 54.7,
+        "practice": 64.2,
+        "send": 38.8
+      },
+      "concurrency": 4,
+      "errors": 0,
+      "first_error": null,
+      "p50_ms": 43.5,
+      "p95_ms": 57.6,
+      "p99_ms": 67.3,
+      "rate": 92.6,
+      "requests": 928,
+      "seconds": 10.02
+    },
+    {
+      "by_kind_p95_ms": {
+        "day": 208.2,
+        "history": 193.8,
+        "me": 203.6,
+        "practice": 168.5,
+        "send": 124.0
+      },
+      "concurrency": 8,
+      "errors": 0,
+      "first_error": null,
+      "p50_ms": 168.4,
+      "p95_ms": 206.1,
+      "p99_ms": 259.3,
+      "rate": 51.2,
+      "requests": 514,
+      "seconds": 10.05
+    },
+    {
+      "by_kind_p95_ms": {
+        "day": 549.5,
+        "history": 630.3,
+        "me": 529.9,
+        "practice": 567.9,
+        "send": 368.2
+      },
+      "concurrency": 16,
+      "errors": 0,
+      "first_error": null,
+      "p50_ms": 366.7,
+      "p95_ms": 546.0,
+      "p99_ms": 642.9,
+      "rate": 46.3,
+      "requests": 469,
+      "seconds": 10.14
+    }
+  ],
+  "machine": {
+    "cpus": 8,
+    "node": "ade-thinkpad",
+    "python": "3.14.4",
+    "system": "Linux-7.0.0-42-generic-x86_64-with-glibc2.43"
+  },
+  "player_model": {
+    "rate": 0.0583,
+    "requests": {
+      "day": 31,
+      "history": 1,
+      "me": 1,
+      "practice": 1,
+      "send": 1
+    },
+    "window_seconds": 600.0
+  },
+  "ran_out_of_senders": false,
+  "reveal_seconds": 0.409,
+  "sends_stored": 130,
+  "server_peak_memory_mb": 150.6,
+  "world": {
+    "players": 3000,
+    "pool": 1000,
+    "providers": "fake",
+    "seeded_days": 14
+  }
+}

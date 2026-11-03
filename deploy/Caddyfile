@@ -5,6 +5,35 @@
 game.example.com {
 	encode zstd gzip
 
+	# The byte cap of a request body (spec PL1 section 1). The server
+	# holds the same value in service/limits.py, thus a request that
+	# skips the edge meets it too. The avatar cap in service/store.py
+	# fits below it.
+	request_body {
+		max_size 1MiB
+	}
+
+	# The response headers (spec PL1 section 5). The built app holds
+	# no inline script and no outside source, thus the policy names
+	# this site alone. Inline style attributes are in the React code.
+	# An image comes from this site, or a data or blob URL for a
+	# picture the player is choosing. Referrer-Policy keeps an invite
+	# URL out of each page the app links to.
+	#
+	# This Caddyfile holds no log directive, thus Caddy writes no
+	# access log, and an invite URL does not reach one. Before adding
+	# one, add a filter that drops the /join/ path: the token is a
+	# credential. The server filters its own access log.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
 	# The operator plane and the console never serve publicly
 	# (spec S2 ruling 2): the operator reaches them through an
 	# SSH tunnel to the on-demand dev unit on 127.0.0.1:8001.

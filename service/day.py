@@ -112,6 +112,7 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
              secret: str | None = None,
              trial_code: str | None = None,
              now: Callable[[], datetime.datetime] | None = None,
+             wired: scoring.WiredScoring | None = None,
              ) -> store.DayRecord:
     """Open one day: wire warm, pick, commit, write (spec section 6).
 
@@ -119,7 +120,16 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
     must be a calendar date after the latest stored day, and with a
     rollover hour configured it must not be more than one day after
     the current day. The latest stored day must be revealed.
+
+    A caller with a resident context hands it in through wired, in the
+    manner of close_day, thus the process loads no second copy of the
+    pool (spec PL1 section 5). That context comes from the server's
+    config, thus a config override and a context together refuse.
     """
+    if wired is not None and scoring_config_path not in (
+            None, service_config.scoring_config):
+        raise ValueError("a resident context serves the server's own config "
+                         "- a named config wires by itself")
     clock = clock or harness.default_clock
     instant = (now or utc_now)()
     root = Path(service_config.store_root)
@@ -134,9 +144,10 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
         raise store.StoreError(f"day {day} exists - open refuses a rewrite")
     _check_open_sequence(root, day)
     config_path = scoring_config_path or service_config.scoring_config
-    config = load_scoring_config(Path(config_path))
-    wired = scoring.wire_for_open(config, config_path,
-                                  Path(service_config.data_root))
+    if wired is None:
+        config = load_scoring_config(Path(config_path))
+        wired = scoring.wire_for_open(config, config_path,
+                                      Path(service_config.data_root))
     pick_seed = pick_seed or secrets.token_hex(16)
     secret = secret or secrets.token_hex(32)
     trial_code = trial_code or make_trial_code()
@@ -221,8 +232,10 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
     for player, stored in stored_by_player.items():
         trial, report = scoring.score_stored_submission(
             stored["record"], record.target_id, wired)
-        value = scoring.trial_row_value(day, player, str(stored["trial_id"]),
-                                        trial, report, wired)
+        value = scoring.trial_row_value(
+            day, player, str(stored["trial_id"]), trial, report, wired,
+            channel_scores=scoring.channel_score_values(
+                stored["record"], record.target_id, wired))
         row_path = store.trial_row_path(root, day, player)
         rendered = canonical_json_pretty(value) + "\n"
         if row_path.is_file():
@@ -260,7 +273,28 @@ def reveal_day(service_config: ServiceConfig, *,
                                      timestamp_field="revealed_at",
                                      timestamp=clock())
     rollup.roll_up_day(service_config, record)
+    _build_results_index(service_config)
     return record
+
+
+def _build_results_index(service_config: ServiceConfig) -> None:
+    """Make the results index current after a reveal (spec PL1 section 7).
+
+    The index is a cache that the next read builds when it is stale,
+    thus a build that stops writes to the journal, and the reveal that
+    players can read stays as it is.
+    """
+    import sqlite3
+
+    from service import index
+
+    root = Path(service_config.store_root)
+    try:
+        index.build(root, index.index_path(Path(service_config.data_root)))
+    except (index.ResultsIndexError, store.StoreError, sqlite3.Error,
+            OSError) as error:
+        print(f"the results index did not build after the reveal: {error}",
+              file=sys.stderr)
 
 
 def _first_difference(stored: dict, recomputed: dict) -> str:
@@ -321,7 +355,9 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
             trial, report = scoring.score_stored_submission(
                 stored["record"], record.target_id, wired)
             value = scoring.trial_row_value(
-                day, player, str(stored["trial_id"]), trial, report, wired)
+                day, player, str(stored["trial_id"]), trial, report, wired,
+                channel_scores=scoring.channel_score_values(
+                    stored["record"], record.target_id, wired))
             rendered = canonical_json_pretty(value) + "\n"
             if pinned:
                 row_path = store.trial_row_path(root, day, player)

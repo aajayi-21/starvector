@@ -47,12 +47,13 @@ def test_one_full_day_end_to_end(tmp_path) -> None:
     assert day_view["relation_vocabulary"] == ["left-of", "right-of",
                                                "above", "below"]
 
-    ack = client.post("/api/submission", json=mixed_wire_record())
+    ack = client.post(f"/api/submission?day={DAY}", json=mixed_wire_record())
     assert ack.status_code == 200
-    assert set(ack.json()) == {"trial_id", "atom_count"}
+    assert set(ack.json()) == {"trial_id", "day", "atom_count"}
+    assert ack.json()["day"] == DAY
     assert ack.json()["atom_count"] == 6
 
-    second = client.post("/api/submission", json=mixed_wire_record())
+    second = client.post(f"/api/submission?day={DAY}", json=mixed_wire_record())
     assert second.status_code == 409
     assert second.json()["cause"] == "already-submitted"
 
@@ -91,7 +92,7 @@ def test_one_full_day_end_to_end(tmp_path) -> None:
 
 def test_r3_no_score_bytes_while_open_and_closed(tmp_path) -> None:
     fixture, client = _world(tmp_path)
-    client.post("/api/submission", json=mixed_wire_record())
+    client.post(f"/api/submission?day={DAY}", json=mixed_wire_record())
     record = store.read_day_record(fixture["store"], DAY)
 
     def walk() -> dict[str, bytes]:
@@ -149,10 +150,10 @@ def test_a_gate_violation_names_the_cause(tmp_path) -> None:
     flooded = mixed_wire_record()
     flooded["impressions"] = [f"impression {number}"
                               for number in range(70)]
-    answer = client.post("/api/submission", json=flooded)
+    answer = client.post(f"/api/submission?day={DAY}", json=flooded)
     assert answer.status_code == 400
     assert answer.json()["cause"] == "atom-count"
-    malformed = client.post("/api/submission", content=b"not json",
+    malformed = client.post(f"/api/submission?day={DAY}", content=b"not json",
                             headers={"Content-Type": "application/json"})
     assert malformed.status_code == 400
     assert malformed.json()["cause"] == "bad-shape"
@@ -164,7 +165,7 @@ def test_an_unscoreable_submission_is_refused_before_the_store(
     fixture, client = _world(tmp_path)
     empty = {"impressions": [], "canvas_strokes": [], "groups": [],
              "relations": [], "pasted_text": None}
-    answer = client.post("/api/submission", json=empty)
+    answer = client.post(f"/api/submission?day={DAY}", json=empty)
     assert answer.status_code == 400
     assert answer.json()["cause"] == "no-scoreable-atom"
     assert store.list_submissions(fixture["store"], DAY) == ()
@@ -174,7 +175,7 @@ def test_post_is_refused_when_the_day_is_closed(tmp_path) -> None:
     fixture, client = _world(tmp_path)
     close_day(fixture["service_config"], providers=fixture["providers"],
               clock=lambda: FIXED_CLOCK)
-    answer = client.post("/api/submission", json=mixed_wire_record())
+    answer = client.post(f"/api/submission?day={DAY}", json=mixed_wire_record())
     assert answer.status_code == 409
     assert answer.json()["cause"] == "day-closed"
 
@@ -232,7 +233,7 @@ def test_the_console_reads_target_submission_and_preview_rankings(
     # The player sends on the player page. The console reads it
     # back and ranks it before close - a preview, with no store
     # write but the submission, and the day unmoved.
-    ack = dev_client.post("/api/submission", json=mixed_wire_record())
+    ack = dev_client.post(f"/api/submission?day={DAY}", json=mixed_wire_record())
     assert ack.status_code == 200
     stored = dev_client.get("/api/dev/submission").json()
     assert stored["record"] == mixed_wire_record()
@@ -270,7 +271,8 @@ def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
     assert set(opened.json()) == {"day", "trial_code", "commitment"}
     assert client.post("/api/day/open").status_code == 409
 
-    ack = client.post("/api/submission", json=mixed_wire_record())
+    ack = client.post(f"/api/submission?day={opened.json()['day']}",
+                      json=mixed_wire_record())
     assert ack.status_code == 200
 
     assert client.post("/api/day/reveal").status_code == 409
@@ -302,7 +304,7 @@ def test_the_console_page_drives_days_back_to_back(tmp_path) -> None:
     # One active day at a time.
     assert dev_client.post("/api/day/open").status_code == 409
 
-    assert dev_client.post("/api/submission",
+    assert dev_client.post(f"/api/submission?day={first_day}",
                            json=mixed_wire_record()).status_code == 200
     assert dev_client.post("/api/day/close").status_code == 200
 
@@ -350,7 +352,7 @@ def test_an_empty_store_answers_with_constants(tmp_path) -> None:
     assert client.get("/api/day").status_code == 404
     assert client.get("/api/day").content \
         == b'{"detail":"no day open"}'
-    assert client.post("/api/submission",
+    assert client.post(f"/api/submission?day={DAY}",
                        json=mixed_wire_record()).status_code == 404
 
 
@@ -366,7 +368,7 @@ def test_the_resident_context_wires_one_time(tmp_path, monkeypatch) -> None:
     fixture, _ = _world(tmp_path)
     client = TestClient(create_app(fixture["service_config"],
                                    dev_mode=True))
-    client.post("/api/submission", json=mixed_wire_record())
+    client.post(f"/api/submission?day={DAY}", json=mixed_wire_record())
 
     calls: list[str] = []
     original = service_scoring.wire_for_close

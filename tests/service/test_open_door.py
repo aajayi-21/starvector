@@ -18,6 +18,7 @@ from service.server import create_app
 
 DAY = "2026-08-12"
 OPERATOR_TOKEN = "test-operator-token"
+BEARER = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
 
 
 def _world(tmp_path, *, dev_mode: bool, minted=()):
@@ -88,12 +89,12 @@ def test_the_door_adds_a_session_and_keeps_the_others(tmp_path) -> None:
         tmp_path, dev_mode=True,
         minted=(("ade", "Ade", "1" * 43),))
     root = fixture["store"]
-    first = client.post("/api/door", json={"player": "ade"})
+    first = client.post("/api/door", json={"player": "ade"}, headers=BEARER)
     assert first.status_code == 200
     first_value = client.cookies.get(auth.SESSION_COOKIE)
     digest_before = store.read_player_record(root, "ade").token_hash
     client.cookies.clear()
-    second = client.post("/api/door", json={"player": "ade"})
+    second = client.post("/api/door", json={"player": "ade"}, headers=BEARER)
     assert second.status_code == 200
     # The label stays the minted one - the door edits no record.
     assert second.json()["display_name"] == "Ade"
@@ -114,7 +115,7 @@ def test_the_door_cannot_put_a_revoked_player_back(tmp_path) -> None:
         tmp_path, dev_mode=True,
         minted=(("ade", "Ade", "1" * 43),))
     players.revoke_player(fixture["service_config"], player="ade")
-    answer = client.post("/api/door", json={"player": "ade"})
+    answer = client.post("/api/door", json={"player": "ade"}, headers=BEARER)
     assert answer.status_code == 409
     assert answer.json() == {"cause": "revoked"}
     assert store.read_player_record(fixture["store"],

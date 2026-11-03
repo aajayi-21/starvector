@@ -86,7 +86,7 @@ def test_a_due_day_closes_reveals_and_the_next_opens(tmp_path,
     fixture, _config, client, clock, post = _world(
         tmp_path, monkeypatch, "2026-09-24T10:00:00")
     _run(fixture, clock, post)
-    assert client.post("/api/submission",
+    assert client.post("/api/submission?day=2026-09-24",
                        json=mixed_wire_record()).status_code == 200
     clock.instant = _at("2026-09-24T22:00:03")
     steps, _said = _run(fixture, clock, post)

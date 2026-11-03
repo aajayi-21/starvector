@@ -1,7 +1,8 @@
 """The daily rollover: close, reveal, and open, in that sequence.
 
-Spec: BR1 (in docs/specs/beta-readiness.md) section 3. A systemd
-timer starts this command at the rollover hour. It reads the latest
+Spec: BR1 (in docs/specs/beta-readiness.md) section 3, and PL1 (in
+docs/specs/player-readiness.md) section 3. A systemd timer starts this
+command each hour, thus a failure heals at the next firing. It reads the latest
 day from the store, then moves it with the three operator endpoints
 of the live server - the server holds the resident scoring
 context and the provider key, thus the close costs no second context
@@ -270,6 +271,10 @@ def run_and_record(*, root: Path, closes_at_utc: str, post: Post,
     rollover printed, thus the console shows a failure with the step
     it stopped at. A failure is recorded and not raised: the caller
     reads the outcome.
+
+    A firing of the timer that finds nothing due writes no record: the
+    timer fires each hour, and those records can push each move out of
+    the console's recent runs (spec PL1 section 3).
     """
     lines: list[str] = []
 
@@ -293,8 +298,25 @@ def run_and_record(*, root: Path, closes_at_utc: str, post: Post,
         started_at=started.isoformat(), finished_at=now().isoformat(),
         source=source, outcome=outcome, steps=tuple(taken),
         detail="\n".join(lines))
-    store.write_rollover_run(root, run)
+    if not (source == "timer" and outcome == "nothing due"):
+        store.write_rollover_run(root, run)
     return run
+
+
+def alert_failure(*, url: str | None,
+                  say: Callable[[str], None] = print) -> None:
+    """The OnFailure path: a rollover ended with no ping of its own.
+
+    The unit that starts this runs when the rollover unit dies, times
+    out, or exits with a failure. A second failure ping after the
+    rollover's own ping costs nothing.
+    """
+    say("rollover: the rollover unit did not complete - journalctl -u "
+        "starvector-day has the lines")
+    if not url:
+        say("rollover: STARVECTOR_HEALTHCHECK_URL is not set, thus this "
+            "line is the only alert")
+    ping(url, failed=True, say=say)
 
 
 def record_paused(root: Path, control: store.RolloverControl, *,
@@ -361,7 +383,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="seconds before the first retry; doubles")
     parser.add_argument("--plan", action="store_true",
                         help="print the next step and move nothing")
+    parser.add_argument("--alert", action="store_true",
+                        help="report a failed rollover and move nothing; "
+                             "the OnFailure unit passes this")
     arguments = parser.parse_args(argv)
+
+    if arguments.alert:
+        alert_failure(url=os.environ.get("STARVECTOR_HEALTHCHECK_URL"))
+        return 0
 
     try:
         config = load_service_config(Path(arguments.service_config))

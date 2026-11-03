@@ -206,6 +206,9 @@ class RuntimeSection:
 @dataclass(frozen=True, slots=True)
 class ReportSection:
     dev_only: bool
+    # Store each channel's score at the target in the trial rows (spec
+    # PL1 section 7). Off by default, and in the hash only when on.
+    channel_scores: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +293,10 @@ class _Node:
         if high is not None and value > high:
             raise ConfigError(f"{self._path}.{key}: out of range")
         return value
+
+    def bool_or(self, key: str, default: bool) -> bool:
+        """The boolean, or the default when the field is missing."""
+        return self.bool_(key) if key in self._raw else default
 
     def bool_(self, key: str) -> bool:
         value = self._take(key)
@@ -571,7 +578,9 @@ def parse_scoring_config(raw: object, source: str = "config") -> ScoringConfig:
     runtime_node.finish()
 
     report_node = root.child("report")
-    report = ReportSection(dev_only=report_node.bool_("dev_only"))
+    report = ReportSection(
+        dev_only=report_node.bool_("dev_only"),
+        channel_scores=report_node.bool_or("channel_scores", False))
     report_node.finish()
     if report.dev_only != validation.tag.startswith("dev-"):
         raise ConfigError(
@@ -700,7 +709,11 @@ def config_to_json_value(config: ScoringConfig) -> dict[str, JsonValue]:
             },
         },
         "runtime": {"device": config.runtime.device},
-        "report": {"dev_only": config.report.dev_only},
+        # The flag enters only when on: a config that does not name it
+        # keeps its hash, its artifacts, and its stored rows (I4).
+        "report": {"dev_only": config.report.dev_only,
+                   **({"channel_scores": True}
+                      if config.report.channel_scores else {})},
     }
 
 
