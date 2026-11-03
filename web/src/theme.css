@@ -9,7 +9,8 @@
  * (spec C1 §5) was chosen against a dark ground and the scorer reads
  * those exact colors, so the ground moves and the ink does not.
  *
- * The operator console keeps nocturne.css.
+ * The operator console uses this theme too (spec BR1 §7.6), with its
+ * own layout in src/dev/dev.css.
  */
 
 :root {

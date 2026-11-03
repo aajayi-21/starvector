@@ -11,14 +11,16 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { DevApi } from "./api";
-import { DevApiError } from "./api";
-import { utcStamp } from "./format";
+import {
+  ConfirmAction,
+  ErrorNote,
+  messageOf,
+  StatusBadge,
+  WorkingNote,
+} from "./controls";
+import { utcShort, utcStamp } from "./format";
 import { storedOrigin } from "./invite-panel";
 import type { DevDeviceCode, DevPlayerDetail, MintedInvite } from "./types";
-
-function messageOf(error: unknown): string {
-  return error instanceof DevApiError ? error.message : "refused";
-}
 
 /** What the last access control printed, one time. */
 type Printed =
@@ -38,6 +40,7 @@ export function PlayerAccount(props: {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [printed, setPrinted] = useState<Printed | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +54,7 @@ export function PlayerAccount(props: {
   useEffect(() => {
     setDetail(null);
     setPrinted(null);
+    setError("");
     void load();
   }, [load]);
 
@@ -87,31 +91,28 @@ export function PlayerAccount(props: {
     };
   }, [api, player, hasAvatar, updatedAt]);
 
-  const act = async (
-    action: () => Promise<Printed | null>,
-    confirmText?: string,
-  ) => {
-    if (confirmText !== undefined && !window.confirm(confirmText)) {
-      return;
-    }
+  const act = async (action: () => Promise<Printed>) => {
     setBusy(true);
     setPrinted(null);
+    setError("");
     try {
       setPrinted(await action());
       await load();
       onChanged();
-    } catch (error) {
-      setPrinted({ kind: "note", text: messageOf(error) });
+    } catch (failure) {
+      setError(messageOf(failure));
     } finally {
       setBusy(false);
     }
   };
 
   if (detail === null) {
-    return (
-      <p className="dev-muted" role="status">
-        {note === "" ? "loading…" : note}
+    return note === "" ? (
+      <p className="subtle small" role="status">
+        loading…
       </p>
+    ) : (
+      <ErrorNote text={note} />
     );
   }
 
@@ -134,21 +135,17 @@ export function PlayerAccount(props: {
         )}
         <div className="dev-stack-sm">
           <div className="dev-row dev-wrap">
-            <strong className="dev-name">{detail.display_name}</strong>
-            <span className="dev-muted">{detail.player}</span>
-            <span
-              className={`dev-status dev-status-${active ? "open" : "revoked"}`}
-            >
-              {detail.status}
-            </span>
+            <h3 className="dev-name">{detail.display_name}</h3>
+            <span className="subtle">{detail.player}</span>
+            <StatusBadge status={detail.status} />
           </div>
-          <span className="dev-muted">
-            player since {utcStamp(detail.created_at)} ·{" "}
+          <span className="muted small">
+            Player since {utcStamp(detail.created_at)} ·{" "}
             {detail.sends === 1 ? "1 send" : `${detail.sends} sends`}
           </span>
           <p className="dev-description">
             {detail.description === "" ? (
-              <span className="dev-muted">No description.</span>
+              <span className="subtle">No description.</span>
             ) : (
               detail.description
             )}
@@ -156,90 +153,22 @@ export function PlayerAccount(props: {
         </div>
       </div>
 
-      <div className="dev-subhead">
-        Devices signed in · {detail.sessions.length}
-      </div>
-      {detail.sessions.length === 0 ? (
-        <p className="dev-muted">
-          No device is signed in.
-          {active
-            ? " A new invite address or a device code lets the player back in."
-            : ""}
-        </p>
-      ) : (
-        <table className="table dev-table">
-          <thead>
-            <tr>
-              <th>device</th>
-              <th>signed in</th>
-              <th>ends</th>
-              <th>
-                <span className="visually-hidden">action</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.sessions.map((session) => (
-              <tr key={session.id}>
-                <td>{session.label}</td>
-                <td>{utcStamp(session.created_at)}</td>
-                <td>{utcStamp(session.ends_at)}</td>
-                <td className="dev-num">
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(async () => {
-                        await api.endSession(player, session.id);
-                        return {
-                          kind: "note",
-                          text: `${session.label} is signed out.`,
-                        };
-                      })
-                    }
-                  >
-                    Sign out
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {detail.device_codes.length === 0 ? null : (
-        <p className="dev-muted">
-          {detail.device_codes.length === 1
-            ? "1 device code waits"
-            : `${detail.device_codes.length} device codes wait`}{" "}
-          — the last expires{" "}
-          {utcStamp(
-            detail.device_codes[detail.device_codes.length - 1]?.expires_at,
-          )}
-          .
-        </p>
-      )}
-
       <div className="dev-subhead">Access</div>
-      <div className="dev-row dev-wrap">
+      <div className="dev-row dev-wrap dev-top">
         {active ? (
           <>
-            <button
-              type="button"
-              className="btn btn-secondary"
+            <ConfirmAction
+              label="New invite address"
+              question={`Make a new invite address for ${player}? The old address stops working; signed-in devices stay signed in.`}
+              confirmLabel="Yes, make a new address"
               disabled={busy}
-              onClick={() =>
-                void act(
-                  async () => ({
-                    kind: "invite",
-                    invite: await api.rotatePlayer(player),
-                  }),
-                  `Make a new invite address for ${player}? The old address stops working. Devices stay signed in.`,
-                )
+              onConfirm={() =>
+                void act(async () => ({
+                  kind: "invite",
+                  invite: await api.rotatePlayer(player),
+                }))
               }
-            >
-              New invite address
-            </button>
+            />
             <button
               type="button"
               className="btn btn-secondary"
@@ -253,11 +182,13 @@ export function PlayerAccount(props: {
             >
               Device code
             </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
+            <ConfirmAction
+              label="Sign out every device"
+              question={`Sign ${player} out on every device?`}
+              confirmLabel="Yes, sign out"
+              variant="secondary"
               disabled={busy || detail.sessions.length === 0}
-              onClick={() =>
+              onConfirm={() =>
                 void act(async () => {
                   const answer = await api.signOutPlayer(player);
                   return {
@@ -267,76 +198,160 @@ export function PlayerAccount(props: {
                         ? "1 device is signed out."
                         : `${answer.ended} devices are signed out.`,
                   };
-                }, `Sign ${player} out on every device?`)
+                })
               }
-            >
-              Sign out every device
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary dev-danger"
+            />
+            <ConfirmAction
+              label="Revoke access"
+              question={`Revoke ${player}? Their invite address and every signed-in device stop working. Their play stays stored.`}
+              confirmLabel="Yes, revoke"
+              variant="danger"
               disabled={busy}
-              onClick={() =>
+              onConfirm={() =>
                 void act(async () => {
                   await api.revokePlayer(player);
                   return {
                     kind: "note",
                     text: `${player} is revoked: the invite address and each device stop working.`,
                   };
-                }, `Revoke ${player}? Their invite address and every signed-in device stop working. Their play stays stored.`)
+                })
               }
-            >
-              Revoke access
-            </button>
+            />
           </>
         ) : (
-          <button
-            type="button"
-            className="btn btn-primary"
+          <ConfirmAction
+            label="Restore access"
+            question={`Restore ${player}? They get a new invite address; no old device comes back.`}
+            confirmLabel="Yes, restore"
             disabled={busy}
-            onClick={() =>
-              void act(
-                async () => ({
-                  kind: "invite",
-                  invite: await api.restorePlayer(player),
-                }),
-                `Restore ${player}? They get a new invite address; no old device comes back.`,
-              )
+            onConfirm={() =>
+              void act(async () => ({
+                kind: "invite",
+                invite: await api.restorePlayer(player),
+              }))
             }
-          >
-            Restore access
-          </button>
+          />
         )}
       </div>
+      <p className="subtle small">
+        {active
+          ? "A new invite address signs in any device that opens it. A device code is for the iPhone home-screen app, where a link opens in Safari instead."
+          : "A revoked player cannot sign in. Restoring gives them a new invite address."}
+      </p>
 
+      {busy ? <WorkingNote text="Working…" /> : null}
+      <ErrorNote text={error} />
       {printed === null ? null : printed.kind === "note" ? (
-        <p className="dev-muted" role="status">
+        <div className="notice notice-good" role="status">
           {printed.text}
-        </p>
+        </div>
       ) : printed.kind === "invite" ? (
         <div className="dev-printed" role="status">
-          <span>New invite address for {printed.invite.player}:</span>
+          <span className="small">
+            New invite address for {printed.invite.player}:
+          </span>
           <code className="dev-break" data-testid="account-invite-url">
             {origin}
             {printed.invite.join_path}
           </code>
-          <span className="dev-hint">
-            This is the one time it prints. The origin comes from the invite
-            panel above.
+          <CopyButton text={`${origin}${printed.invite.join_path}`} />
+          <span className="subtle small">
+            This is the one time it prints — copy it and send it to the player.
+            The site address comes from the invite panel above.
           </span>
         </div>
       ) : (
         <div className="dev-printed" role="status">
-          <span>Device code for {printed.code.player}:</span>
+          <span className="small">Device code for {printed.code.player}:</span>
           <code className="dev-device-code" data-testid="account-device-code">
             {printed.code.display}
           </code>
-          <span className="dev-hint">
-            The player types it on the device's sign-in page. It works one time
-            and expires {utcStamp(printed.code.expires_at)}.
+          <span className="subtle small">
+            The player types it on the app's sign-in page. It works one time and
+            expires {utcStamp(printed.code.expires_at)}.
           </span>
         </div>
       )}
+
+      <div className="dev-subhead">
+        Devices signed in · {detail.sessions.length}
+      </div>
+      {detail.sessions.length === 0 ? (
+        <p className="muted small">No device is signed in.</p>
+      ) : (
+        <div className="dev-scroll-x">
+          <table className="table dev-table">
+            <thead>
+              <tr>
+                <th>device</th>
+                <th>signed in (UTC)</th>
+                <th>ends (UTC)</th>
+                <th>
+                  <span className="visually-hidden">action</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.sessions.map((session) => (
+                <tr key={session.id}>
+                  <td>{session.label}</td>
+                  <td>{utcShort(session.created_at)}</td>
+                  <td>{utcShort(session.ends_at)}</td>
+                  <td className="num">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={busy}
+                      onClick={() =>
+                        void act(async () => {
+                          await api.endSession(player, session.id);
+                          return {
+                            kind: "note",
+                            text: `${session.label} is signed out.`,
+                          };
+                        })
+                      }
+                    >
+                      Sign out
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {detail.device_codes.length === 0 ? null : (
+        <p className="muted small">
+          {detail.device_codes.length === 1
+            ? "1 device code waits"
+            : `${detail.device_codes.length} device codes wait`}{" "}
+          — the last expires{" "}
+          {utcStamp(
+            detail.device_codes[detail.device_codes.length - 1]?.expires_at,
+          )}
+          .
+        </p>
+      )}
     </section>
+  );
+}
+
+/** Copies one printed value, and says so. */
+function CopyButton(props: { text: string }): React.JSX.Element {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="btn btn-secondary dev-copy"
+      onClick={() => {
+        navigator.clipboard
+          ?.writeText(props.text)
+          .then(() => setCopied(true))
+          .catch(() => setCopied(false));
+      }}
+    >
+      {copied ? "Copied" : "Copy the address"}
+    </button>
   );
 }

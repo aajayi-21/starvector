@@ -46,7 +46,7 @@ export function PlayersTab(props: {
     <div className="dev-stack">
       <InvitePanel api={api} onMinted={() => setLocal((count) => count + 1)} />
       <RosterPanel api={api} reload={reload + local} />
-      <section className="card dev-card" aria-label="Expired sign-ins">
+      <section className="card" aria-label="Expired sign-ins">
         <div className="dev-row dev-wrap">
           <button
             type="button"
@@ -56,7 +56,7 @@ export function PlayersTab(props: {
           >
             Remove expired sign-ins
           </button>
-          <span className="dev-hint">
+          <span className="subtle small">
             {pruneNote === ""
               ? "Sessions older than 180 days and device codes past their 10 minutes stop working on their own; this removes their files."
               : pruneNote}

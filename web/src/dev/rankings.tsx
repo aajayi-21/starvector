@@ -29,39 +29,42 @@ export function RankingsView(props: {
       ];
   const trial = rankings.trial;
   return (
-    <div className="card" style={{ gap: 10 }}>
-      <div style={{ fontSize: 13 }}>
+    <div className="card">
+      <div className="eyebrow">Rankings</div>
+      <div className="small">
         trial score {trial.p.toFixed(4)} — target at position{" "}
         {rankings.target_position} of {rankings.rankings.length} (rank{" "}
         {trial.target_rank} of {trial.decoy_count + 1} after the near-duplicate
         group exits)
       </div>
       {rankings.report.length === 0 ? null : (
-        <table className="table" style={{ fontSize: 13 }}>
-          <thead>
-            <tr>
-              <th>atom</th>
-              <th>matched element</th>
-              <th>weight</th>
-              <th>similarity</th>
-              <th>rarity</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rankings.report.map((row) => (
-              <tr key={row.atom_id}>
-                <td>{row.atom_text}</td>
-                <td>{row.element ?? "-"}</td>
-                <td>{row.weight.toFixed(3)}</td>
-                <td>{row.similarity.toFixed(3)}</td>
-                <td>{row.rarity.toFixed(2)}</td>
+        <div className="dev-scroll-x">
+          <table className="table dev-table">
+            <thead>
+              <tr>
+                <th>atom</th>
+                <th>matched element</th>
+                <th>weight</th>
+                <th>similarity</th>
+                <th>rarity</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rankings.report.map((row) => (
+                <tr key={row.atom_id}>
+                  <td>{row.atom_text}</td>
+                  <td>{row.element ?? "-"}</td>
+                  <td>{row.weight.toFixed(3)}</td>
+                  <td>{row.similarity.toFixed(3)}</td>
+                  <td>{row.rarity.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      <div style={{ overflowX: "auto" }}>
-        <table className="table dev-rankings" style={{ fontSize: 12 }}>
+      <div className="dev-scroll-x">
+        <table className="table dev-table dev-rankings">
           <thead>
             <tr>
               <th>#</th>
@@ -88,7 +91,7 @@ export function RankingsView(props: {
                     alt=""
                   />
                 </td>
-                <td style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>
+                <td className="dev-mono">
                   {row.image_id.slice(0, 8)}
                   {row.is_target ? " ← target" : ""}
                 </td>

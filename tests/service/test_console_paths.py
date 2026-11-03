@@ -46,6 +46,8 @@ _PATHS = (
     ("POST", "/api/dev/index/build"),
     ("POST", "/api/dev/index/verify"),
     ("POST", "/api/dev/index/query"),
+    ("POST", "/api/dev/day/close"),
+    ("POST", "/api/dev/day/reveal"),
 )
 
 
@@ -464,3 +466,49 @@ def test_a_refused_write_names_the_read_only_rule(tmp_path,
     refused = client.post("/api/dev/index/query", headers=HEADERS,
                           json={"sql": "DELETE FROM trials"})
     assert refused.json()["detail"].startswith("read-only:")
+
+
+def test_a_closed_day_behind_a_newer_one_reveals_by_name(
+        tmp_path, monkeypatch) -> None:
+    fixture, config, client, _clock = _world(tmp_path, monkeypatch)
+    # The legacy shape of the local store: a closed day stranded behind
+    # a newer day (spec BR1 section 7.6).
+    from service.day import close_day as close
+
+    close(config, clock=lambda: FIXED_CLOCK)
+    stranded = OPEN_DAY
+    later = "2026-08-14"
+    record = store.read_day_record(fixture["store"], stranded)
+    store.write_day_record(fixture["store"], dataclasses.replace(
+        record, day=later, status="open", closed_at=None,
+        revealed_at=None))
+    for before, after, field in (("open", "closed", "closed_at"),
+                                 ("closed", "revealed", "revealed_at")):
+        store.update_day_status(fixture["store"], later,
+                                expect_status=before, new_status=after,
+                                timestamp_field=field,
+                                timestamp=FIXED_CLOCK)
+    assert store.latest_day(fixture["store"]) == later
+
+    answer = client.post("/api/dev/day/reveal", headers=HEADERS,
+                         json={"day": stranded})
+    assert answer.status_code == 200 and answer.json() == {"day": stranded}
+    assert store.read_day_record(fixture["store"],
+                                 stranded).status == "revealed"
+    again = client.post("/api/dev/day/reveal", headers=HEADERS,
+                        json={"day": stranded})
+    assert again.status_code == 409
+    assert "has status 'revealed'" in again.json()["detail"]
+
+
+def test_a_named_move_wants_a_stored_day(tmp_path, monkeypatch) -> None:
+    _fixture, _config, client, _clock = _world(tmp_path, monkeypatch)
+    for body, code in (({}, 400), ({"day": 12}, 400),
+                       ({"day": "2026-01-01"}, 404)):
+        answer = client.post("/api/dev/day/close", headers=HEADERS,
+                             json=body)
+        assert answer.status_code == code, body
+    closed = client.post("/api/dev/day/close", headers=HEADERS,
+                         json={"day": OPEN_DAY})
+    assert closed.status_code == 200
+    assert closed.json() == {"trial_rows": 1}

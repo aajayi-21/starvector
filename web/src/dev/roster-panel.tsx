@@ -16,8 +16,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError } from "./api";
-import { refusedRead } from "./days-tab";
-import { utcStamp } from "./format";
+import { ErrorNote, refusedRead, StatusBadge } from "./controls";
+import { utcShort } from "./format";
 import { PlayerAccount } from "./player-account";
 import { RankingsView } from "./rankings";
 import { SubmissionView } from "./submission-view";
@@ -57,7 +57,7 @@ export function RosterPanel(props: {
     try {
       const roster = await api.getPlayers();
       setPlayers(roster.players);
-      setNote(roster.players.length === 0 ? "no players yet" : "");
+      setNote("");
     } catch (error) {
       setPlayers([]);
       // The same wording rule as the day browser: a refused
@@ -148,100 +148,110 @@ export function RosterPanel(props: {
     }
   };
 
+  // The world of spec M1 ruling 7: no record, one synthetic row.
+  const noAccounts =
+    players !== null &&
+    players.length === 1 &&
+    players[0]?.status === "configured";
+
   return (
-    <div className="card dev-card" id="roster-panel">
-      <span className="card-kicker">Players</span>
+    <div className="card" id="roster-panel">
+      <div className="eyebrow">Players</div>
       {players === null ? (
-        <p className="dev-muted" role="status">
+        <p className="subtle small" role="status">
           loading…
         </p>
+      ) : noAccounts ? (
+        <div className="notice" role="note">
+          Nobody has an account on this server yet, so there is nobody to send a
+          new invite address to. Mint the first player in “Invite a player”
+          above. Until then, everyone who opens the app plays as{" "}
+          {players[0]?.player} with no sign-in.
+        </div>
       ) : (
-        <table className="table dev-table">
-          <thead>
-            <tr>
-              <th>player</th>
-              <th>label</th>
-              <th>status</th>
-              <th className="dev-num">devices</th>
-              <th>last sign-in</th>
-              <th className="dev-num">sends</th>
-              <th>created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.map((row) => (
-              <tr
-                key={row.player}
-                className={row.player === selected ? "dev-picked" : undefined}
-              >
-                <td>
-                  <button
-                    type="button"
-                    className="btn btn-ghost dev-cell-button"
-                    aria-pressed={row.player === selected}
-                    onClick={() => void showPlayer(row.player)}
-                  >
-                    {row.player}
-                  </button>
-                </td>
-                <td>{row.display_name}</td>
-                <td>
-                  <span
-                    className={`dev-status dev-status-${
-                      row.status === "active" ? "open" : row.status
-                    }`}
-                  >
-                    {row.status}
-                  </span>
-                </td>
-                <td className="dev-num">
-                  {row.devices}
-                  {row.device_codes > 0 ? (
-                    <span className="dev-muted" title="device codes that wait">
-                      {" "}
-                      +{row.device_codes} code
-                    </span>
-                  ) : null}
-                </td>
-                <td>{utcStamp(row.last_signed_in)}</td>
-                <td className="dev-num">{row.sends}</td>
-                <td>{utcStamp(row.created_at)}</td>
+        <div className="dev-scroll-x">
+          <table className="table dev-table">
+            <thead>
+              <tr>
+                <th>player</th>
+                <th>status</th>
+                <th className="num">devices</th>
+                <th>last sign-in (UTC)</th>
+                <th className="num">sends</th>
+                <th>created (UTC)</th>
+                <th>
+                  <span className="visually-hidden">action</span>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {players.map((row) => (
+                <tr
+                  key={row.player}
+                  className={row.player === selected ? "dev-picked" : undefined}
+                >
+                  <td>
+                    <button
+                      type="button"
+                      className="dev-link-button"
+                      aria-pressed={row.player === selected}
+                      onClick={() => void showPlayer(row.player)}
+                    >
+                      {row.player}
+                    </button>
+                    {row.display_name === row.player ? null : (
+                      <span className="subtle"> {row.display_name}</span>
+                    )}
+                  </td>
+                  <td>
+                    <StatusBadge status={row.status} />
+                  </td>
+                  <td className="num">
+                    {row.devices}
+                    {row.device_codes > 0 ? (
+                      <span className="subtle" title="device codes that wait">
+                        {" "}
+                        +{row.device_codes} code
+                      </span>
+                    ) : null}
+                  </td>
+                  <td>{utcShort(row.last_signed_in)}</td>
+                  <td className="num">{row.sends}</td>
+                  <td>{utcShort(row.created_at)}</td>
+                  <td className="num">
+                    <button
+                      type="button"
+                      className="btn btn-secondary dev-small-button"
+                      aria-label={`Manage ${row.player}`}
+                      onClick={() => void showPlayer(row.player)}
+                    >
+                      Manage
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      {note === "" ? null : (
-        <p className="dev-muted" role="status">
-          {note}
-        </p>
-      )}
+      <ErrorNote text={note} />
 
-      {selected === null ? null : (
+      {selected === null || noAccounts ? null : (
         <>
-          <div className="hr" style={{ margin: 0 }} />
-          {players?.find((row) => row.player === selected)?.status ===
-          "configured" ? (
-            <p className="dev-muted">
-              No stored record: this server runs with no sign-in, and each
-              caller is the configured player. Mint an invite to turn sign-in
-              on.
-            </p>
-          ) : (
-            <PlayerAccount
-              key={selected}
-              api={api}
-              player={selected}
-              onChanged={() => void loadPlayers()}
-            />
-          )}
-          <span className="card-kicker">{selected} — history</span>
+          <hr className="divider" />
+          <PlayerAccount
+            key={selected}
+            api={api}
+            player={selected}
+            onChanged={() => void loadPlayers()}
+          />
+          <div className="dev-subhead">{selected} — history</div>
           {history === null ? (
-            <p className="dev-muted" role="status">
+            <p className="subtle small" role="status">
               loading…
             </p>
           ) : history.days.length === 0 ? (
-            <p className="dev-muted">no stored day yet</p>
+            <p className="subtle small">no stored day yet</p>
           ) : (
             <table className="table dev-table">
               <thead>
@@ -263,7 +273,7 @@ export function RosterPanel(props: {
                     <td>
                       <button
                         type="button"
-                        className="btn btn-ghost dev-cell-button"
+                        className="dev-link-button"
                         aria-pressed={row.day === openedDay}
                         onClick={() => void showDay(row)}
                       >
@@ -273,10 +283,10 @@ export function RosterPanel(props: {
                     <td className="dev-mono">{row.trial_code}</td>
                     <td>{row.status}</td>
                     <td>{row.submitted ? "sent" : "—"}</td>
-                    <td className="dev-num">
+                    <td className="num">
                       {row.trial === null ? "—" : row.trial.p.toFixed(4)}
                     </td>
-                    <td className="dev-num">
+                    <td className="num">
                       {row.trial === null
                         ? "—"
                         : `${row.trial.target_rank} of ${
@@ -292,7 +302,7 @@ export function RosterPanel(props: {
       )}
 
       {openedDay === null ? null : stored === null ? (
-        <p className="dev-muted" role="status">
+        <p className="subtle small" role="status">
           {dayNote === "" ? "loading…" : dayNote}
         </p>
       ) : (
@@ -302,13 +312,13 @@ export function RosterPanel(props: {
             {rankings === null ? (
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-secondary"
                 onClick={() => void loadRankings()}
               >
                 Score and rank the submission
               </button>
             ) : null}
-            <span className="dev-hint">
+            <span className="subtle small">
               {rankNote === ""
                 ? "Scores the stored submission through the production " +
                   "path. Before close it is a preview; after close it " +

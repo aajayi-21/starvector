@@ -12,8 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { DevApi } from "./api";
-import { DevApiError } from "./api";
-import { refusedRead } from "./days-tab";
+import { ErrorNote, messageOf, refusedRead, WorkingNote } from "./controls";
 import { utcStamp } from "./format";
 import type {
   DevCell,
@@ -21,10 +20,6 @@ import type {
   DevIndexStatus,
   DevQueryResult,
 } from "./types";
-
-function messageOf(error: unknown): string {
-  return error instanceof DevApiError ? error.message : "refused";
-}
 
 /** Starting points for the query box — each is a plain SELECT. */
 export const EXAMPLES: ReadonlyArray<{ label: string; sql: string }> = [
@@ -112,6 +107,7 @@ export function IndexTab(props: {
   const [busy, setBusy] = useState(false);
   const [check, setCheck] = useState<DevIndexCheck | null>(null);
   const [actionNote, setActionNote] = useState("");
+  const [actionError, setActionError] = useState("");
   const [sql, setSql] = useState(EXAMPLES[0]?.sql ?? "");
   const [result, setResult] = useState<DevQueryResult | null>(null);
   const [queryNote, setQueryNote] = useState("");
@@ -133,13 +129,15 @@ export function IndexTab(props: {
 
   const build = async () => {
     setBusy(true);
-    setActionNote("building…");
+    setActionNote("Building the index from the store…");
+    setActionError("");
     setCheck(null);
     try {
       setStatus(await api.buildIndex());
       setActionNote("Built from the store.");
     } catch (error) {
-      setActionNote(messageOf(error));
+      setActionNote("");
+      setActionError(messageOf(error));
     } finally {
       setBusy(false);
     }
@@ -147,13 +145,15 @@ export function IndexTab(props: {
 
   const verify = async () => {
     setBusy(true);
-    setActionNote("checking…");
+    setActionNote("Checking the index against the store…");
+    setActionError("");
     setCheck(null);
     try {
       setCheck(await api.verifyIndex());
       setActionNote("");
     } catch (error) {
-      setActionNote(messageOf(error));
+      setActionNote("");
+      setActionError(messageOf(error));
     } finally {
       setBusy(false);
     }
@@ -179,9 +179,9 @@ export function IndexTab(props: {
 
   return (
     <div className="dev-stack">
-      <section className="card dev-card" aria-label="Index file">
+      <section className="card" aria-label="Index file">
         {status === null ? (
-          <p className="dev-muted" role="status">
+          <p className="muted small" role="status">
             {note === "" ? "loading…" : note}
           </p>
         ) : (
@@ -207,7 +207,7 @@ export function IndexTab(props: {
                       : "Behind the store"}
               </h2>
             </div>
-            <p className="dev-muted">
+            <p className="muted small">
               {!status.exists
                 ? "The first query builds it, or build it now."
                 : status.problem !== null
@@ -216,7 +216,7 @@ export function IndexTab(props: {
                     ? `Built ${utcStamp(status.built_at)}.`
                     : `Built ${utcStamp(status.built_at)}; the store changed since. The next query builds it again.`}
             </p>
-            <code className="dev-mono dev-break dev-muted">{status.path}</code>
+            <code className="dev-mono dev-break subtle">{status.path}</code>
             <div className="dev-row dev-wrap">
               <button
                 type="button"
@@ -224,7 +224,7 @@ export function IndexTab(props: {
                 disabled={busy}
                 onClick={() => void build()}
               >
-                Build again from the store
+                {status.exists ? "Build again from the store" : "Build it now"}
               </button>
               <button
                 type="button"
@@ -234,16 +234,21 @@ export function IndexTab(props: {
               >
                 Check against the store
               </button>
-              <span className="dev-hint" role="status">
-                {actionNote}
-              </span>
+              {busy ? (
+                <WorkingNote text={actionNote} />
+              ) : (
+                <span className="subtle small" role="status">
+                  {actionNote}
+                </span>
+              )}
             </div>
+            <ErrorNote text={actionError} />
             {check === null ? null : check.agrees ? (
-              <p className="dev-good" role="status">
+              <div className="notice notice-good" role="status">
                 The index agrees with the store, table by table.
-              </p>
+              </div>
             ) : (
-              <ul className="dev-alert" role="alert">
+              <ul className="notice notice-bad dev-problems" role="alert">
                 {check.problems.map((line) => (
                   <li key={line}>{line}</li>
                 ))}
@@ -263,15 +268,15 @@ export function IndexTab(props: {
         )}
       </section>
 
-      <section className="card dev-card" aria-label="Query">
+      <section className="card" aria-label="Query">
         <div className="dev-row dev-wrap">
-          <span className="card-kicker">Query · read-only</span>
+          <span className="eyebrow">Query · read-only</span>
           <span style={{ flex: 1 }} />
           {EXAMPLES.map((example) => (
             <button
               key={example.label}
               type="button"
-              className="btn btn-ghost dev-small"
+              className="btn btn-ghost dev-example"
               onClick={() => setSql(example.sql)}
             >
               {example.label}
@@ -301,14 +306,14 @@ export function IndexTab(props: {
           >
             {querying ? "Running…" : "Run query"}
           </button>
-          <span className="dev-hint">
+          <span className="subtle small">
             Ctrl+Enter runs it. One SELECT; 1,000 rows and 5 seconds at most.
             Trial rows exist for revealed days only.
           </span>
           <span style={{ flex: 1 }} />
           {result === null ? null : (
             <>
-              <span className="dev-muted" role="status">
+              <span className="muted small" role="status">
                 {result.rows.length} {result.rows.length === 1 ? "row" : "rows"}
                 {result.truncated
                   ? " (more rows exist — add a LIMIT or a WHERE)"
@@ -326,13 +331,9 @@ export function IndexTab(props: {
             </>
           )}
         </div>
-        {queryNote === "" ? null : (
-          <p className="dev-alert" role="alert">
-            {queryNote}
-          </p>
-        )}
+        <ErrorNote text={queryNote} />
         {result === null ? null : result.rows.length === 0 ? (
-          <p className="dev-muted">No rows.</p>
+          <p className="muted small">No rows.</p>
         ) : (
           <div className="dev-scroll">
             <table className="table dev-table dev-results">
@@ -357,7 +358,7 @@ export function IndexTab(props: {
                           value === null
                             ? "dev-null"
                             : typeof value === "number"
-                              ? "dev-num"
+                              ? "num"
                               : undefined
                         }
                         title={cellText(value)}
@@ -374,7 +375,7 @@ export function IndexTab(props: {
       </section>
 
       {status === null || status.tables.length === 0 ? null : (
-        <details className="card dev-card dev-help">
+        <details className="card disclosure">
           <summary>Tables and columns</summary>
           <dl className="dev-schema">
             {status.tables.map((table) => (
@@ -383,9 +384,7 @@ export function IndexTab(props: {
                   {table.name}
                   {table.view ? " (view: revealed days, pinned rows)" : ""}
                 </dt>
-                <dd className="dev-mono dev-muted">
-                  {table.columns.join(", ")}
-                </dd>
+                <dd className="dev-mono subtle">{table.columns.join(", ")}</dd>
               </div>
             ))}
           </dl>

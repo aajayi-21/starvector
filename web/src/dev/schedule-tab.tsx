@@ -13,8 +13,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { localTimeOfUtc } from "../ui/format";
 import type { DevApi } from "./api";
-import { DevApiError } from "./api";
-import { refusedRead, StatusTag } from "./days-tab";
+import {
+  ConfirmAction,
+  ErrorNote,
+  messageOf,
+  refusedRead,
+  StatusBadge,
+  WorkingNote,
+} from "./controls";
 import { relative, utcStamp } from "./format";
 import type {
   DevPlan,
@@ -29,10 +35,6 @@ const SOURCE_LABEL: Record<DevRunSource, string> = {
   "command-line": "Command line",
   console: "Console",
 };
-
-function messageOf(error: unknown): string {
-  return error instanceof DevApiError ? error.message : "refused";
-}
 
 /** One step in words: "Close 2026-09-24 and score it". */
 export function stepText(
@@ -56,7 +58,7 @@ function PlanSteps(props: {
   empty: string;
 }): React.JSX.Element {
   if (props.plan.steps.length === 0) {
-    return <p className="dev-muted">{props.empty}</p>;
+    return <p className="muted small">{props.empty}</p>;
   }
   return (
     <ol className="dev-steps">
@@ -87,6 +89,7 @@ export function ScheduleTab(props: {
   const [view, setView] = useState<DevSchedule | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(false);
   const [actionNote, setActionNote] = useState("");
   const [lastRun, setLastRun] = useState<DevRun | null>(null);
   const [pauseNote, setPauseNote] = useState("");
@@ -118,33 +121,32 @@ export function ScheduleTab(props: {
     }
   };
 
-  const runNow = async (plan: DevPlan, latestDay: string | null) => {
-    const words = plan.steps
-      .map((step) => stepText(step, latestDay, plan.opens))
-      .join(", then ");
-    if (!window.confirm(`${words}?`)) {
-      return;
-    }
-    setBusy(true);
-    setActionNote("working…");
+  const runNow = async () => {
+    setRunning(true);
+    setActionNote("");
     setLastRun(null);
     try {
       const answer = await api.runRollover();
       setView(answer.schedule);
       setLastRun(answer.run);
-      setActionNote("");
+      // A failed step comes back as a run record, not an HTTP error.
+      setActionNote(
+        answer.run.outcome === "failed"
+          ? "The run stopped at a step that did not complete — its lines are below."
+          : "",
+      );
       onChanged();
     } catch (error) {
       setActionNote(messageOf(error));
       void load();
     } finally {
-      setBusy(false);
+      setRunning(false);
     }
   };
 
   if (view === null) {
     return (
-      <p className="dev-muted" role="status">
+      <p className="muted small" role="status">
         {note === "" ? "loading…" : note}
       </p>
     );
@@ -156,7 +158,7 @@ export function ScheduleTab(props: {
   return (
     <div className="dev-stack">
       {hour === null || view.next_run === null || view.due_now === null ? (
-        <section className="card dev-card" aria-label="Automatic days">
+        <section className="card" aria-label="Automatic days">
           <div className="dev-row">
             <span className="dev-dot dev-dot-off" aria-hidden="true" />
             <h2 className="dev-h2">Automatic days are off</h2>
@@ -165,7 +167,7 @@ export function ScheduleTab(props: {
             This server has no rollover hour: <code>closes_at_utc</code> is not
             in its config. Days move only with the Days tab controls.
           </p>
-          <p className="dev-muted">
+          <p className="muted small">
             To turn them on, set <code>closes_at_utc</code> in the server config
             and install the day timer — see <code>deploy/README.md</code>.
           </p>
@@ -173,7 +175,7 @@ export function ScheduleTab(props: {
       ) : (
         <>
           <section
-            className={`card dev-card ${view.paused ? "dev-card-warn" : ""}`}
+            className={`card ${view.paused ? "dev-card-warn" : ""}`}
             aria-label="Automatic days"
           >
             <div className="dev-row dev-wrap">
@@ -233,12 +235,12 @@ export function ScheduleTab(props: {
           </section>
 
           <div className="dev-grid-2">
-            <section className="card dev-card" aria-label="Next run">
-              <span className="card-kicker">Next timer run</span>
+            <section className="card" aria-label="Next run">
+              <span className="eyebrow">Next timer run</span>
               <p className="dev-big">{utcStamp(view.next_run.at)}</p>
-              <p className="dev-muted">{relative(view.next_run.at, now)}</p>
+              <p className="muted small">{relative(view.next_run.at, now)}</p>
               {view.paused ? (
-                <p className="dev-muted">Paused: it will move nothing.</p>
+                <p className="muted small">Paused: it will move nothing.</p>
               ) : (
                 <PlanSteps
                   plan={view.next_run}
@@ -248,16 +250,16 @@ export function ScheduleTab(props: {
               )}
             </section>
 
-            <section className="card dev-card" aria-label="Due now">
-              <span className="card-kicker">Due now</span>
+            <section className="card" aria-label="Due now">
+              <span className="eyebrow">Due now</span>
               <div className="dev-row">
                 <span>Latest day</span>
                 {view.latest === null ? (
-                  <span className="dev-muted">none yet</span>
+                  <span className="muted small">none yet</span>
                 ) : (
                   <>
                     <strong>{view.latest.day}</strong>
-                    <StatusTag status={view.latest.status} />
+                    <StatusBadge status={view.latest.status} />
                   </>
                 )}
               </div>
@@ -266,47 +268,49 @@ export function ScheduleTab(props: {
                 latestDay={latestDay}
                 empty="Nothing is due now."
               />
-              <div className="dev-row dev-wrap">
-                <button
-                  type="button"
-                  className="btn btn-primary"
+              <div className="dev-controls">
+                <ConfirmAction
+                  label="Do what is due now"
+                  question={`${view.due_now.steps
+                    .map((step) =>
+                      stepText(step, latestDay, view.due_now?.opens ?? null),
+                    )
+                    .join(", then ")} — now?`}
+                  confirmLabel="Yes, do it now"
                   disabled={
-                    busy || view.lock_held || view.due_now.steps.length === 0
+                    busy ||
+                    running ||
+                    view.lock_held ||
+                    view.due_now.steps.length === 0
                   }
-                  onClick={() => {
-                    if (view.due_now !== null) {
-                      void runNow(view.due_now, latestDay);
-                    }
-                  }}
-                >
-                  {busy ? "Working…" : "Do what is due now"}
-                </button>
-                <span className="dev-hint">
-                  {view.lock_held
-                    ? "A rollover is running now — wait for it to end."
-                    : "Does what the timer would do at this moment, here and now. The pause does not stop it."}
-                </span>
+                  onConfirm={() => void runNow()}
+                />
+                {running ? (
+                  <WorkingNote text="Working through the due steps… a close with the live model can take a minute." />
+                ) : (
+                  <p className="subtle small">
+                    {view.lock_held
+                      ? "A rollover is running now — wait for it to end."
+                      : "Does what the timer would do at this moment. The pause does not stop it."}
+                  </p>
+                )}
               </div>
             </section>
           </div>
         </>
       )}
 
-      {actionNote === "" ? null : (
-        <p className="dev-alert" role="alert">
-          {actionNote}
-        </p>
-      )}
+      <ErrorNote text={actionNote} />
       {lastRun === null ? null : (
-        <section className="card dev-card" aria-label="This run">
-          <span className="card-kicker">This run · {lastRun.outcome}</span>
+        <section className="card" aria-label="This run">
+          <span className="eyebrow">This run · {lastRun.outcome}</span>
           <pre className="dev-pre">{lastRun.detail || "(no lines)"}</pre>
         </section>
       )}
 
-      <section className="card dev-card" aria-label="Recent runs">
+      <section className="card" aria-label="Recent runs">
         <div className="dev-row">
-          <span className="card-kicker">Recent runs</span>
+          <span className="eyebrow">Recent runs</span>
           <span style={{ flex: 1 }} />
           <button
             type="button"
@@ -317,7 +321,7 @@ export function ScheduleTab(props: {
           </button>
         </div>
         {view.runs.length === 0 ? (
-          <p className="dev-muted">
+          <p className="muted small">
             No run yet. The timer, <code>python -m service.rollover</code>, and
             this console each leave a record here.
           </p>
@@ -337,7 +341,7 @@ export function ScheduleTab(props: {
                 <tr key={`${run.started_at}-${run.source}`}>
                   <td>
                     {utcStamp(run.started_at)}
-                    <div className="dev-muted">
+                    <div className="muted small">
                       {relative(run.started_at, now)}
                     </div>
                   </td>
@@ -363,7 +367,7 @@ export function ScheduleTab(props: {
             </tbody>
           </table>
         )}
-        <p className="dev-hint">
+        <p className="subtle small">
           The timer is <code>starvector-day.timer</code> in systemd; its hour
           must equal <code>closes_at_utc</code>. On the box,{" "}
           <code>systemctl list-timers starvector-day.timer</code> shows its next

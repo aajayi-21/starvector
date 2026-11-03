@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { makeDevApi } from "../../src/dev/api";
+import { DevApiError, makeDevApi, OLDER_SERVER } from "../../src/dev/api";
+import { refusedRead } from "../../src/dev/controls";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 /** Records every fetch and answers an empty JSON body. */
@@ -72,5 +74,51 @@ describe("the console's client", () => {
       "Bearer first",
       "Bearer second",
     ]);
+  });
+});
+
+function answer(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+describe("the console client after the review (spec BR1 §7.6)", () => {
+  it("names an older server when a console path does not exist there", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => answer(404, { detail: "Not Found" })),
+    );
+    const error = await makeDevApi()
+      .getPlayer("ade")
+      .catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(DevApiError);
+    expect((error as DevApiError).message).toBe(OLDER_SERVER);
+    expect(refusedRead(error)).toBe(OLDER_SERVER);
+  });
+
+  it("keeps the dev-gate wording for the server's own 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => answer(404, { detail: "not found" })),
+    );
+    const error = await makeDevApi()
+      .getSchedule()
+      .catch((failure: unknown) => failure);
+    expect(refusedRead(error)).toMatch(/start the server with --dev/);
+  });
+
+  it("sends the named day in the body of a named move", async () => {
+    const fetch = vi.fn(async () => answer(200, { day: "2026-08-14" }));
+    vi.stubGlobal("fetch", fetch);
+    await makeDevApi(() => "a-token").revealDay("2026-08-14");
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/dev/day/reveal");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ day: "2026-08-14" }));
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer a-token",
+    );
   });
 });

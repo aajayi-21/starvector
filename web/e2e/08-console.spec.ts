@@ -39,8 +39,29 @@ test("the console reads players, devices, and the results database", async ({
   await expect(page.getByRole("alert")).toContainText("read-only");
 });
 
+test("the console closes and reveals the day by hand", async ({ page }) => {
+  await page.goto("/dev.html");
+  const token = page.getByLabel("operator token");
+  await token.fill(OPERATOR_TOKEN);
+  await token.blur();
+  // After the earlier specs the latest day is revealed: open one,
+  // then close and reveal it from the Days tab.
+  await page.getByRole("button", { name: "Open the next day" }).click();
+  await expect(page.getByText(/^Opened \d{4}-\d{2}-\d{2}/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Close the day (scores now)" })
+    .click();
+  await page.getByRole("button", { name: "Yes, close and score" }).click();
+  await expect(page.getByText(/^Closed .*scored\.$/)).toBeVisible();
+  await page.getByRole("button", { name: "Reveal", exact: true }).click();
+  await page.getByRole("button", { name: "Yes, reveal" }).click();
+  await expect(
+    page.getByText(/^Revealed \d{4}-\d{2}-\d{2}\. Players/),
+  ).toBeVisible();
+  await expect(page.getByText("status revealed")).toBeVisible();
+});
+
 test("the console does what is due and the day moves", async ({ page }) => {
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.goto("/dev.html");
   const token = page.getByLabel("operator token");
   await token.fill(OPERATOR_TOKEN);
@@ -51,6 +72,8 @@ test("the console does what is due and the day moves", async ({ page }) => {
   // The fixture's days are in August and the server reads the real
   // clock, thus a step is always due here.
   await page.getByRole("button", { name: "Do what is due now" }).click();
+  // The confirmation is part of the page (spec BR1 §7.6).
+  await page.getByRole("button", { name: "Yes, do it now" }).click();
   await expect(page.getByText("This run · moved")).toBeVisible();
   await expect(page.getByText("Nothing is due now.")).toBeVisible();
 

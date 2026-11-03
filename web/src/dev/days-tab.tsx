@@ -1,38 +1,74 @@
 /**
- * The Days tab (spec S2 §5, grown by spec BR1 §7.1): the day browser
- * with the latest-day-only control rule, the day record with its
- * times, the blind-run target toggle, each player's send, and the
- * stored-submission and rankings views for the send the operator
- * picks.
+ * The Days tab (spec S2 §5, grown by spec BR1 §7.1 and §7.6): the day
+ * browser, the day record with its times, the blind-run target toggle,
+ * each player's send, and the stored-submission and rankings views for
+ * the send the operator picks.
+ *
+ * The controls move the latest day — open, close, reveal — and a day
+ * left behind a newer one (a closed day no reveal reached) gets its
+ * own close or reveal. Each move shows that it is working, then either
+ * what it did or the server's refusal in a red box.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError } from "./api";
-import { utcStamp } from "./format";
+import {
+  ConfirmAction,
+  ErrorNote,
+  messageOf,
+  refusedRead,
+  StatusBadge,
+  WorkingNote,
+} from "./controls";
+import { utcShort, utcStamp } from "./format";
 import { RankingsView } from "./rankings";
 import { SubmissionView } from "./submission-view";
-import type { DevDayDetail, DevDayRow, DevRankings, DevStored } from "./types";
+import type {
+  DevDayDetail,
+  DevDayRow,
+  DevRankings,
+  DevStored,
+  LifecycleAck,
+} from "./types";
 
-function messageOf(error: unknown): string {
-  return error instanceof DevApiError ? error.message : "refused";
+export { refusedRead } from "./controls";
+
+type Move = "open" | "close" | "reveal";
+
+/** The line a move shows while it runs. */
+function workingText(move: Move, day: string | null): string {
+  switch (move) {
+    case "open":
+      return "Opening the next day…";
+    case "close":
+      return `Closing ${day ?? "the day"} and scoring each send… with the live model this can take a minute.`;
+    case "reveal":
+      return `Revealing ${day ?? "the day"}…`;
+  }
 }
 
-/** The wording rule for a refused dev read: see DevApp. */
-export function refusedRead(error: unknown): string {
-  return error instanceof DevApiError && error.status === 404
-    ? "not found: start the server with --dev, or the operator " +
-        "token is missing or wrong"
-    : messageOf(error);
+/** The line a move shows when it lands. */
+function doneText(move: Move, day: string | null, ack: LifecycleAck): string {
+  switch (move) {
+    case "open":
+      return `Opened ${String(ack.day ?? "the next day")} — code ${String(ack.trial_code ?? "")}.`;
+    case "close": {
+      const rows = Number(ack.trial_rows ?? 0);
+      return `Closed ${day ?? "the day"}: ${rows} ${rows === 1 ? "send" : "sends"} scored.`;
+    }
+    case "reveal":
+      return `Revealed ${String(ack.day ?? day ?? "the day")}. Players can see the photo and their results.`;
+  }
 }
 
-export function StatusTag(props: { status: string }): React.JSX.Element {
-  return (
-    <span className={`dev-status dev-status-${props.status}`}>
-      {props.status}
-    </span>
-  );
+/** The refusal, with the one repair the console can name. */
+function refusalText(error: unknown): string {
+  const text = messageOf(error);
+  return text.includes("OPENROUTER_API_KEY")
+    ? `${text} Start the server that this console talks to with the key in its environment: on the box, starvector-dev reads it from /etc/starvector/env; on your own machine, set it in the shell that starts the server.`
+    : text;
 }
 
 export function DaysTab(props: {
@@ -53,10 +89,18 @@ export function DaysTab(props: {
   const [rankings, setRankings] = useState<DevRankings | null>(null);
   const [rankNote, setRankNote] = useState("");
   const [dayNote, setDayNote] = useState("");
-  const [controlNote, setControlNote] = useState("");
+  const [working, setWorking] = useState<Move | null>(null);
+  const [moveError, setMoveError] = useState("");
+  const [moveDone, setMoveDone] = useState("");
   // Each switch takes the next token; a response whose token is
   // stale belongs to a day or send the operator left and is dropped.
   const switchToken = useRef(0);
+  // The day to show after the next reload: a move of an earlier day
+  // stays on it, a move of the latest day shows the new latest.
+  const preferred = useRef<string | null>(null);
+  // Each listing takes the next token: a move and a token change can
+  // start two reloads, and the older answer must not land last.
+  const listToken = useRef(0);
 
   const showSend = useCallback(
     async (row: DevDayRow, player: string) => {
@@ -120,7 +164,7 @@ export function DaysTab(props: {
         setDetail(found);
         const first = found.sends[0];
         if (first === undefined) {
-          setDayNote("nothing sent this day");
+          // The Sends card says so; nothing loads below it.
           return;
         }
         await showSend(row, first.player);
@@ -134,24 +178,32 @@ export function DaysTab(props: {
   );
 
   const loadDays = useCallback(async () => {
+    listToken.current += 1;
+    const mine = listToken.current;
     try {
       const listing = await api.getDays();
+      if (mine !== listToken.current) {
+        return;
+      }
       setDays(listing.days);
       setNote(listing.days.length === 0 ? "no day yet" : "");
-      const first = listing.days[0];
-      if (first !== undefined) {
-        await showDay(first);
+      const wanted = preferred.current;
+      preferred.current = null;
+      const pick =
+        listing.days.find((row) => row.day === wanted) ?? listing.days[0];
+      if (pick !== undefined) {
+        await showDay(pick);
       } else {
         setSelected(null);
       }
     } catch (error) {
-      setDays([]);
+      if (mine !== listToken.current) {
+        return;
+      }
+      // No listing, no control: an open offered here would act on a
+      // store the console cannot see.
+      setDays(null);
       setSelected(null);
-      // A refused operator check on a dev read answers the same 404
-      // the server gives with no --dev flag, and that is deliberate:
-      // a 401 there would announce that dev mode is on. The console
-      // only ever runs against a dev server, thus it can say both
-      // causes out loud without opening the oracle on the wire.
       setNote(refusedRead(error));
     }
   }, [api, showDay]);
@@ -162,26 +214,34 @@ export function DaysTab(props: {
     void loadDays();
   }, [loadDays, reload]);
 
-  const act = async (action: () => Promise<unknown>, confirmText?: string) => {
-    if (confirmText !== undefined && !window.confirm(confirmText)) {
-      return;
-    }
-    setControlNote("working…");
+  const move = async (
+    kind: Move,
+    day: string | null,
+    action: () => Promise<LifecycleAck>,
+    stayOn: string | null,
+  ) => {
+    setWorking(kind);
+    setMoveError("");
+    setMoveDone("");
     try {
-      await action();
-      setControlNote("");
+      const ack = await action();
+      setMoveDone(doneText(kind, day, ack));
+      preferred.current = stayOn;
       onChanged();
     } catch (error) {
-      setControlNote(messageOf(error));
+      setMoveError(refusalText(error));
+    } finally {
+      setWorking(null);
     }
   };
 
-  const latestDay = days?.[0]?.day;
+  const latestDay = days?.[0]?.day ?? null;
   // Before the listing lands there is no latest day to move, thus
   // no control is offered.
-  const movable =
+  const isLatest =
     days !== null && (selected === null || selected.day === latestDay);
   const status = selected?.status ?? "none";
+  const busy = working !== null;
 
   const loadPreview = async () => {
     if (selected === null || sender === null) {
@@ -202,18 +262,113 @@ export function DaysTab(props: {
     }
   };
 
+  const controls = (): React.JSX.Element | null => {
+    if (days === null) {
+      return null;
+    }
+    const day = selected?.day ?? null;
+    if (isLatest) {
+      switch (status) {
+        case "none":
+        case "revealed":
+          // The server opens a day after a reveal alone (spec BR1 §3).
+          return (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() =>
+                void move("open", null, () => api.postOpen(), null)
+              }
+            >
+              Open the next day
+            </button>
+          );
+        case "open":
+          return (
+            <ConfirmAction
+              label="Close the day (scores now)"
+              question={`Close ${day}? New sends stop, and each send is scored now.`}
+              confirmLabel="Yes, close and score"
+              disabled={busy}
+              onConfirm={() =>
+                void move("close", day, () => api.postClose(), null)
+              }
+            />
+          );
+        case "closing":
+          return (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() =>
+                void move("close", day, () => api.postClose(), null)
+              }
+            >
+              Finish closing (a close stopped part way)
+            </button>
+          );
+        case "closed":
+          return (
+            <ConfirmAction
+              label="Reveal"
+              question={`Reveal ${day}? Players see the photo and their results.`}
+              confirmLabel="Yes, reveal"
+              disabled={busy}
+              onConfirm={() =>
+                void move("reveal", day, () => api.postReveal(), null)
+              }
+            />
+          );
+      }
+    }
+    if (day === null) {
+      return null;
+    }
+    // A day behind the latest one (spec BR1 §7.6).
+    if (status === "closed") {
+      return (
+        <ConfirmAction
+          label="Reveal this day"
+          question={`${day} stayed closed behind a newer day. Reveal it? Players see its photo and results.`}
+          confirmLabel="Yes, reveal"
+          disabled={busy}
+          onConfirm={() =>
+            void move("reveal", day, () => api.revealDay(day), day)
+          }
+        />
+      );
+    }
+    if (status === "open" || status === "closing") {
+      return (
+        <ConfirmAction
+          label="Close this day"
+          question={`${day} is still ${status} behind a newer day. Close it and score its sends?`}
+          confirmLabel="Yes, close and score"
+          disabled={busy}
+          onConfirm={() =>
+            void move("close", day, () => api.closeDay(day), day)
+          }
+        />
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="dev-stack">
       <div className="dev-toolbar">
         {days !== null && days.length > 0 ? (
           <select
-            className="input"
+            className="input dev-select"
             aria-label="stored day"
-            style={{ width: "auto" }}
             value={selected?.day ?? ""}
             onChange={(event) => {
               const row = days.find((r) => r.day === event.target.value);
               if (row !== undefined) {
+                setMoveDone("");
+                setMoveError("");
                 void showDay(row);
               }
             }}
@@ -226,137 +381,112 @@ export function DaysTab(props: {
             ))}
           </select>
         ) : null}
-        <span className="dev-muted">
+        <span className="muted small">
           {note === "" ? `status ${status}` : note}
         </span>
       </div>
 
       <div className="dev-grid-2">
-        <section className="card dev-card" aria-label="Day">
+        <section className="card" aria-label="Day">
           <div className="dev-row">
             <span className="dev-code">{selected?.trial_code ?? "······"}</span>
-            {selected === null ? null : <StatusTag status={selected.status} />}
+            {selected === null ? null : (
+              <StatusBadge status={selected.status} />
+            )}
           </div>
           <DayFacts selected={selected} detail={detail} />
-          <div id="day-controls" className="dev-row dev-wrap">
-            {/* The server opens a day after a reveal alone (spec BR1
-                §3): a closed day left behind has no way back. */}
-            {movable && (status === "revealed" || status === "none") ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => act(() => api.postOpen())}
-              >
-                Open the next day
-              </button>
+          <div id="day-controls" className="dev-controls">
+            {controls()}
+            {working === null ? null : (
+              <WorkingNote text={workingText(working, selected?.day ?? null)} />
+            )}
+            <ErrorNote text={moveError} />
+            {moveDone === "" ? null : (
+              <div className="notice notice-good" role="status">
+                {moveDone}
+              </div>
+            )}
+            {working === null && moveError === "" && moveDone === "" ? (
+              <p className="subtle small">
+                {isLatest
+                  ? "The controls move the latest day."
+                  : status === "revealed"
+                    ? "This day is done. The controls move the latest day."
+                    : "This day is behind the latest one."}
+              </p>
             ) : null}
-            {movable && status === "open" ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() =>
-                  act(
-                    () => api.postClose(),
-                    "Close the day? Scoring runs and the window locks.",
-                  )
-                }
-              >
-                Close the day (scores now)
-              </button>
-            ) : null}
-            {movable && status === "closing" ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => act(() => api.postClose())}
-              >
-                Finish closing (a close stopped part way)
-              </button>
-            ) : null}
-            {movable && status === "closed" ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => act(() => api.postReveal())}
-              >
-                Reveal
-              </button>
-            ) : null}
-            <span className="dev-hint">
-              {controlNote === ""
-                ? "each stored day is readable — the controls move the latest one"
-                : controlNote}
-            </span>
           </div>
         </section>
 
-        <section className="card dev-card" aria-label="Sends">
-          <span className="card-kicker">
+        <section className="card" aria-label="Sends">
+          <div className="eyebrow">
             Sends{detail === null ? "" : ` · ${detail.sends.length}`}
-          </span>
+          </div>
           {detail === null ? (
-            <p className="dev-muted">loading…</p>
+            <p className="subtle small">loading…</p>
           ) : detail.sends.length === 0 ? (
-            <p className="dev-muted">Nobody sent this day.</p>
+            <p className="muted">Nobody sent this day.</p>
           ) : (
-            <table className="table dev-table">
-              <thead>
-                <tr>
-                  <th>player</th>
-                  <th>received</th>
-                  <th className="dev-num">share beaten</th>
-                  <th className="dev-num">rank</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.sends.map((send) => (
-                  <tr
-                    key={send.player}
-                    className={
-                      send.player === sender ? "dev-picked" : undefined
-                    }
-                  >
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-ghost dev-cell-button"
-                        aria-pressed={send.player === sender}
-                        onClick={() => {
-                          if (selected !== null) {
-                            void showSend(selected, send.player);
-                          }
-                        }}
-                      >
-                        {send.display_name}
-                        {send.display_name === send.player ? null : (
-                          <span className="dev-muted"> ({send.player})</span>
-                        )}
-                      </button>
-                    </td>
-                    <td>{utcStamp(send.received_at)}</td>
-                    <td className="dev-num">
-                      {send.trial === null
-                        ? "—"
-                        : `${Math.floor(send.trial.p * 100)}%`}
-                    </td>
-                    <td className="dev-num">
-                      {send.trial === null
-                        ? "—"
-                        : `${send.trial.target_rank} of ${
-                            send.trial.decoy_count + 1
-                          }`}
-                    </td>
+            <div className="dev-scroll-x">
+              <table className="table dev-table">
+                <thead>
+                  <tr>
+                    <th>player</th>
+                    <th>received (UTC)</th>
+                    <th className="num">share beaten</th>
+                    <th className="num">rank</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {detail.sends.map((send) => (
+                    <tr
+                      key={send.player}
+                      className={
+                        send.player === sender ? "dev-picked" : undefined
+                      }
+                    >
+                      <td>
+                        <button
+                          type="button"
+                          className="dev-link-button"
+                          aria-pressed={send.player === sender}
+                          onClick={() => {
+                            if (selected !== null) {
+                              void showSend(selected, send.player);
+                            }
+                          }}
+                        >
+                          {send.display_name}
+                        </button>
+                        {send.display_name === send.player ? null : (
+                          <span className="subtle"> {send.player}</span>
+                        )}
+                      </td>
+                      <td>{utcShort(send.received_at)}</td>
+                      <td className="num">
+                        {send.trial === null
+                          ? "—"
+                          : `${Math.floor(send.trial.p * 100)}%`}
+                      </td>
+                      <td className="num">
+                        {send.trial === null
+                          ? "—"
+                          : `${send.trial.target_rank} of ${
+                              send.trial.decoy_count + 1
+                            }`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       </div>
 
       {selected === null ? null : (
-        <section className="card dev-card" aria-label="Target">
-          <div className="dev-row">
+        <section className="card" aria-label="Target">
+          <div className="dev-row dev-wrap">
             <button
               type="button"
               className="btn btn-secondary"
@@ -364,12 +494,12 @@ export function DaysTab(props: {
             >
               {targetShown ? "Hide the target" : "Show the target"}
             </button>
-            <span className="dev-hint">
-              hidden by default, so a blind run stays possible
+            <span className="subtle small">
+              Hidden by default, so a blind run stays possible.
             </span>
           </div>
           {targetShown ? (
-            <div className="dev-row dev-top">
+            <div className="dev-row dev-top dev-wrap">
               <img
                 src={api.imageUrl(selected.target_id)}
                 width={192}
@@ -379,9 +509,9 @@ export function DaysTab(props: {
               <div className="dev-stack-sm">
                 <code className="dev-mono">{selected.target_id}</code>
                 {detail?.credit == null ? (
-                  <span className="dev-muted">no credit on file</span>
+                  <span className="subtle small">No credit on file.</span>
                 ) : (
-                  <span>
+                  <span className="small">
                     {detail.credit.title} —{" "}
                     <a
                       href={detail.credit.page}
@@ -399,23 +529,25 @@ export function DaysTab(props: {
       )}
 
       {stored === null ? (
-        <p className="dev-muted" role="status">
-          {dayNote === "" ? "loading…" : dayNote}
-        </p>
+        detail !== null && detail.sends.length === 0 ? null : (
+          <p className="subtle small" role="status">
+            {dayNote === "" ? "loading…" : dayNote}
+          </p>
+        )
       ) : (
         <>
           <SubmissionView stored={stored} />
-          <div className="dev-row">
+          <div className="dev-row dev-wrap">
             {rankings === null && status === "open" ? (
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-secondary"
                 onClick={() => void loadPreview()}
               >
                 Score and rank the submission
               </button>
             ) : null}
-            <span className="dev-hint">
+            <span className="subtle small">
               {rankNote === ""
                 ? "Scores the stored submission through the production " +
                   "path. Before close it is a preview; after close it " +
@@ -429,18 +561,23 @@ export function DaysTab(props: {
         </>
       )}
 
-      <details className="dev-help">
+      <details className="card disclosure">
         <summary>How a day runs</summary>
-        <ol>
-          <li>Open the next day — the code appears.</li>
-          <li>Players send from the player app.</li>
-          <li>Close the day — the one live step; scoring runs.</li>
-          <li>Reveal — the target and the report go public.</li>
-        </ol>
-        <p>
-          With a rollover hour set, the Automatic days tab does these on a
-          timer.
-        </p>
+        <div className="disclosure-body">
+          <ol className="dev-steps">
+            <li>Open the next day — the code appears.</li>
+            <li>Players send from the player app.</li>
+            <li>
+              Close the day — scoring runs through the live model, which needs
+              the OpenRouter key in the server's environment.
+            </li>
+            <li>Reveal — the target and the results go public.</li>
+          </ol>
+          <p className="muted small">
+            With a rollover hour set, the Automatic days tab does these on a
+            timer.
+          </p>
+        </div>
       </details>
     </div>
   );
@@ -475,7 +612,7 @@ function DayFacts(props: {
       <dt>commitment</dt>
       <dd className="dev-mono dev-break">{selected.commitment}</dd>
       <dt>config</dt>
-      <dd className="dev-mono dev-break">
+      <dd className="dev-mono">
         {detail === null ? "—" : detail.scoring_config_hash.slice(0, 16)}
       </dd>
     </dl>

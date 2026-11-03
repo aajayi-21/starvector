@@ -1,6 +1,6 @@
 /*
- * App layout on top of the theme (theme.css for the player app,
- * nocturne.css for the operator console). One breakpoint, 760 px:
+ * App layout on top of the theme (theme.css, which the operator
+ * console shares since spec BR1 §7.6). One breakpoint, 760 px:
  * below it the top navigation hides and a bottom tab bar takes over,
  * so a phone keeps one row of chrome and the thumb reaches the tabs.
  */
@@ -438,7 +438,8 @@
   position: relative;
   z-index: 5;
 }
-.dev-target-row {
-  color: var(--color-accent-300);
+.dev-target-row td {
+  color: var(--accent-text);
   font-weight: 600;
+  background: var(--accent-soft);
 }

@@ -248,7 +248,15 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
     },
     postReveal: () => {
       lifecycle.push("reveal");
-      return Promise.resolve({});
+      return Promise.resolve({ day: "2026-08-12" });
+    },
+    closeDay: (day) => {
+      lifecycle.push(`close ${day}`);
+      return Promise.resolve({ trial_rows: 1 });
+    },
+    revealDay: (day) => {
+      lifecycle.push(`reveal ${day}`);
+      return Promise.resolve({ day });
     },
     mintPlayer: (player, displayName) => {
       mints.push([player, displayName]);
@@ -431,19 +439,19 @@ describe("the operator console", () => {
     });
   });
 
-  it("asks for confirmation before close, and posts on accept", async () => {
+  it("asks in the page before close, and posts on yes", async () => {
     const api = makeStubApi([dayRow({ status: "open", submitted: false })]);
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+    const native = vi.spyOn(window, "confirm");
     render(<DevApp api={api} />);
-    const close = await screen.findByText("Close the day (scores now)");
-    fireEvent.click(close);
+    fireEvent.click(await screen.findByText("Close the day (scores now)"));
+    expect(screen.getByText(/Close 2026-08-12\? New sends stop/)).toBeDefined();
+    fireEvent.click(screen.getByText("Cancel"));
     expect(api.lifecycle).toEqual([]);
-    fireEvent.click(close);
+    fireEvent.click(screen.getByText("Close the day (scores now)"));
+    fireEvent.click(screen.getByText("Yes, close and score"));
     await waitFor(() => expect(api.lifecycle).toEqual(["close"]));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    // No browser dialog: a blocked one answers "no" with no sign.
+    expect(native).not.toHaveBeenCalled();
   });
 
   it("hides the target by default and clears it on a day switch", async () => {
@@ -584,12 +592,12 @@ describe("the console's async discipline", () => {
     const api = makeStubApi([dayRow({ status: "revealed" })]);
     render(<DevApp api={api} />);
     openTab("Players");
-    const name = await screen.findByLabelText("player name");
+    const name = await screen.findByLabelText("Player name");
     fireEvent.change(name, { target: { value: "bru" } });
-    fireEvent.change(screen.getByLabelText("display name"), {
+    fireEvent.change(screen.getByLabelText(/Display name/), {
       target: { value: "Bru Lin" },
     });
-    fireEvent.change(screen.getByLabelText("invite origin"), {
+    fireEvent.change(screen.getByLabelText("Site address in the invite"), {
       target: { value: "https://game.example.com" },
     });
     fireEvent.click(screen.getByText("Mint the invite"));
@@ -602,7 +610,7 @@ describe("the console's async discipline", () => {
     expect(url.textContent).toBe(
       `https://game.example.com/join/bru.${"s".repeat(43)}`,
     );
-    expect(screen.getByText(/one time the invite prints/)).toBeDefined();
+    expect(screen.getByText(/This is the one time it prints/)).toBeDefined();
     // A minted token is never persisted: the store keeps its digest
     // alone, thus a lost invite wants a rotate and not a lookup.
     const kept = Object.values(window.localStorage);
@@ -613,7 +621,7 @@ describe("the console's async discipline", () => {
   it("defaults the display name to the player name", async () => {
     const api = makeStubApi([dayRow({ status: "revealed" })]);
     render(<DevApp api={api} />);
-    fireEvent.change(await screen.findByLabelText("player name"), {
+    fireEvent.change(await screen.findByLabelText("Player name"), {
       target: { value: "cyd" },
     });
     fireEvent.click(screen.getByText("Mint the invite"));
@@ -637,7 +645,7 @@ describe("the console's async discipline", () => {
         Promise.reject(new DevApiError(409, "player 'ade' is stored")),
     };
     render(<DevApp api={api} />);
-    fireEvent.change(await screen.findByLabelText("player name"), {
+    fireEvent.change(await screen.findByLabelText("Player name"), {
       target: { value: "ade" },
     });
     fireEvent.click(screen.getByText("Mint the invite"));
@@ -883,10 +891,6 @@ describe("the Automatic days tab", () => {
       },
       getSchedule: () => Promise.resolve(due),
     };
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
     render(<DevApp api={api} />);
     openTab("Automatic days");
     const button = (await screen.findByText(
@@ -895,11 +899,14 @@ describe("the Automatic days tab", () => {
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
     expect(api.calls).toEqual([]);
-    expect(confirm).toHaveBeenLastCalledWith(
-      "Reveal 2026-08-12, then Open 2026-08-13?",
-    );
+    expect(
+      screen.getByText("Reveal 2026-08-12, then Open 2026-08-13 — now?"),
+    ).toBeDefined();
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(api.calls).toEqual([]);
     const before = dayReads;
-    fireEvent.click(button);
+    fireEvent.click(screen.getByText("Do what is due now"));
+    fireEvent.click(screen.getByText("Yes, do it now"));
     await waitFor(() => expect(api.calls).toEqual(["run"]));
     expect(await screen.findByText("This run · moved")).toBeDefined();
     await waitFor(() => expect(dayReads).toBeGreaterThan(before));
@@ -988,10 +995,11 @@ describe("the Players tab", () => {
 
   it("prints a new invite address one time, with the invite origin", async () => {
     window.localStorage.setItem(ORIGIN_KEY, "https://game.example.com/");
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const api = makeStubApi([dayRow({})]);
     await openAde(api);
     fireEvent.click(screen.getByText("New invite address"));
+    expect(api.calls).not.toContain("rotate ade");
+    fireEvent.click(screen.getByText("Yes, make a new address"));
     const url = await screen.findByTestId("account-invite-url");
     expect(url.textContent).toBe(
       `https://game.example.com/join/ade.${"t".repeat(43)}`,
@@ -1012,7 +1020,6 @@ describe("the Players tab", () => {
   });
 
   it("asks before a revoke, and offers a restore for a revoked player", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
     const base = makeStubApi([dayRow({})]);
     let revoked = false;
     const api: DevApi & { calls: string[] } = {
@@ -1028,10 +1035,10 @@ describe("the Players tab", () => {
     };
     await openAde(api);
     fireEvent.click(screen.getByText("Revoke access"));
-    expect(confirm).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText("Cancel"));
     expect(api.calls).not.toContain("revoke ade");
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByText("Revoke access"));
+    fireEvent.click(screen.getByText("Yes, revoke"));
     expect(await screen.findByText("Restore access")).toBeDefined();
     expect(api.calls).toContain("revoke ade");
     expect(screen.queryByText("New invite address")).toBeNull();
@@ -1056,7 +1063,7 @@ describe("the Results database tab", () => {
     render(<DevApp api={api} />);
     openTab("Results database");
     expect(await screen.findByText("Not built yet")).toBeDefined();
-    fireEvent.click(screen.getByText("Build again from the store"));
+    fireEvent.click(screen.getByText("Build it now"));
     expect(await screen.findByText("Up to date with the store")).toBeDefined();
     expect(screen.getByText("revealed_trials")).toBeDefined();
     fireEvent.click(screen.getByText("Check against the store"));
@@ -1094,5 +1101,164 @@ describe("the Results database tab", () => {
     expect((await screen.findByRole("alert")).textContent).toBe(
       "not authorized",
     );
+  });
+});
+
+// ── spec BR1 §7.6: the review of 2026-09-27 ─────────────────────
+
+describe("the console shows what each move did", () => {
+  it("shows a refused close in a red box, with the repair for a missing key", async () => {
+    const base = makeStubApi([dayRow({ status: "open" })]);
+    const api: DevApi = {
+      ...base,
+      postClose: () =>
+        Promise.reject(
+          new DevApiError(
+            400,
+            "OpenRouter API key is missing or empty. Set OPENROUTER_API_KEY in the environment",
+          ),
+        ),
+    };
+    render(<DevApp api={api} />);
+    fireEvent.click(await screen.findByText("Close the day (scores now)"));
+    fireEvent.click(screen.getByText("Yes, close and score"));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("OPENROUTER_API_KEY");
+    expect(alert.textContent).toContain("/etc/starvector/env");
+  });
+
+  it("shows the close working, then what it did", async () => {
+    let release: (value: { trial_rows: number }) => void = () => undefined;
+    const gate = new Promise<{ trial_rows: number }>((resolve) => {
+      release = resolve;
+    });
+    const base = makeStubApi([dayRow({ status: "open" })]);
+    const api: DevApi = { ...base, postClose: () => gate };
+    render(<DevApp api={api} />);
+    fireEvent.click(await screen.findByText("Close the day (scores now)"));
+    fireEvent.click(screen.getByText("Yes, close and score"));
+    expect(
+      await screen.findByText(/Closing 2026-08-12 and scoring each send/),
+    ).toBeDefined();
+    release({ trial_rows: 3 });
+    expect(
+      await screen.findByText("Closed 2026-08-12: 3 sends scored."),
+    ).toBeDefined();
+  });
+
+  it("reveals a closed day behind a newer one, and stays on it", async () => {
+    const api = makeStubApi([
+      dayRow({ day: "2026-08-19", status: "open" }),
+      dayRow({ day: "2026-08-14", status: "closed" }),
+    ]);
+    render(<DevApp api={api} />);
+    await screen.findByText("Close the day (scores now)");
+    fireEvent.change(screen.getByLabelText("stored day"), {
+      target: { value: "2026-08-14" },
+    });
+    fireEvent.click(await screen.findByText("Reveal this day"));
+    expect(
+      screen.getByText(/2026-08-14 stayed closed behind a newer day/),
+    ).toBeDefined();
+    fireEvent.click(screen.getByText("Yes, reveal"));
+    await waitFor(() => expect(api.lifecycle).toEqual(["reveal 2026-08-14"]));
+    expect(await screen.findByText(/Revealed 2026-08-14/)).toBeDefined();
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("stored day") as HTMLSelectElement).value,
+      ).toBe("2026-08-14"),
+    );
+    // The latest day's close is not offered while an earlier day shows.
+    expect(screen.queryByText("Close the day (scores now)")).toBeNull();
+  });
+});
+
+describe("the Players tab after the review", () => {
+  it("says when nobody has an account, and offers no account view", async () => {
+    const base = makeStubApi([dayRow({})]);
+    const api: DevApi = {
+      ...base,
+      getPlayers: () =>
+        Promise.resolve({
+          players: [
+            {
+              player: "ade",
+              display_name: "ade",
+              status: "configured" as const,
+              created_at: null,
+              devices: 0,
+              last_signed_in: null,
+              device_codes: 0,
+              sends: 3,
+            },
+          ],
+        }),
+    };
+    render(<DevApp api={api} />);
+    openTab("Players");
+    expect(
+      await screen.findByText(/Nobody has an account on this server yet/),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Manage ade" })).toBeNull();
+  });
+
+  it("opens a player's account from the Manage button", async () => {
+    const api = makeStubApi([dayRow({})]);
+    render(<DevApp api={api} />);
+    openTab("Players");
+    fireEvent.click(await screen.findByRole("button", { name: "Manage ade" }));
+    expect(await screen.findByText("New invite address")).toBeDefined();
+  });
+
+  it("warns when the invite would name the console's own address", async () => {
+    window.localStorage.setItem(ORIGIN_KEY, "http://localhost:5173");
+    render(<DevApp api={makeStubApi([dayRow({})])} />);
+    openTab("Players");
+    expect(
+      await screen.findByText(/This is the console's own address/),
+    ).toBeDefined();
+    fireEvent.change(screen.getByLabelText("Site address in the invite"), {
+      target: { value: "https://game.example.com" },
+    });
+    expect(screen.queryByText(/This is the console's own address/)).toBeNull();
+    window.localStorage.removeItem(ORIGIN_KEY);
+  });
+});
+
+describe("the Days tab's reloads", () => {
+  it("offers no control when the day listing is refused", async () => {
+    const base = makeStubApi([]);
+    const api: DevApi = {
+      ...base,
+      getDays: () => Promise.reject(new DevApiError(404, "not found")),
+    };
+    render(<DevApp api={api} />);
+    await screen.findByText(/start the server with --dev/);
+    expect(screen.queryByText("Open the next day")).toBeNull();
+  });
+
+  it("keeps the newest listing when two reloads cross", async () => {
+    let calls = 0;
+    let releaseFirst: (value: { days: DevDayRow[] }) => void = () => undefined;
+    const base = makeStubApi([dayRow({ status: "closed" })]);
+    const api: DevApi = {
+      ...base,
+      getDays: () => {
+        calls += 1;
+        if (calls === 1) {
+          // The first listing answers last, with the older status.
+          return new Promise((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        return Promise.resolve({ days: [dayRow({ status: "revealed" })] });
+      },
+    };
+    render(<DevApp api={api} />);
+    fireEvent.blur(screen.getByLabelText("operator token"));
+    expect(await screen.findByText("status revealed")).toBeDefined();
+    releaseFirst({ days: [dayRow({ status: "closed" })] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByText("status revealed")).toBeDefined();
   });
 });
