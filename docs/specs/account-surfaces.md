@@ -191,6 +191,11 @@ surface. The door thus lives at its own path, `/api/door`.
   an active record it makes a new session, and each other device
   stays signed in.
 
+  *Note, 2026-11-03 (spec PL1 §5):* from this date, the `POST` also needs the
+  operator bearer, because the dev unit shares the production store. A
+  refused caller gets the constant 404. With no player record stored,
+  ruling 7 of spec M1 leaves the door open for the first name.
+
 The name goes through `check_player_name` and the label through
 `check_display_name` — the same boundary checks as the mint
 endpoint.

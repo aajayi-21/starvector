@@ -402,6 +402,11 @@ is `service/server.py`.
 
 ## 9. The player surfaces
 
+*Note, 2026-11-03 (spec PL1 §8):* from this date, the screens say `Place` for the
+expected rank, `Likely range` for the rank interval, and `Steadied skill`
+for the shrunk estimate. The fields, the equal weight of the three columns,
+and the fractional value do not change.
+
 - **The invite gate.** A 401 renders a screen that says an invite
   URL is the procedure. The cookie rides `same-origin` calls, thus
 the

@@ -131,6 +131,11 @@ failure. `--plan` prints the next step and moves nothing.
 `deploy/starvector-day.timer` (daily at `H`, no catch-up at boot) run
 it. The deployment guides, section 14, have the procedure.
 
+*Note, 2026-11-03 (spec PL1 §3):* from this date, the timer fires each hour and
+catches up at boot, because a failure held a day in `closing` for 24
+hours. A firing with nothing due writes no run record, and an `OnFailure`
+unit alerts when a run dies.
+
 ---
 
 ## 4. Workstream B — sign-in
@@ -175,7 +180,8 @@ is read. Behind Caddy, the address is the last entry of
 
 - **The door** (spec A1 §4, dev servers alone) makes a new session and
   turns no token. A sign-in on a second device leaves the first
-  signed in.
+  signed in. *Note, 2026-11-03 (spec PL1 §5):* from this date, the door
+  also needs the operator bearer.
 - **`rotate`** turns the invite and keeps each session. **`revoke`**
   also deletes each session file. **`restore`** gives a new invite and
   no device of before.
@@ -200,6 +206,10 @@ puts it in position. A reader thus holds the earlier file or the new
 one, and nothing writes the index row by row, thus the index cannot
 fall out of step through a missed write. The store files stay the
 source of truth (I4), and the index needs no backup.
+
+*Note, 2026-11-03 (spec PL1 §7):* the schema is version 2, thus the file
+is `data/index/results-v2.sqlite`. `trial_atoms` gains `pinned`,
+`trial_channels` is new, and a reveal builds the index.
 
 A fingerprint of the name, length, and change time of each record
 file goes in the `meta` table. `ensure_current` builds again when the

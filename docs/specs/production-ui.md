@@ -273,6 +273,8 @@ not a restatement.
   Strokes hold `points` (normalized pairs), `group_id`
   (nullable), optional `color` (lowercase `#rrggbb`). Answer:
   `{trial_id, atom_count}`. Refusals hold `{cause, detail}`.
+  *Note, 2026-11-03 (spec PL1 §2):* from this date, the path takes `?day=`, and the
+  answer adds `day`. `GET /api/day` adds `min_strokes` (spec PL1 §8).
 - `GET /api/reveal` → `day`, `target_id`, `secret`, `commitment`,
   `check`, `trial` (`p`, `decoy_count`, `beaten`, `tied`,
   `target_rank`) or null, `report` rows.
