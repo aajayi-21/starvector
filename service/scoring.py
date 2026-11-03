@@ -23,6 +23,7 @@ from pipeline.config import (ScoringConfig, element_config, fusion_weights,
                              scoring_config_hash)
 from pipeline.context import build_scoring_context, load_pool_index
 from pipeline.score import Encoders, encode_submission, score_trial
+from pool.preparation.config import load_preparation_config
 from validation import harness
 
 # The one-time table build the R5 refusal names: a warm validation.v2
@@ -78,6 +79,10 @@ def _wire(config: ScoringConfig, config_path: str, data_root: Path,
     slot_hashes = harness.scoring_provider_hashes(config, providers)
     harness.check_element_space(dict(loaded.record.provider_config_hashes),
                                 slot_hashes)
+    harness.check_boxes_prepared(
+        config, dict(loaded.record.provider_config_hashes))
+    harness.check_outline_space(
+        config, load_preparation_config(Path(loaded.record.config_path)))
     scoring_hash = scoring_config_hash(config, slot_hashes)
     generator_hash = harness.resolved_generator_hash(
         config, loaded.index, data_root, providers.get("generalizer"))

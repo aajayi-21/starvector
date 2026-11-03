@@ -42,7 +42,7 @@ def table_dir(data_root: Path, vocab_digest: str, slot_hash: str) -> Path:
 
 
 def build_table(vocabulary: tuple[str, ...], generalizer: object,
-                ) -> tuple[dict[str, str], int]:
+                normalize_rule: str) -> tuple[dict[str, str], int]:
     """The table plus the count of entries normalization kept as-is.
 
     Each phrase goes through normalize_element one time. An empty
@@ -60,7 +60,7 @@ def build_table(vocabulary: tuple[str, ...], generalizer: object,
                 f"the generalizer answered {len(phrases)} of {len(chunk)} "
                 "entries")
         for entry, phrase in zip(chunk, phrases):
-            normalized = normalize_element(phrase)
+            normalized = normalize_element(phrase, normalize_rule)
             if not normalized:
                 normalized = entry
                 kept += 1
@@ -103,7 +103,8 @@ def ensure_table(*, data_root: Path, vocabulary: tuple[str, ...],
     wired = generalizer or wire_generalizer(config, data_root)
     posts_before = int(getattr(wired, "post_count", 0))
     hits_before = int(getattr(wired, "cache_hit_count", 0))
-    table, kept = build_table(vocabulary, wired)
+    table, kept = build_table(vocabulary, wired,
+                              config.generalize.normalize_rule)
     write_jsonl(table_path, [
         {"element": entry, "phrase": table[entry]}
         for entry in sorted(table)])

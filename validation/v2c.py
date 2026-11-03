@@ -98,6 +98,8 @@ def run_v2c(config: ScoringConfig, *, data_root: Path, records_root: Path,
     slot_hashes = harness.scoring_provider_hashes(config, providers)
     harness.check_element_space(dict(loaded.record.provider_config_hashes),
                                 slot_hashes)
+    harness.check_boxes_prepared(
+        config, dict(loaded.record.provider_config_hashes))
     dataset_hash = slot_hashes["sketch_pairs"]
     scoring_hash = scoring_config_hash(config, slot_hashes)
     harness_hash = harness.harness_config_hash("v2c", scoring_hash)

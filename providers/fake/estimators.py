@@ -46,6 +46,40 @@ class FakeTextCoverageEstimator:
         )
 
 
+class FakeScreener:
+    """The fake twin of the one-POST screener (spec PP1 B7).
+
+    It answers the three stage protocols from the same chunks as the
+    single-slot fakes. The fake_person_main chunk scripts the person
+    role, and an image with no chunk has no person.
+    """
+
+    def __init__(self, labels: Sequence[str]) -> None:
+        from providers.fake.classifier import FakeZeroShotImageClassifier
+
+        self._labels = tuple(labels)
+        self._classifier = FakeZeroShotImageClassifier()
+
+    @property
+    def config_hash(self) -> str:
+        return sha256_hex(canonical_json(
+            {"provider": "fake-screener", "labels": list(self._labels)}))
+
+    def estimate_text_coverage(self, images: Sequence[bytes]) -> FloatArray:
+        return FakeTextCoverageEstimator().estimate_text_coverage(images)
+
+    def estimate_salient_object_fraction(self, images: Sequence[bytes]) -> FloatArray:
+        return FakeSalientObjectEstimator().estimate_salient_object_fraction(images)
+
+    def classify(self, images: Sequence[bytes], labels: Sequence[str]) -> FloatArray:
+        return self._classifier.classify(images, labels)
+
+    def person_is_main_subject(self, images: Sequence[bytes]) -> FloatArray:
+        return np.asarray(
+            [float(read_fake_chunks(image).get("fake_person_main") == "1")
+             for image in images], dtype=np.float32)
+
+
 class FakeSalientObjectEstimator:
     """Estimator that reads the fake_object_fraction chunk."""
 

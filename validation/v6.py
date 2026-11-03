@@ -48,6 +48,8 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
     slot_hashes = harness.scoring_provider_hashes(config, providers)
     harness.check_element_space(dict(loaded.record.provider_config_hashes),
                                 slot_hashes)
+    harness.check_boxes_prepared(
+        config, dict(loaded.record.provider_config_hashes))
     scoring_hash = scoring_config_hash(config, slot_hashes)
     fit_hash = fit_config_hash(fit_config)
     harness_hash = fit_harness_hash("v6", scoring_hash, fit_hash)

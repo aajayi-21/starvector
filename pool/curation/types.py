@@ -40,6 +40,7 @@ REJECTION_REASONS: tuple[str, ...] = (
     "extraction-budget",
     "text-coverage",
     "object-size",
+    "person-focus",
     "near-duplicate",
     "diversity-cap",
 )

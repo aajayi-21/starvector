@@ -221,6 +221,10 @@ class PoolIndex:
     # channel then calculates the same values at scoring time.
     outline_centered: FloatArray | None = None
     outline_norms: FloatArray | None = None
+    # The same cache for the vocabulary (spec PP1 B3): the term with no
+    # N in it, and the largest local cost at a production vocabulary.
+    vocabulary_centered: FloatArray | None = None
+    vocabulary_norms: FloatArray | None = None
 
 
 @dataclass(frozen=True, slots=True)

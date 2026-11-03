@@ -11,6 +11,7 @@ import datetime as _datetime
 import os
 import shutil
 import time
+from functools import partial
 from collections import Counter
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -33,6 +34,7 @@ from pool.curation.stages import (
     release,
     review,
     screen,
+    person,
     snapshot,
     text,
 )
@@ -44,6 +46,7 @@ from pool.curation.types import (
     Rejection,
     RunReport,
     StageMeta,
+    StageResult,
     StageReport,
 )
 from providers.protocols import (
@@ -88,8 +91,89 @@ def _encoder_slot_config(slot: SlotSection):
     )
 
 
+def _voyage_encoder_slot_config(slot: SlotSection):
+    """The Voyage parameters of the encoder slot (spec VE1)."""
+    from providers.voyage.embeddings import VoyageSlotConfig
+
+    return VoyageSlotConfig(
+        slot="encoder",
+        model=slot.model or "",
+        dimension=slot.dimension or 0,
+        instruction=slot.instruction_template,
+    )
+
+
+def _screener_slot_config(config: CurationConfig):
+    """The one-POST screener of spec PP1 B7, computable with no client."""
+    from providers.openrouter import slots as orslots
+    from providers.openrouter.screener import ScreenerSlotConfig
+
+    section = config.providers.screener
+    return ScreenerSlotConfig(
+        slot="screener",
+        model=section.model or config.providers.openrouter.default_model,
+        template=section.instruction_template or "",
+        labels=tuple(config.classify.labels),
+        temperature=orslots.TEMPERATURE,
+        seed=orslots.SEED,
+        max_tokens=orslots.MAX_TOKENS,
+        reasoning_enabled=orslots.REASONING_ENABLED,
+        response_format_mode=config.providers.openrouter.response_format_mode,
+        input_canvas_px=section.input_canvas_px,
+    )
+
+
+def _screener_hash(config: CurationConfig) -> str:
+    if config.providers.screener.provider == "fake":
+        from providers.fake.estimators import FakeScreener
+
+        return FakeScreener(config.classify.labels).config_hash
+    from providers.openrouter.screener import screener_config_hash
+
+    return screener_config_hash(_screener_slot_config(config))
+
+
+def _wire_screener(config: CurationConfig, data_root: Path):
+    """The one provider behind the three screen slots."""
+    section = config.providers.screener
+    if section.provider == "fake":
+        from providers.fake.estimators import FakeScreener
+
+        return FakeScreener(config.classify.labels)
+    from providers.openrouter.client import OpenRouterClient, OpenRouterClientConfig
+    from providers.openrouter.screener import OpenRouterScreener
+
+    transport = config.providers.openrouter
+    prepare = None
+    if section.input_canvas_px is not None:
+        from pool.preparation.stages.outline import photo_canonical
+
+        prepare = partial(photo_canonical, canvas_px=section.input_canvas_px)
+    return OpenRouterScreener(
+        _screener_slot_config(config),
+        OpenRouterClient(
+            OpenRouterClientConfig(
+                base_url="https://openrouter.ai/api/v1",
+                max_concurrency=transport.max_concurrency,
+                requests_per_second=transport.requests_per_second,
+                timeout_seconds=transport.timeout_seconds,
+                retry_limit=transport.retry_limit,
+            ),
+            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+        ),
+        data_root / "cache" / "openrouter",
+        prepare=prepare,
+    )
+
+
 def _slot_hash(slot_name: str, slot: SlotSection, config: CurationConfig) -> str:
     """The config hash of one slot, computable with no client and no key."""
+    if slot.provider == "screener":
+        return _screener_hash(config)
+    if slot.provider == "voyage" and slot_name == "encoder":
+        from providers.voyage.embeddings import voyage_config_hash
+
+        return voyage_config_hash(_voyage_encoder_slot_config(slot))
     if slot.provider == "openrouter":
         # The encoder branches before the chat-slot hash: an
         # embeddings slot keyed by the chat hash gives the artifact
@@ -189,9 +273,24 @@ def wire_corpus(config: CurationConfig) -> SourceCorpus:
     )
 
 
+def wire_slot(slot_name: str, config: CurationConfig, data_root: Path):
+    """Build one provider instance for a named slot of this config.
+
+    Public seam for the near-duplicate calibration (spec VE1 section
+    5), which reads the s06 vector space.
+    """
+    return _wire_slot(slot_name, config, data_root)
+
+
 def _wire_slot(slot_name: str, config: CurationConfig, data_root: Path):
     """Build one model provider instance right before its stage runs."""
     slot = getattr(config.providers, slot_name)
+    if slot.provider == "screener":
+        return _wire_screener(config, data_root)
+    if slot.provider == "voyage" and slot_name == "encoder":
+        from providers.voyage import wiring
+
+        return wiring.image_encoder(_voyage_encoder_slot_config(slot), data_root)
     if slot.provider == "fake":
         if slot_name == "encoder":
             from providers.fake.encoder import FakeImageEncoder
@@ -644,6 +743,8 @@ def run_s05_object(
     provider: SalientObjectEstimator, config: CurationConfig, tree: ArtifactTree,
     code_version: str,
 ) -> StageMeta:
+    if config.person is not None:
+        return _s05_with_person(provider, config, tree, code_version)
     return _model_stage(
         tree,
         "s05-object",
@@ -655,6 +756,46 @@ def run_s05_object(
             ids, values, config.objectsize.min_object_fraction
         ),
         provider.estimate_salient_object_fraction,
+        code_version,
+    )
+
+
+def _s05_with_person(
+    provider: SalientObjectEstimator, config: CurationConfig, tree: ArtifactTree,
+    code_version: str,
+) -> StageMeta:
+    """Stage s05 with the person rule: two columns, one stage.
+
+    A new stage name makes each stored tree read as not complete, and
+    the funnel report tells the two causes apart by the cause field.
+    """
+
+    def estimate(images: Sequence[bytes]) -> np.ndarray:
+        return np.stack([provider.estimate_salient_object_fraction(images),
+                         provider.person_is_main_subject(images)], axis=1)  # (B, 2)
+
+    def decide(ids: list[str], values: np.ndarray) -> StageResult[str]:
+        if values.size == 0:
+            values = np.zeros((len(ids), 2), dtype=np.float32)
+        by_object = objectsize.object_decisions(
+            ids, values[:, 0], config.objectsize.min_object_fraction)
+        position = {image_id: index for index, image_id in enumerate(ids)}
+        kept = list(by_object.survivors)
+        flags = values[[position[image_id] for image_id in kept], 1]  # (K,)
+        by_person = person.person_decisions(kept, flags.astype(np.float32))
+        return StageResult(survivors=by_person.survivors,
+                           rejections=by_object.rejections + by_person.rejections)
+
+    return _model_stage(
+        tree,
+        "s05-object",
+        "s04-class",
+        {"min_object_fraction": config.objectsize.min_object_fraction,
+         "person_reject_role": config.person.reject_role},
+        "object_size",
+        provider,
+        decide,
+        estimate,
         code_version,
     )
 

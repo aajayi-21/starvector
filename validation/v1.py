@@ -55,31 +55,6 @@ _PHOTO_ENCODE_CHUNK = 10
 _DESCRIBE_CHUNK = 256
 
 
-def _check_shared_space(config: ScoringConfig,
-                        prep_config: PreparationConfig) -> None:
-    """R7: the sketch encoder must fill the p06 vector space.
-
-    The outline channel compares the two, thus a dimension or model
-    that does not agree makes each cosine meaningless.
-    """
-    sketch = config.providers.sketch_encoder
-    image = prep_config.providers.image_encoder
-    if (sketch.dimension is not None and image.dimension is not None
-            and sketch.dimension != image.dimension):
-        raise ValueError(
-            f"R7: sketch_encoder dimension {sketch.dimension} does not "
-            f"agree with the p06 image_encoder dimension {image.dimension}")
-    if sketch.provider == "openrouter" and image.provider == "openrouter":
-        sketch_model = sketch.model \
-            or config.providers.openrouter.default_model
-        image_model = image.model \
-            or prep_config.providers.openrouter.default_model
-        if sketch_model != image_model:
-            raise ValueError(
-                f"R7: sketch_encoder model {sketch_model!r} does not "
-                f"agree with the p06 image_encoder model {image_model!r}")
-
-
 def build_union_elements(
     loaded: LoadedPreparation, prep_config: PreparationConfig,
     photo_bytes_by_id: dict[str, bytes], union_ids: tuple[str, ...],
@@ -117,7 +92,8 @@ def build_union_elements(
                     in zip(loaded.index.vocabulary,
                            loaded.index.pool_frequency)}
     capped, _ = cap_with_frequencies(
-        new_ids, [normalize_elements(response) for response in responses],
+        new_ids, [normalize_elements(response, prep_config.elements.normalize_rule)
+                  for response in responses],
         prep_config.elements.max_elements, frequency_of,
         loaded.index.pool_image_count)
 
@@ -361,7 +337,7 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
     loaded = load_pool_index(Path(config.input.preparation_record),
                              data_root, dev_only=config.report.dev_only)
     prep_config = load_preparation_config(Path(loaded.record.config_path))
-    _check_shared_space(config, prep_config)
+    harness.check_outline_space(config, prep_config)
 
     mode = config.validation.submission_mode
     source = providers.get("sketch_pairs") or harness.wire_sketch_pairs(
@@ -406,6 +382,7 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
 
     slot_hashes = harness.scoring_provider_hashes(config, providers)
     harness.check_element_space(record_hashes, slot_hashes)
+    harness.check_boxes_prepared(config, record_hashes)
     dataset_hash = slot_hashes["sketch_pairs"]
     scoring_hash = scoring_config_hash(config, slot_hashes)
     harness_hash = harness.harness_config_hash("v1", scoring_hash)

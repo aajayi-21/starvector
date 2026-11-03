@@ -36,7 +36,8 @@ A render field here is an unknown-field error.
   model as the preparation image encoder (R7): the outline channel
   compares the two vector spaces. A local sketch encoder thus
   requires a local pool re-encode and a new preparation. `provider`
-  can be `fake` for tests.
+  can be `voyage` (spec VE1) with a `voyage` preparation, or `fake` for
+  tests.
 - **Dataset** — `commonness.dataset` selects the sketch-pair source
   (D1: FS-COCO). Two pin-at-first-download sentinels start as null:
   - `archive_sha256` — the first download raises with the observed

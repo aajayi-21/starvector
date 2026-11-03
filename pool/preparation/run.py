@@ -85,6 +85,14 @@ def _slot_hash(slot_name: str, slot: SlotSection, config: PreparationConfig) -> 
             from providers.openrouter.boxes import box_config_hash
 
             return box_config_hash(_box_slot_config(slot, config))
+    if slot.provider == "deferred" and slot_name == "element_boxes":
+        from providers.deferred_boxes import DEFERRED_BOXES_HASH
+
+        return DEFERRED_BOXES_HASH
+    if slot.provider == "voyage" and slot_name in ("text_encoder", "image_encoder"):
+        from providers.voyage.embeddings import voyage_config_hash
+
+        return voyage_config_hash(_voyage_slot_config(slot_name, slot))
     if slot.provider == "local":
         if slot_name == "line_drawer":
             from providers.local.lineart import lineart_config_hash
@@ -178,6 +186,20 @@ def _embedding_slot_config(slot_name: str, slot: SlotSection, config: Preparatio
         encoding_format="float",
         # The joint-embedding instruction of the image slot (spec P2c
         # section 5). The config parser keeps it null on the text slot.
+        instruction=slot.instruction_template,
+    )
+
+
+def _voyage_slot_config(slot_name: str, slot: SlotSection):
+    """The Voyage parameters of an encoder slot (spec VE1)."""
+    from providers.voyage.embeddings import VoyageSlotConfig
+
+    # The config parser requires the model and the dimension, and it
+    # keeps the instruction null on the text slot.
+    return VoyageSlotConfig(
+        slot=slot_name,
+        model=slot.model or "",
+        dimension=slot.dimension or 0,
         instruction=slot.instruction_template,
     )
 
@@ -281,6 +303,17 @@ def _wire_slot(slot_name: str, config: PreparationConfig, data_root: Path):
             from providers.openrouter.boxes import OpenRouterElementBoxDetector
 
             return OpenRouterElementBoxDetector(_box_slot_config(slot, config), client, cache_root)
+    if slot.provider == "deferred" and slot_name == "element_boxes":
+        from providers.deferred_boxes import DeferredElementBoxDetector
+
+        return DeferredElementBoxDetector()
+    if slot.provider == "voyage":
+        from providers.voyage import wiring
+
+        if slot_name == "text_encoder":
+            return wiring.text_encoder(_voyage_slot_config(slot_name, slot), data_root)
+        if slot_name == "image_encoder":
+            return wiring.image_encoder(_voyage_slot_config(slot_name, slot), data_root)
     if slot.provider == "local":
         device = resolve_device(config.runtime.device)
         if slot_name == "line_drawer":
@@ -516,7 +549,9 @@ def run_p02_normalize(
     rows_out: list[dict[str, JsonValue]] = []
     for row in rows:
         image_id, response = mf.row_to_element_response(row)
-        rows_out.append(mf.element_list_row(image_id, normalize.normalize_elements(response)))
+        rows_out.append(mf.element_list_row(
+            image_id,
+            normalize.normalize_elements(response, config.elements.normalize_rule)))
     meta = _meta(
         tree,
         stage,

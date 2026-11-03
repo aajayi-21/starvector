@@ -79,6 +79,21 @@ def _centered(vectors: FloatArray, mean: FloatArray,
     return centered, norms
 
 
+def vocabulary_pool_cache(vocabulary_vectors: FloatArray,
+                          element_space_mean: FloatArray,
+                          ) -> tuple[FloatArray, FloatArray]:
+    """Center the vocabulary and get its norms, one time (spec PP1 B3).
+
+    The same expressions _centered runs, calculated at index build, thus
+    the values are byte-equal by construction. The checks stay with the
+    channel, as in the outline cache: an index with a vocabulary that
+    does not score must build.
+    """
+    centered = vocabulary_vectors - element_space_mean          # (B, d)
+    norms = np.linalg.norm(centered, axis=1)                    # (B,)
+    return centered, norms
+
+
 def similarity_table(atom_vectors: FloatArray, element_vectors: FloatArray,
                      element_space_mean: FloatArray) -> FloatArray:
     """Rule element-center-cosine-v1 (D2): centered cosine, shape (m, k).
@@ -103,6 +118,34 @@ def similarity_table(atom_vectors: FloatArray, element_vectors: FloatArray,
                                         "element_vectors")
     products = atoms @ elements.T                               # (m, k)
     return products / np.outer(atom_norms, element_norms)       # (m, k)
+
+
+def index_similarity_table(atom_vectors: FloatArray,
+                           index: PoolIndex) -> FloatArray:
+    """The similarity table of one index, through its cache when it has one.
+
+    Byte-equal to similarity_table on the same rows (the spec PP1 B3
+    gate test). A non-finite vector gives a non-finite norm, thus one
+    check on the norms replaces the check on each vector value.
+    """
+    if index.vocabulary_centered is None or index.vocabulary_norms is None:
+        return similarity_table(atom_vectors, index.vocabulary_vectors,
+                                index.element_space_mean)
+    dimension = index.vocabulary_centered.shape[1]
+    if atom_vectors.ndim != 2 or atom_vectors.shape[1] != dimension:
+        raise ValueError(
+            f"atom_vectors must have shape (m, {dimension}), got "
+            f"{atom_vectors.shape}")
+    atoms, atom_norms = _centered(atom_vectors, index.element_space_mean,
+                                  "atom_vectors")
+    element_norms = index.vocabulary_norms                      # (B,)
+    if not np.isfinite(element_norms).all():
+        raise ValueError("element_vectors holds a non-finite value")
+    if bool((element_norms == 0.0).any()):
+        raise ValueError(
+            "element_vectors: zero vector norm after mean subtraction")
+    products = atoms @ index.vocabulary_centered.T              # (m, B)
+    return products / np.outer(atom_norms, element_norms)       # (m, B)
 
 
 def rarity_weights(pool_similarity: FloatArray,
@@ -338,8 +381,7 @@ def element_channel(submission: EncodedSubmission, index: PoolIndex,
             "text, got none")
     atom_vectors = np.stack([submission.vectors[atom.id] for atom in atoms])
 
-    similarity = similarity_table(atom_vectors, index.vocabulary_vectors,
-                                  index.element_space_mean)     # (m, B)
+    similarity = index_similarity_table(atom_vectors, index)    # (m, B)
     entry_count = len(index.pool_frequency)
     rarity = rarity_weights(similarity[:, :entry_count],
                             index.pool_frequency,
@@ -378,8 +420,7 @@ def match_report(submission: EncodedSubmission, index: PoolIndex,
     if not atoms:
         return ()
     atom_vectors = np.stack([submission.vectors[atom.id] for atom in atoms])
-    similarity = similarity_table(atom_vectors, index.vocabulary_vectors,
-                                  index.element_space_mean)     # (m, B)
+    similarity = index_similarity_table(atom_vectors, index)    # (m, B)
     entry_count = len(index.pool_frequency)
     rarity = rarity_weights(similarity[:, :entry_count],
                             index.pool_frequency,

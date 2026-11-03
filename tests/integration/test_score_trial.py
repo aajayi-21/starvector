@@ -268,3 +268,8 @@ def test_a_loaded_index_holds_the_outline_cache(scoring_preparation) -> None:
     assert index.outline_norms is not None
     assert index.outline_centered.tobytes() == (
         index.outline_vectors - index.outline_space_mean).tobytes()
+    # The spec PP1 B3 rule: the vocabulary cache has the same shape.
+    assert index.vocabulary_centered is not None
+    assert index.vocabulary_centered.tobytes() == (
+        index.vocabulary_vectors - index.element_space_mean).tobytes()
+    assert index.vocabulary_norms is not None
