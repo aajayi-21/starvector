@@ -337,6 +337,25 @@ def check_element_space(record_provider_hashes: Mapping[str, str],
             "vectors would not share a space (R7)")
 
 
+def check_boxes_prepared(config: ScoringConfig,
+                         record_provider_hashes: Mapping[str, str]) -> None:
+    """A placement weight needs boxes (spec PP1 B8).
+
+    A preparation with deferred boxes marks each element as not located,
+    thus the placement channel fires on nothing, and its scores look
+    ordinary. A scoring config that names placement against such a
+    record stops at this boundary.
+    """
+    from providers.deferred_boxes import DEFERRED_BOXES_HASH
+
+    if ("placement" in dict(config.fusion.weights)
+            and record_provider_hashes.get("element_boxes") == DEFERRED_BOXES_HASH):
+        raise ValueError(
+            "the fusion weights name placement, and the preparation deferred "
+            "its boxes (spec PP1 B8) - buy the boxes in a new preparation or "
+            "remove the placement weight")
+
+
 def check_outline_space(config: ScoringConfig,
                         prep_config: PreparationConfig) -> None:
     """R7: the sketch encoder must fill the p06 vector space.

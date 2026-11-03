@@ -290,6 +290,7 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
 
     slot_hashes = harness.scoring_provider_hashes(scoring, providers)
     harness.check_element_space(record_hashes, slot_hashes)
+    harness.check_boxes_prepared(scoring, record_hashes)
     dataset_hash = slot_hashes["sketch_pairs"]
     scoring_hash = scoring_config_hash(scoring, slot_hashes)
     fit_hash = fit_config_hash(fit_config)

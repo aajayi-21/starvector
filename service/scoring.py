@@ -77,6 +77,8 @@ def _wire(config: ScoringConfig, config_path: str, data_root: Path,
     slot_hashes = harness.scoring_provider_hashes(config, providers)
     harness.check_element_space(dict(loaded.record.provider_config_hashes),
                                 slot_hashes)
+    harness.check_boxes_prepared(
+        config, dict(loaded.record.provider_config_hashes))
     harness.check_outline_space(
         config, load_preparation_config(Path(loaded.record.config_path)))
     scoring_hash = scoring_config_hash(config, slot_hashes)

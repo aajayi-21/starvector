@@ -92,7 +92,8 @@ def build_union_elements(
                     in zip(loaded.index.vocabulary,
                            loaded.index.pool_frequency)}
     capped, _ = cap_with_frequencies(
-        new_ids, [normalize_elements(response) for response in responses],
+        new_ids, [normalize_elements(response, prep_config.elements.normalize_rule)
+                  for response in responses],
         prep_config.elements.max_elements, frequency_of,
         loaded.index.pool_image_count)
 
@@ -381,6 +382,7 @@ def run_v1(config: ScoringConfig, *, data_root: Path, records_root: Path,
 
     slot_hashes = harness.scoring_provider_hashes(config, providers)
     harness.check_element_space(record_hashes, slot_hashes)
+    harness.check_boxes_prepared(config, record_hashes)
     dataset_hash = slot_hashes["sketch_pairs"]
     scoring_hash = scoring_config_hash(config, slot_hashes)
     harness_hash = harness.harness_config_hash("v1", scoring_hash)

@@ -85,6 +85,10 @@ def _slot_hash(slot_name: str, slot: SlotSection, config: PreparationConfig) -> 
             from providers.openrouter.boxes import box_config_hash
 
             return box_config_hash(_box_slot_config(slot, config))
+    if slot.provider == "deferred" and slot_name == "element_boxes":
+        from providers.deferred_boxes import DEFERRED_BOXES_HASH
+
+        return DEFERRED_BOXES_HASH
     if slot.provider == "voyage" and slot_name in ("text_encoder", "image_encoder"):
         from providers.voyage.embeddings import voyage_config_hash
 
@@ -299,6 +303,10 @@ def _wire_slot(slot_name: str, config: PreparationConfig, data_root: Path):
             from providers.openrouter.boxes import OpenRouterElementBoxDetector
 
             return OpenRouterElementBoxDetector(_box_slot_config(slot, config), client, cache_root)
+    if slot.provider == "deferred" and slot_name == "element_boxes":
+        from providers.deferred_boxes import DeferredElementBoxDetector
+
+        return DeferredElementBoxDetector()
     if slot.provider == "voyage":
         from providers.voyage import wiring
 
@@ -541,7 +549,9 @@ def run_p02_normalize(
     rows_out: list[dict[str, JsonValue]] = []
     for row in rows:
         image_id, response = mf.row_to_element_response(row)
-        rows_out.append(mf.element_list_row(image_id, normalize.normalize_elements(response)))
+        rows_out.append(mf.element_list_row(
+            image_id,
+            normalize.normalize_elements(response, config.elements.normalize_rule)))
     meta = _meta(
         tree,
         stage,

@@ -3,6 +3,11 @@
 **Status:** surveyed 2026-09-02. Rulings 1 (the pool count, §2) and
 10 (the budget, §5a) are the owner's. Rulings 2 to 9 and 11 (§8) are
 open. Not in build.
+*Note, 2026-11-03:* the plan of 2026-11-03 accepts rulings 2 to 7, 9,
+and 11 as proposed, with the changes in §5b. Spec VE1 opens ruling 8
+again. Build items B3 and B5 to B8 are built. B1, B2, and B4 are the
+tool `tools/production_configs.py`, because their values wait for the
+VE1 verdict and the near-duplicate ruling.
 **Phase:** the production pool — the row after spec B1 in the F1
 roadmap (`docs/specs/weight-freeze.md` §7), the architecture's Phase 1
 at production scale (`docs/ARCHITECTURE.md` §25).
@@ -341,6 +346,76 @@ The preparation config `prod-wit-photo-inst.json` (B4) is
 `dev-wit-photo-inst-2.json` with the new release path and
 `providers.element_boxes.provider` set to `deferred`. Each other field
 is unchanged.
+
+## 5b. Changes of 2026-11-03
+
+**The person rule (owner ruling).** An image of one person or one face
+goes out of the pool at s05, with the cause `person-focus`.
+A person in a scene stays. The screener answers with one of three roles,
+thus the rule has no numeric limit. The wording is the open item:
+`validation/screener_check.py` shows what each group holds on the
+development images, and the owner rules on it.
+
+**Two new labels.** The s04 set gets `painting or artwork` and `document
+or scan`. The classifier had to give one label from the set, and about
+7% of the development pool reads as artwork.
+
+**No safety stage (owner ruling).** The pool has no content-safety
+stage, and the review stays a sample of 200, 2.7% of the pool. A graphic
+image can become a target. The owner accepted this.
+
+**The new normalize rule.** `d8-v1` replaces `d7-v1` for each new
+lineage, and `d7-v1` stays for each stored day. On the dev-wit-002 lists,
+`d7-v1` gave the non-words `hous`, `hors`, `ros`, `bas`, `len`, `canva`,
+`campu`, and `mysteriou`, and `leaves` became `leave`. The encoder reads
+atoms as the player wrote them, thus these strings had no matching atom.
+
+**One commonness source.** The served `dev-wit-mixed-3` holds source A,
+and the fit and V3 to V5 used source B, thus the V5 slopes did not
+describe the served tables. Each `prod-` scoring config holds source B.
+V5 measured an element slope of −0.326 on source B, an overcorrection,
+thus V5 on the production lineage is the check of this ruling.
+
+**The cost with the person rule.** The yield is not measured. If the rule
+removes 20% of s05 survivors, the screening count goes from 38,000 to
+about 47,500, which adds USD 2.31 and takes the fetched bytes to about
+19 GB. With Voyage the total is about USD 13.2. With Gemini it is above
+the USD 20 ruling, thus that path needs the lever of ruling 6 or a lower
+count. The calibration run measures the yield before the spend.
+
+**Placement against deferred boxes.** B4 puts placement back in the fit
+simplex, and B8 defers the boxes that placement reads. The two do not
+agree. The default follows ruling 11: no placement weight in a `prod-`
+config, and the boundary refuses a config that names placement against
+deferred boxes. If Voyage clears, the boxes (USD 4.72) fit in the budget:
+`--boxes bought` writes the configs with them.
+
+**The fast path, measured** (`tools.bench`, 7,500 images, |V| 26,770, `--repeat`
+count 5, synthetic vectors, B3 built):
+
+| dimension | local total | similarity table | tier 1 | outline | resident |
+|---|---|---|---|---|---|
+| 3072, before B3 | 239.32 ms | 208.29 | 10.35 | 23.27 | 1.44 GB |
+| 3072 | 94.9 ms | 19.8 | 18.9 | 37.7 | 1.76 GB |
+| 1024 | 52.2 ms | 7.4 | 19.3 | 13.3 | 0.59 GB |
+
+The first row is the §4 record, at `--repeat` 9 on a different day.
+B3 removes the similarity-table problem. At 1024 dimensions the total is
+2.2 ms above the 50 ms line, and tier 1 is the largest term.
+
+**The runbook with these changes.** The steps of §9 stay, with these
+edits:
+
+1. Before step 2: rule on the VE1 verdict and the thresholds, then write
+   the configs:
+   `uv run python -m tools.production_configs curation --encoder voyage
+   --curation-threshold <ruled> --preparation-threshold <ruled>`.
+2. After step 3: write the lineage configs with the same command, the
+   step `lineage`, and `--release-record <the new record>`.
+3. Step 6 comes before step 5: V1 and V2 read source-B tables, and these
+   tables read the generalize table. V1 also runs on `prod-wit-mixed`.
+4. After step 3: `uv run python -m tools.prune_candidates`, then with
+   `--apply`, to free the rejected candidates.
 
 ---
 

@@ -18,6 +18,8 @@ from core.canonical import JsonValue, canonical_json, sha256_hex
 from pipeline.config import (RESPONSE_FORMAT_MODES, ConfigError,
                              OpenRouterSection, _Node)
 
+from pool.preparation.config import NORMALIZE_RULES
+
 GENERALIZE_PROVIDERS: tuple[str, ...] = ("openrouter", "fake")
 
 FIT_CONFIG_VERSION = 1
@@ -46,6 +48,9 @@ class GeneratorSection:
     levels: tuple[LevelRow, ...]
 
 
+_DEFAULT_NORMALIZE_RULE = "d7-v1"
+
+
 @dataclass(frozen=True, slots=True)
 class GeneralizeSection:
     """The generalization slot (P4 decision D2)."""
@@ -53,6 +58,9 @@ class GeneralizeSection:
     provider: str
     model: str | None
     instruction_template: str | None
+    # The normalize rule of the lineage (spec PP1). A config with no
+    # such field holds d7-v1, and its document and hash do not move.
+    normalize_rule: str = _DEFAULT_NORMALIZE_RULE
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +164,10 @@ def parse_fit_config(raw: object, source: str = "fit-config") -> FitConfig:
         provider=generalize_node.choice("provider", GENERALIZE_PROVIDERS),
         model=generalize_node.opt_str("model"),
         instruction_template=generalize_node.opt_str("instruction_template"),
+        normalize_rule=(
+            generalize_node.choice("normalize_rule", NORMALIZE_RULES)
+            if "normalize_rule" in generalize_node._raw
+            else _DEFAULT_NORMALIZE_RULE),
     )
     generalize_node.finish()
     if generalize.provider == "openrouter":
@@ -285,6 +297,8 @@ def fit_config_to_json_value(config: FitConfig) -> dict[str, JsonValue]:
             "provider": config.generalize.provider,
             "model": config.generalize.model,
             "instruction_template": config.generalize.instruction_template,
+            **({} if config.generalize.normalize_rule == _DEFAULT_NORMALIZE_RULE
+               else {"normalize_rule": config.generalize.normalize_rule}),
         },
         "openrouter": {
             "default_model": config.openrouter.default_model,
@@ -326,7 +340,18 @@ def fit_config_hash(config: FitConfig) -> str:
 
 
 def generalize_slot_hash(config: FitConfig) -> str:
-    """The generalization slot hash, computed without wiring."""
+    """The generalization slot hash, computed without wiring.
+
+    A normalize rule other than the default forks the hash, thus the
+    table of one rule does not read as the table of the other rule.
+    """
+    base = _generalizer_hash(config)
+    if config.generalize.normalize_rule == _DEFAULT_NORMALIZE_RULE:
+        return base
+    return sha256_hex(f"{base}:{config.generalize.normalize_rule}")
+
+
+def _generalizer_hash(config: FitConfig) -> str:
     if config.generalize.provider == "openrouter":
         from providers.openrouter.generalize import (GENERALIZE_MAX_TOKENS,
                                                      GeneralizeSlotConfig,
