@@ -442,6 +442,10 @@ against them).
 
 ## 7. Build items
 
+*Note, 2026-11-03 (spec PL1 §7):* the `prod-wit` scoring configs set
+`report.channel_scores` to `true` from their first day, thus each trial row of the
+production lineage stores each channel's score at the target.
+
 Each lands before the runbook of §9 starts, each on a branch, each
 green offline.
 

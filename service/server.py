@@ -67,6 +67,8 @@ _BAD_CODE = b'{"cause":"bad-code"}'
 _TOO_MANY = b'{"cause":"too-many-attempts"}'
 _NO_SESSION = b'{"detail":"no session"}'
 _NO_ACCOUNTS = b'{"cause":"no-accounts"}'
+# The practice limit (spec PL1 section 1).
+_PRACTICE_LIMIT = b'{"cause":"practice-limit"}'
 
 # The gated skill board (spec M1 section 8). Two properties, each
 # load-bearing. It carries each field the view declares, thus a
@@ -217,7 +219,9 @@ def _revealed_targets(root: Path) -> dict[str, str]:
 def create_app(service_config: ServiceConfig,
                dev_mode: bool = False, *,
                cookie_secure: bool = True,
-               operator_token: str | None = None) -> FastAPI:
+               operator_token: str | None = None,
+               practice_limiter: limits.WindowLimiter | None = None,
+               ) -> FastAPI:
     """The app factory - tests run it through TestClient.
 
     With dev_mode the server adds the section 14b surfaces: the
@@ -236,6 +240,9 @@ def create_app(service_config: ServiceConfig,
     environment here, in the manner of open_day's secret: a
     component reads no global configuration. The start-up path
     does the environment read.
+
+    practice_limiter is an argument for the tests. The default holds
+    the values of spec PL1 section 1.
 
     Raises ServiceConfigError when the store holds player records
     and no operator token is set. A quiet hole is worse than a loud
@@ -271,7 +278,10 @@ def create_app(service_config: ServiceConfig,
     player = service_config.player
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-    code_limiter = limits.FailureLimiter()
+    # The avatar path has its own stream check and its own refusal.
+    app.add_middleware(limits.BodyCap, exempt=("/api/account/avatar",))
+    code_limiter = limits.WindowLimiter()
+    practice_counts = practice_limiter or limits.practice_limiter()
 
     def _unauthorized() -> Response:
         return Response(content=_UNAUTHORIZED, status_code=401,
@@ -470,7 +480,7 @@ def create_app(service_config: ServiceConfig,
         instant = utc_now()
         redeemed = access.redeem_device_code(root, text, instant)
         if redeemed is None:
-            code_limiter.record_failure(key)
+            code_limiter.record(key)
             return Response(content=_BAD_CODE, status_code=400,
                             media_type="application/json")
         value = access.open_session(
@@ -495,16 +505,16 @@ def create_app(service_config: ServiceConfig,
         """The open door: a typed name becomes a session (spec A1
         section 4).
 
-        Development alone, deliberately without a password. The
-        gate is dev_mode by itself and not the operator bearer -
-        the door is a player surface. An unknown name mints, an
-        active name turns its token (each other session of that
-        player stops at its next read), and a revoked name is
-        refused: the door cannot put a revoked player back.
+        Development alone. The gate is dev_mode and the operator
+        gate (spec PL1 section 5): the dev unit shares the production
+        store, thus a typed name with no bearer can sign in as each
+        player. An unknown name mints, an active name makes a new
+        session, and a revoked name is refused: the door cannot put a
+        revoked player back.
         """
         from service import players
 
-        if not dev_mode:
+        if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         try:
@@ -1126,7 +1136,39 @@ def create_app(service_config: ServiceConfig,
         if not rows:
             return Response(content=_NO_PRACTICE, status_code=404,
                             media_type="application/json")
-        return JSONResponse({"days": rows})
+        return JSONResponse({"days": rows,
+                             "min_strokes": gates.min_strokes_whole_drawing})
+
+    async def _parsed_body(request: Request) -> object:
+        """The JSON body, parsed off the loop thread: at the body cap
+        the parse takes some milliseconds."""
+        return await asyncio.to_thread(json.loads, await request.body())
+
+    def _checked_or_refusal(wire_record: object) -> Submission | Response:
+        """The caps, Layer 0, and the channel pre-check, in sequence."""
+        too_large = limits.record_caps_refusal(wire_record)
+        if too_large is not None:
+            return JSONResponse({"cause": "too-much-drawing",
+                                 "detail": too_large}, status_code=400)
+        try:
+            submission = validate_submission(wire_record, gates, canvas_px)
+        except IntakeError as error:
+            return JSONResponse({"cause": error.cause,
+                                 "detail": str(error)}, status_code=400)
+        if not _activates_weighted_channel(submission, weights):
+            return JSONResponse(
+                {"cause": "no-scoreable-atom",
+                 "detail": "no atom reads into a weighted channel - add "
+                           "an impression, a labeled group, or strokes"},
+                status_code=400)
+        return submission
+
+    async def _checked_submission(
+            wire_record: object) -> Submission | Response:
+        """Layer 0 off the loop thread: a record at its caps holds a
+        thread for more than a second, and no other caller waits on
+        that (spec PL1 section 1)."""
+        return await asyncio.to_thread(_checked_or_refusal, wire_record)
 
     @app.post("/api/practice/score")
     async def practice_score_endpoint(request: Request) -> Response:
@@ -1140,8 +1182,11 @@ def create_app(service_config: ServiceConfig,
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
+        if not practice_counts.allowed(caller):
+            return Response(content=_PRACTICE_LIMIT, status_code=429,
+                            media_type="application/json")
         try:
-            body = await request.json()
+            body = await _parsed_body(request)
         except Exception:
             return JSONResponse(
                 {"cause": "bad-shape",
@@ -1167,17 +1212,10 @@ def create_app(service_config: ServiceConfig,
         except store.StoreError:
             return Response(content=_NOT_PRACTICE, status_code=404,
                             media_type="application/json")
-        try:
-            submission = validate_submission(wire_record, gates, canvas_px)
-        except IntakeError as error:
-            return JSONResponse({"cause": error.cause,
-                                 "detail": str(error)}, status_code=400)
-        if not _activates_weighted_channel(submission, weights):
-            return JSONResponse(
-                {"cause": "no-scoreable-atom",
-                 "detail": "no atom reads into a weighted channel - add "
-                           "an impression, a labeled group, or strokes"},
-                status_code=400)
+        checked = await _checked_submission(wire_record)
+        if isinstance(checked, Response):
+            return checked
+        practice_counts.record(caller)
 
         def compute():
             wired = _resident()
@@ -1223,9 +1261,12 @@ def create_app(service_config: ServiceConfig,
             "status": record.status,
             "commitment": record.commitment,
             "player": caller,
-            "submitted": caller in store.list_submissions(root, day),
+            # One stat and not a walk of the day's sends: an open tab
+            # polls this path (spec PL1 section 4).
+            "submitted": store.submission_path(root, day, caller).is_file(),
             "relation_vocabulary": relation_vocabulary,
             "canvas_px": canvas_px,
+            "min_strokes": gates.min_strokes_whole_drawing,
             "closes_at": closes_at,
         }
         if record.status == "revealed":
@@ -1233,49 +1274,20 @@ def create_app(service_config: ServiceConfig,
             value["secret"] = record.secret
         return JSONResponse(value)
 
-    @app.post("/api/submission")
-    async def submit(request: Request) -> Response:
-        caller = _caller(request)
-        if isinstance(caller, Response):
-            return caller
-        day = store.latest_day(root)
-        if day is None:
-            return Response(content=_NO_DAY, status_code=404,
-                            media_type="application/json")
-        record = store.read_day_record(root, day)
-        if record.status != "open":
-            return JSONResponse({"cause": "day-closed"}, status_code=409)
-        if caller in store.list_submissions(root, day):
-            return JSONResponse({"cause": "already-submitted"},
-                                status_code=409)
-        try:
-            wire_record = await request.json()
-        except Exception:
-            return JSONResponse(
-                {"cause": "bad-shape",
-                 "detail": "bad-shape: the body is not JSON"},
-                status_code=400)
-        try:
-            submission = validate_submission(wire_record, gates, canvas_px)
-        except IntakeError as error:
-            return JSONResponse({"cause": error.cause,
-                                 "detail": str(error)}, status_code=400)
-        if not _activates_weighted_channel(submission, weights):
-            return JSONResponse(
-                {"cause": "no-scoreable-atom",
-                 "detail": "no atom reads into a weighted channel - add "
-                           "an impression, a labeled group, or strokes"},
-                status_code=400)
-        trial_id = secrets.token_hex(16)
-        # The status check again, with the day's write lock held: the
-        # body read above lasts until the client stops sending, and a
-        # close can move the day in that time. A close holds the same
-        # lock for its move, thus this write lands before the close
-        # reads the submissions, or it refuses (spec BR1 section 3).
+    def _store_submission(day: str, caller: str, trial_id: str,
+                          wire_record: object) -> Response | None:
+        """Write one send with the day's write lock held, or refuse.
+
+        The status check again, with the lock held: a close can move
+        the day after the first check, and a close holds the same lock
+        for its move, thus this write lands before the close reads the
+        submissions, or it refuses (spec BR1 section 3). A worker thread
+        calls this: the lock can wait on a close, and the write syncs
+        to the disk.
+        """
         with store.day_write_lock(root, day):
             if store.read_day_record(root, day).status != "open":
-                return JSONResponse({"cause": "day-closed"},
-                                    status_code=409)
+                return JSONResponse({"cause": "day-closed"}, status_code=409)
             try:
                 store.write_once_json(
                     store.submission_path(root, day, caller),
@@ -1285,8 +1297,57 @@ def create_app(service_config: ServiceConfig,
             except store.StoreError:
                 return JSONResponse({"cause": "already-submitted"},
                                     status_code=409)
-        return JSONResponse({"trial_id": trial_id,
-                             "atom_count": len(submission.atoms)})
+        return None
+
+    @app.post("/api/submission")
+    async def submit(request: Request,
+                     day: str | None = None) -> Response:
+        """Store one send for the day the query names (spec PL1 section 2).
+
+        The name is not in the stored record, thus stored bytes do
+        not move. It answers the stale tab: a send composed for a day
+        that is not the latest one refuses, and it does not land on
+        the target of the latest day. The refusal names a label that
+        GET /api/day gives each player, thus it says nothing of a target.
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        latest = store.latest_day(root)
+        if latest is None:
+            return Response(content=_NO_DAY, status_code=404,
+                            media_type="application/json")
+        if day is None:
+            return JSONResponse({"cause": "day-required",
+                                 "detail": "day: the query must name the "
+                                           "day of this send"},
+                                status_code=400)
+        if day != latest:
+            return JSONResponse({"cause": "day-moved", "day": latest},
+                                status_code=409)
+        record = store.read_day_record(root, day)
+        if record.status != "open":
+            return JSONResponse({"cause": "day-closed"}, status_code=409)
+        if store.submission_path(root, day, caller).is_file():
+            return JSONResponse({"cause": "already-submitted"},
+                                status_code=409)
+        try:
+            wire_record = await _parsed_body(request)
+        except Exception:
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body is not JSON"},
+                status_code=400)
+        checked = await _checked_submission(wire_record)
+        if isinstance(checked, Response):
+            return checked
+        trial_id = secrets.token_hex(16)
+        refused = await asyncio.to_thread(_store_submission, day, caller,
+                                          trial_id, wire_record)
+        if refused is not None:
+            return refused
+        return JSONResponse({"trial_id": trial_id, "day": day,
+                             "atom_count": len(checked.atoms)})
 
     # One lifecycle move at a time in this process: the three day
     # endpoints run in the thread pool, and two of them on one day
@@ -1316,7 +1377,13 @@ def create_app(service_config: ServiceConfig,
                         # unless the latest day is revealed - one
                         # active day at a time, and no closed day left
                         # behind.
-                        record = open_day(service_config)
+                        # The resident context serves the open when
+                        # one is there, thus the process holds one copy
+                        # of the pool. With none, the open wires warm
+                        # and frees that copy (spec PL1 section 5).
+                        with resident_lock:
+                            resident = resident_state.get("wired")
+                        record = open_day(service_config, wired=resident)
                         return 200, {"day": record.day,
                                      "trial_code": record.trial_code,
                                      "commitment": record.commitment}
@@ -1818,9 +1885,13 @@ def create_app(service_config: ServiceConfig,
                 return JSONResponse({"cause": "bad-player",
                                      "detail": str(error)}, status_code=400)
         target = index.ensure_current(root, index.index_path(data_root))
-        rows = index.revealed_trial_rows(target, from_day=day_from,
-                                         to_day=day_to, player=player_name)
-        return JSONResponse({"rows": rows, "count": len(rows)})
+        rows, truncated = index.revealed_trial_rows(
+            target, from_day=day_from, to_day=day_to, player=player_name)
+        # A caller that gets truncated continues with from set to the
+        # last day it read (spec PL1 section 7).
+        return JSONResponse({"rows": rows, "count": len(rows),
+                             "truncated": truncated,
+                             "row_cap": index.TRIAL_ROW_CAP})
 
     @app.get("/api/avatar/{player_name}")
     def avatar_view(request: Request, player_name: str) -> Response:
@@ -1945,8 +2016,13 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as error:
         print(f"refused: {error}", file=sys.stderr)
         return 1
+    import logging
+
     import uvicorn
 
+    # The invite is a credential, thus its path stays out of the
+    # journal (spec PL1 section 5).
+    logging.getLogger("uvicorn.access").addFilter(limits.RedactInvitePaths())
     uvicorn.run(app, host="127.0.0.1",
                 port=arguments.port or service_config.port)
     return 0

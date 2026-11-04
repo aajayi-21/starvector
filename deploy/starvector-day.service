@@ -1,8 +1,8 @@
 # The daily rollover (spec BR1 section 3): close the due day, reveal
-# it, open the next. The timer starts it; it is safe to start by hand
-# too - it moves nothing that is not due. Install:
+# it, open the next. The timer starts it each hour; it is safe to start
+# by hand too - it moves nothing that is not due. Install:
 #   cp deploy/starvector-day.service deploy/starvector-day.timer \
-#       /etc/systemd/system/
+#       deploy/starvector-day-failed.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now starvector-day.timer
 #
 # It reads the store and drives the public process's operator
@@ -11,12 +11,15 @@
 # things itself, both under store/rollover/: its lock, which the
 # console's "Do what is due now" holds too, and one run record for
 # each start. It reads the operator's pause there (spec BR1 section
-# 7.2).
+# 7.2). A firing with nothing due writes no run record.
 
 [Unit]
 Description=Starvector day rollover (close, reveal, open)
 After=starvector.service
 Requires=starvector.service
+# The alert for a run that dies or times out before its own ping (spec
+# PL1 section 3).
+OnFailure=starvector-day-failed.service
 
 [Service]
 Type=oneshot
@@ -34,6 +37,9 @@ ExecStart=/srv/starvector/app/.venv/bin/python -m service.rollover \
 # A close retries a failing provider with backoff; the whole run
 # stays below this.
 TimeoutStartSec=45min
+# Status 2: a second start met the lock. The first one is at work, and
+# that is not a failure.
+SuccessExitStatus=2
 
 NoNewPrivileges=true
 PrivateTmp=true

@@ -148,12 +148,20 @@ def is_due(label: str, instant: datetime.datetime,
     return _utc(instant) >= closes_at_for(label, closes_at_utc)
 
 
+def next_firing_at(instant: datetime.datetime) -> datetime.datetime:
+    """The next start of the day timer: the next hour on the hour, in
+    UTC (spec PL1 section 3)."""
+    moment = _utc(instant)
+    return moment.replace(minute=0, second=0, microsecond=0) \
+        + datetime.timedelta(hours=1)
+
+
 def next_rollover_at(instant: datetime.datetime,
                      closes_at_utc: str) -> datetime.datetime:
     """The first rollover hour at or after this instant, in UTC.
 
-    The console shows it as the next start of the day timer, which
-    fires at the same hour (spec BR1 section 7.2).
+    The console shows it as the next move of a day that waits for its
+    close (spec BR1 section 7.2).
     """
     moment = _utc(instant)
     today = _at(moment.date(), rollover_minutes(closes_at_utc))

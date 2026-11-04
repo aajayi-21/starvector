@@ -1,0 +1,26 @@
+# The alert for a rollover that did not complete (spec PL1 section 3).
+# OnFailure in starvector-day.service starts this. It pings the health
+# check with /fail and writes one journal line, and it moves no day.
+# A failed rollover pings /fail by itself. This unit covers a run that
+# dies or times out first.
+
+[Unit]
+Description=Starvector day rollover failure alert
+
+[Service]
+Type=oneshot
+User=starvector
+Group=starvector
+WorkingDirectory=/srv/starvector/app
+# The optional STARVECTOR_HEALTHCHECK_URL.
+EnvironmentFile=/etc/starvector/env
+ExecStart=/srv/starvector/app/.venv/bin/python -m service.rollover --alert
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true

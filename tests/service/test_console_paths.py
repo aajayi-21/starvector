@@ -389,6 +389,8 @@ def _digest(path) -> str:
 def test_the_index_builds_checks_and_describes(tmp_path,
                                                monkeypatch) -> None:
     fixture, _config, client, _clock = _world(tmp_path, monkeypatch)
+    # The reveal in the world built one. This test builds from nothing.
+    index.index_path(fixture["data"]).unlink(missing_ok=True)
     before = client.get("/api/dev/index", headers=HEADERS).json()
     assert before["exists"] is False and before["tables"] == []
     built = client.post("/api/dev/index/build", headers=HEADERS).json()

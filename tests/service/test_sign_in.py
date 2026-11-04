@@ -328,14 +328,14 @@ def test_the_redemption_limiter_stops_a_guessing_client(tmp_path) -> None:
 
 def test_the_limiter_window_and_the_global_cap() -> None:
     now = {"t": 0.0}
-    limiter = limits.FailureLimiter(window_seconds=60, client_cap=2,
+    limiter = limits.WindowLimiter(window_seconds=60, client_cap=2,
                                     global_cap=3, clock=lambda: now["t"])
     for _ in range(2):
         assert limiter.allowed("a")
-        limiter.record_failure("a")
+        limiter.record("a")
     assert not limiter.allowed("a")
     assert limiter.allowed("b")
-    limiter.record_failure("b")
+    limiter.record("b")
     # Three failures in the window: the global cap holds for each key.
     assert not limiter.allowed("c")
     now["t"] = 61.0
@@ -377,8 +377,9 @@ def test_a_revoked_player_gets_no_session_from_the_door(tmp_path) -> None:
     client = TestClient(create_app(config, dev_mode=True,
                                    cookie_secure=False,
                                    operator_token=OPERATOR_TOKEN))
-    assert client.post("/api/door", json={"player": "ade"}).status_code \
-        == 409
+    bearer = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
+    assert client.post("/api/door", json={"player": "ade"},
+                       headers=bearer).status_code == 409
     assert store.list_sessions(fixture["store"], "ade") == ()
 
 

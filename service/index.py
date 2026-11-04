@@ -18,6 +18,8 @@ The fences:
 - token_hash, sessions, and device codes stay out: they are
   credentials, not results.
 
+docs/querying-results.md holds the schema and the example queries.
+
 The command line of this module has four commands: build makes the
 index again from the store, a compare against the store checks it,
 export writes the research set of revealed days, and path prints
@@ -43,7 +45,7 @@ from pathlib import Path
 from service import store
 from service.config import ServiceConfigError, load_service_config
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE meta (
@@ -108,6 +110,7 @@ CREATE TABLE trial_atoms (
   day TEXT NOT NULL,
   player TEXT NOT NULL,
   scoring_config_hash TEXT NOT NULL,
+  pinned INTEGER NOT NULL,
   position INTEGER NOT NULL,
   atom_id TEXT NOT NULL,
   atom_text TEXT,
@@ -116,6 +119,16 @@ CREATE TABLE trial_atoms (
   similarity REAL,
   rarity REAL,
   PRIMARY KEY (day, player, scoring_config_hash, position)
+);
+CREATE TABLE trial_channels (
+  day TEXT NOT NULL,
+  player TEXT NOT NULL,
+  scoring_config_hash TEXT NOT NULL,
+  pinned INTEGER NOT NULL,
+  channel TEXT NOT NULL,
+  standardized REAL NOT NULL,
+  p REAL NOT NULL,
+  PRIMARY KEY (day, player, scoring_config_hash, channel)
 );
 CREATE VIEW revealed_trials AS
   SELECT t.*, d.trial_code, d.target_id, s.received_at
@@ -135,6 +148,7 @@ _TABLES = (
     ("submissions", "day, player"),
     ("trials", "day, player, scoring_config_hash"),
     ("trial_atoms", "day, player, scoring_config_hash, position"),
+    ("trial_channels", "day, player, scoring_config_hash, channel"),
 )
 
 
@@ -143,6 +157,10 @@ QUERY_ROW_CAP = 1000
 QUERY_SECONDS = 5.0
 QUERY_TEXT_CAP = 10_000
 QUERY_VALUE_BYTES = 10_000_000
+
+# The rows one answer of the operator's trial reader holds (spec BR1
+# section 5). A longer result reports the cut (spec PL1 section 7).
+TRIAL_ROW_CAP = 5000
 
 
 class ResultsIndexError(RuntimeError):
@@ -272,11 +290,17 @@ def _fill(connection: sqlite3.Connection, root: Path) -> None:
             for position, atom in enumerate(row.get("report") or []):
                 connection.execute(
                     "INSERT INTO trial_atoms VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (day, player, config_hash, position,
+                    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (day, player, config_hash, 1 if pinned else 0, position,
                      str(atom.get("atom_id")), atom.get("atom_text"),
                      atom.get("element"), atom.get("weight"),
                      atom.get("similarity"), atom.get("rarity")))
+            channels = row.get("channel_scores") or {}
+            for channel, value in channels.items():
+                connection.execute(
+                    "INSERT INTO trial_channels VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (day, player, config_hash, 1 if pinned else 0, channel,
+                     float(value["standardized"]), float(value["p"])))
 
 
 def _write(path: Path, root: Path, fingerprint: str,
@@ -529,12 +553,15 @@ def read_only_query(target: Path, sql: str, *,
 def revealed_trial_rows(target: Path, *, from_day: str | None = None,
                         to_day: str | None = None,
                         player: str | None = None,
-                        limit: int = 5000) -> list[dict]:
-    """The pinned trial rows of revealed days, with each player's label.
+                        limit: int = TRIAL_ROW_CAP,
+                        ) -> tuple[list[dict], bool]:
+    """The pinned trial rows of revealed days, and a flag for a cut.
 
-    The operator API reads this. Days before or after the range and
-    players other than the named one do not come in. The view does the revealed
-    filter, thus no caller can forget it.
+    Each row holds the player's label. The operator API reads this.
+    Days before or after the range and players other than the named
+    one do not come in. The view does the revealed filter, thus no
+    caller can forget it. The flag is on when the result holds more
+    than limit rows, thus a short answer always says so.
     """
     clauses, values = [], []
     if from_day is not None:
@@ -558,10 +585,10 @@ def revealed_trial_rows(target: Path, *, from_day: str | None = None,
             "FROM revealed_trials AS t "
             "LEFT JOIN players AS p ON p.player = t.player "
             f"{where} ORDER BY t.day, t.player LIMIT ?",
-            (*values, limit)).fetchall()
+            (*values, limit + 1)).fetchall()
     finally:
         connection.close()
-    return [dict(row) for row in rows]
+    return [dict(row) for row in rows[:limit]], len(rows) > limit
 
 
 def pseudonym(player: str, salt: str) -> str:

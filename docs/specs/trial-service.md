@@ -294,6 +294,11 @@ A localhost HTTP server (§14 D1 rules the mechanism), started as
 | `GET /image/<id>` | refused | the target bytes of a revealed day |
 | `GET /history` | earlier revealed days, Layer 9 summary | same |
 
+*Note, 2026-11-03 (spec PL1 §2):* from this date, `POST /api/submission` names
+its day in the query string, and a label that is not the latest day gets a
+409. The stored bytes do not change. Fsync guards each permanent file (spec
+PL1 §5).
+
 - The acknowledgment names the stored atom count and the trial
   identifier and nothing else — a validation echo, not a score (§8:
   acknowledgment below 200 ms, with no encoder in this path).

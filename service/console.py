@@ -213,7 +213,12 @@ def schedule_view(root: Path, *, closes_at_utc: str | None,
     }
     if closes_at_utc is not None:
         value["due_now"] = _plan_value(latest, instant, closes_at_utc)
+        # A step that is due waits for the next firing of the hourly timer.
+        # With none due, the next move comes at the close hour (spec PL1
+        # section 3).
+        due = rollover.planned_steps(latest, instant, closes_at_utc)
         value["next_run"] = _plan_value(
-            latest, schedule.next_rollover_at(instant, closes_at_utc),
+            latest, schedule.next_firing_at(instant) if due
+            else schedule.next_rollover_at(instant, closes_at_utc),
             closes_at_utc)
     return value

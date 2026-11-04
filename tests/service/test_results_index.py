@@ -219,7 +219,8 @@ def test_the_operator_endpoint_serves_revealed_rows(tmp_path) -> None:
                      "2026-08-12", headers=HEADERS).json()
     assert [row["player"] for row in one["rows"]] == ["bru"]
     none = client.get("/api/ops/trials?from=2026-08-13", headers=HEADERS)
-    assert none.json() == {"rows": [], "count": 0}
+    assert none.json() == {"rows": [], "count": 0, "truncated": False,
+                           "row_cap": index.TRIAL_ROW_CAP}
     assert client.get("/api/ops/trials?from=nope",
                       headers=HEADERS).status_code == 400
     assert client.get("/api/ops/trials?player=../x",
@@ -253,6 +254,8 @@ def test_the_player_export_is_the_callers_own(tmp_path) -> None:
 
 def test_the_player_export_reads_the_store_alone(tmp_path) -> None:
     fixture, root, target = _world(tmp_path)
+    # The reveal in the world built one. The export must not build one.
+    target.unlink()
 
     def snapshot() -> dict:
         return {str(path): path.read_bytes() for path in root.rglob("*")

@@ -1,18 +1,26 @@
-# The rollover hour. Keep it equal to closes_at_utc in
-# /etc/starvector/service.json: the server shows that instant as the
-# countdown, and the rollover closes a day only once it is due.
-# Keep it clear of 04:30 (the unattended-upgrade reboot) and 05:00
-# (the backup timer).
+# The rollover check, each hour on the hour (spec PL1 section 3). Most
+# firings find nothing due and move nothing. A close that failed gets
+# a new try at the next firing, thus a failure costs about an hour and
+# not a day.
+#
+# Keep closes_at_utc in /etc/starvector/service.json on the hour: a
+# different minute closes at the first firing after it, up to 59
+# minutes late, while the server's countdown shows the exact time.
+#
+# 04:30 is the unattended-upgrade reboot and 05:00 is the backup timer.
+# A firing near them moves nothing unless a close is due, thus keep the
+# close hour clear of them.
 
 [Unit]
-Description=Starvector day rollover at the close hour
+Description=Starvector day rollover check, each hour
 
 [Timer]
-OnCalendar=*-*-* 22:00:00 UTC
+OnCalendar=*-*-* *:00:00 UTC
 AccuracySec=1s
-# No catch-up at boot: a box that was down at the hour does not fire
-# a stale close when it comes back. Start the service by hand then.
-Persistent=false
+# A box that was down catches up at boot. This is safe because the
+# rollover closes only a day that is due, and it reads the status
+# before each step.
+Persistent=true
 
 [Install]
 WantedBy=timers.target

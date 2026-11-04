@@ -19,7 +19,7 @@ import { useState } from "react";
 import { useApi } from "../api/client";
 import { friendlyMessage, isRefusal } from "../api/types";
 import { LogoMark } from "../ui/logo";
-import { HowItWorksSteps } from "./how";
+import { HowItWorksSteps, Premise } from "./how";
 
 export function WelcomeScreen(): React.JSX.Element {
   const api = useApi();
@@ -73,6 +73,7 @@ export function WelcomeScreen(): React.JSX.Element {
           </div>
           <section className="card" aria-labelledby="how-heading">
             <h2 id="how-heading">How it works</h2>
+            <Premise />
             <HowItWorksSteps />
           </section>
         </div>
@@ -159,10 +160,15 @@ function DoorCard(): React.JSX.Element {
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [label, setLabel] = useState("");
+  const [token, setToken] = useState("");
 
   const enter = useMutation({
     mutationFn: () =>
-      api.postDoor(name.trim(), label.trim() === "" ? undefined : label.trim()),
+      api.postDoor(
+        name.trim(),
+        label.trim() === "" ? undefined : label.trim(),
+        token,
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["me"] });
     },
@@ -172,8 +178,8 @@ function DoorCard(): React.JSX.Element {
     <section className="card card-quiet" aria-labelledby="door-heading">
       <h3 id="door-heading">Test server sign-in</h3>
       <p className="hint">
-        This is a test server, so you can sign in with a name alone. Real
-        servers don't show this.
+        This is a test server, so the operator can sign in with a name and the
+        operator token. Real servers don't show this.
       </p>
       <form
         className="stack-sm"
@@ -203,6 +209,17 @@ function DoorCard(): React.JSX.Element {
           value={label}
           onChange={(event) => setLabel(event.target.value)}
         />
+        <label className="label" htmlFor="door-token">
+          Operator token
+        </label>
+        <input
+          id="door-token"
+          className="input"
+          type="password"
+          autoComplete="off"
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+        />
         <button
           type="submit"
           className="btn btn-secondary"
@@ -213,7 +230,7 @@ function DoorCard(): React.JSX.Element {
         {enter.isError ? (
           <div className="notice notice-bad" role="alert">
             {isRefusal(enter.error)
-              ? "Name sign-in is off on this server."
+              ? "Name sign-in needs the operator token on this server."
               : friendlyMessage(enter.error)}
           </div>
         ) : null}

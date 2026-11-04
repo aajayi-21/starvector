@@ -2,7 +2,9 @@
  * How it works (spec BR1 §6): the game in plain words. Each sentence
  * here is a claim about the scoring, so each one says what the
  * system does and no more — the result is a rank among the photos,
- * 50% is what guessing averages, and practice stores nothing.
+ * 50% is what guessing averages, and practice stores nothing. The
+ * premise is stated as a question, because the game tests it and does
+ * not assume an answer (spec PL1 §8).
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +12,18 @@ import { Link } from "@tanstack/react-router";
 
 import { useApi } from "../api/client";
 import { localTimeOfUtc } from "../ui/format";
+
+/** The premise, in one place: each how-it-works surface shows this. */
+export function Premise(): React.JSX.Element {
+  return (
+    <p>
+      Starvector tests one question: can a person pick up anything about a photo
+      they have never seen? The game doesn't assume they can. With nothing to go
+      on, results land at 50% on average, so anything steadily above that is
+      worth a closer look.
+    </p>
+  );
+}
 
 export function HowItWorksSteps(): React.JSX.Element {
   return (
@@ -69,6 +83,11 @@ export function HowItWorksScreen(): React.JSX.Element {
       </div>
 
       <section className="card">
+        <h2>The idea</h2>
+        <Premise />
+      </section>
+
+      <section className="card">
         <HowItWorksSteps />
       </section>
 
@@ -90,10 +109,12 @@ export function HowItWorksScreen(): React.JSX.Element {
       <section className="card">
         <h2>Your skill number</h2>
         <p>
-          Over many days your results combine into one number. 1.0 is chance.
-          Above 1.0 means your results lean better than chance. It takes a lot
-          of days before the number settles, so the results page also shows how
-          often luck alone would do as well.
+          Over many days your results combine into one number. 1.00 is chance,
+          the same thing as averaging 50%. 2.00 is the same as averaging 67%. It
+          takes a lot of days before the number settles, so the results page
+          also shows how often luck alone would do as well. The leaderboard
+          shows a steadied version, which stays near the middle until enough
+          results back it, so the two numbers can differ.
         </p>
       </section>
 
@@ -106,8 +127,8 @@ export function HowItWorksScreen(): React.JSX.Element {
             : ` A new day starts at ${hour} UTC (${localTimeOfUtc(hour)} your time), when the last one closes and its photo is revealed.`}
         </p>
         <p>
-          In <Link to="/practice">Practice</Link> you can replay past photos as
-          often as you like. Practice is never saved and never counts.
+          In <Link to="/practice">Practice</Link> you can replay past photos, up
+          to an hourly limit. Practice results are never saved and never count.
         </p>
       </section>
 

@@ -39,6 +39,8 @@ class WiredScoring(NamedTuple):
     scoring_hash: str
     commonness_hash: str
     preparation_version_id: str
+    # The report.channel_scores flag of the config (spec PL1 section 7).
+    store_channel_scores: bool = False
 
 
 def _refusing_background(config_path: str) -> Callable[[], list]:
@@ -128,7 +130,8 @@ def wire_for_close(config: ScoringConfig, config_path: str,
                    ) -> WiredScoring:
     """The close-time wiring: live encoders, tables read warm."""
     encoders = harness.wire_encoders(config, data_root, providers)
-    return _wire(config, config_path, data_root, encoders, providers)
+    wired = _wire(config, config_path, data_root, encoders, providers)
+    return wired._replace(store_channel_scores=config.report.channel_scores)
 
 
 def score_stored_submission(record: JsonValue, target_id: TargetId,
@@ -149,6 +152,40 @@ def score_stored_submission(record: JsonValue, target_id: TargetId,
     report = match_report(encoded, wired.context.index, position,
                           wired.context.element)
     return trial, report
+
+
+def channel_score_values(record: JsonValue, target_id: TargetId,
+                         wired: WiredScoring,
+                         ) -> dict[str, JsonValue] | None:
+    """Each active channel at the target, or None with the flag off.
+
+    Spec PL1 section 7. The standardized score at the target, and the
+    trial score of that channel alone against the same decoys. The
+    target enters here after Layer 8 and in the shell: each channel
+    has a score for the full pool before this reads one position (I1).
+    The row keeps these for analysis. No player surface reads them, and
+    no fit can read them (I6).
+    """
+    if not wired.store_channel_scores:
+        return None
+    from core.ranking import decoy_set, rank
+    from pipeline.score import standardized_channels
+
+    context = wired.context
+    submission = validate_submission(record, context.gates,
+                                     context.render.canvas_px)
+    encoded = encode_submission(submission, context.render, wired.encoders)
+    standardized = standardized_channels(encoded, context)
+    decoys = decoy_set(context.index, target_id)
+    position = context.index.image_ids.index(target_id)
+    return {
+        name: {
+            "standardized": harness.quantized(float(scores[position])),
+            "p": harness.quantized(
+                rank(scores, target_id, decoys, context.index).p),
+        }
+        for name, scores in sorted(standardized.items())
+    }
 
 
 class DayPrecompute(NamedTuple):
@@ -326,13 +363,19 @@ def dev_rankings(record: JsonValue, target_id: TargetId,
 
 def trial_row_value(day: str, player: str, trial_id: str,
                     trial: TrialScore, report: tuple[MatchRow, ...],
-                    wired: WiredScoring) -> dict[str, JsonValue]:
+                    wired: WiredScoring,
+                    channel_scores: dict[str, JsonValue] | None = None,
+                    ) -> dict[str, JsonValue]:
     """The stored trial-row document (S1 section 5).
 
     One function shapes the row for close and for rescore, thus the
     R8 byte equality holds by construction. The strict rank is the
-    V1 rule: decoys above the target, plus one.
+    V1 rule: decoys above the target, plus one. With channel_scores
+    None the row has no such key, thus a row of a config with the flag
+    off stays byte-equal to each row stored before the flag.
     """
+    extra = {} if channel_scores is None \
+        else {"channel_scores": channel_scores}
     return {
         "day": day,
         "player": player,
@@ -342,4 +385,5 @@ def trial_row_value(day: str, player: str, trial_id: str,
         "scoring_config_hash": wired.scoring_hash,
         "commonness_config_hash": wired.commonness_hash,
         "preparation_version_id": wired.preparation_version_id,
+        **extra,
     }

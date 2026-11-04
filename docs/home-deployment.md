@@ -343,6 +343,13 @@ sudo -u starvector .venv/bin/python -m service.players \
 The invite prints one time — send it, then forget it. `list` shows
 the roster with no secret in it.
 
+*Note, 2026-11-03 (spec PL1 §5):* an invite is not a one-time URL, and it
+has no end date. It prints one time, and it stays good on each device that
+opens it until you `rotate` or `revoke` that player. Keep a sent invite safe,
+in the same manner as a password. If a message that holds one goes to an
+incorrect person, `rotate` that player. Spec PL1 §10 holds the open ruling on
+an end date or a limit of one use.
+
 *Note, 2026-09-24 (spec BR1 §4):* the invite and the session are two
 different things from this date. The invite makes a session on each device that
 opens it, and the cookie holds that session and not the invite.
@@ -422,18 +429,21 @@ the day that is due, reveals it, and opens the next.
    `"closes_at_utc": "22:00"` (24-hour, UTC) and start the server
    again with `sudo systemctl restart starvector`. The app shows the
    countdown to that instant.
-2. Set the same hour in `deploy/starvector-day.timer`
-   (`OnCalendar=*-*-* 22:00:00 UTC`). Keep it clear of 04:30 (the
-   update reboot) and 05:00 (the backup).
+2. Keep that hour on the hour, and clear of 04:30 (the update reboot)
+   and 05:00 (the backup). `deploy/starvector-day.timer` fires each
+   hour at minute 00, thus a different minute closes at the next firing
+   after it (spec PL1 §3). The timer file needs no edit.
 3. Optional: put `STARVECTOR_HEALTHCHECK_URL` in
    `/etc/starvector/env`. Each rollover pings it, and a failure pings
-   it with `/fail` added, thus a missed day alerts you.
+   it with `/fail` added, thus a missed day alerts you. Give the check
+   a period of 2 hours. Without this address, the only record of a
+   failure is the journal and the console.
 4. Install and start the timer:
 
 ```
 cd /srv/starvector/app
 sudo cp deploy/starvector-day.service deploy/starvector-day.timer \
-    /etc/systemd/system/
+    deploy/starvector-day-failed.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now starvector-day.timer
 systemctl list-timers starvector-day.timer
@@ -450,14 +460,21 @@ To read the last runs: the console's Automatic days tab shows each
 run with its outcome, and `journalctl -u starvector-day -n 50` has
 each line.
 
-The rollover closes a day only when its close time is here, thus a
-second start the same day does nothing. When the close meets a
-provider failure it tries again with a growing wait, and the day stays
-in `closing` — no send gets in — until a subsequent start finishes it. The
-timer does not catch up at boot: after a box was down at the hour,
-start the rollover by hand with
-`sudo systemctl start starvector-day`, or press `Do what is due now`
-in the console.
+The rollover closes a day only when its close time is here, thus most
+firings of the hourly timer do nothing, and they write no run record.
+When the close meets a provider failure it tries again with a growing
+wait, for about 7.5 minutes. The day then stays in `closing` — no send
+gets in — and the next firing tries again, in about an hour. A failure
+pings the health check at each firing until it heals. The timer also
+catches up at boot, thus a box that was down at the hour closes the day
+when it comes back. To do it at that moment, start the rollover by hand with
+`sudo systemctl start starvector-day`, or press `Do what is due now` in
+the console.
+
+**One submission that does not score stops the close for each player**,
+and each firing then stops at the same point. This needs a person. Read the
+error with `journalctl -u starvector-day -n 50`. Spec PL1 §3.1 holds the
+proposed repair, which is not built.
 
 *Note, 2026-09-24 (spec BR1 §7.2).* The console's Automatic days tab
 pauses the timer and resumes it. A paused timer starts at the hour,
@@ -526,7 +543,7 @@ is a new preparation adjacent to the earlier one. The move is one
 | 8000 and 8001 (uvicorn) | `127.0.0.1` alone |
 | SSH | LAN alone, keys alone — not forwarded at the router |
 | player surfaces | 401 without an invited session |
-| secrets | root-read file, spend-capped key, one-time invites |
+| secrets | root-read file, spend-capped key, invites that print one time and stay good until `rotate` |
 | backups | off-box, append-only credential |
 
 Each layer holds alone, on purpose. The edge blocks the operator

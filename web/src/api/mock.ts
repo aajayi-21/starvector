@@ -456,10 +456,14 @@ export function makeMockApi(options: MockOptions = {}): Api {
         submitted: submittedToday,
         relation_vocabulary: ["left-of", "right-of", "above", "below"],
         canvas_px: 512,
+        min_strokes: 2,
         closes_at: null,
       });
     },
-    submit(record: WireRecord): Promise<SubmissionAck> {
+    submit(day: string, record: WireRecord): Promise<SubmissionAck> {
+      if (day !== today) {
+        return Promise.reject(new ApiError(409, "day-moved"));
+      }
       if (submittedToday) {
         return Promise.reject(new ApiError(409, "already-submitted"));
       }
@@ -473,6 +477,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         (record.pasted_text !== null ? 1 : 0);
       return Promise.resolve({
         trial_id: seededHex(`trial:${today}`, 32),
+        day,
         atom_count: atomCount,
       });
     },
@@ -508,6 +513,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
           target_id: targetId(day),
           trial_code: seededCode(`code:${day}`),
         })),
+        min_strokes: 2,
       });
     },
     scorePractice(day: string, record: WireRecord): Promise<PracticeScore> {
@@ -745,6 +751,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
     postDoor(
       name: string,
       displayName?: string,
+      _operatorToken?: string,
     ): Promise<{ player: string; display_name: string }> {
       return Promise.resolve({
         player: name,

@@ -20,6 +20,11 @@ A render field here is an unknown-field error.
 
 ## The headline knobs
 
+- **Scores for each channel** — `report.channel_scores`, optional, off by
+  default. On, each trial row stores each channel's score at the target (spec PL1
+  section 7). It enters the config hash only when on, thus a config that
+  does not name it keeps its hash.
+
 - **Input preparation** — `input.preparation_record` names the
   committed preparation record. The pool index, the render values,
   and the near-duplicate groups come from its artifact tree, with

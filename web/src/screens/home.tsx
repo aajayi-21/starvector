@@ -10,13 +10,19 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { useApi } from "../api/client";
+import { useDayQuery } from "../api/day-query";
 import type { DayView, HistoryView, MeView } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
 import { ChanceMeter } from "../ui/chance-meter";
 import { CodeCells } from "../ui/code-cells";
 import { ClosesIn } from "../ui/countdown";
-import { formatDay, formatShortDay, percentBeaten } from "../ui/format";
-import { HowItWorksSteps } from "./how";
+import {
+  formatCloseMoment,
+  formatDay,
+  formatShortDay,
+  percentBeaten,
+} from "../ui/format";
+import { HowItWorksSteps, Premise } from "./how";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -32,11 +38,7 @@ function greeting(): string {
 export function HomeScreen(): React.JSX.Element {
   const api = useApi();
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
-  const day = useQuery({
-    queryKey: ["day"],
-    queryFn: () => api.getDay(),
-    refetchOnWindowFocus: true,
-  });
+  const day = useDayQuery();
   const history = useQuery({
     queryKey: ["history"],
     queryFn: () => api.getHistory(),
@@ -70,6 +72,7 @@ export function HomeScreen(): React.JSX.Element {
               More detail
             </Link>
           </div>
+          <Premise />
           <HowItWorksSteps />
         </section>
       ) : null}
@@ -123,7 +126,7 @@ function TodayCard(props: {
       </section>
     );
   }
-  const eyebrow = `Today · ${formatDay(day.day)}`;
+  const eyebrow = `Today · ${formatCloseMoment(day.closes_at) ?? formatDay(day.day)}`;
   if (day.status === "revealed") {
     return (
       <section className="card card-hero">
@@ -149,8 +152,8 @@ function TodayCard(props: {
         <h2>Today's session has closed</h2>
         <p className="muted">
           {day.submitted
-            ? "Your sketch is in. Results are being worked out — check back in a few minutes."
-            : "Results are being worked out — check back in a few minutes."}
+            ? "Your sketch is in. Results are being worked out, and this page updates by itself."
+            : "Results are being worked out, and this page updates by itself."}
         </p>
       </section>
     );

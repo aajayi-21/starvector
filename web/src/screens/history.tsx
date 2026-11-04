@@ -16,7 +16,13 @@ import { Link } from "@tanstack/react-router";
 import { useApi } from "../api/client";
 import type { HistoryDayRow, HistoryView, MeView } from "../api/types";
 import { friendlyMessage } from "../api/types";
-import { formatShortDay, median, ordinal, percentBeaten } from "../ui/format";
+import {
+  formatShortDay,
+  median,
+  ordinal,
+  percentBeaten,
+  skillAsPercent,
+} from "../ui/format";
 
 const CHART_DAYS = 14;
 /**
@@ -122,9 +128,14 @@ function HistoryBody(props: {
                 {view.skill.theta.toFixed(2)}
               </div>
               <p className="muted small">
-                1.00 is chance. Above 1.00, your results lean better than
-                chance. Based on {view.skill.n}{" "}
-                {view.skill.n === 1 ? "result" : "results"}.
+                1.00 is chance, the same thing as averaging 50%. Yours is the
+                same as averaging {skillAsPercent(view.skill.theta)}%. Based on{" "}
+                {view.skill.n} {view.skill.n === 1 ? "result" : "results"}.
+              </p>
+              <p className="hint">
+                The leaderboard shows a steadied version of this number, which
+                stays near the middle until enough results back it. The two can
+                differ.
               </p>
               {view.skill.n < EARLY_RESULTS ? (
                 <p
@@ -175,7 +186,7 @@ function HistoryBody(props: {
                 <th>Date</th>
                 <th>Code</th>
                 <th className="num">Result</th>
-                <th className="num">Hidden photo's rank</th>
+                <th className="num">Hidden photo's place</th>
                 <th>
                   <span className="visually-hidden">Details</span>
                 </th>
