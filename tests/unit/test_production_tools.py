@@ -86,6 +86,7 @@ def test_the_lineage_documents_parse_and_agree(
         assert config.input.preparation_record == record
         assert not config.input.preparation_record.split("/")[-1].startswith("dev-")
         assert config.report.dev_only is False
+        assert config.report.channel_scores is True
         harness.check_outline_space(config, preparation)
         # The gates and the server read one commonness source.
         assert config.commonness == scoring[0].commonness

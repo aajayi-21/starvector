@@ -158,6 +158,9 @@ def _scoring(rulings: Rulings, record_path: str, tag: str, mode: str) -> dict:
     document["validation"]["tag"] = tag
     document["validation"]["submission_mode"] = mode
     document["report"]["dev_only"] = False
+    # On from the first day: a trial row with no channel scores cannot
+    # get them after the fact (spec PL1 section 7, spec PP1 section 7).
+    document["report"]["channel_scores"] = True
     return document
 
 
