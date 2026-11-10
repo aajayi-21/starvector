@@ -492,6 +492,29 @@ The stage also writes `records.jsonl`: one row for each survivor with
 attribution. The stages after s02 read image metadata from this file and do
 not decode the image files again.
 
+**Note, 2026-11-09: the fetch journal.** The stage held the bytes of
+each fetched image until the fetch loop ended. That is about 15 GB at
+the `materialize_cap` of spec PP1, and after a stop no fetch outcome was on the disk.
+At this time the stage does the decode checks batch by batch, and it
+holds the bytes of one batch.
+
+The stage writes each batch outcome to
+`s02-materialize/fetch-journal.jsonl` before the next batch starts. A
+row has the batch number, the source keys, the transport bytes, and for
+each key the `image_id` with its byte count or the failure cause. A
+second start of a stopped stage reads the journal and does the same
+budget arithmetic on the recorded outcomes. Then it fetches from the
+first batch that the journal does not hold.
+
+A recorded fetch failure stays a rejection, thus the continued run
+gives the bytes that a run with no stop gives. A journal row that does
+not agree with the fetch sequence raises (R14). A stored image with a
+different byte count also raises.
+
+The stage removes the journal after `meta.json`. The files of a
+complete stage directory in §11 thus do not change, and `--force-from`
+removes the journal with the stage directory.
+
 ### s03 text — R4
 
 `TextCoverageEstimator` on the survivor images: one fraction for each

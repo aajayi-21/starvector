@@ -508,9 +508,73 @@ def run_s01_screen(config: CurationConfig, tree: ArtifactTree, code_version: str
     return meta
 
 
+def _journaled_outcomes(
+    row: Mapping[str, JsonValue], number: int, batch_keys: Sequence[str], journal_path: Path
+) -> list[Mapping[str, JsonValue]]:
+    """The outcomes of one fetch batch that the journal holds.
+
+    The journal row must name this batch and its keys in this sequence.
+    A row that does not agree comes from a different fetch sequence, and
+    its outcomes are not the outcomes of these candidates, thus it
+    raises (R14).
+    """
+    outcomes = row.get("outcomes")
+    if (
+        row.get("batch") != number
+        or row.get("keys") != list(batch_keys)
+        or not isinstance(outcomes, list)
+        or len(outcomes) != len(batch_keys)
+    ):
+        raise mf.ManifestError(
+            f"{journal_path}: row {number} does not agree with fetch batch {number} - "
+            "the journal is from a different fetch sequence"
+        )
+    return outcomes
+
+
+def _fetched_outcomes(
+    corpus: SourceCorpus, batch: Sequence[SourceRecord], data_root: Path
+) -> tuple[list[dict[str, JsonValue]], dict[str, bytes]]:
+    """Fetch one batch, store its images, and give the journal outcomes.
+
+    An image outcome holds the image_id and the byte count. A failure
+    outcome holds the two text fields of the failure. The second output maps each
+    image_id of this batch to its bytes, for the decode check, and the
+    caller drops it when the batch ends.
+    """
+    results = corpus.materialize_many(batch)
+    if len(results) != len(batch):
+        raise mf.ManifestError("materialize_many result is not aligned with its input")
+    outcomes: list[dict[str, JsonValue]] = []
+    batch_bytes: dict[str, bytes] = {}
+    for result in results:
+        if isinstance(result, MaterializedImage):
+            image_id = mf.store_image_bytes(data_root, result.image_bytes)
+            batch_bytes[image_id] = result.image_bytes
+            outcomes.append({"image_id": image_id, "byte_count": len(result.image_bytes)})
+        else:
+            outcomes.append({"reason": result.reason, "detail": result.detail})
+    return outcomes, batch_bytes
+
+
 def run_s02_materialize(
     corpus: SourceCorpus, config: CurationConfig, tree: ArtifactTree, code_version: str
 ) -> StageMeta:
+    """Fetch, store, and decode-check the s01 survivors.
+
+    The stage holds the bytes of one fetch batch at a time. Each image
+    gets its decode check when its batch ends, and the bytes go out of
+    memory then: at the production cap the full set is about 15 GB.
+
+    Each batch outcome goes to the fetch journal before the next batch
+    starts. A second start of a stage that stopped reads the journal,
+    does the same budget arithmetic on the recorded outcomes, and
+    fetches from the first batch the journal does not hold. The stored
+    bytes of a recorded image come from the image store, and a byte
+    count that does not agree raises. The stage removes the journal
+    after meta.json, thus a complete stage directory holds the files it
+    held before the journal.
+    """
     stage = "s02-materialize"
     rows = _read_parent_manifest(tree, "s01-screen")
     candidates = {c.source_key: c for c in (mf.row_to_candidate(row) for row in rows)}
@@ -520,14 +584,21 @@ def run_s02_materialize(
     budget = config.extraction.budget_bytes
     cap = config.extraction.materialize_cap
     batch_size = config.corpus.materialization.fetch_batch_size
-    transport_start = corpus.bytes_retrieved
+
+    directory = mf.stage_dir(tree, stage)
+    journal_path = directory / mf.FETCH_JOURNAL
+    journal = mf.read_journal(journal_path)
 
     decision_bytes = int(scan_bytes)
+    transport_bytes = 0
     fetched = 0
     budget_stopped = 0
     rejections: list[Rejection] = []
-    admitted: list[tuple[str, str, bytes]] = []  # (source_key, image_id, bytes)
+    admitted: list[tuple[str, str]] = []  # (source_key, image_id)
+    decoded: dict[str, materialize.DecodedImage] = {}
+    decode_reject: dict[str, materialize.ScreenRejection] = {}
     position = 0
+    batch_number = 0
 
     while position < len(order):
         if decision_bytes >= budget or (cap is not None and fetched >= cap):
@@ -535,39 +606,64 @@ def run_s02_materialize(
             break
         batch_keys = order[position : position + batch_size]
         position += len(batch_keys)
-        batch = [_candidate_to_source(candidates[k]) for k in batch_keys]
-        results = corpus.materialize_many(batch)
-        if len(results) != len(batch):
-            raise mf.ManifestError("materialize_many result is not aligned with its input")
-        for key, outcome in zip(batch_keys, results):
-            if isinstance(outcome, MaterializedImage):
-                fetched += 1
-                decision_bytes += len(outcome.image_bytes)
-                image_id = mf.store_image_bytes(tree.data_root, outcome.image_bytes)
-                admitted.append((key, image_id, outcome.image_bytes))
-            else:
+        batch_bytes: dict[str, bytes] = {}
+        if batch_number < len(journal):
+            row = journal[batch_number]
+            outcomes = _journaled_outcomes(row, batch_number, batch_keys, journal_path)
+            transport_bytes += int(row["transport_bytes"])  # type: ignore[arg-type]
+        else:
+            transport_start = corpus.bytes_retrieved
+            outcomes, batch_bytes = _fetched_outcomes(
+                corpus, [_candidate_to_source(candidates[k]) for k in batch_keys], tree.data_root
+            )
+            batch_transport = corpus.bytes_retrieved - transport_start
+            transport_bytes += batch_transport
+            mf.append_journal(
+                journal_path,
+                {
+                    "batch": batch_number,
+                    "keys": list(batch_keys),
+                    "outcomes": outcomes,
+                    "transport_bytes": batch_transport,
+                },
+            )
+        batch_number += 1
+        for key, outcome in zip(batch_keys, outcomes):
+            if "image_id" not in outcome:
                 rejections.append(
-                    Rejection(key, stage, outcome.reason, None, outcome.detail)
+                    Rejection(key, stage, str(outcome["reason"]), None, str(outcome["detail"]))
                 )
+                continue
+            image_id = str(outcome["image_id"])
+            byte_count = int(outcome["byte_count"])  # type: ignore[arg-type]
+            fetched += 1
+            decision_bytes += byte_count
+            admitted.append((key, image_id))
+            if image_id in decoded or image_id in decode_reject:
+                continue
+            # Decode checks on unique byte content. A journaled image
+            # reads its bytes from the store.
+            image_bytes = batch_bytes.get(image_id)
+            if image_bytes is None:
+                image_bytes = mf.load_image_bytes(tree.data_root, image_id)
+            if len(image_bytes) != byte_count:
+                raise mf.ManifestError(
+                    f"{journal_path}: image {image_id} has {len(image_bytes)} bytes in "
+                    f"the store and {byte_count} in the journal"
+                )
+            screened = materialize.screen_decoded(image_bytes, config.screen)
+            if isinstance(screened, materialize.DecodedImage):
+                decoded[image_id] = screened
+            else:
+                decode_reject[image_id] = screened
     for key in order[position:]:
         rejections.append(
             Rejection(key, stage, "extraction-budget", None, "budget or cap reached before fetch")
         )
 
-    # Decode checks on unique byte content, then the duplicate-bytes rule.
-    decoded: dict[str, materialize.DecodedImage] = {}
-    decode_reject: dict[str, materialize.ScreenRejection] = {}
-    for _, image_id, image_bytes in admitted:
-        if image_id in decoded or image_id in decode_reject:
-            continue
-        outcome = materialize.screen_decoded(image_bytes, config.screen)
-        if isinstance(outcome, materialize.DecodedImage):
-            decoded[image_id] = outcome
-        else:
-            decode_reject[image_id] = outcome
-
+    # The decode rejections, then the duplicate-bytes rule.
     passing: list[tuple[str, str]] = []
-    for key, image_id, _ in admitted:
+    for key, image_id in admitted:
         if image_id in decode_reject:
             r = decode_reject[image_id]
             rejections.append(Rejection(key, stage, r.reason, r.measured, r.detail))
@@ -600,7 +696,6 @@ def run_s02_materialize(
         )
     records.sort(key=lambda r: r.image_id)
 
-    transport_bytes = corpus.bytes_retrieved - transport_start
     meta = _meta(
         tree,
         stage,
@@ -624,7 +719,6 @@ def run_s02_materialize(
         provider_requests=0,
         code_version=code_version,
     )
-    directory = mf.stage_dir(tree, stage)
     directory.mkdir(parents=True, exist_ok=True)
     mf.write_jsonl(
         directory / "records.jsonl", (mf.image_record_to_row(r) for r in records)
@@ -636,6 +730,7 @@ def run_s02_materialize(
         [mf.manifest_row(r.image_id, r.source_key) for r in records],
         rejections,
     )
+    journal_path.unlink(missing_ok=True)
     return meta
 
 

@@ -17,9 +17,11 @@ from pool.artifacts import (
     ManifestError,
     _dict_to_pairs,
     _pairs_to_dict,
+    append_journal,
     corpus_slug,
     image_path,
     load_image_bytes,
+    read_journal,
     read_jsonl,
     store_image_bytes,
     vector_path,
@@ -39,9 +41,12 @@ from pool.curation.types import (
 
 __all__ = [
     "ManifestError",
+    "FETCH_JOURNAL",
+    "append_journal",
     "corpus_slug",
     "image_path",
     "load_image_bytes",
+    "read_journal",
     "read_jsonl",
     "store_image_bytes",
     "vector_path",
@@ -65,6 +70,12 @@ __all__ = [
     "stage_is_complete",
     "parse_review",
 ]
+
+
+# The fetch journal of s02 (pool-curation.md, the s02 note of
+# 2026-11-09). It sits in the stage directory while the stage is not
+# complete, and the stage removes it after meta.json.
+FETCH_JOURNAL = "fetch-journal.jsonl"
 
 
 def stage_dir(tree: ArtifactTree, stage: str) -> Path:
