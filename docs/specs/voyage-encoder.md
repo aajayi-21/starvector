@@ -220,6 +220,27 @@ These land on the build branch of the pool, not in this spec:
 Each step ends with numbers. The owner runs them with the key in the
 environment, and the key stays out of each transcript.
 
+**Note, 2026-11-10: one command for steps 2 to 6.**
+`uv run python -m tools.voyage_bakeoff` does steps 2 to 6 in sequence,
+with the two keys in the environment. The steps below stay as the
+definition of what it does.
+
+- **Preflight.** Before it uses the network, the tool makes sure that the
+  two keys are in the environment, that each config file is there, and
+  that each scoring config names the record that its preparation
+  writes. With `--check` the tool stops after the preflight. No key
+  value shows in the output.
+- **The sketch baseline runs again.** Step 5 uses the record on file.
+  The tool also runs V1 on `dev-wit-photo-inst-sym-3` from the cache,
+  thus the baseline rows and the candidate rows come from the same
+  code. The record on file keeps its verdict.
+- **A stop.** An error stops the run, and the output names the step.
+  The vectors are in the cache, thus a second run does the complete
+  steps again with no new spend. The smoke check alone makes its four
+  POSTs in each run.
+- **The output file.** `data/validation/bakeoff/voyage-bakeoff.log` gets a copy
+  of the output, with the elapsed time of each step.
+
 1. **The account.** Find the rate limit on the dashboard, and add a
    payment method if the limit is low. The credits apply first.
 2. **Smoke:** `uv run python -m tools.voyage_smoke`.
