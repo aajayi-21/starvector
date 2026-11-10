@@ -65,6 +65,50 @@ def read_jsonl(path: Path) -> list[dict[str, JsonValue]]:
     return rows
 
 
+def read_journal(path: Path) -> list[dict[str, JsonValue]]:
+    """Read an append journal: one JSON row for each complete line.
+
+    A file that is not there gives no rows. A stop in the middle of an
+    append can put a part of one row at the end of the file. That part
+    has no line end, thus it is not a row: this function removes it
+    from the file, and the next append starts on a line boundary. A
+    complete line that does not parse raises - that is damage, not a
+    stop (R14).
+    """
+    if not path.exists():
+        return []
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise ManifestError(f"{path}: cannot read: {error}") from error
+    complete = data[: data.rfind(b"\n") + 1]
+    if len(complete) != len(data):
+        with path.open("r+b") as handle:
+            handle.truncate(len(complete))
+            handle.flush()
+            os.fsync(handle.fileno())
+    rows: list[dict[str, JsonValue]] = []
+    for number, line in enumerate(complete.decode("utf-8").splitlines(), start=1):
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError as error:
+            raise ManifestError(f"{path}:{number}: bad JSON row: {error}") from error
+    return rows
+
+
+def append_journal(path: Path, row: dict[str, JsonValue]) -> None:
+    """Add one row to an append journal and put it on the disk.
+
+    The row is on the disk before this function ends, thus a stop
+    after that cannot remove it.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("ab") as handle:
+        handle.write((canonical_json(row) + "\n").encode("utf-8"))
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def write_json_pretty(path: Path, value: JsonValue) -> None:
     write_bytes_atomic(path, (canonical_json_pretty(value) + "\n").encode("utf-8"))
 
