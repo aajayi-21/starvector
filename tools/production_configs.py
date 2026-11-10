@@ -7,6 +7,11 @@ numbers. This tool holds the parameter tables, a test parses its output
 for each encoder, and the owner runs it one time for each step. It reads
 the committed development configs, and no value here moves a stored
 config.
+
+The calibration config and the production curation config are two
+steps. The calibration run measures the yield, and the owner rules the
+shard count, the byte budget, and the cap of the production run after
+it, thus the production file cannot be correct before that run.
 """
 
 import argparse
@@ -46,12 +51,32 @@ SCREENER_INSTRUCTION = (
 )
 _BOX_INSTRUCTION_SOURCE = "configs/preparation/dev-wit-photo-inst-2.json"
 
+# The proposed values of spec PP1 section 8: ruling 2 (the shard
+# count), ruling 3 (the byte budget and the cap), and ruling 5 (the
+# calibration shard count). The owner can give different values after
+# the calibration run.
+PRODUCTION_SCAN_SHARDS = 105
+PRODUCTION_BUDGET_BYTES = 20_000_000_000
+PRODUCTION_MATERIALIZE_CAP = 38_000
+CALIBRATION_SCAN_SHARDS = 20
+
+# The production V6 widths (spec PP1 section 9 step 7 and section 10
+# item 3, spec P5 ruling 1): the tier-1 shortlist of 500 and the tier-2
+# head of 25. The development widths of spec P4 decision D10 are for a
+# pool of some hundreds of images.
+PRODUCTION_V6_TIER1_WIDTHS = (500,)
+PRODUCTION_V6_TIER2_WIDTHS = (25,)
+
 
 class Rulings(NamedTuple):
     """The owner's values that the tool cannot know.
 
     encoder and cell come from the spec VE1 verdict, the threshold from
     the calibration, and boxes from the budget ruling (PP1 ruling 11).
+    scan_shards, budget_bytes, and materialize_cap are rulings 2 and 3,
+    which the owner reads again after the calibration run. The V6
+    widths go into the fit config, and the fit config hash covers them,
+    thus they must be correct before the fit.
     """
 
     encoder: str                 # "voyage" | "gemini"
@@ -59,7 +84,11 @@ class Rulings(NamedTuple):
     curation_threshold: float
     preparation_threshold: float
     boxes: str                   # "deferred" | "bought"
-    materialize_cap: int
+    materialize_cap: int = PRODUCTION_MATERIALIZE_CAP
+    scan_shards: int = PRODUCTION_SCAN_SHARDS
+    budget_bytes: int = PRODUCTION_BUDGET_BYTES
+    v6_tier1_widths: tuple[int, ...] = PRODUCTION_V6_TIER1_WIDTHS
+    v6_tier2_widths: tuple[int, ...] = PRODUCTION_V6_TIER2_WIDTHS
 
 
 def _read(path: str) -> dict:
@@ -79,7 +108,7 @@ def _screening_config(rulings: Rulings) -> dict:
     document = _read("configs/curation/dev-wit-2.json")
     document["classify"]["labels"] = list(PRODUCTION_LABELS)
     document["neardup"]["similarity_threshold"] = rulings.curation_threshold
-    document["extraction"]["budget_bytes"] = 20_000_000_000
+    document["extraction"]["budget_bytes"] = rulings.budget_bytes
     providers = document["providers"]
     slot = {"provider": "screener", "model": None, "instruction_template": None,
             "dimension": None, "probability_sum_tolerance": None}
@@ -97,11 +126,11 @@ def _screening_config(rulings: Rulings) -> dict:
 def curation_documents(rulings: Rulings) -> dict[str, dict]:
     """B1 and B2: the production curation and its calibration run."""
     production = _screening_config(rulings)
-    production["corpus"]["max_scan_shards"] = 105
+    production["corpus"]["max_scan_shards"] = rulings.scan_shards
     production["extraction"]["materialize_cap"] = rulings.materialize_cap
     production["release"] = {"tag": "prod-wit-001", "dev_only": False}
     calibration = _screening_config(rulings)
-    calibration["corpus"]["max_scan_shards"] = 20
+    calibration["corpus"]["max_scan_shards"] = CALIBRATION_SCAN_SHARDS
     calibration["extraction"]["materialize_cap"] = None
     calibration["release"] = {"tag": "dev-wit-003", "dev_only": True}
     return {"curation/prod-wit.json": production,
@@ -176,6 +205,8 @@ def lineage_documents(rulings: Rulings, release_record: str) -> dict[str, dict]:
     fit = _read("configs/fit/dev-wit-2.json")
     fit["tag"] = "prod-wit"
     fit["generalize"]["normalize_rule"] = "d8-v1"
+    fit["harness"]["v6_tier1_widths"] = list(rulings.v6_tier1_widths)
+    fit["harness"]["v6_tier2_widths"] = list(rulings.v6_tier2_widths)
     return {
         "preparation/prod-wit-photo-inst.json": preparation,
         "fit/prod-wit.json": fit,
@@ -205,13 +236,27 @@ def write_documents(documents: dict[str, dict], root: Path) -> list[Path]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="tools.production_configs")
-    parser.add_argument("step", choices=("curation", "lineage"))
+    parser.add_argument(
+        "step", choices=("calibration", "curation", "lineage"),
+        help="calibration writes curation/dev-wit-3.json, curation writes "
+             "curation/prod-wit.json, lineage writes the preparation, fit, "
+             "and scoring configs")
     parser.add_argument("--encoder", required=True, choices=("voyage", "gemini"))
     parser.add_argument("--cell", default="inst", choices=("inst", "plain"))
     parser.add_argument("--curation-threshold", type=float, required=True)
     parser.add_argument("--preparation-threshold", type=float, required=True)
     parser.add_argument("--boxes", default="deferred", choices=("deferred", "bought"))
-    parser.add_argument("--materialize-cap", type=int, default=38_000)
+    parser.add_argument("--materialize-cap", type=int,
+                        default=PRODUCTION_MATERIALIZE_CAP)
+    parser.add_argument("--scan-shards", type=int,
+                        default=PRODUCTION_SCAN_SHARDS,
+                        help="max_scan_shards of the production curation")
+    parser.add_argument("--budget-bytes", type=int,
+                        default=PRODUCTION_BUDGET_BYTES)
+    parser.add_argument("--v6-tier1-widths", type=int, nargs="+",
+                        default=list(PRODUCTION_V6_TIER1_WIDTHS))
+    parser.add_argument("--v6-tier2-widths", type=int, nargs="+",
+                        default=list(PRODUCTION_V6_TIER2_WIDTHS))
     parser.add_argument("--release-record", help="required for the lineage step")
     parser.add_argument("--root", type=Path, default=Path("configs"))
     arguments = parser.parse_args(argv)
@@ -219,9 +264,17 @@ def main(argv: list[str] | None = None) -> int:
         encoder=arguments.encoder, cell=arguments.cell,
         curation_threshold=arguments.curation_threshold,
         preparation_threshold=arguments.preparation_threshold,
-        boxes=arguments.boxes, materialize_cap=arguments.materialize_cap)
-    if arguments.step == "curation":
-        documents = curation_documents(rulings)
+        boxes=arguments.boxes, materialize_cap=arguments.materialize_cap,
+        scan_shards=arguments.scan_shards,
+        budget_bytes=arguments.budget_bytes,
+        v6_tier1_widths=tuple(arguments.v6_tier1_widths),
+        v6_tier2_widths=tuple(arguments.v6_tier2_widths))
+    if arguments.step == "calibration":
+        documents = {"curation/dev-wit-3.json":
+                     curation_documents(rulings)["curation/dev-wit-3.json"]}
+    elif arguments.step == "curation":
+        documents = {"curation/prod-wit.json":
+                     curation_documents(rulings)["curation/prod-wit.json"]}
     else:
         if arguments.release_record is None:
             parser.error("the lineage step requires --release-record")

@@ -8,6 +8,10 @@ and 11 as proposed, with the changes in §5b. Spec VE1 opens ruling 8
 again. Build items B3 and B5 to B8 are built. B1, B2, and B4 are the
 tool `tools/production_configs.py`, because their values wait for the
 VE1 verdict and the near-duplicate ruling.
+*Note, 2026-11-09:* §5c corrects numbers and commands in §3, §8, and
+§9, and it gives the tool three steps. The open items at this date are
+ruling 8 (the VE1 verdict), the two near-duplicate thresholds, and the
+wording of the person rule.
 **Phase:** the production pool — the row after spec B1 in the F1
 roadmap (`docs/specs/weight-freeze.md` §7), the architecture's Phase 1
 at production scale (`docs/ARCHITECTURE.md` §25).
@@ -410,12 +414,102 @@ edits:
    the configs:
    `uv run python -m tools.production_configs curation --encoder voyage
    --curation-threshold <ruled> --preparation-threshold <ruled>`.
+   *Note, 2026-11-09:* §5c makes this two steps, `calibration` and
+   `curation`.
 2. After step 3: write the lineage configs with the same command, the
    step `lineage`, and `--release-record <the new record>`.
 3. Step 6 comes before step 5: V1 and V2 read source-B tables, and these
    tables read the generalize table. V1 also runs on `prod-wit-mixed`.
 4. After step 3: `uv run python -m tools.prune_candidates`, then with
    `--apply`, to free the rejected candidates.
+
+---
+
+## 5c. Corrections of 2026-11-09
+
+A read of the code against this spec found text that the code does not
+agree with. The code is correct in each of these, and the older text
+stays above as the record.
+
+**The tool has three steps.** `tools/production_configs.py` wrote the
+calibration config and the production curation config in one step. The
+calibration run measures the yield, and the owner rules the production
+shard count, byte budget, and cap after it, thus the production file
+could not be correct at that time. The steps are:
+
+- `calibration` writes `configs/curation/dev-wit-3.json`.
+- `curation` writes `configs/curation/prod-wit.json`. It takes
+  `--scan-shards` (default 105), `--budget-bytes` (default 20 GB), and
+  `--materialize-cap` (default 38,000), the proposed values of rulings
+  2 and 3.
+- `lineage` writes the preparation, fit, and scoring configs. The fit
+  config gets the production V6 widths, 500 for tier 1 and 25 for
+  tier 2 (§9 step 7, §10 item 3). It held the development widths of
+  spec P4 decision D10. `--v6-tier1-widths` and `--v6-tier2-widths`
+  change them.
+
+Give the same `--encoder`, `--cell`, and threshold values to each step.
+The calibration answers are the production cache only when the screener
+and the encoder are equal in the two files.
+
+**The fit config has more development values.** `fit_count` 300,
+`holdout_count` 150, `v3_trials_for_each_level` 200, and the split
+salts come from `configs/fit/dev-wit-2.json` with no change. No spec
+gives production values for them. The fit config hash covers them, thus
+the owner rules on them before the fit.
+
+**Counts in §9.**
+
+| Where | The text | What the code does |
+|---|---|---|
+| Step 3 | about 120,000 chat posts across about 17 hours | The screener of B7 sends one `POST` for each s02 survivor: 38,000 at the cap, about 5.3 hours at 2.0 `POST`/s. |
+| Step 4 | about 15,000 posts | With deferred boxes (B8) the describer sends 7,500. |
+| Step 8 | `tools.bench` with no dimension | The default is 3072. Add `--dimension 1024` for the Voyage space. |
+| Step 6 | `validation.generalize` | The command wants `--config configs/fit/prod-wit.json` and `--scoring-config configs/scoring/prod-wit-b.json`. |
+
+**Keys.** §9 names `OPENROUTER_API_KEY` alone. With the Voyage encoder,
+s06, the preparation, and each gate also read `VOYAGE_API_KEY`. The
+curation run reads the OpenRouter key at s03 and the Voyage key at s06,
+thus a key that is not in the environment stops the run after the
+fetch. Put the two keys in the environment before step 2.
+
+**No response is in the cache at the start.** §3 says that the s03 to
+s05 responses of the 1,036 development candidates stay in the cache. The
+screener of B7 has a new config hash and no stored response, thus each
+candidate gets one new `POST`.
+
+**The scan has no cache.** Ruling 2 says that the scan is done one time.
+`max_scan_shards` is in the corpus hash, and the scan result is in the
+tree of one curation hash alone. The corpus adapter reads the shards
+from the hub and keeps no file. The calibration config and the
+production config thus each scan their shards.
+
+**The calibration cost.** Ruling 5 says about USD 6, and §5a says about
+USD 2.3. The §5a value is the one-`POST` screener, and it is the
+current estimate.
+
+**The cap against the count floor.** With the yield of §3 and its 5%
+near-duplicate allowance, a cap of 38,000 gives about 7,110 images.
+The floor of §10 item 1 is 7,125. The calibration run replaces the two
+estimates with measured values, and the owner rules the cap after it.
+
+**Steps that are not in §9.** Before step 2: steps 3 to 7 of spec
+VE1 §8, then `validation.screener_check` on the development s02
+manifest for the wording of the person rule. A change of that wording
+moves the screener hash, thus it comes before the calibration run.
+
+**A stop in the fetch.** s02 holds one fetch batch in memory and
+continues from its journal after a stop (`docs/specs/pool-curation.md`,
+the s02 note of 2026-11-09). A change of a provider rate or a retry
+count starts a new tree, because the curation hash covers those values.
+Set them before the run.
+
+**Small differences.** The B5 guard is in
+`tests/unit/test_production_tools.py`. The tool also writes
+`configs/scoring/prod-wit-b.json`. It is to the fit and to V3 to V6
+what `dev-wit-b-2` is on the development lineage, and it is equal to
+`prod-wit-mixed.json` in each field but the tag. No command makes the
+768 px serving copy of step 9.
 
 ---
 

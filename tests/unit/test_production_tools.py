@@ -99,6 +99,64 @@ def test_the_lineage_documents_parse_and_agree(
         assert preparation.providers.image_encoder.instruction_template is not None
 
 
+def test_the_curation_documents_hold_the_values_after_calibration() -> None:
+    """The shard count, the budget, and the cap are inputs (PP1 rulings 2, 3)."""
+    documents = writer.curation_documents(rulings(
+        scan_shards=125, budget_bytes=24_000_000_000, materialize_cap=47_500))
+    production = parse_curation_config(documents["curation/prod-wit.json"])
+    calibration = parse_curation_config(documents["curation/dev-wit-3.json"])
+    assert production.corpus.max_scan_shards == 125
+    assert production.extraction.budget_bytes == 24_000_000_000
+    assert production.extraction.materialize_cap == 47_500
+    # The calibration shard count is ruling 5 and does not move with them.
+    assert calibration.corpus.max_scan_shards == 20
+    assert calibration.extraction.materialize_cap is None
+
+
+def test_the_fit_document_holds_the_production_v6_widths(
+        production_release: str, tmp_path: Path) -> None:
+    """V6 runs at 500 and 25 on the production lineage (PP1 section 9)."""
+    fit_path = tmp_path / "fit.json"
+    documents = writer.lineage_documents(rulings(), production_release)
+    fit_path.write_text(json.dumps(documents["fit/prod-wit.json"]))
+    harness_values = load_fit_config(fit_path).harness
+    assert harness_values.v6_tier1_widths == (500,)
+    assert harness_values.v6_tier2_widths == (25,)
+    development = load_fit_config(Path("configs/fit/dev-wit-2.json")).harness
+    assert development.v6_tier1_widths == (10, 25, 50)
+    wider = writer.lineage_documents(
+        rulings(v6_tier1_widths=(250, 500), v6_tier2_widths=(10, 25)),
+        production_release)
+    fit_path.write_text(json.dumps(wider["fit/prod-wit.json"]))
+    harness_values = load_fit_config(fit_path).harness
+    assert harness_values.v6_tier1_widths == (250, 500)
+    assert harness_values.v6_tier2_widths == (10, 25)
+
+
+def test_calibration_and_production_are_two_steps(tmp_path: Path) -> None:
+    """The production file is written after the calibration run."""
+    common = ["--encoder", "voyage", "--curation-threshold", "0.97",
+              "--preparation-threshold", "0.96", "--root", str(tmp_path)]
+    assert writer.main(["calibration", *common]) == 0
+    assert [path.name for path in (tmp_path / "curation").iterdir()] == [
+        "dev-wit-3.json"]
+    assert writer.main(["curation", *common, "--scan-shards", "125",
+                        "--budget-bytes", "24000000000",
+                        "--materialize-cap", "47500"]) == 0
+    production = parse_curation_config(
+        json.loads((tmp_path / "curation" / "prod-wit.json").read_text()))
+    calibration = parse_curation_config(
+        json.loads((tmp_path / "curation" / "dev-wit-3.json").read_text()))
+    assert production.corpus.max_scan_shards == 125
+    assert production.extraction.materialize_cap == 47_500
+    # One screener and one encoder: the calibration answers stay the
+    # production run's cache.
+    for name in ("screener", "encoder"):
+        assert getattr(production.providers, name) == getattr(calibration.providers, name)
+    with pytest.raises(FileExistsError):
+        writer.main(["calibration", *common])
+
+
 def test_a_development_release_is_refused() -> None:
     with pytest.raises(ValueError, match="development release"):
         writer.lineage_documents(rulings(), "pool/releases/dev-wit-002-9644fac1.json")
