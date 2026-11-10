@@ -6,6 +6,7 @@ artifact trees byte-for-byte.
 """
 
 import json
+import socket
 from collections.abc import Mapping, Sequence
 from io import BytesIO
 from pathlib import Path
@@ -25,6 +26,42 @@ from pool.preparation.run import run_preparation
 from pool.preparation.types import PreparationReport
 
 FIXED_CLOCK = "2026-01-01T00:00:00+00:00"
+
+# The hosts a test can connect to: this machine alone.
+_LOCAL_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refuse each connection that goes out of this machine.
+
+    The full suite runs with no GPU and no network (CLAUDE.md section
+    7). A test that connects to a remote host stops here with a clear
+    message, thus its result does not change with the network. A Unix
+    socket and a local address connect as before.
+    """
+    connect = socket.socket.connect
+    connect_ex = socket.socket.connect_ex
+
+    def checked(sock: socket.socket, address: object) -> None:
+        if sock.family not in (socket.AF_INET, socket.AF_INET6):
+            return
+        host = address[0] if isinstance(address, tuple) else address
+        if host not in _LOCAL_HOSTS:
+            raise RuntimeError(
+                f"a test tried to connect to {host!r} - the suite runs "
+                "with no network")
+
+    def guarded_connect(sock: socket.socket, address: object) -> None:
+        checked(sock, address)
+        return connect(sock, address)
+
+    def guarded_connect_ex(sock: socket.socket, address: object) -> int:
+        checked(sock, address)
+        return connect_ex(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
 
 # The default fake population: each rule has records on the two sides
 # of its boundary. Counts stay small so the suite stays fast.
