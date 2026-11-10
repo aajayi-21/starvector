@@ -163,6 +163,33 @@ record, and the verdict is the owner's.
 `validation/bakeoff.py` reads the `trials.jsonl` of two V1 runs and gives
 the paired table. It writes nothing to a config.
 
+**Note, 2026-11-09: what the tool checks.** A read of the tool found
+that it accepted evidence that was not the candidate's. It has these
+checks at this time:
+
+- **Mode.** The two V1 runs have one submission mode, which comes from
+  the `meta.json` of each run. The floor of rule 2 shows for a sketch
+  run alone. A text run gets rules 1 and 3. No rule reads a mixed V1
+  run, thus the tool gives its table with no rule line.
+- **Rule 3 is in each report.** Each V2 mode that rule 3 names gets a
+  line. A mode with no `--v2` record gets a line that does not hold.
+- **The V2 records are the candidate's.** The tool refuses a V2 record
+  with a different `preparation_version_id`. The record of the
+  candidate's mode also has the candidate's `scoring_config_hash`.
+- **The rows agree with the record.** The first-rank fraction of the
+  trial rows equals `first_rank_fraction` in the V1 record. A second V1
+  run writes the rows again, and a record with a verdict stays.
+- **Decoy counts.** V1 groups near-duplicates across the pool and the
+  inserted photographs, in the encoder space of each run. The Gemini
+  baseline has such groups: its decoy count is 403 on 175 pairs, 402
+  on 18, 401 on 3, and 400 on 4. The sentence in §5 about no removed
+  image is about the pool alone. The tool prints the counts of the two
+  runs, and a line that holds only when each pair has equal counts. It
+  also prints a lower bound for the candidate's first-rank fraction.
+  The bound counts each first rank on a pair with fewer decoys as not
+  first. When the counts move, the numbers wait for the threshold
+  ruling of §5.
+
 **Estimated cost:** less than 2,000 M pixels from the credits (0.11
 for each pool preparation, about 0.4 of inserted photographs, about
 0.4 of sketches in each V1 and V2 pair). Describer and box responses come
@@ -199,19 +226,36 @@ environment, and the key stays out of each transcript.
 3. **The Voyage preparations:**
    `uv run python -m pool.preparation --config configs/preparation/dev-wit-voyage-inst.json`,
    then the same with `dev-wit-voyage-plain.json`. Read the p08 group
-   count of each.
+   count of each. These commands also wire the describer and the box
+   slot, thus `OPENROUTER_API_KEY` must be in the environment with
+   `VOYAGE_API_KEY`. The two slots answer from the cache.
 4. **Calibration:** `uv run python -m validation.neardup_calibration
    --config configs/preparation/dev-wit-voyage-inst.json
    --curation-config configs/curation/dev-wit-voyage.json`. Record a
-   ruling if p08 grouped images. With `dev-wit-photo-inst-2.json` and the
-   OpenRouter key, the same command gives the first positive control of
-   the Gemini space.
+   ruling if p08 grouped images. For the first positive control of the
+   Gemini space, give `dev-wit-photo-inst-2.json` and
+   `configs/curation/dev-wit-2.json` to the same two options, with the
+   OpenRouter key.
 5. **Gates:** `validation.v2` and `validation.v1`, each with `--config`
    and `--report`, on each new scoring config, and V1 on `dev-wit-text-3`
-   and `dev-wit-mixed-3`. The sketch baseline record is on file:
+   and `dev-wit-mixed-3`. V1 wires the describer, thus each V1 command
+   wants the two keys. The sketch baseline record is on file:
    `validation/records/v1-dev-wit-sym-3-d4f8019b.json`.
-6. **The table:** `uv run python -m validation.bakeoff --baseline
-   <v1 record> --candidate <v1 record> --v2 <v2 record> --v2 <v2 record>`.
+6. **The tables:** `uv run python -m validation.bakeoff --baseline
+   <v1 record> --candidate <v1 record> --v2 <v2 record> --v2 <v2 record>`,
+   one time for each line of this table. The `--v2` records are the
+   candidate's.
+
+   | Table | Baseline V1 | Candidate V1 | `--v2` modes |
+   |---|---|---|---|
+   | Image and sketch slots, with instructions | `dev-wit-sym-3` | `dev-wit-voyage-inst-sym` | sketch, mixed |
+   | Image and sketch slots, no instructions | `dev-wit-sym-3` | `dev-wit-voyage-plain-sym` | sketch, mixed |
+   | Text slot | `dev-wit-text-3` | `dev-wit-voyage-text` | text |
+   | Mixed, for the record | `dev-wit-mixed-3` | `dev-wit-voyage-inst-mixed` | none |
+
+   The text table and the mixed table are the ones that print the
+   similarity quantiles of §5. Read the decoy lines of each table before
+   the rule lines.
 7. **The verdict:** the owner's, with the numbers, in §9 of this spec.
 
 ---
