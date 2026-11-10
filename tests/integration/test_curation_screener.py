@@ -69,16 +69,29 @@ def test_an_openrouter_screener_needs_its_instruction() -> None:
         make_config(**{**SCREENED, "providers.screener": section})
 
 
-def test_the_committed_curation_hash_does_not_move() -> None:
-    """A stored tree stays addressable with the new optional sections."""
+def test_the_committed_curation_hash_does_not_move(monkeypatch) -> None:
+    """A stored tree stays addressable with the new optional sections.
+
+    The corpus adapter resolves its revision through the hub, and the
+    suite runs with no network. The config pins a full commit hash, and
+    the hub resolves a commit hash to itself, thus the test gives that
+    value directly. The release record holds the same commit.
+    """
     import json
 
     from pool.curation.config import (curation_config_hash,
                                       load_curation_config)
     from pool.curation.run import provider_config_hashes, wire_corpus
+    from providers.corpora.huggingface import HuggingFaceCorpus
 
     config = load_curation_config(Path("configs/curation/dev-wit-2.json"))
-    hashes = provider_config_hashes(config, wire_corpus(config))
     record = json.loads(
         Path("pool/releases/dev-wit-002-9644fac1.json").read_text())
+    assert len(config.corpus.revision) == 40
+    assert config.corpus.revision == record["corpus_identity"]["revision"]
+    monkeypatch.setattr(HuggingFaceCorpus, "_resolve_revision",
+                        lambda self: config.corpus.revision)
+    monkeypatch.setattr(HuggingFaceCorpus, "_install_metered_client",
+                        lambda self: None)
+    hashes = provider_config_hashes(config, wire_corpus(config))
     assert curation_config_hash(config, hashes) == record["curation_config_hash"]
