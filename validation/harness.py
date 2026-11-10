@@ -565,7 +565,8 @@ def stored_table(index: PoolIndex, fit_config, data_root: Path,
     except _TableMissing as error:
         raise ValueError(
             "the generalization table is not built — run "
-            "`uv run python -m validation.generalize` first "
+            "`uv run python -m validation.generalize --config <fit config> "
+            "--scoring-config <scoring config>` first "
             f"({error})") from error
 
 
