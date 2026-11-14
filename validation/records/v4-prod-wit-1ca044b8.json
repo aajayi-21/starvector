@@ -1,0 +1,89 @@
+{
+  "ablations": [
+    {
+      "cost": 0.014987,
+      "holdout_objective": 0.886,
+      "readable_trials": {
+        "source1": 150,
+        "source2": 300
+      },
+      "refit_weights": {
+        "element": 0.9,
+        "placement": 0.09999999999999998
+      },
+      "removed": "outline"
+    },
+    {
+      "cost": 0.070782,
+      "holdout_objective": 0.830205,
+      "readable_trials": {
+        "source1": 150,
+        "source2": 154
+      },
+      "refit_weights": {
+        "outline": 0.05,
+        "placement": 0.95
+      },
+      "removed": "element"
+    },
+    {
+      "cost": -0.000127,
+      "holdout_objective": 0.901114,
+      "readable_trials": {
+        "source1": 150,
+        "source2": 300
+      },
+      "refit_weights": {
+        "element": 0.5,
+        "outline": 0.5
+      },
+      "removed": "placement"
+    }
+  ],
+  "channel_set": [
+    "outline",
+    "element",
+    "placement"
+  ],
+  "code_version": "dev",
+  "commonness_config_hash": "304090bec4329d3688e1f01fdf5231ddfa10e8d7399d719f8584891620a54f02",
+  "commonness_contributors": {
+    "pool": {
+      "element": 1000,
+      "outline": 739,
+      "placement": 239
+    },
+    "union": {
+      "element": 1000,
+      "outline": 739,
+      "placement": 239
+    }
+  },
+  "created_at": "2026-11-13T22:40:45.205274+00:00",
+  "date": "2026-11-13",
+  "dev_only": false,
+  "fit_config_hash": "43b3ca6a875eb1b365f8651928a19acca0c1f9c1a369dd11cc2f9530686ad9ef",
+  "full_holdout_objective": 0.900987,
+  "full_weights": {
+    "element": 0.45,
+    "outline": 0.5,
+    "placement": 0.05
+  },
+  "generator_config_hash": "36469be1161497a9fcdf10a3152d7ef654869bc1dcd580dd6580143cb4808607",
+  "harness": "v4",
+  "harness_config_hash": "1ca044b8c8c356bf2bf427089cd8b01d65b876a37b82b4f39a2c43937419886f",
+  "index_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "notes": "Ablation on the holdout trials: element cost 0.070782, outline cost 0.014987, placement cost -0.000127 against the 0.01 line. placement_earns_its_place is false, and the owner cut the placement channel for this lineage on 2026-11-13 (spec PP1 section 5f). The frozen table is the refit with no placement: element 0.5, outline 0.5. Owner verdict of 2026-11-13, set on the owner's word after the analysis of that date.",
+  "objective_basis": "mixed",
+  "placement_ablation_line": 0.01,
+  "placement_alive": true,
+  "placement_earns_its_place": false,
+  "placement_signal": 0.949234,
+  "preparation_version_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "reviewer": "ade",
+  "scoring_config_hash": "503e2e003e8cd50264b0649d3e3fe5406153ec8b9e37a7c4e5e72a1b6afbb6c0",
+  "synthetic_count": 300,
+  "synthetic_seed": 20260810,
+  "tag": "prod-wit",
+  "verdict": "pass"
+}

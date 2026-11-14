@@ -108,6 +108,9 @@ def test_the_fit_writes_a_record_with_the_full_curve(fit_setup) -> None:
     content = _run_fit(fit_setup)
     assert content["verdict"] == "pending"
     assert len(content["curve"]["line"]) == 5
+    # The fixture boxes are large, thus Layer 0 admits each synthetic
+    # record and the record says so.
+    assert content["synthetic_refused"] == {"fit": 0, "holdout": 0}
     assert content["placement_signal"] is not None
     # The scripted relations come from the box geometry, thus the
     # placement-only mean on strong holdout synthetics beats the

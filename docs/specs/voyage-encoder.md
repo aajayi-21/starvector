@@ -1,7 +1,7 @@
 # Spec VE1 — the Voyage encoder slot and its bake-off
 
-**Status:** rulings recorded 2026-11-03. The verdict (§6) stays
-open until the bake-off records are on file.
+**Status:** rulings recorded 2026-11-03. Verdict recorded 2026-11-11
+(§9): Voyage is not adopted.
 **Phase:** before the production pool (spec PP1).
 **Architecture sections:** §3 (the invariants), §21 (versioning).
 **Working agreement:** `CLAUDE.md` §2 (I3, I4), §3 (no silent
@@ -220,6 +220,27 @@ These land on the build branch of the pool, not in this spec:
 Each step ends with numbers. The owner runs them with the key in the
 environment, and the key stays out of each transcript.
 
+**Note, 2026-11-10: one command for steps 2 to 6.**
+`uv run python -m tools.voyage_bakeoff` does steps 2 to 6 in sequence,
+with the two keys in the environment. The steps below stay as the
+definition of what it does.
+
+- **Preflight.** Before it uses the network, the tool makes sure that the
+  two keys are in the environment, that each config file is there, and
+  that each scoring config names the record that its preparation
+  writes. With `--check` the tool stops after the preflight. No key
+  value shows in the output.
+- **The sketch baseline runs again.** Step 5 uses the record on file.
+  The tool also runs V1 on `dev-wit-photo-inst-sym-3` from the cache,
+  thus the baseline rows and the candidate rows come from the same
+  code. The record on file keeps its verdict.
+- **A stop.** An error stops the run, and the output names the step.
+  The vectors are in the cache, thus a second run does the complete
+  steps again with no new spend. The smoke check alone makes its four
+  POSTs in each run.
+- **The output file.** `data/validation/bakeoff/voyage-bakeoff.log` gets a copy
+  of the output, with the elapsed time of each step.
+
 1. **The account.** Find the rate limit on the dashboard, and add a
    payment method if the limit is low. The credits apply first.
 2. **Smoke:** `uv run python -m tools.voyage_smoke`.
@@ -262,4 +283,45 @@ environment, and the key stays out of each transcript.
 
 ## 9. Verdict
 
-Open.
+**Voyage is not adopted. Gemini stays in each encoder slot.** Owner
+ruling, 2026-11-11: Gemini makes each embedding, and the embedding of a
+player sketch is one of them. Ruling 8 of spec PP1 closes with this.
+
+The bake-off ran on 2026-11-10 with `tools.voyage_bakeoff`, in 48
+minutes. A first-rank trial is first of 404 images, on 200 pairs.
+
+| Table | Gemini | Voyage | McNemar p | Adoption rule |
+|---|---|---|---|---|
+| Sketch, with instructions | 0.680 | 0.290 | below 0.0001 | rules 1 and 2 do not hold |
+| Sketch, no instructions | 0.680 | 0.270 | below 0.0001 | rules 1 and 2 do not hold |
+| Text | 0.265 | 0.240 | 0.4583 | rules 1 and 3 hold |
+| Mixed, for the record | 0.635 | 0.435 | below 0.0001 | no rule reads it |
+
+- **V2.** The KS significance is 0.5050 and 0.4284 with instructions
+  (sketch, mixed), 0.6555 and 0.7387 with no instructions, and 0.9908
+  for text. Rule 3 holds in each mode.
+- **Decoy counts.** The Voyage runs have 403 decoys on each pair, and
+  the Gemini baseline has the counts of §6. The line about equal counts
+  does not hold. On the 175 pairs with equal counts the sketch result
+  is 0.663 against 0.291, thus the verdict does not change with the
+  threshold ruling.
+- **The text slot.** It clears its two rules, and it shows no increase.
+  The owner keeps Gemini there: one live provider at the close, and no
+  change of the atom similarity scale (median 0.407 for Gemini, 0.510
+  for Voyage).
+- **A check of the result, 2026-11-11.** The ranks, calculated a
+  second time from the stored vectors with no network, equal the stored
+  Voyage ranks on 200 of 200 pairs. The plain cosine against the full image, with no
+  centering, no crops, and no commonness correction, gives 0.295 for
+  Voyage and 0.655 for Gemini. The difference is in the vectors, not in
+  the scoring path.
+- **Not in the test.** The `input_type` values `query` and `document`,
+  and the 2048 dimension.
+- **The near-duplicate control.** In the Gemini p08 space the lowest
+  variant cosine is 0.957 and the highest pool pair is 0.910. In the
+  Gemini s06 space the lowest variant cosine is 0.916 and the highest
+  pool pair is 0.747. The thresholds are the owner's ruling, and spec
+  PP1 §5d has the proposed values.
+
+The `verdict` field of each new harness record is `pending`. The owner
+fills those fields.

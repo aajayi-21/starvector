@@ -470,6 +470,37 @@ def check_selected_pairs(pairs: Mapping[str, SketchPair],
             + "; ".join(failures))
 
 
+def admitted_synthetic[Row](rows: Sequence[Row], gates: IntakeGates,
+                            canvas_px: int) -> tuple[list[Row], list[str]]:
+    """The synthetic rows that Layer 0 admits, and the keys that it refuses.
+
+    rows are SyntheticSubmission rows: each has a key and a wire-shape
+    record. A relation level draws its rectangles along the element
+    boxes, and two small boxes can give less ink than the min-ink gate
+    (spec P4 section 17a, the note of 2026-11-13). Layer 0 refuses that
+    record, thus it is not a submission and it is not a trial. The
+    caller writes the count of the refused keys into its record.
+
+    The first output keeps the input sequence. A refusal with a
+    different cause raises: the generator does not make such a record,
+    thus it is a defect.
+    """
+    from core.intake import IntakeError, validate_submission
+
+    kept: list[Row] = []
+    refused: list[str] = []
+    for row in rows:
+        try:
+            validate_submission(row.record, gates, canvas_px)  # type: ignore[attr-defined]
+        except IntakeError as error:
+            if error.cause != "min-ink":
+                raise
+            refused.append(row.key)  # type: ignore[attr-defined]
+            continue
+        kept.append(row)
+    return kept, refused
+
+
 def prewarm_records(records: Sequence[JsonValue], gates: IntakeGates,
                     render: RenderParams, encoders: Encoders) -> None:
     """Warm the provider caches for a trial loop in batched calls.

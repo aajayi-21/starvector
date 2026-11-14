@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "4da47c6891eb85b5eb122200b92b72bc9fe3c27b4a4397cb62f5f40f50d1a0cb",
+  "created_at": "2026-11-13T22:52:57.839903+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-11-13",
+  "dev_only": false,
+  "first_rank_fraction": 0.6,
+  "fit_record": "validation/records/fit-prod-wit-43b3ca6a.json",
+  "fusion_weights": {
+    "element": 0.5,
+    "outline": 0.5
+  },
+  "fusion_weights_fitted": true,
+  "harness": "v1",
+  "harness_config_hash": "55e1fa23d3cd0744043bf2ba104dd21eea8882b5b70bd6d3b0371af48118490b",
+  "index_id": "1d96894ea3db370892181fdddeaa39dc784e990cfb2f28cb33804b5ded127e31",
+  "mean_trial_score": 0.998295,
+  "median_rank": 1.0,
+  "notes": "Frozen rerun, element 0.5 and outline 0.5. First rank 0.600 and first ten 0.940 on 200 pairs in 1,593 images, equal to the baseline record v1-prod-wit-photo-inst-sym-4a811f31. No regression. Owner verdict of 2026-11-13, set on the owner's word after the analysis of that date.",
+  "pair_count": 200,
+  "preparation_version_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 600,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 573,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.000628,
+  "reference_top_ten": 0.006278,
+  "reviewer": "ade",
+  "scoring_config_hash": "8c0a67793e4c32debbacb17ece5c89fe66c0852958878991158eea99c51ee63d",
+  "tag": "prod-wit-photo-inst-sym",
+  "top_ten_fraction": 0.94,
+  "verdict": "pass"
+}

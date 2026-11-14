@@ -1,0 +1,79 @@
+{
+  "bootstrap_count": 2000,
+  "bootstrap_interval": 0.95,
+  "code_version": "dev",
+  "commonness_config_hash": "304090bec4329d3688e1f01fdf5231ddfa10e8d7399d719f8584891620a54f02",
+  "commonness_contributors": {
+    "element": 1000,
+    "outline": 739,
+    "placement": 239
+  },
+  "control_at_half": false,
+  "created_at": "2026-11-13T22:55:41.243669+00:00",
+  "date": "2026-11-13",
+  "dev_only": false,
+  "fit_config_hash": "43b3ca6a875eb1b365f8651928a19acca0c1f9c1a369dd11cc2f9530686ad9ef",
+  "fit_record": "validation/records/fit-prod-wit-43b3ca6a.json",
+  "fusion_weights": {
+    "element": 0.5,
+    "outline": 0.5
+  },
+  "fusion_weights_fitted": true,
+  "generator_config_hash": "36469be1161497a9fcdf10a3152d7ef654869bc1dcd580dd6580143cb4808607",
+  "harness": "v3",
+  "harness_config_hash": "f2dbb94edc818073aa7621e577a823290c29bf73d84d3dae0df9a4d304b3c2b1",
+  "index_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "levels": [
+    {
+      "high": 1.0,
+      "level": 0,
+      "low": 0.999982,
+      "mean_p": 0.999993,
+      "trial_count": 200
+    },
+    {
+      "high": 0.999892,
+      "level": 1,
+      "low": 0.998592,
+      "mean_p": 0.999436,
+      "trial_count": 200
+    },
+    {
+      "high": 0.959483,
+      "level": 2,
+      "low": 0.915657,
+      "mean_p": 0.938861,
+      "trial_count": 200
+    },
+    {
+      "high": 0.780018,
+      "level": 3,
+      "low": 0.699264,
+      "mean_p": 0.739386,
+      "trial_count": 200
+    },
+    {
+      "high": 0.490225,
+      "level": 4,
+      "low": 0.409104,
+      "mean_p": 0.44933,
+      "trial_count": 200
+    }
+  ],
+  "monotone": true,
+  "notes": "Frozen weights. Monotone clears: 0.999993 / 0.999436 / 0.938861 / 0.739386 / 0.449330 with intervals that do not overlap. control_at_half is false: the level-4 interval is 0.409 to 0.490. This is the standing item of the ruling of 2026-08-13 on v3-dev-wit-2-9071d500: the noise entries of the generator exclude the elements of the source image, thus level 4 is an anti-informative control and a correct scorer puts it below 0.5. The development value was 0.391. The no-information baseline is the V2 records of this lineage (significance 0.943 and 0.818). Standing item: the level-4 redesign waits for the next generator revision. Owner verdict of 2026-11-13, set on the owner's word after the analysis of that date.",
+  "preparation_version_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "reviewer": "ade",
+  "scoring_config_hash": "3cf0820e1129f33aa84d3f73da2f85a5414499ec8d674730f317a5190c89aa4e",
+  "synthetic_count": 200,
+  "synthetic_refused": [
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "synthetic_seed": 20260811,
+  "tag": "prod-wit",
+  "verdict": "pass"
+}

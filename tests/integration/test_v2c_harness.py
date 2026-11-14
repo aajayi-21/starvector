@@ -43,6 +43,8 @@ def test_the_gate_runs_and_writes_its_record(tmp_path) -> None:
     assert report.max_abs_delta_p >= report.mean_abs_delta_p
     assert report.record_path is not None
     record = json.loads(open(report.record_path, encoding="utf-8").read())
+    # The record names the colors of the run (spec C1 section 5).
+    assert record["palette"] == list(PALETTE)
     assert record["harness"] == "v2c"
     assert record["verdict"] == "pending"
     assert {"mono_ks_statistic", "color_ks_statistic", "mean_delta_p",
@@ -77,3 +79,15 @@ def test_colorized_record_is_seeded_and_touches_colors_alone() -> None:
     stripped = [{k: v for k, v in stroke.items() if k != "color"}
                 for stroke in first["canvas_strokes"]]
     assert stripped == record["canvas_strokes"]
+
+
+def test_the_palette_is_the_set_that_the_web_interface_sends() -> None:
+    # The gate must measure the colors that a player can send. The web
+    # palette file holds one wire value for each swatch, and ink sends
+    # no value (spec C1 section 5).
+    import re
+    from pathlib import Path
+
+    source = Path("web/src/sketch/palette.ts").read_text(encoding="utf-8")
+    wire = re.findall(r'wire: "(#[0-9a-f]{6})"', source)
+    assert tuple(wire) == PALETTE

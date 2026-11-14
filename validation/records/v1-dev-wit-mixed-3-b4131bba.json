@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "de867f445586370eae5c5f48130e449fa15171f7184da43ccc91462eb17560c8",
+  "created_at": "2026-11-11T02:15:11.185561+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "",
+  "dev_only": true,
+  "first_rank_fraction": 0.635,
+  "fit_record": "validation/records/fit-dev-wit-2-76056098.json",
+  "fusion_weights": {
+    "element": 0.45,
+    "outline": 0.55
+  },
+  "fusion_weights_fitted": true,
+  "harness": "v1",
+  "harness_config_hash": "b4131bba4db717bc1296116bcf37d1d5adacc9bf2c9a2bd4185a0c7c7a31d3f9",
+  "index_id": "fc6749664dcf88f174428926f49e67e99c5f56214a3d99af384af22d69088e20",
+  "mean_trial_score": 0.99624,
+  "median_rank": 1.0,
+  "notes": "",
+  "pair_count": 200,
+  "preparation_version_id": "40f06be18d243bf69d99e9f9e99728ee26bb757641be41446a78cd122f4e8c6f",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 1600,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 1590,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 766,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002476,
+  "reference_top_ten": 0.024764,
+  "reviewer": "",
+  "scoring_config_hash": "1f06bdb7f9cf82800d969becf6f0e63e2a54fd82ed7f0007a28351b02b2c26a1",
+  "tag": "dev-wit-mixed-3",
+  "top_ten_fraction": 0.955,
+  "verdict": "pending"
+}

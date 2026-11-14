@@ -8,9 +8,12 @@ import copy
 
 from core.canonical import JsonValue, sha256_hex
 
-# The seven non-ink palette values (spec C1 section 5).
-PALETTE: tuple[str, ...] = ("#c5221f", "#e8710a", "#f0b429", "#1b6b3a",
-                            "#1a73e8", "#7a4ec9", "#795548")
+# The seven non-ink palette values (spec C1 section 5, the set of
+# 2026-08-14): red, orange, yellow, green, blue, purple, teal. The web
+# interface sends these values (web/src/sketch/palette.ts), thus the
+# gate measures the colors that a player can send.
+PALETTE: tuple[str, ...] = ("#bf616a", "#d08770", "#ebcb8b", "#a3be8c",
+                            "#81a1c1", "#b48ead", "#8fbcbb")
 
 
 def colorized_record(record: JsonValue, seed: int,

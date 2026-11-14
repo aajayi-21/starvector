@@ -72,6 +72,43 @@ def test_the_frozen_configs_hold_the_fit_winner() -> None:
         assert config.input.preparation_record.endswith("40f06be1.json")
 
 
+def test_the_frozen_production_configs_hold_the_fit_table() -> None:
+    # The production freeze (spec PP1 section 5f): the weights that V4
+    # gives with no placement channel, plus the fit-record label.
+    for name in ("prod-wit-mixed", "prod-wit-photo-inst-sym"):
+        config = load_scoring_config(Path(f"configs/scoring/{name}.json"))
+        assert dict(config.fusion.weights) == {"element": 0.5,
+                                               "outline": 0.5}
+        assert config.fusion.fit_record \
+            == "validation/records/fit-prod-wit-43b3ca6a.json"
+        assert config.input.preparation_record.endswith("fff3dddd.json")
+        assert not config.report.dev_only
+
+
+def test_the_production_source_b_config_keeps_the_candidate_table() -> None:
+    # The fit record and the V4 record name the scoring hash of this
+    # table, thus the freeze does not change the file.
+    config = load_scoring_config(Path("configs/scoring/prod-wit-b.json"))
+    assert dict(config.fusion.weights) == {
+        "outline": 1.0, "element": 1.0, "placement": 1.0}
+    assert config.fusion.fit_record is None
+    frozen = json.loads(
+        Path("configs/scoring/prod-wit-mixed.json").read_text())
+    candidate = json.loads(
+        Path("configs/scoring/prod-wit-b.json").read_text())
+    for document in (frozen, candidate):
+        document.pop("fusion")
+        document["validation"].pop("tag")
+    assert frozen == candidate
+
+
+def test_the_production_service_config_names_the_frozen_config() -> None:
+    from service.config import load_service_config
+
+    service = load_service_config(Path("configs/service/prod-wit.json"))
+    assert service.scoring_config == "configs/scoring/prod-wit-mixed.json"
+
+
 def test_the_stitched_boundary_config_forks_on_two_fields() -> None:
     # The P5 item B8 variant: tier2_count below the dev pool count,
     # thus the tier boundary cuts on data before production. Each

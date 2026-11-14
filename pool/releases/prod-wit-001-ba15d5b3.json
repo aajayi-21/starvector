@@ -1,0 +1,99 @@
+{
+  "code_version": "6d32b6908b949d5349ab19e56147abc6b68f085e",
+  "config_path": "configs/curation/prod-wit.json",
+  "corpus_id": "f655d7130d31e57940771ed8faa541a2f52cfd5fa02a8b4b6675b89d9e647c22",
+  "corpus_identity": {
+    "config_name": null,
+    "provider": "huggingface",
+    "repo_id": "wikimedia/wit_base",
+    "revision": "ff6d4fb32fd566d3a1fa20e946cba3234179465e",
+    "split": "train"
+  },
+  "created_at": "2026-11-12T02:54:44.009790+00:00",
+  "curation_config_hash": "d9c7558d3afc705b1a2ffb4175920c6d14e52089e29a747074b66c0f4b841766",
+  "dev_only": false,
+  "funnel": {
+    "s00-snapshot": {
+      "input": 11793,
+      "rejections": {},
+      "survivors": 11793
+    },
+    "s01-screen": {
+      "input": 11793,
+      "rejections": {
+        "aspect-metadata": 343,
+        "resolution-metadata": 2358
+      },
+      "survivors": 9092
+    },
+    "s02-materialize": {
+      "input": 9092,
+      "rejections": {
+        "aspect": 4,
+        "fetch-error": 1081,
+        "resolution": 5,
+        "unsupported-media-type": 350
+      },
+      "survivors": 7652
+    },
+    "s03-text": {
+      "input": 7652,
+      "rejections": {
+        "text-coverage": 680
+      },
+      "survivors": 6972
+    },
+    "s04-class": {
+      "input": 6972,
+      "rejections": {
+        "class-chart": 18,
+        "class-coat-of-arms": 41,
+        "class-diagram": 79,
+        "class-document-or-scan": 21,
+        "class-line-drawing": 136,
+        "class-logo": 8,
+        "class-map": 210,
+        "class-no-winner": 2,
+        "class-painting-or-artwork": 445,
+        "class-screenshot": 7
+      },
+      "survivors": 6005
+    },
+    "s05-object": {
+      "input": 6005,
+      "rejections": {
+        "object-size": 389,
+        "person-focus": 936
+      },
+      "survivors": 4680
+    },
+    "s06-neardup": {
+      "input": 4680,
+      "rejections": {
+        "near-duplicate": 1
+      },
+      "survivors": 4679
+    },
+    "s07-diversity": {
+      "input": 4679,
+      "rejections": {
+        "diversity-cap": 3286
+      },
+      "survivors": 1393
+    },
+    "s08-review": {
+      "input": 1393,
+      "rejections": {},
+      "survivors": 1393
+    }
+  },
+  "image_count": 1393,
+  "label": "prod-wit-001-ba15d5b3",
+  "pool_version_id": "ba15d5b3d9f85b2ea2ef0fa9df79c81cbc5f55372426a30e846da634e260ac02",
+  "review": {
+    "date": "2026-11-11",
+    "notes": "",
+    "reviewer": "ade",
+    "verdict": "pass"
+  }
+}

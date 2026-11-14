@@ -164,12 +164,18 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
 
     level_rows: list[V3Level] = []
     trial_rows: list[dict[str, JsonValue]] = []
+    refused_counts: list[int] = []
     for level_index in range(len(fit_config.generator.levels)):
         rows = synthetic_set(
             loaded.index, fit_config, table, placement,
             seed=fit_config.harness.v3_seed,
             count=fit_config.harness.v3_trials_for_each_level,
             level_index=level_index)
+        # A record below the ink gate is not a submission, thus it is
+        # not a trial. The report counts each one.
+        rows, refused = harness.admitted_synthetic(
+            rows, gates, loaded.render.canvas_px)
+        refused_counts.append(len(refused))
         harness.prewarm_records([row.record for row in rows], gates,
                                 loaded.render, encoders)
         values = []
@@ -205,6 +211,8 @@ def run_v3(config: ScoringConfig, fit_config: FitConfig, *,
         ],
         "monotone": ordered,
         "control_at_half": control_at_half,
+        # One count for each level, in level sequence.
+        "synthetic_refused": refused_counts,
         "bootstrap_count": fit_config.harness.v3_bootstrap_count,
         "bootstrap_interval": fit_config.harness.v3_interval,
         # D13: how many background submissions each channel's

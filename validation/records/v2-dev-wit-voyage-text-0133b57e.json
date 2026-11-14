@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "30b82f005fa4ade57e7ffa63ee3e4877aee588aec185b21b1b2565cd1483219c",
+  "created_at": "2026-11-11T02:05:35.841476+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "",
+  "decoy_count_max": 203,
+  "decoy_count_min": 203,
+  "dev_only": true,
+  "fit_record": "validation/records/fit-dev-wit-2-76056098.json",
+  "fusion_weights": {
+    "element": 0.45,
+    "outline": 0.55
+  },
+  "fusion_weights_fitted": true,
+  "harness": "v2",
+  "harness_config_hash": "0133b57e0dce15ff95ca12755df04e6e15a67b1fb179b562669f30453aa08034",
+  "index_id": "81bfdcff27611b822fd8093dcf9e92cfbfc121810d597617af790f65630392c3",
+  "ks_significance": 0.990844,
+  "ks_statistic": 0.019576,
+  "mean_p_at_max_decoy_count": 0.49734,
+  "mean_p_at_min_decoy_count": 0.49734,
+  "notes": "",
+  "preparation_version_id": "81bfdcff27611b822fd8093dcf9e92cfbfc121810d597617af790f65630392c3",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 2003,
+      "posts": 0
+    }
+  },
+  "reviewer": "",
+  "scoring_config_hash": "7cda97dcf143c6d1fcc4be5da755052f43a53f45cebf0bbed439e5c16aa3e55a",
+  "tag": "dev-wit-voyage-text",
+  "trial_count": 500,
+  "verdict": "pending"
+}

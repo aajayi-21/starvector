@@ -3,9 +3,11 @@
 import numpy as np
 
 from pool.curation.stages.classify import (
+    NO_WINNER_REASON,
     class_decisions,
     reason_for_label,
     rendered_labels,
+    winning_label,
 )
 
 _LABELS = (
@@ -63,15 +65,42 @@ def test_coat_of_arms_winner_gets_a_hyphenated_reason() -> None:
     assert result.rejections[0].reason == "class-coat-of-arms"
 
 
-def test_equal_winning_values_keep_the_lowest_index() -> None:
-    # Indices 0 and 2 hold the same winning value. Index 0 wins.
+def test_equal_winning_values_have_no_winner() -> None:
+    # Indices 0 and 2 hold the same winning value. Before the s04 note
+    # of 2026-11-11 index 0 won, and the keep label stayed by its
+    # position alone.
     row = [0.03125] * len(_LABELS)
     row[0] = 0.375
     row[2] = 0.375
     probabilities = np.array([row], dtype=np.float32)
     result = class_decisions(["a"], probabilities, _LABELS, "photograph")
-    assert result.survivors == ("a",)
-    assert result.rejections == ()
+    assert result.survivors == ()
+    rejection = result.rejections[0]
+    assert rejection.reason == NO_WINNER_REASON == "class-no-winner"
+    assert rejection.measured == 0.375
+
+
+def test_a_row_with_no_information_does_not_keep_the_candidate() -> None:
+    probabilities = np.full((1, len(_LABELS)), 1.0 / len(_LABELS), dtype=np.float32)
+    result = class_decisions(["a"], probabilities, _LABELS, "photograph")
+    assert result.survivors == ()
+    assert result.rejections[0].reason == NO_WINNER_REASON
+
+
+def test_a_stated_label_below_its_row_has_no_winner() -> None:
+    # The screener row of a contradictory answer: the stated label is
+    # below each other label. That holds for the keep label and for a
+    # different stated label, which must not let the keep label win.
+    for stated in (0, 4):
+        probabilities = np.array([_row(stated, 0.05)], dtype=np.float32)
+        result = class_decisions(["a"], probabilities, _LABELS, "photograph")
+        assert result.survivors == ()
+        assert result.rejections[0].reason == NO_WINNER_REASON
+
+
+def test_winning_label_gives_the_one_winner_or_none() -> None:
+    assert winning_label(np.array(_row(4, 0.6), dtype=np.float32), _LABELS) == "map"
+    assert winning_label(np.array(_row(4, 0.05), dtype=np.float32), _LABELS) is None
 
 
 def test_accounting_and_input_sequence() -> None:

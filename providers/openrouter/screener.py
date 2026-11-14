@@ -22,8 +22,8 @@ from providers.openrouter.resolve import (chat_request_body,
                                           checked_response_format_mode,
                                           default_clock, json_payload,
                                           resolve_chat)
-from providers.openrouter.slots import (_LABEL_PLACEHOLDER, _choice_row,
-                                        _fraction_value)
+from providers.openrouter.slots import (_LABEL_PLACEHOLDER, _fraction_value,
+                                        _spread_row, _stated_choice)
 
 PERSON_ROLES: tuple[str, ...] = ("none", "in_scene", "main_subject")
 _PERSON_MAIN = "main_subject"
@@ -84,6 +84,23 @@ def _screen_schema(labels: tuple[str, ...]) -> dict[str, JsonValue]:
     }
 
 
+def _label_row(payload: Mapping[str, object],
+               labels: tuple[str, ...]) -> tuple[float, ...]:
+    """The label row of one answer, in label sequence. It sums to 1.
+
+    The stated label holds its confidence, and the other labels divide
+    the remaining mass equally. With a confidence at or below 1/L the
+    stated label does not win its own row: the answer says that the
+    model does not trust its label. That row is not an error here. It
+    has no one winner, and the s04 rule puts the image out with the
+    cause class-no-winner (spec PP1 section 5d, owner ruling of
+    2026-11-11). The answer goes to the cache as each other answer
+    does, thus a second start gives the same decision with no POST.
+    """
+    label, confidence = _stated_choice(payload, labels)
+    return _spread_row(label, confidence, labels)
+
+
 def _screen_answer(payload: Mapping[str, object],
                    labels: tuple[str, ...]) -> ScreenAnswer:
     """One validated answer. A missing or out-of-set field raises (R14)."""
@@ -92,7 +109,7 @@ def _screen_answer(payload: Mapping[str, object],
         raise OpenRouterResponseError(f"person_role is not in the set: {role!r}")
     return ScreenAnswer(
         text_fraction=_fraction_value(payload, _TEXT_KEY),
-        label_row=_choice_row(payload, labels),
+        label_row=_label_row(payload, labels),
         object_fraction=_fraction_value(payload, _OBJECT_KEY),
         person_role=role,
     )

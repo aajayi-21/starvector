@@ -1,0 +1,59 @@
+{
+  "artifacts": {
+    "p00-intake/records.jsonl": "d3f587b23d2be391f6378c7b392409d3c3066d39e2c659a04463acb61ae0df28",
+    "p01-elements/elements.jsonl": "d53acacaf6da7445c053931279b140909a5aafe8727628924263e5d87a60fee9",
+    "p02-normalize/normalized.jsonl": "34ba2528b5f7b41c9783fc773e377c08c748b1a9a101acf652b2099547ee639c",
+    "p03-cap/capped.jsonl": "34ba2528b5f7b41c9783fc773e377c08c748b1a9a101acf652b2099547ee639c",
+    "p03-cap/cuts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "p04-vocabulary/element_space_mean.npy": "2d6306946ea54b7add3279e916b4cb4647b070e1b1dfb77088962bf054a55d7a",
+    "p04-vocabulary/incidence.npy": "ab5770ac764cf9b96c3192ffee0abf2ab149b5e2eb6e29b0f326cd17b40c989d",
+    "p04-vocabulary/vocabulary.jsonl": "4ec4d630242157755b328a91e90f6a7a278a556a63b5b8a6067c16facdabbbe7",
+    "p04-vocabulary/vocabulary_vectors.npy": "0c21fbec7ccec5019f184c250410b3aa2c194d63c248f7c3b8a55e14876d7107",
+    "p06-outline/outline_space_mean.npy": "80ed57e7ae3db84d2ea452d805761518b6986ea9121403cbeb273587b9b46876",
+    "p06-outline/outline_vectors.npy": "f9385e1afdd9fab5624324a3ab2e434d69aedb3366a1fbd63f9a0d2948590de3",
+    "p07-boxes/boxes.jsonl": "2c81f4f8f74fb086e836125ece46cff3487297702c13676c3392074535301fb3",
+    "p08-neardup/groups.jsonl": "cf8583c67e8d6bc1de4ecab5290998505fc38fd056f8233e3f2ac185dd1d45db"
+  },
+  "code_version": "6d32b6908b949d5349ab19e56147abc6b68f085e",
+  "config_path": "configs/preparation/dev-wit-voyage-plain.json",
+  "created_at": "2026-11-11T01:31:32.495423+00:00",
+  "dev_only": true,
+  "image_count": 204,
+  "label": "dev-wit-prep-voyage-plain-c6be4754",
+  "pool": {
+    "label": "dev-wit-002-9644fac1",
+    "pool_version_id": "9644fac1994e733ce865c2aec68b24013b7094465f862c90b1762387360e1fea",
+    "release_record_path": "pool/releases/dev-wit-002-9644fac1.json"
+  },
+  "preparation_config_hash": "5023ee196f5253270aa79f8917351930f8759198b019337c78940a41340e584f",
+  "preparation_version_id": "c6be475418ae64336e5289cfff85c4b6a9a48f3670d74bf1a785d58e71fd0b9b",
+  "provider_config_hashes": {
+    "describer": "bf6ee1e062d8fa57875c087eb3734ebb2ef8d23a1b91bb461e29f4c2d2920c76",
+    "element_boxes": "a524c2ad2f36202f65be818f806bc62d31571a98934d117cbc19b417a73ca3c6",
+    "image_encoder": "4cd8432353e62994c21c83bf1bc75869d4ebbcd33e0418631fc131a48018bce1",
+    "line_drawer": "6a5e726bb0c12bca576ee0dedec635b7c36a3e587fa35589b0ca18a571fc88a3",
+    "text_encoder": "6f345c2c3aa52570359deeb9a55c6d5638e335330ba0013e149b121f11587548"
+  },
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 204,
+      "posts": 0
+    },
+    "element_boxes": {
+      "cache_hits": 204,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 33
+    },
+    "line_drawer": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 1379,
+      "posts": 0
+    }
+  }
+}

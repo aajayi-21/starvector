@@ -115,6 +115,10 @@ recorded:
   `validation/colorize.py` holds the seven non-ink values and
   updates with this table. The new record notes the palette
   revision.
+  *Note, 2026-11-13:* `validation/colorize.py` has the values of
+  this table from this date. A test reads the web palette file and
+  stops if the two sets are not equal. Each v2c record has a `palette`
+  field.
 - The dev page (`service/ui/trial.js`) keeps the 2026-08-12
   swatches until the backend phase retires it — a recorded
   difference, not drift. Records it sends stay correct: intake
