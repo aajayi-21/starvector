@@ -511,6 +511,216 @@ what `dev-wit-b-2` is on the development lineage, and it is equal to
 `prod-wit-mixed.json` in each field but the tag. No command makes the
 768 px serving copy of step 9.
 
+## 5d. Rulings of 2026-11-11 — a first pool of about 1,000
+
+**The count (owner ruling).** The first production pool has about
+1,000 images. The 7,500 of ruling 1 stays the count of a subsequent
+lineage, by §4 row 6. For this lineage, §10 item 1 reads against the
+count that the run gives, and the owner's `review.json` accepts it.
+
+**What moves in §4.** The chance guarantee has no `N` in it and does
+not move. The trial score has about 1,000 different values. A frontload
+tag must cover 20% of the pool to keep `D ≥ 200`. A second use of one
+image as the target is more likely than not by about day 38. The top of
+the rarity range is 6.9 nats.
+
+**The encoder (owner ruling).** Gemini is in each encoder slot, the
+sketch slot also (spec VE1 §9). Ruling 8 closes.
+
+**No batch model.** OpenRouter has `google/gemini-embedding-2:batch` at
+half the standard cost, USD 0.225 for each million image tokens. Its
+batch API accepts text input alone for embeddings, and its docs say
+that multimodal input is not available there. Image vectors are almost
+all of the embedding cost, thus each slot keeps
+`google/gemini-embedding-2`. At this count the two embedding rows of
+§5a come to about USD 1.
+
+**No calibration run apart from the production run.** Ruling 5 sized
+the calibration run at 20 shards, and a pool of about 1,000 is that
+scale. The production run is thus its own measurement: it stops at the
+s08 gate, and the owner reads the funnel report before the review.
+
+**Proposed values.** The owner rules on them when the owner runs the
+`curation` step of `tools.production_configs`:
+
+| value | proposed | from |
+|---|---|---|
+| `--scan-shards` | 20 | ruling 5: about 11,800 sampled rows, about 7,600 materialized |
+| `--materialize-cap` | 8,000 | above the 7,600 of ruling 5, thus it stops the fetch only for a sample that is larger than the estimate. The screening cost stops at about USD 1.95 |
+| `--budget-bytes` | 5,000,000,000 | 0.5 GB of scan and about 3.1 GB of fetched images, with room |
+| the two thresholds | 0.95 | the control of spec VE1 §9. A variant that s06 does not catch at 0.95 goes into its p08 group, thus I3 holds |
+
+At the yields of §3, 7,600 materialized candidates give about 1,400
+images. The person rule and the two new labels have no measured yield.
+If the two remove 25% of the s05 survivors, the count is about 1,050.
+The expected count is thus 1,000 to 1,400.
+
+**Cost and time.** About USD 3.5 at the standard cost: about USD 1.85
+of screening, about USD 0.4 of curation embeddings, about USD 0.2 for
+the describer, about USD 0.9 for the crop embeddings, and about USD 0.1
+for the generalize table. About one hour of fetch and one hour of
+screening at 2.0 `POST`/s.
+
+**The sequence.** `validation.screener_check` with the production
+curation config on the development s02 manifest comes first. Its 1,036
+answers have the production screener hash, thus the production run
+reads them from the cache.
+
+**A contradictory screener answer (owner ruling).** The screener gave
+`photograph` with confidence 0.05 for a line diagram, the 508th image of
+the check. With ten labels, a confidence at or below 0.1 puts the stated
+label below each other label of its row. That was an error, and it
+stopped the check.
+
+The ruling: such an answer is not an error. Its row
+has no winner, and s04 puts the image out with the cause
+`class-no-winner` (`docs/specs/pool-curation.md`, the s04 note of this
+date). The answer goes to the cache, thus a second start gives the same
+decision with no `POST`, and the funnel report counts the cause. The
+classifier slot with three `POST`s keeps its error.
+
+**The answers of a group that stops.** A refused answer stopped its
+group before the good answers after it were in the cache. In the check,
+528 answers had their cost and were not stored. The provider
+stores each good answer of a group first and then gives the error.
+
+**Open before the fit.** The V6 widths 500 and 25 of §5c and the
+`tier2_count` of 500 are values for 7,500 images. The fit counts of
+§5c are also open. The owner rules on them before the `lineage` configs
+go to the fit.
+
+---
+
+## 5e. Ruling of 2026-11-12 — the boxes are bought for the first pool
+
+**What the first preparation gave.** The run of 2026-11-11 gave the
+release `prod-wit-001-ba15d5b3` with 1,393 images and the preparation
+`prod-wit-photo-inst-1e921f6b` with 6,079 vocabulary entries. That
+preparation deferred its boxes (B8), thus no element of the pool has a
+box.
+
+**The fit stops on that preparation.** `validation.fit` asks for a
+placement commonness table when a generator level names a relation. The
+generator makes a relation from two located elements. With no box, no
+synthetic submission has a relation, and no background submission
+activates placement. The fit then stops at the D13 check.
+
+A run on the fake providers with the located slots empty gave that
+stop. V4 reads the same data and stops there also. This is the
+disagreement between B4 and B8 that §5b records.
+
+**The ruling (owner).** The boxes are bought for this pool. The cause
+of B8 was the cost at 7,500 images. At 1,393 images the boxes are
+about 1,330 `POST`s. The development mean of USD 0.000627 for each
+`POST` gives about USD 0.85. The describer cost on this pool was 3.2
+times its development mean, thus the estimate is USD 1 to 3.
+
+**What changes.** The `lineage` step ran again with `--boxes bought`:
+
+- `configs/preparation/prod-wit-photo-inst.json` names the OpenRouter
+  boxes slot. Each other slot hash is equal to the first preparation,
+  thus the boxes are the only new `POST`s.
+- The three `prod-wit` scoring configs name the record
+  `prod-wit-photo-inst-fff3dddd` and have a placement weight in the
+  candidate table.
+- `configs/fit/prod-wit.json` does not change.
+
+The preparation `1e921f6b` is not the input of a gate, a fit, or a
+day. Its record is not in `pool/preparations/`, and its tree stays on
+disk as a cache. The release record does not change.
+
+---
+
+## 5f. Rulings of 2026-11-13 — the fit, the placement cut, the freeze
+
+**The second preparation.** `prod-wit-photo-inst-fff3dddd` has a box
+for 96.8% of its elements (21,538 of 22,255). The generalization table
+has 6,079 entries.
+
+**The baseline gates (owner verdicts: `pass`).** Candidate weights, not
+fitted.
+
+| gate | config | result |
+|---|---|---|
+| V1 | `prod-wit-photo-inst-sym` | first rank 0.600 and first ten 0.940 on 200 pairs, in 1,593 images |
+| V2 | `prod-wit-photo-inst-sym` | KS significance 0.943, mean 0.497, 500 trials |
+| V2 | `prod-wit-mixed` | KS significance 0.818, mean 0.496, 500 trials |
+
+**The fit (owner verdict: `pass`).** Record `fit-prod-wit-43b3ca6a`.
+The winner is element 0.45, outline 0.50, placement 0.05. Its
+objective is 0.906632 on the fit trials and 0.900987 on the holdout
+trials. The winner is not an endpoint. One synthetic fit record was
+below the min-ink gate and is not a trial
+(`docs/specs/fuse-and-validate.md` §17a item 2, the note of this
+date).
+
+**V4.** Record `v4-prod-wit-1ca044b8`, on the holdout trials:
+
+| channel removed | weights of the second fit | holdout objective | cost |
+|---|---|---|---|
+| element | outline 0.05, placement 0.95 | 0.830205 | 0.070782 |
+| outline | element 0.90, placement 0.10 | 0.886000 | 0.014987 |
+| placement | element 0.50, outline 0.50 | 0.901114 | −0.000127 |
+
+**The placement ruling (owner).** The cost of placement is below the
+0.01 line of spec F1 ruling 2, thus the channel is cut for this
+lineage. `placement_signal` is 0.949, thus the channel itself works.
+Relations stay stored, and a subsequent pool reads the ruling again.
+
+**The freeze.** `configs/scoring/prod-wit-mixed.json` and
+`configs/scoring/prod-wit-photo-inst-sym.json` have the weights that V4 gives with
+no placement channel: element 0.5, outline 0.5. `fusion.fit_record`
+names the fit record. `configs/scoring/prod-wit-b.json` keeps the
+candidate table, because the fit record and the V4 record name its
+scoring hash.
+
+**The config of V3, V5, and V6.** §9 step 7 puts these gates on the
+frozen weights, and §5c says that `prod-wit-b` is their config. The
+two texts do not agree after a cut, because `prod-wit-b` has a
+placement weight that no player gets. The gates run with
+`--scoring-config configs/scoring/prod-wit-mixed.json`. A run on the
+fake providers shows that V3, V5, and V6 complete with relation levels
+and no placement weight.
+
+**The gates on the frozen weights (owner verdicts: `pass`).**
+
+| gate | record | result |
+|---|---|---|
+| V1 | `v1-prod-wit-photo-inst-sym-55e1fa23` | first rank 0.600, first ten 0.940, equal to the baseline |
+| V2 | `v2-prod-wit-photo-inst-sym-201dc698` | KS significance 0.943, equal to the baseline |
+| V2 | `v2-prod-wit-mixed-8c4176f4` | KS significance 0.818, equal to the baseline |
+| V3 | `v3-prod-wit-f2dbb94e` | monotone: 1.000, 0.999, 0.939, 0.739, 0.449. `control_at_half` is `false` |
+| V5 | `v5-prod-wit-b120e769` | slopes: outline +0.279, element −0.244. 83 images above the 3.0 line |
+| V6 | `v6-prod-wit-5aaabf80` | tier-1 recall 1.0 at width 500, tier-2 recall 0.995 at width 25 |
+
+Three standing items stay open, and each is in the notes of its
+record:
+
+- **V3, level 4.** The interval is 0.409 to 0.490. It is the
+  anti-informative control of the ruling of 2026-08-13, and the
+  redesign of level 4 waits for the next generator revision.
+- **V5, the element slope.** It is negative, as on the development
+  lineage (−0.326). The V2 marginal stays in agreement with `Uniform(0, 1)`.
+- **V5, the tail.** 83 of 1,393 images (6.0%) hold 29.6% of the
+  top-ten places of the background. The highest image has 108
+  appearances, and the equal share is 7.2. The development pool had
+  1 image of 204 above the line.
+
+**The bench.** `bench-1393-39f1ad67`: `local_total` is 28.3 ms at
+1,393 images and 6,079 vocabulary entries, with the similarity table at
+15.4 ms. The 50 ms line is the owner's verdict.
+
+**The color gate.** `validation/colorize.py` has the palette of spec
+C1 §5 (the set of 2026-08-14), and each v2c record names its palette.
+The gate runs on `configs/scoring/prod-wit-photo-inst-sym.json`,
+because the production preparation renders in color.
+
+**The server config.** `configs/service/prod-wit.json` names
+`configs/scoring/prod-wit-mixed.json`. The warm start of the server
+reads the pool and the two commonness tables with no `POST`. The
+deployed server moves to this config after the color gate has its
+verdict.
+
 ---
 
 ## 6. What the repository says after this ruling

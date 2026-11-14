@@ -1,0 +1,42 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "4da47c6891eb85b5eb122200b92b72bc9fe3c27b4a4397cb62f5f40f50d1a0cb",
+  "created_at": "2026-11-13T21:59:25.880496+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-11-13",
+  "decoy_count_max": 1392,
+  "decoy_count_min": 1392,
+  "dev_only": false,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0,
+    "placement": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v2",
+  "harness_config_hash": "407ef1fda865de6898e5fb10e036c70547541a1a2f59d59f6feb52a0eb6071ea",
+  "index_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "ks_significance": 0.943022,
+  "ks_statistic": 0.023621,
+  "mean_p_at_max_decoy_count": 0.497224,
+  "mean_p_at_min_decoy_count": 0.497224,
+  "notes": "Baseline gate on the first production pool (1,393 images), sketch mode, equal candidate weights, not fitted. KS statistic 0.023621 at significance 0.943022 over 500 trials, mean p 0.497224 at decoy_count 1392. Owner verdict of 2026-11-13.",
+  "preparation_version_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 1739,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 2988,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "0c6cfbcb7db0b3804d7b5d6c5b92f35f7da8436cead90d3a317a4edd01ab93e8",
+  "tag": "prod-wit-photo-inst-sym",
+  "trial_count": 500,
+  "verdict": "pass"
+}

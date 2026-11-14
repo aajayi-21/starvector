@@ -1,0 +1,54 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "4da47c6891eb85b5eb122200b92b72bc9fe3c27b4a4397cb62f5f40f50d1a0cb",
+  "created_at": "2026-11-13T21:57:25.637534+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-11-13",
+  "dev_only": false,
+  "first_rank_fraction": 0.6,
+  "fit_record": null,
+  "fusion_weights": {
+    "element": 1.0,
+    "outline": 1.0,
+    "placement": 1.0
+  },
+  "fusion_weights_fitted": false,
+  "harness": "v1",
+  "harness_config_hash": "4a811f31eb4982cebd6a638667535ab5a974be9f11eeb24e75793bf5f9177cc6",
+  "index_id": "1d96894ea3db370892181fdddeaa39dc784e990cfb2f28cb33804b5ded127e31",
+  "mean_trial_score": 0.998295,
+  "median_rank": 1.0,
+  "notes": "Baseline gate on the first production pool (1,393 images), sketch mode, equal candidate weights, not fitted. The correct photograph is first in 0.600 of 200 pairs among 1,593 images and in the first ten in 0.940. The development lineage gave 0.680 among 404 images. Owner verdict of 2026-11-13.",
+  "pair_count": 200,
+  "preparation_version_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "sketch_encoder": {
+      "cache_hits": 1101,
+      "posts": 9
+    },
+    "text_encoder": {
+      "cache_hits": 2839,
+      "posts": 51
+    },
+    "union_text_encoder": {
+      "cache_hits": 570,
+      "posts": 2
+    }
+  },
+  "reference_first": 0.000628,
+  "reference_top_ten": 0.006278,
+  "reviewer": "ade",
+  "scoring_config_hash": "0c6cfbcb7db0b3804d7b5d6c5b92f35f7da8436cead90d3a317a4edd01ab93e8",
+  "tag": "prod-wit-photo-inst-sym",
+  "top_ten_fraction": 0.94,
+  "verdict": "pass"
+}

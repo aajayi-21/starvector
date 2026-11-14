@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "304090bec4329d3688e1f01fdf5231ddfa10e8d7399d719f8584891620a54f02",
+  "created_at": "2026-11-13T22:54:20.170861+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-11-13",
+  "decoy_count_max": 1392,
+  "decoy_count_min": 1392,
+  "dev_only": false,
+  "fit_record": "validation/records/fit-prod-wit-43b3ca6a.json",
+  "fusion_weights": {
+    "element": 0.5,
+    "outline": 0.5
+  },
+  "fusion_weights_fitted": true,
+  "harness": "v2",
+  "harness_config_hash": "8c4176f426f5cb27cd5157c3838119ecd626353b4142d8b04ed6313c53049333",
+  "index_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "ks_significance": 0.817565,
+  "ks_statistic": 0.028316,
+  "mean_p_at_max_decoy_count": 0.495904,
+  "mean_p_at_min_decoy_count": 0.495904,
+  "notes": "Frozen rerun, element 0.5 and outline 0.5, mixed mode, the served tables. KS statistic 0.028316 at significance 0.817565 over 500 trials, mean p 0.495904, equal to the baseline record v2-prod-wit-mixed-f3d830dc. Owner verdict of 2026-11-13, set on the owner's word after the analysis of that date.",
+  "preparation_version_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 1000,
+      "posts": 0
+    },
+    "text_encoder": {
+      "cache_hits": 1010,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "3cf0820e1129f33aa84d3f73da2f85a5414499ec8d674730f317a5190c89aa4e",
+  "tag": "prod-wit-mixed",
+  "trial_count": 500,
+  "verdict": "pass"
+}

@@ -1,0 +1,50 @@
+{
+  "code_version": "dev",
+  "color_ks_significance": 0.973081,
+  "color_ks_statistic": 0.021661,
+  "commonness_config_hash": "4da47c6891eb85b5eb122200b92b72bc9fe3c27b4a4397cb62f5f40f50d1a0cb",
+  "created_at": "2026-11-14T00:15:46.484457+00:00",
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "2026-11-13",
+  "dev_only": false,
+  "fit_record": "validation/records/fit-prod-wit-43b3ca6a.json",
+  "fusion_weights": {
+    "element": 0.5,
+    "outline": 0.5
+  },
+  "fusion_weights_fitted": true,
+  "harness": "v2c",
+  "harness_config_hash": "05155426775ba5c2f23ec7e7c68e714fcc568b61432e7bdbd9dba6637bfa26e6",
+  "index_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "max_abs_delta_p": 0.652299,
+  "mean_abs_delta_p": 0.102261,
+  "mean_delta_p": 0.004106,
+  "mono_ks_significance": 0.943022,
+  "mono_ks_statistic": 0.023621,
+  "notes": "Color gate on the first production pool, frozen weights, the palette of spec C1 section 5 (the set of 2026-08-14) that the web interface sends. The color side agrees with Uniform(0, 1): KS statistic 0.021661 at significance 0.973081 over 500 trials. The monochrome side is 0.023621 at 0.943022, equal to the V2 record v2-prod-wit-photo-inst-sym-201dc698. Color moves a trial score by 0.102261 on the mean of the absolute difference and by 0.652299 at the most, with a signed mean of +0.004106, thus no direction. The development records on the earlier set gave 0.114562 and 0.135970. Owner verdict of 2026-11-13, set on the owner's word after the analysis of that date.",
+  "palette": [
+    "#bf616a",
+    "#d08770",
+    "#ebcb8b",
+    "#a3be8c",
+    "#81a1c1",
+    "#b48ead",
+    "#8fbcbb"
+  ],
+  "preparation_version_id": "fff3ddddfb21b77b4bd43ecb31ace0d0d55a5119e02425653bf64964d88fb182",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 1500,
+      "posts": 9
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    }
+  },
+  "reviewer": "ade",
+  "scoring_config_hash": "8c0a67793e4c32debbacb17ece5c89fe66c0852958878991158eea99c51ee63d",
+  "tag": "prod-wit-photo-inst-sym",
+  "trial_count": 500,
+  "verdict": "pass"
+}
