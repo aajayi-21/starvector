@@ -4,5 +4,6 @@
   "scoring_config": "configs/scoring/prod-wit-mixed.json",
   "data_root": "data",
   "store_root": "store",
-  "port": 8000
+  "port": 8000,
+  "closes_at_utc": "00:00"
 }
