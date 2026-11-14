@@ -1,9 +1,10 @@
-"""Integration: invited players and the session (spec M1 section 4).
+"""Integration: stored players and the session (spec M1 section 4).
 
-The token parse, the invite gate, the cookie attributes, and the one
-constant refusal. Each refusal is asked two times and compared as
-bytes: a body that differs by condition is an oracle that tells an
-outsider who is stored.
+The token parse, the cookie attributes, and the one constant refusal.
+Each refusal is asked two times and compared as bytes: a body that
+differs by condition is an oracle that tells an outsider who is
+stored. The players here have the record of before spec A2, with the
+digest of an invite. That invite opens nothing from that spec on.
 """
 
 from pathlib import Path
@@ -11,10 +12,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from svc_fixture import (FIXED_CLOCK, build_service_fixture,
+from svc_fixture import (FIXED_CLOCK, QuickDigester, build_service_fixture,
                          plant_session, pinned_session_value)
 
-from service import auth, store
+from service import auth, signin, store
 from service.day import open_day
 from service.server import create_app
 
@@ -24,15 +25,17 @@ BRU_SECRET = "2" * 43
 # create_app refuses to start with records stored and no token
 # (spec M1 section 4), thus each world here carries one.
 OPERATOR_TOKEN = "test-operator-token"
+PASSWORD = "correct horse battery"
 
 
 def _mint(root: Path, player: str, display_name: str, secret: str) -> str:
-    """Store one player record and answer the invite token."""
-    token, digest = auth.mint_token(player, secret=secret)
+    """Store one player record of before spec A2, and answer the
+    invite token that its digest names."""
     store.write_player_record(root, store.PlayerRecord(
-        player=player, display_name=display_name, token_hash=digest,
+        player=player, display_name=display_name,
+        token_hash=auth.token_hash(secret),
         created_at=FIXED_CLOCK, status="active"))
-    return token
+    return f"{player}.{secret}"
 
 
 def _sign_in(client: TestClient, token: str | None) -> TestClient:
@@ -66,9 +69,24 @@ def _world(tmp_path, *, players=(("ade", "Ade", ALICE_SECRET),)):
     # weakening it for the test.
     client = TestClient(
         create_app(fixture["service_config"],
-                   operator_token=OPERATOR_TOKEN),
+                   operator_token=OPERATOR_TOKEN, digester=QuickDigester(),
+                   usual_passwords=frozenset()),
         base_url="https://testserver")
     return fixture, client, tokens
+
+
+def _password_sign_in(client: TestClient, root: Path, name: str):
+    """Give the player a password, and sign the client in with it."""
+    import datetime
+
+    signin.set_password(
+        root, player=name, current_password=None, password=PASSWORD,
+        digester=QuickDigester(), usual=frozenset(),
+        instant=datetime.datetime.now(datetime.UTC))
+    client.cookies.clear()
+    return client.post("/api/signin",
+                       json={"username": name, "password": PASSWORD},
+                       headers={"origin": "https://testserver"})
 
 
 def test_the_token_parse_is_unambiguous() -> None:
@@ -89,16 +107,14 @@ def test_the_mint_stores_a_digest_and_not_the_secret(tmp_path) -> None:
                                                       errors="replace")
 
 
-def test_the_join_gate_agrees_and_sets_a_session_cookie(tmp_path) -> None:
+def test_a_sign_in_sets_a_session_cookie_and_not_a_credential(
+        tmp_path) -> None:
     fixture, client, tokens = _world(tmp_path)
-    client.cookies.clear()
-    answer = client.get(f"/join/{tokens['ade']}", follow_redirects=False)
-    assert answer.status_code == 302
-    assert answer.headers["location"] == "/"
+    answer = _password_sign_in(client, fixture["store"], "ade")
+    assert answer.status_code == 200
     value = client.cookies.get(auth.SESSION_COOKIE)
-    # The cookie holds a session and not the invite (spec BR1).
     assert value is not None and value != tokens["ade"]
-    assert ALICE_SECRET not in value
+    assert ALICE_SECRET not in value and PASSWORD not in value
     parsed = auth.parse_token(value)
     assert parsed is not None and parsed[0] == "ade"
     digest = auth.token_hash(parsed[1])
@@ -114,9 +130,8 @@ def test_the_invite_in_a_cookie_signs_nobody_in(tmp_path) -> None:
 
 
 def test_the_cookie_attributes_are_the_specified_ones(tmp_path) -> None:
-    _fixture, client, tokens = _world(tmp_path)
-    client.cookies.clear()
-    answer = client.get(f"/join/{tokens['ade']}", follow_redirects=False)
+    fixture, client, _tokens = _world(tmp_path)
+    answer = _password_sign_in(client, fixture["store"], "ade")
     header = answer.headers["set-cookie"]
     assert header.startswith(f"{auth.SESSION_COOKIE}=ade.")
     assert ALICE_SECRET not in header
@@ -129,26 +144,42 @@ def test_the_cookie_attributes_are_the_specified_ones(tmp_path) -> None:
 def test_the_transport_flag_turns_off_for_the_offline_tests(
         tmp_path) -> None:
     fixture = build_service_fixture(tmp_path)
-    token = _mint(fixture["store"], "ade", "Ade", ALICE_SECRET)
+    _mint(fixture["store"], "ade", "Ade", ALICE_SECRET)
     client = TestClient(create_app(fixture["service_config"],
                                    cookie_secure=False,
-                                   operator_token=OPERATOR_TOKEN))
-    header = client.get(f"/join/{token}",
-                        follow_redirects=False).headers["set-cookie"]
+                                   operator_token=OPERATOR_TOKEN,
+                                   digester=QuickDigester(),
+                                   usual_passwords=frozenset()),
+                        base_url="http://testserver")
+    signin.set_password(
+        fixture["store"], player="ade", current_password=None,
+        password=PASSWORD, digester=QuickDigester(), usual=frozenset(),
+        instant=__import__("datetime").datetime.now(
+            __import__("datetime").UTC))
+    header = client.post(
+        "/api/signin", json={"username": "ade", "password": PASSWORD},
+        headers={"origin": "http://testserver"}).headers["set-cookie"]
     assert "Secure" not in header
     assert "HttpOnly" in header
 
 
-def test_the_join_refusal_is_one_constant_body(tmp_path) -> None:
-    fixture, client, _tokens = _world(tmp_path)
+def test_each_invite_address_gets_the_constant_404(tmp_path) -> None:
+    fixture, client, tokens = _world(tmp_path)
     root = fixture["store"]
     _mint(root, "revoked-one", "Revoked One", BRU_SECRET)
     store.set_player_status(root, "revoked-one", expect_status="active",
                             new_status="revoked")
-    # The last one arrives percent-encoded and reaches the handler
-    # with a newline at its end. A client refuses the raw byte in a
-    # URL, thus this is the shape the guard sees in practice.
-    refused = (
+
+    def snapshot() -> dict:
+        return {str(path): path.read_bytes()
+                for path in Path(root).rglob("*") if path.is_file()}
+
+    before = snapshot()
+    client.cookies.clear()
+    # The first one is the invite that the stored digest names. The
+    # invite is gone (spec A2 ruling 2), thus it opens nothing too.
+    asked = (
+        tokens["ade"],
         "not-a-token",
         f"ade.{'9' * 43}",
         f"unknown-name.{ALICE_SECRET}",
@@ -156,59 +187,24 @@ def test_the_join_refusal_is_one_constant_body(tmp_path) -> None:
         f"ade.{ALICE_SECRET}%0A",
     )
     bodies, statuses = set(), set()
-    for token in refused:
+    for token in asked:
         for _ in range(2):
             answer = client.get(f"/join/{token}", follow_redirects=False)
             bodies.add(answer.content)
             statuses.add(answer.status_code)
-    assert bodies == {b'{"detail":"unauthorized"}'}
-    assert statuses == {401}
+            assert "set-cookie" not in answer.headers
+    assert bodies == {b'{"detail":"not found"}'}
+    assert statuses == {404}
+    # No session and no other file comes from an invite address.
+    assert snapshot() == before
 
 
 def test_a_revoked_player_stops_at_the_next_read(tmp_path) -> None:
     fixture, client, tokens = _world(tmp_path)
-    assert client.get(f"/join/{tokens['ade']}",
-                      follow_redirects=False).status_code == 302
+    assert _sign_in(client, tokens["ade"]).get("/api/me").status_code == 200
     store.set_player_status(fixture["store"], "ade",
                             expect_status="active", new_status="revoked")
-    assert client.get(f"/join/{tokens['ade']}",
-                      follow_redirects=False).status_code == 401
-
-
-def test_a_replaced_token_stops_the_earlier_invite(tmp_path) -> None:
-    fixture, client, tokens = _world(tmp_path)
-    _new_token, digest = auth.mint_token("ade", secret=BRU_SECRET)
-    store.replace_player_token(fixture["store"], "ade",
-                               expect_status="active",
-                               new_token_hash=digest)
-    assert client.get(f"/join/{tokens['ade']}",
-                      follow_redirects=False).status_code == 401
-    assert client.get(f"/join/ade.{BRU_SECRET}",
-                      follow_redirects=False).status_code == 302
-
-
-def test_the_join_path_writes_one_session_and_nothing_else(
-        tmp_path) -> None:
-    fixture, client, tokens = _world(tmp_path)
-
-    def snapshot() -> dict:
-        return {str(path): path.read_bytes()
-                for path in Path(fixture["store"]).rglob("*")
-                if path.is_file()}
-
-    before = snapshot()
-    client.cookies.clear()
-    client.get(f"/join/{tokens['ade']}", follow_redirects=False)
-    client.get("/join/not-a-token", follow_redirects=False)
-    after = snapshot()
-    added = set(after) - set(before)
-    assert len(added) == 1
-    (only,) = added
-    assert Path(only).parent == Path(fixture["store"]) / "sessions" / "ade"
-    assert {name: after[name] for name in before} == before
-    # A second visit from the signed-in browser keeps its session.
-    client.get(f"/join/{tokens['ade']}", follow_redirects=False)
-    assert snapshot() == after
+    assert client.get("/api/me").status_code == 401
 
 
 def test_the_constant_time_compare_holds_odd_input() -> None:
@@ -220,23 +216,6 @@ def test_the_constant_time_compare_holds_odd_input() -> None:
     assert auth.constant_time_equal("naïve", "secret") is False
     assert auth.constant_time_equal(None, "secret") is False
     assert auth.constant_time_equal(7, "secret") is False
-
-
-def test_the_secret_compare_agrees_with_the_stored_digest() -> None:
-    token, digest = auth.mint_token("ade", secret=ALICE_SECRET)
-    assert token == f"ade.{ALICE_SECRET}"
-    assert auth.secret_matches(ALICE_SECRET, digest) is True
-    assert auth.secret_matches(BRU_SECRET, digest) is False
-
-
-def test_a_minted_secret_has_the_pinned_shape() -> None:
-    token, digest = auth.mint_token("ade")
-    parsed = auth.parse_token(token)
-    assert parsed is not None
-    name, secret = parsed
-    assert name == "ade"
-    assert len(secret) == 43
-    assert auth.secret_matches(secret, digest) is True
 
 
 _PLAYER_SURFACES = ("/api/day", "/api/reveal", "/api/history",

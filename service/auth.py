@@ -1,17 +1,16 @@
-"""The invite token, the session, and the device code (spec M1
-section 4, spec BR1 section 4).
+"""The session, the device code, and the recovery code (spec M1
+section 4, spec BR1 section 4, spec A2 section 6).
 
-Pure functions of strings: the token shape, its one unambiguous
-division, the digest the store keeps, the constant-time compare, the
-cookie headers, the device code, and the device label. No file read,
-no clock, and no HTTP object. The store holds the records and the
-server holds the handlers.
+Pure functions of strings: the session value's shape, its one
+unambiguous division, the digest the store keeps, the constant-time
+compare, the cookie headers, the two codes, and the device label. No
+file read, no clock, and no HTTP object. The store holds the records
+and the server holds the handlers.
 
-Two credentials share one shape, "<player>.<secret>". An invite
-token names a player record and its secret meets the record's
-digest. A session value names a session record below the player,
-and its secret's digest is that record's file name. The cookie
-holds a session value alone - not the invite (spec BR1).
+A session value has the shape "<player>.<secret>". It names a session
+record below the player, and the digest of its secret is that
+record's file name. The cookie holds a session value. The invite
+token of before spec A2 had the same shape, and it is gone.
 """
 
 import re
@@ -33,6 +32,13 @@ DEVICE_CODE_SECONDS = 10 * 60
 _DEVICE_CODE_RULE = re.compile(
     f"[{DEVICE_CODE_ALPHABET}]{{{DEVICE_CODE_LENGTH}}}")
 
+# The recovery code (spec A2 section 6, decision D8): 24 characters
+# from the device-code alphabet. 31 ** 24 is about 2 ** 119, thus no
+# trial finds one and the store keeps a digest with no slow work.
+RECOVERY_CODE_LENGTH = 24
+_RECOVERY_CODE_RULE = re.compile(
+    f"[{DEVICE_CODE_ALPHABET}]{{{RECOVERY_CODE_LENGTH}}}")
+
 _LABEL_LIMIT = 40
 
 # The player alphabet holds no dot and the URL-safe secret alphabet
@@ -46,24 +52,12 @@ _TOKEN_RULE = re.compile(r"([a-z0-9-]{1,64})\.([A-Za-z0-9_-]{43})")
 
 
 def token_hash(secret: str) -> str:
-    """The sha256 hex digest of one invite secret.
+    """The sha256 hex digest of one session secret.
 
     A secret of 32 random bytes wants no slow password hash. There
     is no dictionary to walk, thus the added cost buys nothing.
     """
     return sha256_hex(secret)
-
-
-def mint_token(player: str, *, secret: str | None = None) -> tuple[str, str]:
-    """One invite token and the digest for the store.
-
-    secret arrives as an argument in the manner of open_day's
-    pick_seed: the random path is the default, and a fixed secret
-    makes a byte-equal compare of two worlds possible. The caller
-    answers the token one time and stores the digest alone.
-    """
-    chosen = secrets.token_urlsafe(SECRET_BYTES) if secret is None else secret
-    return f"{player}.{chosen}", token_hash(chosen)
 
 
 def parse_token(token: object) -> tuple[str, str] | None:
@@ -72,15 +66,6 @@ def parse_token(token: object) -> tuple[str, str] | None:
         return None
     found = _TOKEN_RULE.fullmatch(token)
     return None if found is None else (found.group(1), found.group(2))
-
-
-def secret_matches(secret: str, stored_hash: str) -> bool:
-    """Compare one invite secret against the stored digest.
-
-    The compare runs on two hex digests of equal width, thus the
-    stored value gives up no content and no length.
-    """
-    return secrets.compare_digest(token_hash(secret), stored_hash)
 
 
 def constant_time_equal(given: object, expected: str) -> bool:
@@ -139,9 +124,8 @@ def mint_session(player: str, *,
                  secret: str | None = None) -> tuple[str, str]:
     """One session value for the cookie and the digest the store keys on.
 
-    The value has the invite token's shape, thus parse_token divides
-    it. secret arrives as an argument for the tests that pin a
-    session, in the manner of mint_token.
+    parse_token divides the value. secret arrives as an argument for
+    the tests that pin a session.
     """
     chosen = secrets.token_urlsafe(SECRET_BYTES) if secret is None else secret
     return f"{player}.{chosen}", token_hash(chosen)
@@ -174,6 +158,40 @@ def display_device_code(code: str) -> str:
 def device_code_hash(code: str) -> str:
     """The digest the store keys a device code on."""
     return sha256_hex(f"device-code:{code}")
+
+
+def make_recovery_code() -> str:
+    """One new recovery code: 24 random characters of the alphabet."""
+    return "".join(secrets.choice(DEVICE_CODE_ALPHABET)
+                   for _ in range(RECOVERY_CODE_LENGTH))
+
+
+def normalize_recovery_code(text: object) -> str | None:
+    """A typed recovery code in its stored shape, or None for other text.
+
+    Capitals, spaces, and hyphens do not count, in the manner of the
+    device code. The length cap comes before the work, because the
+    text arrives from the network.
+    """
+    if not isinstance(text, str) or len(text) > 64:
+        return None
+    compact = "".join(text.split()).replace("-", "").upper()
+    return compact if _RECOVERY_CODE_RULE.fullmatch(compact) else None
+
+
+def display_recovery_code(code: str) -> str:
+    """The code in six groups of four, for a person to copy."""
+    return "-".join(code[start:start + 4]
+                    for start in range(0, RECOVERY_CODE_LENGTH, 4))
+
+
+def recovery_code_hash(code: str) -> str:
+    """The digest the store keeps for one recovery code.
+
+    The prefix keeps this digest apart from the digest of a device
+    code and of a session secret with the same characters.
+    """
+    return sha256_hex(f"recovery-code:{code}")
 
 
 def device_label(user_agent: object) -> str:

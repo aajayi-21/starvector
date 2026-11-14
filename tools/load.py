@@ -131,7 +131,7 @@ def _build_world(root: Path, *, players: int, pool: int,
     instant = datetime.datetime.now(datetime.UTC)
     for number in range(players):
         name = f"p{number:05d}"
-        player_commands.mint_player(config, player=name, display_name=name,
+        player_commands.make_player(config, player=name, display_name=name,
                                     clock=clock)
         sessions[name] = access.open_session(
             root / "store", name, user_agent="load", instant=instant)

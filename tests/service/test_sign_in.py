@@ -12,15 +12,17 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from svc_fixture import QuickDigester, mint_player
 from svc_fixture import (FIXED_CLOCK, build_service_fixture,
                          pinned_session_value, plant_session)
 
-from service import access, auth, limits, players, store
+from service import access, auth, limits, players, signin, store
 from service.day import open_day
 from service.server import create_app, open_world_refusal, start_refusal
 
 DAY = "2026-08-12"
 OPERATOR_TOKEN = "test-operator-token"
+PASSWORD = "correct horse battery"
 ADE = f"ade.{'1' * 43}"
 BRU = f"bru.{'2' * 43}"
 IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
@@ -36,11 +38,19 @@ def _world(tmp_path):
     config = fixture["service_config"]
     for token, label in ((ADE, "Ade"), (BRU, "Bru")):
         name, secret = auth.parse_token(token)
-        players.mint_player(config, player=name, display_name=label,
+        mint_player(config, player=name, display_name=label,
                             clock=lambda: FIXED_CLOCK, secret=secret)
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)
-    app = create_app(config, operator_token=OPERATOR_TOKEN)
+    # Each player has a password, and a device signs in with it (spec
+    # A2). The invite of before that spec is gone.
+    for name in ("ade", "bru"):
+        signin.set_password(
+            fixture["store"], player=name, current_password=None,
+            password=PASSWORD, digester=QuickDigester(), usual=frozenset(),
+            instant=datetime.datetime.now(datetime.UTC))
+    app = create_app(config, operator_token=OPERATOR_TOKEN,
+                     digester=QuickDigester(), usual_passwords=frozenset())
     return fixture, app
 
 
@@ -53,10 +63,17 @@ def _client(app, cookie: str | None = None,
     return client
 
 
+def _sign_in(client: TestClient, name: str):
+    return client.post("/api/signin",
+                       json={"username": name, "password": PASSWORD},
+                       headers={"origin": "https://testserver"})
+
+
 def _joined(app, token: str, user_agent: str = MAC_CHROME) -> TestClient:
+    """A new device, signed in as the player that the token names."""
+    name, _secret = auth.parse_token(token)
     client = _client(app, user_agent=user_agent)
-    assert client.get(f"/join/{token}",
-                      follow_redirects=False).status_code == 302
+    assert _sign_in(client, name).status_code == 200
     return client
 
 
@@ -198,36 +215,56 @@ def test_a_session_past_its_life_stops(tmp_path, monkeypatch) -> None:
     assert laptop.get("/api/me").status_code == 401
 
 
-def test_a_join_from_a_signed_in_browser_switches_players(tmp_path) -> None:
+def test_a_sign_in_from_a_signed_in_browser_switches_players(
+        tmp_path) -> None:
     fixture, app = _world(tmp_path)
     browser = _joined(app, ADE)
     assert browser.get("/api/me").json()["player"] == "ade"
-    assert browser.get(f"/join/{BRU}",
-                       follow_redirects=False).status_code == 302
+    assert _sign_in(browser, "bru").status_code == 200
     assert browser.get("/api/me").json()["player"] == "bru"
-    # The ade session stays - it is a device, and a second invite does
-    # not sign it out from a different device.
+    # The ade session stays - it is a device, and a second sign-in
+    # does not sign it out from a different device.
     assert len(store.list_sessions(fixture["store"], "ade")) == 1
 
 
-def test_revoke_ends_each_session_and_rotate_ends_none(tmp_path) -> None:
+def test_the_invite_address_opens_nothing(tmp_path) -> None:
+    _fixture, app = _world(tmp_path)
+    for token in (ADE, "not-a-token", f"nobody.{'s' * 43}"):
+        answer = _client(app).get(f"/join/{token}", follow_redirects=False)
+        assert answer.status_code == 404
+        assert answer.content == b'{"detail":"not found"}'
+        assert "set-cookie" not in answer.headers
+
+
+def test_revoke_ends_each_session_and_restore_gives_a_code(
+        tmp_path, monkeypatch) -> None:
+    from service import server
+
     fixture, app = _world(tmp_path)
     config = fixture["service_config"]
     laptop = _joined(app, ADE)
-    players.rotate_player(config, player="ade")
-    # A new invite leaves the signed-in device signed in.
-    assert laptop.get("/api/me").status_code == 200
-    # The earlier invite stops.
-    assert _client(app).get(f"/join/{ADE}",
-                            follow_redirects=False).status_code == 401
     players.revoke_player(config, player="ade")
     assert laptop.get("/api/me").status_code == 401
     assert store.list_sessions(fixture["store"], "ade") == ()
-    # Putting the player back gives a new invite and no device of
-    # before.
-    _record, token = players.restore_player(config, player="ade")
+    # A revoked account does not sign in.
+    assert _sign_in(_client(app), "ade").status_code == 401
+    # Putting the player back gives an operator's code with its hold
+    # and no device of before.
+    now = datetime.datetime.now(datetime.UTC)
+    record, code, usable_at = players.restore_player(
+        config, player="ade", instant=now)
+    assert record.status == "active"
+    assert usable_at == (now + datetime.timedelta(hours=24)).isoformat()
     assert laptop.get("/api/me").status_code == 401
-    assert _joined(app, token).get("/api/me").status_code == 200
+    attempt = {"username": "ade", "recovery_code": code,
+               "password": "a new good password"}
+    origin = {"origin": "https://testserver"}
+    assert _client(app).post("/api/recover", json=attempt,
+                             headers=origin).status_code == 401
+    monkeypatch.setattr(server, "utc_now",
+                        lambda: now + datetime.timedelta(hours=24))
+    assert _client(app).post("/api/recover", json=attempt,
+                             headers=origin).status_code == 200
 
 
 def test_the_operator_signout_and_session_list(tmp_path) -> None:
@@ -259,7 +296,7 @@ def test_a_device_code_signs_one_more_device_in(tmp_path) -> None:
     typed = issued["code"].lower().replace("-", " ")
     answer = phone.post("/api/device-code/redeem", json={"code": typed})
     assert answer.status_code == 200
-    assert answer.json() == {"player": "ade", "display_name": "Ade"}
+    assert answer.json() == {"player": "ade", "display_name": "ade"}
     assert phone.get("/api/me").json()["player"] == "ade"
     labels = [row["label"] for row in
               phone.get("/api/sessions").json()["sessions"]]
@@ -371,7 +408,7 @@ def test_prune_removes_what_is_past_its_life(tmp_path) -> None:
 def test_a_revoked_player_gets_no_session_from_the_door(tmp_path) -> None:
     fixture = build_service_fixture(tmp_path)
     config = fixture["service_config"]
-    players.mint_player(config, player="ade", display_name="Ade",
+    mint_player(config, player="ade", display_name="Ade",
                         clock=lambda: FIXED_CLOCK)
     players.revoke_player(config, player="ade")
     client = TestClient(create_app(config, dev_mode=True,

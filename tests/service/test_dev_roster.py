@@ -7,6 +7,7 @@ dev gate and answers the constant 404 in the other conditions.
 
 from fastapi.testclient import TestClient
 
+from svc_fixture import mint_player
 from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
 
 from service import players, store
@@ -33,7 +34,7 @@ def _world(tmp_path, *, dev_mode=True, minted=True):
     if minted:
         for name, label, secret in (("ade", "Ade", "1" * 43),
                                     ("bru", "Bru Lin", "2" * 43)):
-            players.mint_player(config, player=name, display_name=label,
+            mint_player(config, player=name, display_name=label,
                                 clock=lambda: FIXED_CLOCK, secret=secret)
     open_day(config, date=FIRST_DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)

@@ -10,6 +10,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from svc_fixture import mint_player
 from svc_fixture import FIXED_CLOCK, build_service_fixture
 
 from service import auth, players, store
@@ -24,7 +25,7 @@ BEARER = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
 def _world(tmp_path, *, dev_mode: bool, minted=()):
     fixture = build_service_fixture(tmp_path)
     for name, label, secret in minted:
-        players.mint_player(fixture["service_config"], player=name,
+        mint_player(fixture["service_config"], player=name,
                             display_name=label,
                             clock=lambda: FIXED_CLOCK, secret=secret)
     open_day(fixture["service_config"], date=DAY,
@@ -63,14 +64,17 @@ def test_the_door_mints_and_signs_in(tmp_path) -> None:
     answer = client.post("/api/door", json={"player": "walkin",
                                             "display_name": "Walk In"})
     assert answer.status_code == 200
+    # The answer names the username (spec A2 ruling 3). The typed
+    # label stays in the record and shows on no screen.
     assert answer.json() == {"player": "walkin",
-                             "display_name": "Walk In"}
+                             "display_name": "walkin"}
     assert auth.SESSION_COOKIE in answer.headers["set-cookie"]
     me = client.get("/api/me").json()
     assert me["player"] == "walkin"
-    assert me["display_name"] == "Walk In"
+    assert me["display_name"] == "walkin"
     record = store.read_player_record(fixture["store"], "walkin")
     assert record.status == "active"
+    assert record.display_name == "Walk In"
 
 
 def test_the_first_door_mint_flips_access_control_on(tmp_path) -> None:
@@ -97,7 +101,7 @@ def test_the_door_adds_a_session_and_keeps_the_others(tmp_path) -> None:
     second = client.post("/api/door", json={"player": "ade"}, headers=BEARER)
     assert second.status_code == 200
     # The label stays the minted one - the door edits no record.
-    assert second.json()["display_name"] == "Ade"
+    assert second.json()["display_name"] == "ade"
     assert store.read_player_record(root, "ade").token_hash == digest_before
     assert len(store.list_sessions(root, "ade")) == 2
     # The first device continues to read as ade.
@@ -148,7 +152,7 @@ def test_a_mint_race_answers_a_refusal_and_not_a_crash(
         raise store.StoreError("the store is one-write and the file "
                                "exists")
 
-    monkeypatch.setattr(players, "mint_player", collide)
+    monkeypatch.setattr(players, "make_player", collide)
     answer = client.post("/api/door", json={"player": "walkin"})
     assert answer.status_code == 409
     assert answer.json()["cause"] == "refused"
@@ -158,7 +162,7 @@ def test_the_door_mint_and_the_console_mint_write_one_shape(
         tmp_path) -> None:
     fixture, client = _world(tmp_path, dev_mode=True)
     client.post("/api/door", json={"player": "walkin"})
-    players.mint_player(fixture["service_config"], player="cyd",
+    mint_player(fixture["service_config"], player="cyd",
                         display_name="Cyd",
                         clock=lambda: FIXED_CLOCK, secret="3" * 43)
     raw = {}

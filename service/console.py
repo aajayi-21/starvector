@@ -15,7 +15,7 @@ purpose, and the edge refuses each dev path.
 import datetime
 from pathlib import Path
 
-from service import access, rollover, schedule, store
+from service import access, rollover, schedule, signin, store
 
 # The recent runs the automatic-days tab shows.
 RUN_LIMIT = 20
@@ -111,6 +111,10 @@ def player_detail(root: Path, player: str,
         else account.updated_at,
         "sessions": sessions,
         "device_codes": codes,
+        # Spec A2: if the player has a password, and the two times of a
+        # live operator's code. No code and no digest is here.
+        "has_password": signin.has_password(root, player),
+        "operator_code": signin.operator_code_view(root, player),
         "sends": send_counts(root).get(player, 0),
     }
 

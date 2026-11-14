@@ -7,8 +7,8 @@ validation echo with no score in it.
 
 This process serves the API and no page. The player app and the
 operator console are the built web app of spec W1, which the edge
-serves from web/dist and which reaches this process at /api,
-/image, and the invite path. The hand-written pages that stood in before
+serves from web/dist and which reaches this process at /api and
+/image. The hand-written pages that stood in before
 that app existed retired on 2026-08-16, thus GET / answers 404
 here and the app owns each path a person types.
 """
@@ -17,12 +17,15 @@ import argparse
 import asyncio
 import datetime
 import json
+import logging
 import math
 import os
 import secrets
 import sqlite3
 import sys
 import threading
+import urllib.parse
+from collections.abc import Container
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -38,8 +41,8 @@ from pipeline.config import (fusion_weights, intake_gates,
 from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
-from service import (access, auth, console, credits, limits, rollover,
-                     rollup, schedule, store)
+from service import (access, auth, console, credits, digests, limits,
+                     passwords, rollover, rollup, schedule, signin, store)
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 
@@ -67,6 +70,14 @@ _BAD_CODE = b'{"cause":"bad-code"}'
 _TOO_MANY = b'{"cause":"too-many-attempts"}'
 _NO_SESSION = b'{"detail":"no session"}'
 _NO_ACCOUNTS = b'{"cause":"no-accounts"}'
+# The password refusals (spec A2 section 8): one body for each pair
+# that does not sign in, one for each recovery that does not work, and
+# one for a current password that does not agree.
+_BAD_SIGN_IN = b'{"cause":"sign-in"}'
+_BAD_RECOVERY = b'{"cause":"recovery"}'
+_WRONG_PASSWORD = b'{"cause":"password"}'
+_BAD_ORIGIN = b'{"cause":"origin"}'
+_BAD_CONTENT_TYPE = b'{"cause":"content-type"}'
 # The practice limit (spec PL1 section 1).
 _PRACTICE_LIMIT = b'{"cause":"practice-limit"}'
 
@@ -115,10 +126,9 @@ _SKILL_INACTIVE = json.dumps({
 _OPERATOR_ONLY = ("scoring_config_hash", "preparation_version_id",
                   "rank_seed", "baseline", "stopping_monitor")
 
-# The digest the caller path compares against with no record
-# stored, thus an unknown name costs the same work as an incorrect
-# secret (the architecture's section 22 hygiene rule).
-_ABSENT_HASH = "0" * 64
+# Error lines of the password paths. A line names the record that
+# stopped a move and holds no password, no code, and no digest.
+credential_log = logging.getLogger("starvector.credentials")
 
 
 def _skill_value(ps: list[float]) -> dict | None:
@@ -221,6 +231,8 @@ def create_app(service_config: ServiceConfig,
                cookie_secure: bool = True,
                operator_token: str | None = None,
                practice_limiter: limits.WindowLimiter | None = None,
+               digester: digests.PasswordDigester | None = None,
+               usual_passwords: Container[str] | None = None,
                ) -> FastAPI:
     """The app factory - tests run it through TestClient.
 
@@ -244,16 +256,40 @@ def create_app(service_config: ServiceConfig,
     practice_limiter is an argument for the tests. The default holds
     the values of spec PL1 section 1.
 
+    digester computes the password digests (spec A2 section 5.2). It
+    arrives as an argument, because the start-up path reads the pepper
+    from the environment. With None the server has no password paths:
+    each of them answers the constant 404. usual_passwords is the
+    table of usual passwords, and the default reads the committed
+    file.
+
     Raises ServiceConfigError when the store holds player records
     and no operator token is set. A quiet hole is worse than a loud
-    stop (spec M1 section 4).
+    stop (spec M1 section 4). With sign-up open it also raises with no
+    operator token, with no digester, and with a stored player that
+    has no name claim (spec A2 section 10).
     """
-    if store.any_player(Path(service_config.store_root)) \
+    signup_open = service_config.signup == "open"
+    if (signup_open or store.any_player(Path(service_config.store_root))) \
             and not operator_token:
         raise ServiceConfigError(
-            "the store holds player records and the operator token is "
-            "not set - put STARVECTOR_OPERATOR_TOKEN in the deployment "
+            "the store holds player records or sign-up is open, and the "
+            "operator token is not set - put STARVECTOR_OPERATOR_TOKEN in "
+            "the deployment environment file")
+    if signup_open and digester is None:
+        raise ServiceConfigError(
+            "sign-up is open and the password pepper is not set - put "
+            f"{digests.PEPPER_ENVIRONMENT_NAME} in the deployment "
             "environment file")
+    if signup_open:
+        unclaimed = signin.unclaimed_players(Path(service_config.store_root))
+        if unclaimed:
+            raise ServiceConfigError(
+                "sign-up is open and these stored players have no name "
+                f"claim: {', '.join(unclaimed)} - run python -m "
+                "service.players claim-names")
+    if digester is not None and usual_passwords is None:
+        usual_passwords = passwords.load_usual_passwords()
     scoring_config = load_scoring_config(Path(service_config.scoring_config))
     gates: IntakeGates = intake_gates(scoring_config)
     weights: Weights = fusion_weights(scoring_config)
@@ -282,38 +318,31 @@ def create_app(service_config: ServiceConfig,
     app.add_middleware(limits.BodyCap, exempt=("/api/account/avatar",))
     code_limiter = limits.WindowLimiter()
     practice_counts = practice_limiter or limits.practice_limiter()
+    # The password counters (spec A2 section 9.2). Each failure counts
+    # for its client address and for its username.
+    address_failures = limits.WindowLimiter()
+    name_failures = limits.name_failure_limiter()
+    signup_counts = limits.signup_limiter()
+
+    def _access_on() -> bool:
+        """Access control is on: a caller needs a session.
+
+        Ruling 7 of spec M1 turns it on at the first stored player
+        record. Open sign-up also turns it on, with no record stored:
+        no caller then plays as the configured player (spec A2 section
+        10.2).
+        """
+        return signup_open or store.any_player(root)
 
     def _unauthorized() -> Response:
         return Response(content=_UNAUTHORIZED, status_code=401,
                         media_type="application/json")
 
-    def _resolve_token(token: object) -> str | Response:
-        """The player one invite or cookie names, or the refusal.
-
-        Divides the token at its one separator, reads that single
-        player record, and compares the digests in constant time.
-        The compare also runs with no record stored, thus an
-        unknown name costs the same work as an incorrect secret,
-        and the refusal says nothing about who is stored. The lookup
-        reads one file and walks nothing, which is what lets the
-        shape hold thousands of players (spec M1 section 7).
-        """
-        parsed = auth.parse_token(token)
-        if parsed is None:
-            return _unauthorized()
-        name, secret = parsed
-        record = store.read_player_or_none(root, name)
-        stored_hash = _ABSENT_HASH if record is None else record.token_hash
-        agreed = auth.secret_matches(secret, stored_hash)
-        if record is None or record.status != "active" or not agreed:
-            return _unauthorized()
-        return name
-
     def _bearer_ok(request: Request) -> bool:
         """This holds the operator token.
 
-        Not agreed with no configured token, thus the mint refuses
-        in each world where nobody set the operator plane up.
+        Not agreed with no configured token, thus each bearer path
+        refuses in each world where nobody set the operator plane up.
         """
         if not operator_token:
             return False
@@ -328,9 +357,10 @@ def create_app(service_config: ServiceConfig,
         Ruling 7 of spec M1: with no stored player record nothing
         holds credentials, thus the day commands and the console
         answer as they do today and the offline runbook wants no
-        edit. The first mint closes this.
+        edit. The first player record closes this, and open sign-up
+        closes it too (spec A2 section 10.2).
         """
-        return not store.any_player(root) or _bearer_ok(request)
+        return not _access_on() or _bearer_ok(request)
 
     def _caller(request: Request) -> str | Response:
         """The player behind the cookie, or the constant refusal.
@@ -344,7 +374,7 @@ def create_app(service_config: ServiceConfig,
         thus
         stop at the next read.
         """
-        if not store.any_player(root):
+        if not _access_on():
             return player
         resolved = access.resolve_session(
             root, request.cookies.get(auth.SESSION_COOKIE), utc_now())
@@ -355,31 +385,12 @@ def create_app(service_config: ServiceConfig,
             value, secure=cookie_secure)}
 
     @app.get("/join/{token}")
-    def join(request: Request, token: str) -> Response:
-        """The invite gate (spec M1 section 4, spec BR1 section 4).
-
-        On agreement the answer moves the browser to the app and
-        sets a new session cookie - the invite itself does not ride in
-        a cookie. A browser that holds a live session of the same
-        player keeps it, thus a second visit to the invite adds no
-        session. A refusal is one constant body, equal for a token
-        that does not parse, an unknown player, an incorrect secret,
-        and a revoked record.
-        """
-        resolved = _resolve_token(token)
-        if isinstance(resolved, Response):
-            return resolved
-        instant = utc_now()
-        headers = {"location": "/"}
-        current = access.resolve_session(
-            root, request.cookies.get(auth.SESSION_COOKIE), instant)
-        if current != resolved:
-            value = access.open_session(
-                root, resolved,
-                user_agent=request.headers.get("user-agent"),
-                instant=instant)
-            headers.update(_session_cookie(value))
-        return Response(status_code=302, headers=headers)
+    def join(token: str) -> Response:
+        """The invite address of before spec A2. The invite is gone
+        (ruling 2 of that spec), and each token gets the constant 404:
+        a stored invite digest opens nothing."""
+        return Response(content=_DEV_OFF, status_code=404,
+                        media_type="application/json")
 
     @app.post("/api/session/signout")
     def sign_out(request: Request) -> Response:
@@ -404,7 +415,7 @@ def create_app(service_config: ServiceConfig,
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
-        if not store.any_player(root):
+        if not _access_on():
             return JSONResponse({"sessions": []})
         return JSONResponse({"sessions": access.session_rows(
             root, caller, _current_digest(request), utc_now())})
@@ -417,7 +428,7 @@ def create_app(service_config: ServiceConfig,
         if isinstance(caller, Response):
             return caller
         try:
-            removed = store.any_player(root) \
+            removed = _access_on() \
                 and store.delete_session(root, caller, session_id)
         except store.StoreError:
             removed = False
@@ -432,7 +443,7 @@ def create_app(service_config: ServiceConfig,
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
-        if not store.any_player(root):
+        if not _access_on():
             return JSONResponse({"removed": 0})
         removed = store.delete_player_sessions(
             root, caller, keep=_current_digest(request))
@@ -448,7 +459,7 @@ def create_app(service_config: ServiceConfig,
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
-        if not store.any_player(root):
+        if not _access_on():
             return Response(content=_NO_ACCOUNTS, status_code=409,
                             media_type="application/json")
         code, expires_at = access.issue_device_code(root, caller, utc_now())
@@ -490,6 +501,258 @@ def create_app(service_config: ServiceConfig,
                              "display_name": _label_of(redeemed)},
                             headers=_session_cookie(value))
 
+    # -- accounts with a username and a password (spec A2 section 8) --
+
+    def _constant(body: bytes, status: int) -> Response:
+        return Response(content=body, status_code=status,
+                        media_type="application/json")
+
+    def _address_key(request: Request) -> str:
+        return limits.client_key(
+            request.client.host if request.client else None,
+            request.headers.get("x-forwarded-for"))
+
+    async def _credential_body(request: Request) -> dict | Response:
+        """The JSON object of one credential POST, or the refusal.
+
+        The header that names the site of the page must name the
+        host that the browser spoke to. A page of a different site
+        thus cannot sign this browser in to an account that it picks,
+        which SameSite=Lax does not stop for a POST with no cookie.
+        The media type must be JSON, which plain HTML of a different
+        site cannot send.
+        """
+        origin = request.headers.get("origin")
+        host = request.headers.get("host")
+        if not origin or not host \
+                or urllib.parse.urlsplit(origin).netloc != host:
+            return _constant(_BAD_ORIGIN, 403)
+        media_type = request.headers.get("content-type", "")
+        if media_type.split(";")[0].strip().lower() != "application/json":
+            return _constant(_BAD_CONTENT_TYPE, 415)
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body must be a JSON object"},
+                status_code=400)
+        return body
+
+    def _failures_allowed(address: str, name: str) -> bool:
+        return address_failures.allowed(address) \
+            and name_failures.allowed(name)
+
+    def _count_failure(address: str, name: str) -> None:
+        address_failures.record(address)
+        name_failures.record(name)
+
+    def _signed_in(player_name: str, request: Request,
+                   extra: dict | None = None, status: int = 200) -> Response:
+        """Open a session for the player and answer with its cookie."""
+        value = access.open_session(
+            root, player_name, user_agent=request.headers.get("user-agent"),
+            instant=utc_now())
+        headers = _session_cookie(value)
+        body = {"player": player_name,
+                "display_name": _label_of(player_name)}
+        if extra:
+            body.update(extra)
+            # A recovery code is in this answer one time.
+            headers["cache-control"] = "no-store"
+        return JSONResponse(body, status_code=status, headers=headers)
+
+    @app.get("/api/signup")
+    def signup_view() -> Response:
+        """Does this server make accounts (spec A2 section 8). The gate
+        screen reads this one time. With sign-up closed the answer is
+        the constant 404."""
+        if not signup_open:
+            return _constant(_DEV_OFF, 404)
+        return JSONResponse({"open": True})
+
+    @app.post("/api/signup")
+    async def signup_make(request: Request) -> Response:
+        """Make one account and sign this device in (spec A2 section
+        3.1).
+
+        The cap counts the accounts made, for the client address and
+        for the process, and stands before the store is read. The
+        digest and the store writes are away from the loop thread.
+        """
+        if not signup_open:
+            return _constant(_DEV_OFF, 404)
+        body = await _credential_body(request)
+        if isinstance(body, Response):
+            return body
+        address = _address_key(request)
+        if not signup_counts.allowed(address):
+            return _constant(_TOO_MANY, 429)
+        try:
+            name, code = await asyncio.to_thread(
+                signin.sign_up, root, username=body.get("username"),
+                password=body.get("password"), digester=digester,
+                usual=usual_passwords, instant=utc_now())
+        except signin.Refused as refused:
+            status = 409 if refused.cause == signin.NAME_TAKEN else 400
+            return JSONResponse({"cause": refused.cause}, status_code=status)
+        signup_counts.record(address)
+        return _signed_in(
+            name, request, status=201,
+            extra={"recovery_code": auth.display_recovery_code(code)})
+
+    @app.post("/api/signin")
+    async def signin_open(request: Request) -> Response:
+        """Open a session for a username and a password (spec A2
+        section 3.2).
+
+        Each pair that does not sign in gets one constant body and
+        counts as one failure, for the address and for the username.
+        A credential record that does not parse is an error line and
+        the same constant body: it does not read as "no password".
+        """
+        if digester is None:
+            return _constant(_DEV_OFF, 404)
+        body = await _credential_body(request)
+        if isinstance(body, Response):
+            return body
+        address = _address_key(request)
+        name = limits.name_key(body.get("username"))
+        if not _failures_allowed(address, name):
+            return _constant(_TOO_MANY, 429)
+        try:
+            found = await asyncio.to_thread(
+                signin.sign_in, root, username=body.get("username"),
+                password=body.get("password"), digester=digester,
+                instant=utc_now())
+        except (store.StoreError, ValueError) as error:
+            credential_log.error("sign-in stopped on a stored record: %s",
+                                 error)
+            found = None
+        if found is None:
+            _count_failure(address, name)
+            return _constant(_BAD_SIGN_IN, 401)
+        return _signed_in(found, request)
+
+    @app.post("/api/recover")
+    async def recover_account(request: Request) -> Response:
+        """Trade a recovery code for a new password (spec A2 section
+        3.3). One constant body covers each recovery that does not
+        work, and each of them counts as one failure."""
+        if digester is None:
+            return _constant(_DEV_OFF, 404)
+        body = await _credential_body(request)
+        if isinstance(body, Response):
+            return body
+        address = _address_key(request)
+        name = limits.name_key(body.get("username"))
+        if not _failures_allowed(address, name):
+            return _constant(_TOO_MANY, 429)
+        try:
+            found = await asyncio.to_thread(
+                signin.recover, root, username=body.get("username"),
+                recovery_code=body.get("recovery_code"),
+                password=body.get("password"), digester=digester,
+                usual=usual_passwords, instant=utc_now())
+        except signin.Refused as refused:
+            return JSONResponse({"cause": refused.cause}, status_code=400)
+        except (store.StoreError, ValueError) as error:
+            credential_log.error("recovery stopped on a stored record: %s",
+                                 error)
+            found = None
+        if found is None:
+            _count_failure(address, name)
+            return _constant(_BAD_RECOVERY, 401)
+        player_name, new_code = found
+        return _signed_in(
+            player_name, request,
+            extra={"recovery_code": auth.display_recovery_code(new_code)})
+
+    async def _account_move(request: Request) -> tuple[str, dict] | Response:
+        """The caller and the body of one account POST, or the refusal."""
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        if digester is None:
+            return _constant(_DEV_OFF, 404)
+        if not _access_on():
+            return _constant(_NO_ACCOUNTS, 409)
+        body = await _credential_body(request)
+        if isinstance(body, Response):
+            return body
+        return caller, body
+
+    @app.post("/api/account/password")
+    async def account_password(request: Request) -> Response:
+        """Replace the caller's password (spec A2 section 3.4).
+
+        A caller with no password - a player from before spec A2 -
+        sets the first one with the session alone, and the answer
+        holds the first recovery code. Each other device signs out.
+        """
+        moved = await _account_move(request)
+        if isinstance(moved, Response):
+            return moved
+        caller, body = moved
+        address = _address_key(request)
+        if not _failures_allowed(address, caller):
+            return _constant(_TOO_MANY, 429)
+        try:
+            code = await asyncio.to_thread(
+                signin.set_password, root, player=caller,
+                current_password=body.get("current_password"),
+                password=body.get("password"), digester=digester,
+                usual=usual_passwords, instant=utc_now())
+        except signin.Refused as refused:
+            return JSONResponse({"cause": refused.cause}, status_code=400)
+        except signin.WrongPassword:
+            _count_failure(address, caller)
+            return _constant(_WRONG_PASSWORD, 403)
+        removed = store.delete_player_sessions(
+            root, caller, keep=_current_digest(request))
+        return JSONResponse(
+            {"changed": True, "signed_out": removed,
+             "recovery_code": None if code is None
+             else auth.display_recovery_code(code)},
+            headers={"cache-control": "no-store"})
+
+    @app.post("/api/account/recovery-code")
+    async def account_recovery_code(request: Request) -> Response:
+        """A new recovery code for the caller. The earlier one is dead."""
+        moved = await _account_move(request)
+        if isinstance(moved, Response):
+            return moved
+        caller, body = moved
+        address = _address_key(request)
+        if not _failures_allowed(address, caller):
+            return _constant(_TOO_MANY, 429)
+        try:
+            code = await asyncio.to_thread(
+                signin.new_recovery_code, root, player=caller,
+                current_password=body.get("current_password"),
+                digester=digester, instant=utc_now())
+        except signin.WrongPassword:
+            _count_failure(address, caller)
+            return _constant(_WRONG_PASSWORD, 403)
+        return JSONResponse(
+            {"recovery_code": auth.display_recovery_code(code)},
+            headers={"cache-control": "no-store"})
+
+    @app.post("/api/account/recovery-code/stop")
+    async def account_recovery_stop(request: Request) -> Response:
+        """Remove the operator's code of the caller (spec A2 section
+        6.1). The session is sufficient, and the answer is the same
+        with a code and with none."""
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        if _access_on():
+            await asyncio.to_thread(signin.stop_operator_code, root,
+                                    player=caller, instant=utc_now())
+        return JSONResponse({"stopped": True})
+
     @app.get("/api/door")
     def door_view(request: Request) -> Response:
         """Is the open door on (spec A1 section 4). The gate screen
@@ -508,8 +771,8 @@ def create_app(service_config: ServiceConfig,
         Development alone. The gate is dev_mode and the operator
         gate (spec PL1 section 5): the dev unit shares the production
         store, thus a typed name with no bearer can sign in as each
-        player. An unknown name mints, an active name makes a new
-        session, and a revoked name is refused: the door cannot put a
+        player. An unknown name gets a record, an active name makes a
+        new session, and a revoked name is refused: the door cannot put a
         revoked player back.
         """
         from service import players
@@ -544,9 +807,9 @@ def create_app(service_config: ServiceConfig,
         record = store.read_player_or_none(root, name)
         try:
             if record is None:
-                # The mint's invite is not answered: the door hands
-                # out a session and nothing else.
-                record, _invite = players.mint_player(
+                # A door record has no password: the door hands out
+                # a session and nothing else (spec A2 section 10.2).
+                record = players.make_player(
                     service_config, player=name, display_name=label)
             elif record.status != "active":
                 return JSONResponse({"cause": "revoked"}, status_code=409)
@@ -558,15 +821,15 @@ def create_app(service_config: ServiceConfig,
                 user_agent=request.headers.get("user-agent"),
                 instant=utc_now())
         except (store.StoreError, access.AccessError) as error:
-            # The read above and the write here can straddle a mint
-            # or a revoke from a different process - the CLI on the
-            # box. The store's own guards refuse, and the door says
+            # The read above and the write here can straddle a
+            # sign-up or a revoke from a different process - the
+            # command line on the box. The store's own guards refuse, and the door says
             # so rather than crashing.
             return JSONResponse({"cause": "refused",
                                  "detail": str(error)}, status_code=409)
         return JSONResponse(
             {"player": record.player,
-             "display_name": record.display_name},
+             "display_name": _label_of(record.player)},
             headers=_session_cookie(value))
 
     # The resident scoring context (P5 R1): wired lazily one time
@@ -803,13 +1066,6 @@ def create_app(service_config: ServiceConfig,
                                 status_code=404)
         return record
 
-    def _invite_value(record: store.PlayerRecord, token: str) -> dict:
-        # The same shape as the mint: a path and not an address, and
-        # the token one time.
-        return {"player": record.player,
-                "display_name": record.display_name,
-                "token": token, "join_path": f"/join/{token}"}
-
     @app.get("/api/dev/day")
     def dev_day(request: Request, day: str | None = None) -> Response:
         refused = _dev_refused(request)
@@ -953,7 +1209,7 @@ def create_app(service_config: ServiceConfig,
         return Response(content=data, media_type=media_type)
 
     def _player_command(name: str, command: str) -> Response:
-        """The commands of the players module, and a device code."""
+        """The commands of the players module (spec A2 section 10.1)."""
         from service import players
 
         record = _stored_player(name)
@@ -961,14 +1217,23 @@ def create_app(service_config: ServiceConfig,
             return record
         try:
             match command:
-                case "rotate":
-                    turned, token = players.rotate_player(service_config,
-                                                          player=name)
-                    return JSONResponse(_invite_value(turned, token))
                 case "restore":
-                    turned, token = players.restore_player(service_config,
-                                                           player=name)
-                    return JSONResponse(_invite_value(turned, token))
+                    restored, code, usable_at = players.restore_player(
+                        service_config, player=name, instant=utc_now())
+                    return JSONResponse(
+                        {"player": restored.player,
+                         "status": restored.status,
+                         "recovery_code": auth.display_recovery_code(code),
+                         "usable_at": usable_at},
+                        headers={"cache-control": "no-store"})
+                case "recovery-code":
+                    code, usable_at = players.operator_code(
+                        service_config, player=name, instant=utc_now())
+                    return JSONResponse(
+                        {"player": name,
+                         "recovery_code": auth.display_recovery_code(code),
+                         "usable_at": usable_at},
+                        headers={"cache-control": "no-store"})
                 case "revoke":
                     revoked = players.revoke_player(service_config,
                                                     player=name)
@@ -978,29 +1243,21 @@ def create_app(service_config: ServiceConfig,
                     ended = players.signout_player(service_config,
                                                    player=name)
                     return JSONResponse({"player": name, "ended": ended})
-                case "device-code":
-                    if record.status != "active":
-                        raise store.StoreError(
-                            f"player {name!r} is {record.status} - a "
-                            "device code is for an active player")
-                    code, expires_at = access.issue_device_code(
-                        root, name, utc_now())
-                    return JSONResponse({
-                        "player": name, "code": code,
-                        "display": auth.display_device_code(code),
-                        "expires_at": expires_at})
                 case _:
                     raise ValueError(f"unknown command {command!r}")
         except store.StoreError as error:
             return JSONResponse({"cause": "refused", "detail": str(error)},
                                 status_code=409)
 
-    @app.post("/api/dev/players/{name}/rotate")
-    def dev_player_rotate(request: Request, name: str) -> Response:
+    @app.post("/api/dev/players/{name}/recovery-code")
+    def dev_player_recovery_code(request: Request, name: str) -> Response:
+        """The operator's recovery code (spec A2 section 6.1): its own
+        slot, a hold of 24 hours, and a notice on the player's
+        devices."""
         refused = _dev_refused(request)
         if refused is not None:
             return refused
-        return _player_command(name, "rotate")
+        return _player_command(name, "recovery-code")
 
     @app.post("/api/dev/players/{name}/revoke")
     def dev_player_revoke(request: Request, name: str) -> Response:
@@ -1024,11 +1281,12 @@ def create_app(service_config: ServiceConfig,
         return _player_command(name, "signout")
 
     @app.post("/api/dev/players/{name}/device-code")
-    def dev_player_device_code(request: Request, name: str) -> Response:
-        refused = _dev_refused(request)
-        if refused is not None:
-            return refused
-        return _player_command(name, "device-code")
+    def dev_player_device_code(name: str) -> Response:
+        """The console device code is gone (spec A2 decision D13): it
+        was a procedure into an account with no hold. The path answers
+        the constant 404 in each world."""
+        return Response(content=_DEV_OFF, status_code=404,
+                        media_type="application/json")
 
     @app.delete("/api/dev/players/{name}/sessions/{session_id}")
     def dev_player_session_end(request: Request, name: str,
@@ -1177,7 +1435,7 @@ def create_app(service_config: ServiceConfig,
         from service.scoring import day_precompute, practice_score
 
         # The gate stands before the work: this is the one player
-        # path that scores, thus a caller with no invite does none
+        # path that scores, thus a caller with no session does none
         # of it.
         caller = _caller(request)
         if isinstance(caller, Response):
@@ -1539,16 +1797,15 @@ def create_app(service_config: ServiceConfig,
                              "record": stored["record"]})
 
     def _label_of(name: str) -> str:
-        """The board label for one store key.
+        """The board label for one store key: the key itself.
 
-        The board artifact carries the store key alone, thus this
-        joins to the player record at read time - one file read,
-        and an edited label wants no new assembly. A name with no
-        record falls back to its key, which is what the world of
-        ruling 7 needs.
+        Ruling 3 of spec A2: the username is the one name of a
+        player, and it shows on each board. The display name of a
+        record from before that spec stays in its record and shows on
+        no board. The wire keeps its display_name field, with the
+        username in it, thus each screen reads one name.
         """
-        found = store.read_player_or_none(root, name)
-        return name if found is None else found.display_name
+        return name
 
     def _avatar_of(name: str) -> str | None:
         """The avatar digest for one store key, or None.
@@ -1559,6 +1816,26 @@ def create_app(service_config: ServiceConfig,
         """
         found = store.read_account_or_none(root, name)
         return None if found is None else found.avatar_hash
+
+    # The played days before each board day, for the floor of the
+    # daily board. A day that has a revealed board is after each
+    # earlier day's close, thus the counts of its earlier days do not
+    # change and one walk for each day is sufficient.
+    earlier_played_cache: dict[str, dict[str, int]] = {}
+    earlier_played_lock = threading.Lock()
+
+    def _earlier_played(day: str) -> dict[str, int]:
+        with earlier_played_lock:
+            found = earlier_played_cache.get(day)
+            if found is None:
+                found = {}
+                for earlier in store.list_days(root):
+                    if earlier >= day:
+                        continue
+                    for name in store.list_submissions(root, earlier):
+                        found[name] = found.get(name, 0) + 1
+                earlier_played_cache[day] = found
+            return found
 
     @app.get("/api/leaderboard")
     def leaderboard_view(request: Request,
@@ -1601,6 +1878,12 @@ def create_app(service_config: ServiceConfig,
                     board.append((name, stored))
             prepared = rollup.daily_board_value(record, board)
         newest = _newest_revealed(root)
+        # The floor of spec A2 section 9.5: a player shows after 3
+        # played days, and the caller gets the caller's own row too.
+        earlier = _earlier_played(day)
+        shown = rollup.public_board_rows(
+            prepared["rows"], earlier, caller,
+            floor=rollup.DAILY_BOARD_FLOOR_DAYS)
         rows = [{
             "player": entry["player"],
             "display_name": _label_of(entry["player"]),
@@ -1609,65 +1892,12 @@ def create_app(service_config: ServiceConfig,
             "target_rank": entry["target_rank"],
             "decoy_count": entry["decoy_count"],
             "streak": _streak(root, entry["player"], newest),
-        } for entry in prepared["rows"]]
-        return JSONResponse({"day": day, "rows": rows})
-
-    @app.post("/api/players")
-    async def mint_player_endpoint(request: Request) -> Response:
-        """Mint one invite (spec M1 section 8).
-
-        The gate is the bearer and not the operator gate of
-        ruling 7. With no configured token this answers the
-        constant refusal forever: the switch that turns access
-        control on must not itself be open in the world where
-        nothing holds credentials.
-
-        The answer holds the invite path and not a full address.
-        The server does not know its public source and must not
-        trust the Host header for one. The console knows its own
-        source and the command-line path takes an argument.
-
-        The token prints one time. The store keeps its digest
-        alone, thus no read that follows can collect it.
-        """
-        from service import players
-
-        if not _bearer_ok(request):
-            return _unauthorized()
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse(
-                {"cause": "bad-shape",
-                 "detail": "bad-shape: the body is not JSON"},
-                status_code=400)
-        if not isinstance(body, dict):
-            return JSONResponse(
-                {"cause": "bad-shape",
-                 "detail": "bad-shape: the body must be an object"},
-                status_code=400)
-        name = body.get("player")
-        label = body.get("display_name") or name
-        try:
-            store.check_player_name(name, "player")
-        except store.StoreError as error:
-            return JSONResponse({"cause": "bad-player",
-                                 "detail": str(error)}, status_code=400)
-        try:
-            store.check_display_name(label, "display_name")
-        except store.StoreError as error:
-            return JSONResponse({"cause": "bad-display-name",
-                                 "detail": str(error)}, status_code=400)
-        try:
-            record, token = players.mint_player(
-                service_config, player=name, display_name=label)
-        except store.StoreError as error:
-            return JSONResponse({"cause": "already-minted",
-                                 "detail": str(error)}, status_code=409)
-        return JSONResponse({"player": record.player,
-                             "display_name": record.display_name,
-                             "token": token,
-                             "join_path": f"/join/{token}"})
+            "public": entry["public"],
+        } for entry in shown]
+        return JSONResponse({
+            "day": day, "rows": rows,
+            "floor": {"played_days": rollup.DAILY_BOARD_FLOOR_DAYS,
+                      "caller_played_days": earlier.get(caller, 0)}})
 
     @app.get("/api/leaderboard/skill")
     def skill_board_view(request: Request) -> Response:
@@ -1716,6 +1946,13 @@ def create_app(service_config: ServiceConfig,
             "description": "" if account is None else account.description,
             "avatar_hash": None if account is None
             else account.avatar_hash,
+            # The account screen picks its password control from the
+            # first, and the notice of spec A2 section 6.1 reads the
+            # second. No code and no digest is here.
+            "has_password": _access_on()
+            and signin.has_password(root, caller),
+            "operator_code": signin.operator_code_view(root, caller)
+            if _access_on() else None,
         })
 
     @app.put("/api/account")
@@ -1962,20 +2199,37 @@ def start_refusal(*, dev_mode: bool, cookie_insecure: bool,
 
 
 def open_world_refusal(*, has_players: bool, dev_mode: bool,
-                       single_player: bool) -> str | None:
+                       single_player: bool,
+                       signup_open: bool = False) -> str | None:
     """Refuse a public start with no player records (spec BR1 section 4).
 
     With no record stored each caller is the configured player (spec
     M1 ruling 7), thus a public box in that condition lets each
     visitor play as the owner. The dev server and an explicit
-    --single-player keep that world on purpose.
+    --single-player keep that world on purpose. Open sign-up has no
+    such world: a caller with no session is signed out (spec A2
+    section 10.2).
     """
-    if has_players or dev_mode or single_player:
+    if has_players or dev_mode or single_player or signup_open:
         return None
     return ("the store holds no player records, thus each visitor would "
-            "play as the configured player - mint one first (python -m "
-            "service.players mint <name>), or start with --single-player "
-            "for a private box")
+            "play as the configured player - set \"signup\": \"open\" in "
+            "the server config, or start with --single-player for a "
+            "private box")
+
+
+def pepper_refusal(*, has_credentials: bool, has_pepper: bool) -> str | None:
+    """Refuse a start that cannot check the stored passwords (spec A2
+    section 5.2).
+
+    A store with credential records and no pepper signs nobody in, and
+    a new pepper makes each stored password dead. The stop is loud.
+    """
+    if has_credentials and not has_pepper:
+        return ("the store holds credential records and the password "
+                f"pepper is not set - put {digests.PEPPER_ENVIRONMENT_NAME} "
+                "in the deployment environment file")
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2004,24 +2258,32 @@ def main(argv: list[str] | None = None) -> int:
     # refusal must print as one line and not as a traceback.
     try:
         service_config = load_service_config(Path(arguments.service_config))
+        store_root = Path(service_config.store_root)
         world_refusal = open_world_refusal(
-            has_players=store.any_player(Path(service_config.store_root)),
-            dev_mode=arguments.dev, single_player=arguments.single_player)
+            has_players=store.any_player(store_root),
+            dev_mode=arguments.dev, single_player=arguments.single_player,
+            signup_open=service_config.signup == "open")
         if world_refusal is not None:
             raise ServiceConfigError(world_refusal)
+        digester = digests.digester_from_pepper(
+            os.environ.get(digests.PEPPER_ENVIRONMENT_NAME))
+        no_pepper = pepper_refusal(
+            has_credentials=store.any_credential(store_root),
+            has_pepper=digester is not None)
+        if no_pepper is not None:
+            raise ServiceConfigError(no_pepper)
         app = create_app(
             service_config, dev_mode=arguments.dev,
             cookie_secure=not arguments.cookie_insecure,
-            operator_token=os.environ.get("STARVECTOR_OPERATOR_TOKEN"))
+            operator_token=os.environ.get("STARVECTOR_OPERATOR_TOKEN"),
+            digester=digester)
     except Exception as error:
         print(f"refused: {error}", file=sys.stderr)
         return 1
-    import logging
-
     import uvicorn
 
-    # The invite is a credential, thus its path stays out of the
-    # journal (spec PL1 section 5).
+    # An invite of before spec A2 was a credential, and earlier lines
+    # hold such paths. The filter stays (spec A2 section 10.1).
     logging.getLogger("uvicorn.access").addFilter(limits.RedactInvitePaths())
     uvicorn.run(app, host="127.0.0.1",
                 port=arguments.port or service_config.port)

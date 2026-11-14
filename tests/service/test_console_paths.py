@@ -14,9 +14,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from svc_fixture import QuickDigester, mint_player
 from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
 
-from service import access, auth, index, players, rollover, store
+from service import access, auth, index, players, rollover, signin, store
 from service.day import close_day, open_day, reveal_day
 from service.server import create_app
 
@@ -35,7 +36,7 @@ _PATHS = (
     ("POST", "/api/dev/rollover/run"),
     ("GET", "/api/dev/players/ade"),
     ("GET", "/api/dev/players/ade/avatar"),
-    ("POST", "/api/dev/players/ade/rotate"),
+    ("POST", "/api/dev/players/ade/recovery-code"),
     ("POST", "/api/dev/players/ade/revoke"),
     ("POST", "/api/dev/players/ade/restore"),
     ("POST", "/api/dev/players/ade/signout"),
@@ -84,7 +85,7 @@ def _world(tmp_path, monkeypatch, *, dev_mode=True, hour=None,
     monkeypatch.setattr(server_module, "utc_now", clock)
     for name, label, secret in (("ade", "Ade", "1" * 43),
                                 ("bru", "Bru Lin", "2" * 43)):
-        players.mint_player(config, player=name, display_name=label,
+        mint_player(config, player=name, display_name=label,
                             clock=lambda: FIXED_CLOCK, secret=secret)
     open_day(config, date=FIRST_DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)
@@ -261,9 +262,21 @@ def test_the_player_detail_holds_no_secret(tmp_path, monkeypatch) -> None:
     assert detail["has_avatar"] is False
     assert len(detail["sessions"]) == 1
     assert "token_hash" not in detail
+    # The answer names the facts of a credential and holds none of it.
+    signin.set_password(
+        fixture["store"], player="ade", current_password=None,
+        password="correct horse battery", digester=QuickDigester(),
+        usual=frozenset(), instant=clock.instant)
+    code, usable_at = signin.issue_operator_code(
+        fixture["store"], player="ade", instant=clock.instant)
+    detail = client.get("/api/dev/players/ade", headers=HEADERS).json()
+    assert detail["has_password"] is True
+    assert detail["operator_code"]["usable_at"] == usable_at
     text = client.get("/api/dev/players/ade", headers=HEADERS).text
-    record = store.read_player_record(fixture["store"], "ade")
-    assert record.token_hash not in text
+    credential = store.read_credential_or_none(fixture["store"], "ade")
+    for secret in (code, credential.password_digest,
+                   credential.recovery_digest, credential.operator_digest):
+        assert secret not in text
 
     rows = client.get("/api/dev/players", headers=HEADERS).json()["players"]
     ade = next(row for row in rows if row["player"] == "ade")
@@ -311,21 +324,26 @@ def test_devices_sign_out_one_at_a_time_or_all(tmp_path,
     assert store.list_sessions(fixture["store"], "ade") == ()
 
 
-def test_a_new_invite_keeps_the_sessions(tmp_path, monkeypatch) -> None:
+def test_the_operator_code_keeps_the_sessions_and_has_a_hold(
+        tmp_path, monkeypatch) -> None:
     fixture, _config, client, clock = _world(tmp_path, monkeypatch)
     value = access.open_session(fixture["store"], "ade",
                                 user_agent="Firefox", instant=clock.instant)
-    turned = client.post("/api/dev/players/ade/rotate",
-                         headers=HEADERS).json()
-    assert turned["join_path"] == f"/join/{turned['token']}"
-    assert turned["token"].startswith("ade.")
-    # The earlier invite stops, and the session does not.
-    assert client.get(f"/join/ade.{'1' * 43}",
-                      follow_redirects=False).status_code == 401
+    answer = client.post("/api/dev/players/ade/recovery-code",
+                         headers=HEADERS)
+    assert answer.headers["cache-control"] == "no-store"
+    issued = answer.json()
+    assert issued["player"] == "ade"
+    assert auth.normalize_recovery_code(issued["recovery_code"]) is not None
+    hold = datetime.timedelta(hours=24)
+    assert issued["usable_at"] == (clock.instant + hold).isoformat()
+    # The code ends no session and has its own slot.
     assert access.resolve_session(fixture["store"], value,
                                   clock.instant) == "ade"
-    joined = client.get(turned["join_path"], follow_redirects=False)
-    assert joined.status_code == 302
+    assert signin.operator_code_view(
+        fixture["store"], "ade")["usable_at"] == issued["usable_at"]
+    assert client.post("/api/dev/players/nobody/recovery-code",
+                       headers=HEADERS).status_code == 404
 
 
 def test_revoke_and_restore_move_the_access(tmp_path, monkeypatch) -> None:
@@ -338,35 +356,30 @@ def test_revoke_and_restore_move_the_access(tmp_path, monkeypatch) -> None:
     assert store.list_sessions(fixture["store"], "bru") == ()
     again = client.post("/api/dev/players/bru/revoke", headers=HEADERS)
     assert again.status_code == 409
-    code = client.post("/api/dev/players/bru/device-code", headers=HEADERS)
+    # A revoked account gets no recovery, thus it gets no code.
+    code = client.post("/api/dev/players/bru/recovery-code",
+                       headers=HEADERS)
     assert code.status_code == 409
     restored = client.post("/api/dev/players/bru/restore",
                            headers=HEADERS).json()
-    assert restored["join_path"].startswith("/join/bru.")
+    assert restored["status"] == "active"
+    assert auth.normalize_recovery_code(
+        restored["recovery_code"]) is not None
+    assert restored["usable_at"] \
+        == (clock.instant + datetime.timedelta(hours=24)).isoformat()
+    assert "join_path" not in restored and "token" not in restored
     assert store.read_player_record(fixture["store"],
                                     "bru").status == "active"
 
 
-def test_a_console_device_code_signs_a_device_in(tmp_path,
-                                                 monkeypatch) -> None:
+def test_the_console_makes_no_device_code(tmp_path, monkeypatch) -> None:
     fixture, _config, client, _clock = _world(tmp_path, monkeypatch)
-    issued = client.post("/api/dev/players/ade/device-code",
-                         headers=HEADERS).json()
-    assert len(issued["code"]) == 8
-    assert issued["display"] == f"{issued['code'][:4]}-{issued['code'][4:]}"
-    detail = client.get("/api/dev/players/ade", headers=HEADERS).json()
-    assert len(detail["device_codes"]) == 1
-    assert issued["code"] not in client.get("/api/dev/players/ade",
-                                            headers=HEADERS).text
-    phone = TestClient(client.app)
-    redeemed = phone.post("/api/device-code/redeem",
-                          json={"code": issued["display"]})
-    assert redeemed.status_code == 200
-    # The cookie is Secure and the test client speaks http, thus the
-    # session is read from the answer and not sent back.
-    value = redeemed.cookies.get(auth.SESSION_COOKIE)
-    assert access.resolve_session(fixture["store"], value,
-                                  _clock.instant) == "ade"
+    # Decision D13 of spec A2: the path answers the constant 404 with
+    # the bearer too, and no code file comes from it.
+    answer = client.post("/api/dev/players/ade/device-code", headers=HEADERS)
+    assert answer.status_code == 404
+    assert answer.content == b'{"detail":"not found"}'
+    assert store.list_device_codes(fixture["store"]) == ()
 
 
 def test_the_prune_removes_what_expired(tmp_path, monkeypatch) -> None:

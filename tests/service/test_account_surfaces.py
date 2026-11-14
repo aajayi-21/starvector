@@ -10,6 +10,7 @@ constant avatar refusal.
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from svc_fixture import (FIXED_CLOCK, build_service_fixture,
@@ -19,6 +20,16 @@ from service import auth, store
 from service.day import open_day
 from service.server import create_app
 
+
+@pytest.fixture(autouse=True)
+def _no_daily_board_floor(monkeypatch):
+    """The players of these worlds have no earlier played days, and the
+    tests are about the rows of a board. The floor of spec A2 section
+    9.5 has its own tests (test_daily_board_floor.py)."""
+    from service import rollup as rollup_module
+
+    monkeypatch.setattr(rollup_module, "DAILY_BOARD_FLOOR_DAYS", 0)
+
 DAY = "2026-08-12"
 OPERATOR_TOKEN = "test-operator-token"
 ALICE_SECRET = "1" * 43
@@ -27,9 +38,9 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"x" * 24
 
 
 def _mint(root: Path, player: str, label: str, secret: str) -> str:
-    token, digest = auth.mint_token(player, secret=secret)
+    token = f"{player}.{secret}"
     store.write_player_record(root, store.PlayerRecord(
-        player=player, display_name=label, token_hash=digest,
+        player=player, display_name=label, token_hash=None,
         created_at=FIXED_CLOCK, status="active"))
     plant_session(root, token)
     return token

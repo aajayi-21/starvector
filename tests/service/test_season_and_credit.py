@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from svc_fixture import mint_player
 from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
 
 from pipeline.config import load_scoring_config
@@ -91,7 +92,7 @@ def test_the_season_facts_need_no_session(tmp_path) -> None:
                                  closes_at_utc="22:00")
     from service import players
 
-    players.mint_player(config, player="ade", display_name="Ade",
+    mint_player(config, player="ade", display_name="Ade",
                         clock=lambda: FIXED_CLOCK)
     client = TestClient(create_app(config, operator_token="t"))
     assert client.get("/api/me").status_code == 401

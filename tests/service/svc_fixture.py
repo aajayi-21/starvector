@@ -162,3 +162,53 @@ def plant_session(store_root: Path, token: str) -> str:
             player=player, label="Test device",
             created_at=datetime.datetime.now(datetime.UTC).isoformat()))
     return value
+
+
+class QuickDigester:
+    """A password digester with no slow work, for the tests (spec A2
+    build item B2). The interface is the deployed digester's.
+
+    The digest text names its own parameter number, thus a test can
+    make a digest that reads as stale.
+    """
+
+    def __init__(self, level: int = 2) -> None:
+        self.level = level
+        self.absent_count = 0
+
+    def digest(self, password: str) -> str:
+        from core.canonical import sha256_hex
+
+        return f"quick${self.level}${sha256_hex('quick:' + password)}"
+
+    def agrees(self, password: str, stored: str) -> bool:
+        from core.canonical import sha256_hex
+
+        parts = stored.split("$")
+        if len(parts) != 3 or parts[0] != "quick":
+            raise ValueError("a stored password digest is not quick text")
+        return parts[2] == sha256_hex("quick:" + password)
+
+    def stale(self, stored: str) -> bool:
+        return stored.split("$")[1] != str(self.level)
+
+    def absent(self, password: str) -> None:
+        self.absent_count += 1
+
+
+def mint_player(service_config, *, player: str, display_name: str,
+                clock=None, secret: str | None = None):
+    """One stored player and a token-shaped seed for plant_session.
+
+    The invite is gone (spec A2 ruling 2), and the tests of before it
+    signed a client in with the session that an invite token pins.
+    This helper keeps that shape: the record has no credential, and
+    the second output names the player and a secret for
+    pinned_session_value. It opens nothing on the server.
+    """
+    from service import players
+
+    more = {} if clock is None else {"clock": clock}
+    record = players.make_player(service_config, player=player,
+                                 display_name=display_name, **more)
+    return record, f"{player}.{secret or 's' * 43}"
