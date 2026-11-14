@@ -55,6 +55,25 @@ describe("the avatar ring (spec H1 §4)", () => {
   });
 });
 
+describe("the ring around a stored picture (spec H1 §4)", () => {
+  it.each([
+    [24, 18],
+    [34, 26],
+    [88, 74],
+  ])("a %i px circle holds a %i px picture", (size, inner) => {
+    const view = inApi(
+      <AvatarCircle
+        player="ade"
+        avatarHash={"a".repeat(64)}
+        size={size}
+        streak={7}
+      />,
+    );
+    const picture = view.container.querySelector(".streak-ring img");
+    expect(picture?.getAttribute("width")).toBe(String(inner));
+  });
+});
+
 describe("the marked username (spec H1 §4)", () => {
   it("adds the hidden streak label from tier 1", () => {
     inApi(<StreakName streak={3}>ade</StreakName>);

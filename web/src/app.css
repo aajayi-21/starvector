@@ -613,7 +613,12 @@
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: var(--surface);
+  /* The highlighted row of the board sets its own ground (theme.css
+     tr.is-you), and the gap must agree with it. */
+  background: var(--ring-gap-bg, var(--surface));
+}
+.table tr.is-you {
+  --ring-gap-bg: var(--accent-soft);
 }
 .streak-ring[data-tier="2"] {
   background: linear-gradient(135deg, var(--streak-a), var(--streak-b));
@@ -621,6 +626,10 @@
 .streak-ring[data-tier="3"] {
   overflow: hidden;
   background: none;
+  /* WebKit does not always clip a turning child to a rounded box; the
+     mask and the isolation make it clip. */
+  isolation: isolate;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
 }
 .streak-ring[data-tier="3"]::before {
   content: "";
@@ -636,7 +645,9 @@
   );
 }
 
-.streak-name {
+/* Tier 1 marks the ring alone: its name stays plain (spec H1 §4). */
+.streak-name[data-tier="2"],
+.streak-name[data-tier="3"] {
   font-weight: 650;
 }
 .streak-name[data-tier="2"] {
@@ -722,19 +733,38 @@
     transform: none;
   }
 }
-.epigraph {
-  margin: 0;
-  min-height: 5.5rem;
-  max-width: 62ch;
+.epigraph-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 8px;
+  max-width: 70ch;
   color: var(--text-2);
 }
-.epigraph blockquote {
+/* The hidden copies and the figure share one cell: the cell is as
+   tall as the tallest epigraph, so a change does not move the page. */
+.epigraph-sizer,
+.epigraph {
+  grid-area: 1 / 1;
+  margin: 0;
+}
+.epigraph-sizer {
+  visibility: hidden;
+}
+.epigraph-sizer .resolve-letter {
+  animation: none;
+}
+.epigraph-toggle {
+  grid-area: 1 / 2;
+  color: var(--text-3);
+}
+.epigraph-text {
   margin: 0;
   font-size: 16px;
   font-style: italic;
   line-height: 1.5;
 }
-.epigraph figcaption {
+.epigraph-cite {
   margin-top: 6px;
   font-size: 13px;
   color: var(--text-3);

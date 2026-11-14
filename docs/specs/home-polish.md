@@ -60,12 +60,14 @@ ruling. Do not implement an open decision without agreement.
 
   | Count | Text |
   |---|---|
-  | 0 | `Be the first to send today` |
+  | 0, day open | `Be the first to send today` |
+  | 0, day closed | `No one sent today` |
   | 1 | `1 player has sent today` |
   | 2 or more | `N players have sent today` |
 
-  After the reveal, the same count reads as the total of the day. The text
-  does not change, because the day label in the card names the day.
+  After the reveal, the same count reads as the total of the day. A zero
+  has its own text after the close, because an invitation to send is not
+  correct on a day that refuses a send.
 - The mock API of the web app gives a fixed `sends`, so the screens operate
   with no server.
 
@@ -127,20 +129,28 @@ records the cause.
 
 - A `<figure>` below the heading holds one epigraph and its attribution. It
   picks a first epigraph when the screen opens, and it then changes to a
-  different one at an interval of 12 seconds. It does not change while the
-  tab is hidden, and it does not change when `prefers-reduced-motion: reduce`
-  is set.
-- The figure keeps a fixed minimum height of two lines, so a change does not
-  move the page.
+  different one at an interval of 12 seconds.
+- The change stops while the tab is hidden, while the pointer or the focus
+  is on the figure, and when `prefers-reduced-motion: reduce` is set. The
+  screen reads that value again when the player changes it.
+- A pause control adjacent to the figure stops and starts the change. WCAG
+  2.2.2 asks for this on content that moves by itself for more than five
+  seconds. With reduced movement set, the control does not show, because
+  nothing moves.
+- Each epigraph also renders, hidden, in the grid cell of the figure. The
+  cell is as tall as the tallest epigraph at the current width, so a change
+  does not move the page. (Changed at build time: the draft said two lines,
+  and an epigraph of 25 words needs three lines on a desktop and five on a
+  phone.)
 - A change fades in the epigraph with the same resolve effect as the
   heading.
 - The epigraphs are in `web/src/screens/epigraphs.ts`: text, author or
   agency, work, and the source address. Each epigraph has a maximum of 25
   words.
-- **Sources.** Each epigraph comes from a source in the public domain or
-  from a work of the US government, with the wording checked against the
-  source page. Section 9, ruling D3, records this, and it excludes
-  Warhammer text. Games Workshop holds the copyright of that text.
+- **Sources.** Each epigraph has a `rights` field. A `public-domain` or
+  `us-government` entry has its wording checked against the source page. An
+  `owner-supplied` entry comes from a work with a copyright, and the owner
+  gives its words. Section 9, ruling D3, records this.
 
 ## 6. Integrity
 
@@ -162,9 +172,11 @@ records the cause.
 - **Web unit.** `streakTier` at 0, 2, 3, 6, 7, 29, 30, and 365.
 - **Web component.** The home card text for the counts 0, 1, and 2. The ring
   and the hidden text on the avatar for each tier. The heading holds the
-  full greeting and username as text. The epigraph changes after 12 seconds
-  with fake timers, does not change on a hidden tab, and does not change
-  when the player sets reduced movement.
+  full greeting and username as the name that assistive technology reads. The epigraph changes
+  after 12 seconds with fake timers. It does not change on a hidden tab,
+  with reduced movement set at the start or during the visit, while the
+  pointer is on it, or when paused. The ring around a stored picture leaves
+  the correct picture dimension.
 - **Prose.** Vale on this spec, and on each comment and docstring that the
   build writes.
 
@@ -209,6 +221,12 @@ Each item is one commit, green and Vale-clean on the touched prose.
   copyright, and the public site shows it. **The owner can overrule this.**
   The record then holds the correct words and a statement of the right to
   use them.
+  **The owner overruled it on 2026-11-13.** Short lines from Warhammer
+  40,000, with psykers as the theme, and from Philip K. Dick are in. These
+  works have a copyright, so the owner gives the correct words of each line
+  and the owner makes the decision on the right to use them. Each such
+  entry has `rights: "owner-supplied"` in the data, and the agent adds no
+  line of this type from its own memory or from a web page.
 - **D5 — the live count and the M1 gate.** Spec M1 treated a count of sends
   as score-adjacent, and `test_no_open_day_answer_follows_the_other_players_sends`
   pinned each open-day byte. The owner ruled on 2026-11-13 that the day view

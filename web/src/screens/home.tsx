@@ -98,10 +98,10 @@ export function HomeScreen(): React.JSX.Element {
 }
 
 /** The day's send count, in each hero state (spec H1 §3). */
-function SendCount(props: { sends: number }): React.JSX.Element {
+function SendCount(props: { day: DayView }): React.JSX.Element {
   return (
     <p className="subtle small" data-testid="send-count">
-      {sendCountText(props.sends)}
+      {sendCountText(props.day.sends, props.day.status === "open")}
     </p>
   );
 }
@@ -148,7 +148,7 @@ function TodayCard(props: {
             ? "See the hidden photo next to your sketch, and how close you came."
             : "You didn't send this one, but you can still see the photo."}
         </p>
-        <SendCount sends={day.sends} />
+        <SendCount day={day} />
         <div>
           <Link to="/reveal" className="btn btn-primary btn-large">
             {day.submitted ? "See your result" : "See the photo"}
@@ -167,7 +167,7 @@ function TodayCard(props: {
             ? "Your sketch is in. Results are being worked out, and this page updates by itself."
             : "Results are being worked out, and this page updates by itself."}
         </p>
-        <SendCount sends={day.sends} />
+        <SendCount day={day} />
       </section>
     );
   }
@@ -180,7 +180,7 @@ function TodayCard(props: {
           Your sketch is locked in. The photo is revealed when the day closes
           <ClosesIn closesAt={day.closes_at} prefix=" — in" />.
         </p>
-        <SendCount sends={day.sends} />
+        <SendCount day={day} />
         <div>
           <Link to="/practice" className="btn btn-secondary">
             Practice while you wait
@@ -201,7 +201,7 @@ function TodayCard(props: {
           <p className="muted">
             Sketch and describe whatever comes to mind. You can send once.
           </p>
-          <SendCount sends={day.sends} />
+          <SendCount day={day} />
           <div className="row">
             <Link to="/today" className="btn btn-primary btn-large">
               Start today's session

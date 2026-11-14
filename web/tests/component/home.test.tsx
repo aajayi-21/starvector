@@ -63,6 +63,17 @@ describe("the home screen (spec BR1 §6)", () => {
   });
 
   it.each([
+    "closing",
+    "closed",
+    "revealed",
+  ] as const)("says no one sent when a %s day has zero sends", async (status) => {
+    renderAt("/", withDay({ status, sends: 0, submitted: false }));
+    expect((await screen.findByTestId("send-count")).textContent).toBe(
+      "No one sent today",
+    );
+  });
+
+  it.each([
     "open",
     "closing",
     "closed",

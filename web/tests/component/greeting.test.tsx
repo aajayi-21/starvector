@@ -8,6 +8,7 @@ import { renderAt } from "./harness";
 
 const THREE: Epigraph[] = ["alpha", "bravo", "charlie"].map((text) => ({
   text,
+  rights: "public-domain",
   author: `author ${text}`,
   work: "work",
   source: "https://example.test/",
@@ -46,16 +47,16 @@ describe("the resolve text (spec H1 §5)", () => {
 });
 
 describe("the home heading (spec H1 §5)", () => {
-  it("holds the greeting and the username as one heading", async () => {
+  it("names the greeting and the username as one heading", async () => {
     renderAt("/");
-    const heading = await screen.findByRole("heading", { level: 1 });
-    await vi.waitFor(() => expect(heading.textContent ?? "").toMatch(/, \w+/));
+    // The accessible name reads the hidden copies alone: the animated
+    // letters are aria-hidden, so the name holds each word one time.
     expect(
-      /^(Good (morning|afternoon|evening)|Welcome back|Ready to view), /.test(
-        heading.querySelectorAll(".visually-hidden")[0]?.textContent +
-          (heading.querySelectorAll(".visually-hidden")[1]?.textContent ?? ""),
-      ),
-    ).toBe(true);
+      await screen.findByRole("heading", {
+        level: 1,
+        name: /^(Good (morning|afternoon|evening)|Welcome back|Ready to view), \S+$/,
+      }),
+    ).toBeDefined();
   });
 });
 
@@ -66,12 +67,17 @@ describe("the epigraph figure (spec H1 §5)", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    // The hidden-tab test spies on visibilityState; without this the
+    // tests after it run with the tab still hidden and prove nothing.
+    vi.restoreAllMocks();
   });
 
   it("starts on the drawn epigraph and holds its attribution", () => {
     render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
     expect(shown()).toBe("alpha");
-    expect(screen.getByText("work")).toBeDefined();
+    expect(
+      screen.getByTestId("epigraph").querySelector("figcaption")?.textContent,
+    ).toBe("author alpha, work");
   });
 
   it("moves to a different epigraph after the interval", () => {
@@ -105,9 +111,71 @@ describe("the epigraph figure (spec H1 §5)", () => {
       removeEventListener: () => undefined,
     }));
     render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
+    expect(screen.queryByRole("button")).toBeNull();
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
     expect(shown()).toBe("alpha");
+  });
+
+  it("stops when reduced motion turns on during the visit", () => {
+    let listener: (() => void) | null = null;
+    const query = {
+      matches: false,
+      media: "",
+      addEventListener: (_: string, fn: () => void) => {
+        listener = fn;
+      },
+      removeEventListener: () => undefined,
+    };
+    vi.stubGlobal("matchMedia", () => query);
+    render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
+    act(() => {
+      query.matches = true;
+      listener?.();
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(shown()).toBe("alpha");
+  });
+
+  it("pauses and plays from its control (WCAG 2.2.2)", () => {
+    render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
+    act(() => {
+      screen.getByRole("button", { name: "Pause the epigraphs" }).click();
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(shown()).toBe("alpha");
+    act(() => {
+      screen.getByRole("button", { name: "Play the epigraphs" }).click();
+    });
+    act(() => {
+      vi.advanceTimersByTime(12_000);
+    });
+    expect(shown()).not.toBe("alpha");
+  });
+
+  it("holds while the pointer is on it", () => {
+    const view = render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
+    const frame = view.container.querySelector(".epigraph-frame");
+    act(() => {
+      frame?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(shown()).toBe("alpha");
+  });
+
+  it("renders each epigraph hidden, so the frame fits the tallest", () => {
+    const view = render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
+    const sizers = view.container.querySelectorAll(".epigraph-sizer");
+    expect(sizers).toHaveLength(3);
+    for (const sizer of sizers) {
+      expect(sizer.getAttribute("aria-hidden")).toBe("true");
+    }
   });
 });
