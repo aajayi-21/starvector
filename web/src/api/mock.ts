@@ -606,6 +606,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         commitment: seededHex(`commitment:${today}`, 64),
         player,
         submitted: submittedToday,
+        sends: 12 + (submittedToday ? 1 : 0),
         relation_vocabulary: ["left-of", "right-of", "above", "below"],
         canvas_px: 512,
         min_strokes: 2,

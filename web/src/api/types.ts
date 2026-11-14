@@ -20,6 +20,8 @@ export interface DayView {
   commitment: string;
   player: string;
   submitted: boolean;
+  /** Stored sends for the day, all players (spec H1 §3). */
+  sends: number;
   relation_vocabulary: string[];
   canvas_px: number;
   /** The Layer 0 stroke floor: a sketch with fewer does not send. */

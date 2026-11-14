@@ -11,7 +11,11 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
-function withDay(overrides: { status?: DayStatus; submitted?: boolean }): Api {
+function withDay(overrides: {
+  status?: DayStatus;
+  submitted?: boolean;
+  sends?: number;
+}): Api {
   const base = makeMockApi({ today: HARNESS_TODAY });
   return {
     ...base,
@@ -46,6 +50,28 @@ describe("the home screen (spec BR1 §6)", () => {
     renderAt("/", withDay({ status: "revealed", submitted: true }));
     const link = await screen.findByRole("link", { name: "See your result" });
     expect(link.getAttribute("href")).toBe("/reveal");
+  });
+
+  it.each([
+    [0, "Be the first to send today"],
+    [1, "1 player has sent today"],
+    [2, "2 players have sent today"],
+    [1234, "1,234 players have sent today"],
+  ])("shows %i sends as the right text (spec H1 §3)", async (sends, text) => {
+    renderAt("/", withDay({ sends }));
+    expect((await screen.findByTestId("send-count")).textContent).toBe(text);
+  });
+
+  it.each([
+    "open",
+    "closing",
+    "closed",
+    "revealed",
+  ] as const)("shows the send count when the day is %s", async (status) => {
+    renderAt("/", withDay({ status, sends: 7, submitted: true }));
+    expect((await screen.findByTestId("send-count")).textContent).toBe(
+      "7 players have sent today",
+    );
   });
 
   it("says when no session is open", async () => {

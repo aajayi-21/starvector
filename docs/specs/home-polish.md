@@ -1,6 +1,6 @@
 # Spec H1 — the home page: send count, streak marks, and the greeting
 
-**Status:** values ruled 2026-11-13 (§9), in build.
+**Status:** values ruled 2026-11-13 (§9, D1 to D5), in build.
 **Phase:** surface growth after spec A2 and spec R1. Three small pieces land
 in the web app, and one field joins the day view. No scoring code moves and
 no frozen tier moves.
@@ -49,8 +49,9 @@ ruling. Do not implement an open decision without agreement.
   sort and it builds no sequence of names. Practice trials are not in that
   folder, so they are not in the count.
 - The count is a function of the stored sends alone. It holds no score and
-  no target value, so I7 holds. The number of sends does not change with the
-  target.
+  no target value. The number of sends does not change with the target.
+  The integrity test of spec M1 B10 forbade each open-day byte that follows
+  the sends of other players, so ruling D5 changes it in §9.
 - **Cost.** One scan of a folder of about 1,000 files for each read. An
   open tab polls at an interval of 5 minutes, or 20 seconds near the close.
   The load test of spec PL1 §9 holds about 880 active players. §7 gives the
@@ -193,6 +194,14 @@ Each item is one commit, green and Vale-clean on the touched prose.
   copyright, and the public site shows it. **The owner can overrule this.**
   The record then holds the correct words and a statement of the right to
   use them.
+- **D5 — the live count and the M1 gate.** Spec M1 treated a count of sends
+  as score-adjacent, and `test_no_open_day_answer_follows_the_other_players_sends`
+  pinned each open-day byte. The owner ruled on 2026-11-13 that the day view
+  can hold one anonymous total, `sends`. The change is narrow. The test
+  removes that field from the two day views and compares the remaining
+  bytes. It also checks that the total is one more in the first world.
+  The paragraph of spec A1 §7 has the same change. No name, no sequence of
+  names, and no other field follows the sends.
 - **D4 — the timing numbers.** The 1.4 second effect and the 12 second
   change of epigraph are cosmetic values that this spec proposes. They are
   in one file of constants, so a change is one edit.

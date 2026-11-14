@@ -406,6 +406,23 @@ def list_submissions(store: Path, day: str) -> tuple[str, ...]:
         and not entry.name.endswith(".tmp")))
 
 
+def count_submissions(store: Path, day: str) -> int:
+    """The number of stored submissions for one day, zero when none.
+
+    The count rule of list_submissions without the sorted names: the
+    home page reads it on each poll of an open tab, and it needs the
+    number alone (spec H1 section 3). A `.tmp` file is a write that
+    has not ended and is not a send. Practice trials are not in the
+    folder, so they are not in the count.
+    """
+    root = day_dir(store, day) / "submissions"
+    if not root.is_dir():
+        return 0
+    with os.scandir(root) as entries:
+        return sum(1 for entry in entries
+                   if entry.name.endswith(".json") and entry.is_file())
+
+
 def check_player_name(value: object, where: str) -> None:
     """Refuse a player name that is not a legal store key."""
     if not isinstance(value, str) or not _PLAYER_RULE.fullmatch(value):
