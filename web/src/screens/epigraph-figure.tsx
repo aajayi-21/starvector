@@ -14,7 +14,7 @@
  */
 
 import { Pause, Play } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ResolveText } from "../ui/resolve-text";
 import type { Epigraph } from "./epigraphs";
@@ -47,6 +47,38 @@ function useReducedMotion(): boolean {
 
 const STILL: Random = () => 0;
 
+/**
+ * True while the pointer or the focus is on the element. The hold is
+ * passive, not a control, so it listens through a ref and the element
+ * keeps no handler props.
+ */
+function useHeld(ref: React.RefObject<HTMLDivElement | null>): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null) {
+      return;
+    }
+    const hold = (): void => setHeld(true);
+    const release = (): void => setHeld(false);
+    const pairs = [
+      ["mouseenter", hold],
+      ["mouseleave", release],
+      ["focusin", hold],
+      ["focusout", release],
+    ] as const;
+    for (const [name, fn] of pairs) {
+      element.addEventListener(name, fn);
+    }
+    return () => {
+      for (const [name, fn] of pairs) {
+        element.removeEventListener(name, fn);
+      }
+    };
+  }, [ref]);
+  return held;
+}
+
 export function EpigraphFigure(props: {
   epigraphs: readonly Epigraph[];
   random?: Random;
@@ -57,7 +89,8 @@ export function EpigraphFigure(props: {
     Math.floor(random() * epigraphs.length),
   );
   const [paused, setPaused] = useState(false);
-  const [held, setHeld] = useState(false);
+  const frame = useRef<HTMLDivElement>(null);
+  const held = useHeld(frame);
   const reduced = useReducedMotion();
   const rotates = epigraphs.length >= 2 && !reduced;
   const stopped = !rotates || paused || held;
@@ -81,13 +114,7 @@ export function EpigraphFigure(props: {
     return null;
   }
   return (
-    <div
-      className="epigraph-frame"
-      onMouseEnter={() => setHeld(true)}
-      onMouseLeave={() => setHeld(false)}
-      onFocus={() => setHeld(true)}
-      onBlur={() => setHeld(false)}
-    >
+    <div ref={frame} className="epigraph-frame">
       {epigraphs.map((each, eachIndex) => (
         <div
           // The set does not reorder: the key is the position.

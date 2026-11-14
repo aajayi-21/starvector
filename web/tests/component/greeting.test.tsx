@@ -162,7 +162,7 @@ describe("the epigraph figure (spec H1 §5)", () => {
     const view = render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
     const frame = view.container.querySelector(".epigraph-frame");
     act(() => {
-      frame?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      frame?.dispatchEvent(new MouseEvent("mouseenter"));
     });
     act(() => {
       vi.advanceTimersByTime(60_000);
