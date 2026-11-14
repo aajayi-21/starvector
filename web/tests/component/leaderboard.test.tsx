@@ -36,11 +36,12 @@ describe("the leaderboard screen", () => {
     };
     const view = renderAt("/leaderboard", withAvatar);
     await screen.findByText("Latest day");
-    // One 24 px picture for the row with a hash; the others fall
-    // back to initials and render no image.
+    // One picture for the row with a hash; the others fall back to
+    // initials and render no image. A row with a streak ring draws a
+    // smaller picture inside the same 24 px circle (spec H1 §4).
     await waitFor(() =>
       expect(
-        view.container.querySelectorAll('table img[width="24"]').length,
+        view.container.querySelectorAll("table img").length,
       ).toBeGreaterThanOrEqual(1),
     );
   });

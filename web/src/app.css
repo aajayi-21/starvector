@@ -589,3 +589,102 @@
   gap: 4px;
   white-space: nowrap;
 }
+
+/*
+ * Streak marks (spec H1 §4). The ring wraps the avatar at the same
+ * outer size. Tier 1 is a solid ring, tier 2 a gradient with a slow
+ * pulse, tier 3 a gradient that turns. Each animation sits behind
+ * no-preference, so reduced motion keeps the tier and drops the
+ * movement.
+ */
+.streak-ring {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--streak-a);
+}
+.streak-ring-gap {
+  position: relative;
+  z-index: 1;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.streak-ring[data-tier="2"] {
+  background: linear-gradient(135deg, var(--streak-a), var(--streak-b));
+}
+.streak-ring[data-tier="3"] {
+  overflow: hidden;
+  background: none;
+}
+.streak-ring[data-tier="3"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 0deg,
+    var(--streak-a),
+    var(--streak-b),
+    var(--streak-c),
+    var(--streak-b),
+    var(--streak-a)
+  );
+}
+
+.streak-name {
+  font-weight: 650;
+}
+.streak-name[data-tier="2"] {
+  color: var(--streak-b);
+}
+.streak-name[data-tier="3"] {
+  color: var(--streak-b);
+  background: linear-gradient(
+    90deg,
+    var(--streak-a),
+    var(--streak-b),
+    var(--streak-c),
+    var(--streak-b),
+    var(--streak-a)
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .streak-ring[data-tier="2"] {
+    animation: streak-pulse 3.2s ease-in-out infinite;
+  }
+  .streak-ring[data-tier="3"]::before {
+    animation: streak-turn 6s linear infinite;
+  }
+  .streak-name[data-tier="3"] {
+    animation: streak-shimmer 5s linear infinite;
+  }
+}
+@keyframes streak-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--streak-b) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--streak-b) 55%, transparent);
+  }
+}
+@keyframes streak-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes streak-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
