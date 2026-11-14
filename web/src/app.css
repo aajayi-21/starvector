@@ -560,3 +560,32 @@
   font-weight: 600;
   background: var(--accent-soft);
 }
+
+/* — the share control of a result — */
+.share-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.share-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.share-status {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.share-status:empty {
+  display: none;
+}
+.share-status-bad {
+  color: var(--bad, #b3261e);
+}
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}

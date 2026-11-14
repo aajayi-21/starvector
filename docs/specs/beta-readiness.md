@@ -308,6 +308,27 @@ The copy rules of spec M1 §9 hold on each screen: no medals, no
 "good match" wording, fractional ranks, and the rank, its range, and
 the result count at equal weight.
 
+*Note, 2026-11-13 — the share control (owner instruction).* Each day
+of **Your results** and the **Results** screen of a day have a share
+control. It makes one PNG of that result, 1080 by 1350 pixels, on the
+device of the player. The browser's share sheet gets the file where
+the browser can share a file, and each other browser saves it.
+
+- The image holds what the Results screen shows the player: the day
+  and its code, the share of the other photos beaten with the 50%
+  guessing mark, the rank of the hidden photo, the username, and the
+  host of the site. It also holds the player's own sketch when the
+  server has it.
+- The hidden photo is not in the image. Each photograph has its own
+  author and license, and the image goes where the credit does not.
+- The copy rules above hold for the image and for the words that go
+  with it: the result against chance, and no verdict.
+- The image is made in a canvas in the page. No `POST` and no new
+  server path is in it, thus I7 does not change: a result is on a
+  screen after the reveal alone, and the control is on those screens
+  alone.
+- The code is in `web/src/share/` and `web/src/ui/share-button.tsx`.
+
 ### 6.3 Two server additions
 
 - `GET /api/about`, with no session: `test_season` (the preparation

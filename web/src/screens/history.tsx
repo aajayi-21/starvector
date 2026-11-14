@@ -23,6 +23,7 @@ import {
   percentBeaten,
   skillAsPercent,
 } from "../ui/format";
+import { ShareResultButton } from "../ui/share-button";
 
 const CHART_DAYS = 14;
 /**
@@ -188,7 +189,7 @@ function HistoryBody(props: {
                 <th className="num">Result</th>
                 <th className="num">Hidden photo's place</th>
                 <th>
-                  <span className="visually-hidden">Details</span>
+                  <span className="visually-hidden">Details and share</span>
                 </th>
               </tr>
             </thead>
@@ -204,9 +205,17 @@ function HistoryBody(props: {
                     {ordinal(row.target_rank)} of {row.decoy_count + 1}
                   </td>
                   <td>
-                    <Link to="/reveal" search={{ day: row.day }}>
-                      Details
-                    </Link>
+                    <span className="row-actions">
+                      <Link to="/reveal" search={{ day: row.day }}>
+                        Details
+                      </Link>
+                      <ShareResultButton
+                        variant="icon"
+                        day={row.day}
+                        trialCode={row.trial_code}
+                        trial={row}
+                      />
+                    </span>
                   </td>
                 </tr>
               ))}

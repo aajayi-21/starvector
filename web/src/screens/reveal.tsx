@@ -28,6 +28,7 @@ import { AvatarCircle } from "../ui/avatar";
 import { ChanceMeter } from "../ui/chance-meter";
 import { formatDay, ordinal, percentBeaten } from "../ui/format";
 import { PrivateRowBadge } from "../ui/private-row-badge";
+import { ShareResultButton } from "../ui/share-button";
 
 function readSentCopy(day: string): WireRecord | null {
   try {
@@ -117,7 +118,7 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
               here's the photo that was hidden.
             </p>
           ) : (
-            <ResultSummary trial={trial} />
+            <ResultSummary trial={trial} day={view.day} />
           )}
         </section>
         <div className="pictures">
@@ -204,7 +205,10 @@ function SketchReplay(props: {
   return <ReplayCanvas strokes={props.record.canvas_strokes} />;
 }
 
-function ResultSummary(props: { trial: TrialValue }): React.JSX.Element {
+function ResultSummary(props: {
+  trial: TrialValue;
+  day: string;
+}): React.JSX.Element {
   const { trial } = props;
   const percent = percentBeaten(trial.p);
   const total = trial.decoy_count + 1;
@@ -224,6 +228,9 @@ function ResultSummary(props: { trial: TrialValue }): React.JSX.Element {
         of {total}. Guessing averages 50%, and one day says little on its own —{" "}
         <Link to="/history">your results</Link> combine many days.
       </p>
+      <div>
+        <ShareResultButton day={props.day} trial={trial} />
+      </div>
     </div>
   );
 }
