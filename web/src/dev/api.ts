@@ -8,19 +8,19 @@ import type { AboutView } from "../api/types";
 import type {
   DevDayDetail,
   DevDays,
-  DevDeviceCode,
   DevHistory,
   DevIndexCheck,
   DevIndexStatus,
   DevPlayerDetail,
   DevQueryResult,
   DevRankings,
+  DevRecoveryCode,
+  DevRestored,
   DevRolloverResult,
   DevRoster,
   DevSchedule,
   DevStored,
   LifecycleAck,
-  MintedInvite,
 } from "./types";
 
 export class DevApiError extends Error {
@@ -41,9 +41,9 @@ function authorized(token: string, init?: RequestInit): RequestInit {
   // spec M1 describes, where nothing holds credentials and the
   // operator plane answers as it always did.
   //
-  // The caller's own headers are merged and not replaced - the
-  // mint sends a content type, and a bearer that overwrote it
-  // would be a silent loss.
+  // The caller's own headers are merged and not replaced - a JSON
+  // body sends a content type, and a bearer that overwrote it would
+  // be a silent loss.
   if (token === "") {
     return init ?? {};
   }
@@ -111,7 +111,6 @@ export interface DevApi {
   /** Close or reveal a named day — one behind the latest (BR1 §7.6). */
   closeDay(day: string): Promise<LifecycleAck>;
   revealDay(day: string): Promise<LifecycleAck>;
-  mintPlayer(player: string, displayName: string): Promise<MintedInvite>;
   imageUrl(imageId: string): string;
 
   // ── spec BR1 §7 ──
@@ -124,15 +123,19 @@ export interface DevApi {
   getPlayer(player: string): Promise<DevPlayerDetail>;
   /** Null when the player has no picture. */
   getAvatar(player: string): Promise<Blob | null>;
-  rotatePlayer(player: string): Promise<MintedInvite>;
-  restorePlayer(player: string): Promise<MintedInvite>;
+  /**
+   * The operator's recovery code (spec A2 §6.1): it works 24 hours
+   * after it is made, and the player's devices show a notice.
+   */
+  issueRecoveryCode(player: string): Promise<DevRecoveryCode>;
+  /** Active again, with an operator's recovery code and its hold. */
+  restorePlayer(player: string): Promise<DevRestored>;
   revokePlayer(player: string): Promise<{ player: string; status: string }>;
   signOutPlayer(player: string): Promise<{ player: string; ended: number }>;
   endSession(
     player: string,
     sessionId: string,
   ): Promise<{ player: string; ended: number }>;
-  issueDeviceCode(player: string): Promise<DevDeviceCode>;
   prune(): Promise<{ sessions: number; device_codes: number }>;
   getIndex(): Promise<DevIndexStatus>;
   buildIndex(): Promise<DevIndexStatus>;
@@ -202,18 +205,6 @@ export function makeDevApi(token: TokenSource = () => ""): DevApi {
         "/api/dev/day/reveal",
         authorized(token(), jsonBody({ day })),
       ),
-    mintPlayer: (player, displayName) =>
-      request<MintedInvite>(
-        "/api/players",
-        authorized(token(), {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            player,
-            display_name: displayName,
-          }),
-        }),
-      ),
     imageUrl: (imageId) => `/image/${imageId}`,
 
     getAbout: () => request<AboutView>("/api/about"),
@@ -251,13 +242,13 @@ export function makeDevApi(token: TokenSource = () => ""): DevApi {
       }
       return response.blob();
     },
-    rotatePlayer: (player) =>
-      request<MintedInvite>(
-        `${playerPath(player)}/rotate`,
+    issueRecoveryCode: (player) =>
+      request<DevRecoveryCode>(
+        `${playerPath(player)}/recovery-code`,
         authorized(token(), { method: "POST" }),
       ),
     restorePlayer: (player) =>
-      request<MintedInvite>(
+      request<DevRestored>(
         `${playerPath(player)}/restore`,
         authorized(token(), { method: "POST" }),
       ),
@@ -275,11 +266,6 @@ export function makeDevApi(token: TokenSource = () => ""): DevApi {
       request(
         `${playerPath(player)}/sessions/${encodeURIComponent(sessionId)}`,
         authorized(token(), { method: "DELETE" }),
-      ),
-    issueDeviceCode: (player) =>
-      request<DevDeviceCode>(
-        `${playerPath(player)}/device-code`,
-        authorized(token(), { method: "POST" }),
       ),
     prune: () =>
       request("/api/dev/prune", authorized(token(), { method: "POST" })),

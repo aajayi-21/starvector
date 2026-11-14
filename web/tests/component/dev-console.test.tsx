@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DevApi } from "../../src/dev/api";
 import { DevApiError } from "../../src/dev/api";
 import { DevApp, TAB_KEY, TOKEN_KEY } from "../../src/dev/app";
-import { ORIGIN_KEY } from "../../src/dev/invite-panel";
 import type {
   DevDayRow,
   DevPlayerDetail,
@@ -90,6 +89,8 @@ function playerFixture(
       },
     ],
     device_codes: [],
+    has_password: true,
+    operator_code: null,
     sends: 1,
     ...overrides,
   };
@@ -150,26 +151,21 @@ function rankingsFixture(poolCount: number): DevRankings {
   };
 }
 
+/** The recovery codes the stub prints: test values, no account's. */
+const OPERATOR_CODE = "ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2";
+const RESTORE_CODE = "2345-6789-ABCD-EFGH-JKMN-PQRS";
+
 function makeStubApi(days: DevDayRow[]): DevApi & {
   rankingsCalls: string[];
   lifecycle: string[];
-  mints: Array<[string, string]>;
   calls: string[];
 } {
   const rankingsCalls: string[] = [];
   const lifecycle: string[] = [];
-  const mints: Array<[string, string]> = [];
   const calls: string[] = [];
-  const invite = (player: string) => ({
-    player,
-    display_name: player,
-    token: `${player}.${"t".repeat(43)}`,
-    join_path: `/join/${player}.${"t".repeat(43)}`,
-  });
   return {
     rankingsCalls,
     lifecycle,
-    mints,
     calls,
     getDays: () => Promise.resolve({ days }),
     getDay: (day) => {
@@ -258,15 +254,6 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
       lifecycle.push(`reveal ${day}`);
       return Promise.resolve({ day });
     },
-    mintPlayer: (player, displayName) => {
-      mints.push([player, displayName]);
-      return Promise.resolve({
-        player,
-        display_name: displayName,
-        token: `${player}.${"s".repeat(43)}`,
-        join_path: `/join/${player}.${"s".repeat(43)}`,
-      });
-    },
     imageUrl: (imageId) => `stub:/image/${imageId}`,
     getAbout: () =>
       Promise.resolve({
@@ -306,13 +293,22 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
       return Promise.resolve(playerFixture({ player }));
     },
     getAvatar: () => Promise.resolve(null),
-    rotatePlayer: (player) => {
-      calls.push(`rotate ${player}`);
-      return Promise.resolve(invite(player));
+    issueRecoveryCode: (player) => {
+      calls.push(`recovery-code ${player}`);
+      return Promise.resolve({
+        player,
+        recovery_code: OPERATOR_CODE,
+        usable_at: "2026-08-13T12:00:00+00:00",
+      });
     },
     restorePlayer: (player) => {
       calls.push(`restore ${player}`);
-      return Promise.resolve(invite(player));
+      return Promise.resolve({
+        player,
+        status: "active" as const,
+        recovery_code: RESTORE_CODE,
+        usable_at: "2026-08-13T12:00:00+00:00",
+      });
     },
     revokePlayer: (player) => {
       calls.push(`revoke ${player}`);
@@ -325,15 +321,6 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
     endSession: (player, id) => {
       calls.push(`end ${player} ${id.slice(0, 4)}`);
       return Promise.resolve({ player, ended: 1 });
-    },
-    issueDeviceCode: (player) => {
-      calls.push(`code ${player}`);
-      return Promise.resolve({
-        player,
-        code: "ABCDEFGH",
-        display: "ABCD-EFGH",
-        expires_at: "2026-08-12T12:10:00+00:00",
-      });
     },
     prune: () => {
       calls.push("prune");
@@ -596,70 +583,14 @@ describe("the console's async discipline", () => {
     expect(note.textContent).toContain("operator token is missing or wrong");
   });
 
-  it("mints an invite and prints it one time", async () => {
-    window.localStorage.removeItem(ORIGIN_KEY);
-    const api = makeStubApi([dayRow({ status: "revealed" })]);
-    render(<DevApp api={api} />);
+  it("makes no account and no invite (spec A2 §10.1)", async () => {
+    // A player makes their own account, thus the console has no form
+    // that makes one.
+    render(<DevApp api={makeStubApi([dayRow({ status: "revealed" })])} />);
     openTab("Players");
-    const name = await screen.findByLabelText("Player name");
-    fireEvent.change(name, { target: { value: "bru" } });
-    fireEvent.change(screen.getByLabelText(/Display name/), {
-      target: { value: "Bru Lin" },
-    });
-    fireEvent.change(screen.getByLabelText("Site address in the invite"), {
-      target: { value: "https://game.example.com" },
-    });
-    fireEvent.click(screen.getByText("Mint the invite"));
-
-    await waitFor(() => expect(api.mints).toEqual([["bru", "Bru Lin"]]));
-    // The origin is the operator's, not this console's address: the
-    // console is reached through a tunnel at localhost while the
-    // invite has to name the public site.
-    const url = await screen.findByTestId("invite-url");
-    expect(url.textContent).toBe(
-      `https://game.example.com/join/bru.${"s".repeat(43)}`,
-    );
-    expect(screen.getByText(/This is the one time it prints/)).toBeDefined();
-    // A minted token is never persisted: the store keeps its digest
-    // alone, thus a lost invite wants a rotate and not a lookup.
-    const kept = Object.values(window.localStorage);
-    expect(kept.join(" ")).not.toContain("s".repeat(43));
-    window.localStorage.removeItem(ORIGIN_KEY);
-  });
-
-  it("defaults the display name to the player name", async () => {
-    const api = makeStubApi([dayRow({ status: "revealed" })]);
-    render(<DevApp api={api} />);
-    fireEvent.change(await screen.findByLabelText("Player name"), {
-      target: { value: "cyd" },
-    });
-    fireEvent.click(screen.getByText("Mint the invite"));
-    await waitFor(() => expect(api.mints).toEqual([["cyd", "cyd"]]));
-  });
-
-  it("refuses to mint with no player name", async () => {
-    const api = makeStubApi([dayRow({ status: "revealed" })]);
-    render(<DevApp api={api} />);
-    const button = await screen.findByText("Mint the invite");
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(button);
-    expect(api.mints).toEqual([]);
-  });
-
-  it("says why a mint was refused", async () => {
-    const base = makeStubApi([dayRow({ status: "revealed" })]);
-    const api: DevApi = {
-      ...base,
-      mintPlayer: () =>
-        Promise.reject(new DevApiError(409, "player 'ade' is stored")),
-    };
-    render(<DevApp api={api} />);
-    fireEvent.change(await screen.findByLabelText("Player name"), {
-      target: { value: "ade" },
-    });
-    fireEvent.click(screen.getByText("Mint the invite"));
-    expect(await screen.findByText("player 'ade' is stored")).toBeDefined();
-    expect(screen.queryByTestId("invite-url")).toBeNull();
+    await screen.findByRole("button", { name: "Manage ade" });
+    expect(screen.queryByLabelText("Player name")).toBeNull();
+    expect(screen.queryByText(/invite/i)).toBeNull();
   });
 
   it("shows a failed submission read instead of nothing-sent", async () => {
@@ -1002,30 +933,71 @@ describe("the Players tab", () => {
     ).toBeDefined();
   });
 
-  it("prints a new invite address one time, with the invite origin", async () => {
-    window.localStorage.setItem(ORIGIN_KEY, "https://game.example.com/");
+  it("prints the operator's recovery code one time, with its hold", async () => {
     const api = makeStubApi([dayRow({})]);
     await openAde(api);
-    fireEvent.click(screen.getByText("New invite address"));
-    expect(api.calls).not.toContain("rotate ade");
-    fireEvent.click(screen.getByText("Yes, make a new address"));
-    const url = await screen.findByTestId("account-invite-url");
-    expect(url.textContent).toBe(
-      `https://game.example.com/join/ade.${"t".repeat(43)}`,
-    );
-    expect(api.calls).toContain("rotate ade");
+    fireEvent.click(screen.getByRole("button", { name: "Recovery code" }));
+    // The question names the hold and the notice before the code is made.
+    expect(screen.getByText(/works only after 24 hours/)).toBeDefined();
+    expect(api.calls).not.toContain("recovery-code ade");
+    fireEvent.click(screen.getByText("Yes, make a recovery code"));
+    const code = await screen.findByTestId("account-recovery-code");
+    expect(code.textContent).toBe(OPERATOR_CODE);
+    expect(api.calls).toContain("recovery-code ade");
+    // The time the code starts to work, and the notice on the devices.
+    expect(
+      screen.getByText("It works only from 2026-08-13 12:00 UTC."),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/shows a notice with a\s+“Stop this” control/),
+    ).toBeDefined();
+    expect(screen.getByText(/This is the one time it prints/)).toBeDefined();
+    // A printed code is never persisted: the store keeps its digest.
     const kept = Object.values(window.localStorage);
-    expect(kept.join(" ")).not.toContain("t".repeat(43));
-    window.localStorage.removeItem(ORIGIN_KEY);
+    expect(kept.join(" ")).not.toContain(OPERATOR_CODE);
   });
 
-  it("prints a device code for a player with no signed-in device", async () => {
+  it("has no invite control and no device-code control", async () => {
+    // Spec A2 §10.1 and decision D13: the recovery code, with its
+    // hold, is the one procedure into an account from the console.
     const api = makeStubApi([dayRow({})]);
     await openAde(api);
-    fireEvent.click(screen.getByText("Device code"));
-    expect((await screen.findByTestId("account-device-code")).textContent).toBe(
-      "ABCD-EFGH",
+    expect(screen.queryByText("New invite address")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Device code" })).toBeNull();
+  });
+
+  it("says if the player has a password", async () => {
+    const base = makeStubApi([dayRow({})]);
+    await openAde(base);
+    expect(screen.getByTestId("account-has-password").textContent).toBe(
+      "has a password",
     );
+    expect(screen.queryByTestId("account-operator-code")).toBeNull();
+  });
+
+  it("shows a live operator's code with its two times", async () => {
+    const base = makeStubApi([dayRow({})]);
+    const api: DevApi = {
+      ...base,
+      getPlayer: (player) =>
+        Promise.resolve(
+          playerFixture({
+            player,
+            has_password: false,
+            operator_code: {
+              issued_at: "2026-08-12T12:00:00+00:00",
+              usable_at: "2026-08-13T12:00:00+00:00",
+            },
+          }),
+        ),
+    };
+    await openAde(api);
+    expect(screen.getByTestId("account-has-password").textContent).toBe(
+      "no password set",
+    );
+    const note = screen.getByTestId("account-operator-code");
+    expect(note.textContent).toContain("made 2026-08-12 12:00 UTC");
+    expect(note.textContent).toContain("works from 2026-08-13 12:00 UTC");
   });
 
   it("asks before a revoke, and offers a restore for a revoked player", async () => {
@@ -1050,7 +1022,33 @@ describe("the Players tab", () => {
     fireEvent.click(screen.getByText("Yes, revoke"));
     expect(await screen.findByText("Restore access")).toBeDefined();
     expect(api.calls).toContain("revoke ade");
-    expect(screen.queryByText("New invite address")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Recovery code" })).toBeNull();
+  });
+
+  it("restores a revoked player and prints the recovery code", async () => {
+    const base = makeStubApi([dayRow({})]);
+    let revoked = true;
+    const api: DevApi & { calls: string[] } = {
+      ...base,
+      getPlayer: async (player) =>
+        revoked
+          ? playerFixture({ player, status: "revoked" })
+          : base.getPlayer(player),
+      restorePlayer: async (player) => {
+        revoked = false;
+        return base.restorePlayer(player);
+      },
+    };
+    await openAde(api);
+    fireEvent.click(screen.getByText("Restore access"));
+    fireEvent.click(screen.getByText("Yes, restore"));
+    const code = await screen.findByTestId("account-recovery-code");
+    expect(code.textContent).toBe(RESTORE_CODE);
+    expect(api.calls).toContain("restore ade");
+    expect(screen.getByText(/ade is active again/)).toBeDefined();
+    expect(
+      screen.getByText("It works only from 2026-08-13 12:00 UTC."),
+    ).toBeDefined();
   });
 
   it("removes expired sign-ins and says how many", async () => {
@@ -1216,21 +1214,9 @@ describe("the Players tab after the review", () => {
     render(<DevApp api={api} />);
     openTab("Players");
     fireEvent.click(await screen.findByRole("button", { name: "Manage ade" }));
-    expect(await screen.findByText("New invite address")).toBeDefined();
-  });
-
-  it("warns when the invite would name the console's own address", async () => {
-    window.localStorage.setItem(ORIGIN_KEY, "http://localhost:5173");
-    render(<DevApp api={makeStubApi([dayRow({})])} />);
-    openTab("Players");
     expect(
-      await screen.findByText(/This is the console's own address/),
+      await screen.findByRole("button", { name: "Recovery code" }),
     ).toBeDefined();
-    fireEvent.change(screen.getByLabelText("Site address in the invite"), {
-      target: { value: "https://game.example.com" },
-    });
-    expect(screen.queryByText(/This is the console's own address/)).toBeNull();
-    window.localStorage.removeItem(ORIGIN_KEY);
   });
 });
 

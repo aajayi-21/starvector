@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from svc_fixture import mint_player
 from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
 
 from pipeline.config import load_scoring_config, parse_scoring_config
@@ -412,7 +413,7 @@ def test_the_alert_with_no_address_says_so(monkeypatch, capsys) -> None:
 def _door_world(tmp_path):
     fixture = build_service_fixture(tmp_path)
     config = fixture["service_config"]
-    players.mint_player(config, player="ade", display_name="Ade",
+    mint_player(config, player="ade", display_name="Ade",
                         clock=_clock, secret="1" * 43)
     client = TestClient(create_app(config, dev_mode=True, cookie_secure=False,
                                    operator_token=TOKEN))
@@ -803,7 +804,7 @@ def test_the_operator_reader_reports_a_cut(tmp_path) -> None:
 
 def test_the_operator_path_says_when_it_cut(tmp_path, monkeypatch) -> None:
     fixture, config = _played_world(tmp_path)
-    players.mint_player(config, player="ade", display_name="Ade",
+    mint_player(config, player="ade", display_name="Ade",
                         clock=_clock, secret="1" * 43)
     monkeypatch.setattr(index, "revealed_trial_rows",
                         lambda _target, **_keywords: ([{"day": DAY}], True))

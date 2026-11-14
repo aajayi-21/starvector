@@ -18,6 +18,7 @@ randomness that makes the bytes different.
 import dataclasses
 from pathlib import Path
 
+from svc_fixture import mint_player
 from svc_fixture import (FIXED_CLOCK, build_service_fixture,
                          mixed_wire_record, pinned_session_value,
                          plant_session)
@@ -26,7 +27,18 @@ from service import players, store
 from service.day import close_day, open_day, reveal_day
 from service.server import create_app
 
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _no_daily_board_floor(monkeypatch):
+    """The players of these worlds have no earlier played days, and the
+    tests are about the rows of a board. The floor of spec A2 section
+    9.5 has its own tests (test_daily_board_floor.py)."""
+    from service import rollup as rollup_module
+
+    monkeypatch.setattr(rollup_module, "DAILY_BOARD_FLOOR_DAYS", 0)
 
 DAY = "2026-08-12"
 TOKEN = "test-operator-token"
@@ -47,7 +59,7 @@ def _two_player_world(tmp_path, *, bru_sent: bool):
     config = fixture["service_config"]
     for name, label, secret in (("alice", "Alice", ALICE),
                                 ("bru", "Bru", BRU)):
-        players.mint_player(config, player=name, display_name=label,
+        mint_player(config, player=name, display_name=label,
                             clock=lambda: FIXED_CLOCK, secret=secret)
         plant_session(fixture["store"], f"{name}.{secret}")
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
@@ -199,19 +211,41 @@ def test_the_refusal_says_nothing_about_who_is_stored(
     """The enumeration oracle.
 
     A body or a length that moves with the player name lets
-    anybody walk the roster. _resolve_token compares against a
-    fixed missing digest before it branches, thus an unknown name
-    costs the same single file read and the same fixed-width
-    compare as an incorrect secret.
+    anybody walk the roster. Sign-in gives one constant body for a
+    stored name with a bad password and for a name with no account,
+    and it does one compare in each of the two (spec A2 section 9.3).
+    The invite address of before that spec answers one constant 404.
     """
+    import datetime
+
+    from svc_fixture import QuickDigester
+
+    from service import signin
+
     fixture = build_service_fixture(tmp_path)
     config = fixture["service_config"]
-    players.mint_player(config, player="alice", display_name="Alice",
+    mint_player(config, player="alice", display_name="Alice",
                         clock=lambda: FIXED_CLOCK, secret=ALICE)
-    client = TestClient(create_app(config, operator_token=TOKEN))
-    answers = [client.get(f"/join/{token}", follow_redirects=False)
-               for token in (f"alice.{'9' * 43}", f"zzzz.{'9' * 43}",
-                             f"bru.{ALICE}", "not-a-token")]
+    digester = QuickDigester()
+    signin.set_password(
+        fixture["store"], player="alice", current_password=None,
+        password="correct horse battery", digester=digester,
+        usual=frozenset(), instant=datetime.datetime.now(datetime.UTC))
+    client = TestClient(create_app(config, operator_token=TOKEN,
+                                   digester=digester,
+                                   usual_passwords=frozenset()),
+                        base_url="https://testserver",
+                        headers={"origin": "https://testserver"})
+    answers = [client.post("/api/signin",
+                           json={"username": name, "password": "x" * 12})
+               for name in ("alice", "zzzz", "bru", "not a name")]
     assert len({answer.content for answer in answers}) == 1
     assert len({len(answer.content) for answer in answers}) == 1
     assert {answer.status_code for answer in answers} == {401}
+    # Each name with no account cost one compare against the fixed digest.
+    assert digester.absent_count == 3
+    joins = [client.get(f"/join/{token}", follow_redirects=False)
+             for token in (f"alice.{ALICE}", f"alice.{'9' * 43}",
+                           f"zzzz.{'9' * 43}", "not-a-token")]
+    assert len({answer.content for answer in joins}) == 1
+    assert {answer.status_code for answer in joins} == {404}

@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from svc_fixture import mint_player
 from svc_fixture import (FIXED_CLOCK, build_service_fixture,
                          mixed_wire_record, pinned_session_value,
                          plant_session)
@@ -46,7 +47,7 @@ def _world(tmp_path):
     root = fixture["store"]
     for token, label in ((ADE, "Ade"), (BRU, "Bru Lin")):
         name, secret = auth.parse_token(token)
-        players.mint_player(config, player=name, display_name=label,
+        mint_player(config, player=name, display_name=label,
                             clock=lambda: FIXED_CLOCK, secret=secret)
         plant_session(root, token)
     open_day(config, date=FIRST, clock=lambda: FIXED_CLOCK,
@@ -239,7 +240,7 @@ def test_the_player_export_is_the_callers_own(tmp_path) -> None:
     assert answer.headers["content-disposition"].startswith(
         'attachment; filename="starvector-ade-')
     body = answer.json()
-    assert body["player"] == "ade" and body["display_name"] == "Ade"
+    assert body["player"] == "ade" and body["display_name"] == "ade"
     assert [day["day"] for day in body["days"]] == [FIRST, SECOND]
     revealed, open_day_row = body["days"]
     assert revealed["result"]["p"] is not None

@@ -1,112 +1,107 @@
 """The operator's player commands (spec M1 section 4, spec BR1
-section 4).
+section 4, spec A2 section 10).
 
-Mint an invite, turn a token, revoke a player, put one back, show
-the roster, show and end a player's sessions, and prune the expired
-sign-in records. The mint answers the invite one time: the store
-keeps the digest alone, thus a token nobody can find wants a turn
-and not a lookup.
+Revoke a player, put one back, give a recovery code, claim the names
+of the stored players, show the roster, show and end a player's
+sessions, and prune the expired sign-in records. The invite is gone
+(spec A2 ruling 2): a person makes an account at the sign-up screen,
+and this module mints nothing.
 
-This module composes the token module and the store. It reads no
-environment and holds no HTTP shape - the endpoint of section 8
-uses the same functions.
+This module composes the account moves and the store. It reads no
+environment and holds no HTTP shape - the console paths use the same
+functions.
 """
 
 import argparse
+import datetime
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from service import access, auth, store
+from service import access, auth, signin, store
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 
 
 def default_clock() -> str:
     """The current UTC time, in the store's timestamp shape."""
-    import datetime
-
     return datetime.datetime.now(datetime.UTC).isoformat()
 
 
-def mint_player(service_config: ServiceConfig, *, player: str,
-                display_name: str,
+def make_player(service_config: ServiceConfig, *, player: str,
+                display_name: str | None = None,
                 clock: Callable[[], str] = default_clock,
-                secret: str | None = None) -> tuple[store.PlayerRecord, str]:
-    """Store one new player record and answer its invite token.
+                ) -> store.PlayerRecord:
+    """Store one new player record with no credential.
 
-    The token comes back one time. The store keeps the digest, thus
-    no read that follows can collect it.
-
-    secret arrives as an argument for the tests that compare two
-    worlds as bytes, in the manner of open_day's pick_seed.
+    The dev door and the tests make players with this. Such a player
+    has no password and no invite: the door gives it a session, and a
+    session can set the first password (spec A2 section 8). The label
+    is the name when the caller gives none.
 
     Raises StoreError for an illegal name, an illegal label, or a
     name that is stored.
     """
     root = Path(service_config.store_root)
+    label = player if display_name is None else display_name
     store.check_player_name(player, "player")
-    store.check_display_name(display_name, "display_name")
-    token, digest = auth.mint_token(player, secret=secret)
+    store.check_display_name(label, "display_name")
     record = store.PlayerRecord(
-        player=player, display_name=display_name, token_hash=digest,
+        player=player, display_name=label, token_hash=None,
         created_at=clock(), status="active")
     store.ensure_store(root)
     store.write_player_record(root, record)
-    return record, token
-
-
-def rotate_player(service_config: ServiceConfig, *, player: str,
-                  secret: str | None = None
-                  ) -> tuple[store.PlayerRecord, str]:
-    """Turn one player's invite and answer the new token.
-
-    The earlier invite stops at its next use. The player's sessions
-    do not: a session is not the invite (spec BR1 section 4). To end
-    them too, run signout_player.
-    """
-    root = Path(service_config.store_root)
-    token, digest = auth.mint_token(player, secret=secret)
-    record = store.replace_player_token(root, player,
-                                        expect_status="active",
-                                        new_token_hash=digest)
-    return record, token
+    return record
 
 
 def revoke_player(service_config: ServiceConfig, *,
                   player: str) -> store.PlayerRecord:
     """Stop one player's access.
 
-    Two guarded edits, the digest first. The turned-to secret goes
-    nowhere, thus a move back to active cannot put the revoked
-    invite to use. If the process stops between the two edits, the
-    record holds a dead digest and an active status: the credential
-    is gone, which is the safe direction.
+    The status alone stops each session at its next read, and it
+    refuses sign-in and recovery. The session files go too, thus the
+    devices of before stay signed out after the player is put back.
     """
     root = Path(service_config.store_root)
-    _token, digest = auth.mint_token(player)
-    store.replace_player_token(root, player, expect_status="active",
-                               new_token_hash=digest)
     record = store.set_player_status(root, player, expect_status="active",
                                      new_status="revoked")
-    # The status alone stops each session at its next read. The files
-    # go too, thus the devices of before stay signed out after the
-    # player is put back.
     store.delete_player_sessions(root, player)
     return record
 
 
-def restore_player(service_config: ServiceConfig, *,
-                   player: str) -> tuple[store.PlayerRecord, str]:
-    """Put a revoked player back, with a new invite.
+def operator_code(service_config: ServiceConfig, *, player: str,
+                  instant: datetime.datetime) -> tuple[str, str]:
+    """The operator's recovery code for one player, and the time from
+    which it works (spec A2 section 6.1).
 
-    The status moves first and the mint follows, thus the answer
-    always carries a token the player can use.
+    Raises StoreError for a name with no record and for a revoked
+    player: a revoked account gets no recovery, thus a code for it
+    opens nothing.
     """
     root = Path(service_config.store_root)
-    store.set_player_status(root, player, expect_status="revoked",
-                            new_status="active")
-    return rotate_player(service_config, player=player)
+    record = store.read_player_record(root, player)
+    if record.status != "active":
+        raise store.StoreError(
+            f"player {player!r} is {record.status} - a recovery code is "
+            "for an active player")
+    return signin.issue_operator_code(root, player=player, instant=instant)
+
+
+def restore_player(service_config: ServiceConfig, *, player: str,
+                   instant: datetime.datetime) -> tuple[store.PlayerRecord,
+                                                        str, str]:
+    """Put a revoked player back, with an operator's recovery code.
+
+    The status moves first and the code follows, thus the answer
+    always holds a code that the player can use after its hold. The
+    password of before the revoke stays as it was.
+    """
+    root = Path(service_config.store_root)
+    record = store.set_player_status(root, player, expect_status="revoked",
+                                     new_status="active")
+    code, usable_at = signin.issue_operator_code(root, player=player,
+                                                 instant=instant)
+    return record, code, usable_at
 
 
 def signout_player(service_config: ServiceConfig, *, player: str) -> int:
@@ -137,32 +132,28 @@ def player_lines(service_config: ServiceConfig) -> list[str]:
     return lines
 
 
-def _print_invite(record: store.PlayerRecord, token: str,
-                  origin: str | None) -> None:
-    """Print the invite one time, with the caution that says so."""
-    where = "/join/" + token if origin is None else f"{origin}/join/{token}"
-    print(f"player {record.player}  {record.display_name}")
-    print(f"invite {where}")
-    print("this is the one time the invite prints - send it, then "
-          "forget it")
+def _print_code(player: str, code: str, usable_at: str) -> None:
+    """Print the operator's code one time, with the caution that says
+    so."""
+    print(f"player {player}")
+    print(f"recovery code {auth.display_recovery_code(code)}")
+    print(f"it works from {usable_at}")
+    print("this is the one time the code prints - give it to the "
+          "player, then forget it")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="service.players")
     parser.add_argument("--service-config",
                         default="configs/service/dev-wit.json")
-    parser.add_argument("--origin", default=None,
-                        help="the site address to put before /join")
     commands = parser.add_subparsers(dest="command", required=True)
-    mint_parser = commands.add_parser("mint")
-    mint_parser.add_argument("player")
-    mint_parser.add_argument("--display-name", default=None)
-    rotate_parser = commands.add_parser("rotate")
-    rotate_parser.add_argument("player")
     revoke_parser = commands.add_parser("revoke")
     revoke_parser.add_argument("player")
     restore_parser = commands.add_parser("restore")
     restore_parser.add_argument("player")
+    code_parser = commands.add_parser("recovery-code")
+    code_parser.add_argument("player")
+    commands.add_parser("claim-names")
     commands.add_parser("list")
     sessions_parser = commands.add_parser("sessions")
     sessions_parser.add_argument("player")
@@ -170,31 +161,27 @@ def main(argv: list[str] | None = None) -> int:
     signout_parser.add_argument("player")
     commands.add_parser("prune")
     arguments = parser.parse_args(argv)
-    import datetime
-
     instant = datetime.datetime.now(datetime.UTC)
 
     try:
         service_config = load_service_config(Path(arguments.service_config))
-        if arguments.command == "mint":
-            # No silent truncation: a long name wants the label
-            # said out loud (CLAUDE.md section 3).
-            display_name = arguments.display_name or arguments.player
-            record, token = mint_player(service_config,
-                                        player=arguments.player,
-                                        display_name=display_name)
-            _print_invite(record, token, arguments.origin)
-        elif arguments.command == "rotate":
-            record, token = rotate_player(service_config,
-                                          player=arguments.player)
-            _print_invite(record, token, arguments.origin)
-        elif arguments.command == "revoke":
+        if arguments.command == "revoke":
             record = revoke_player(service_config, player=arguments.player)
             print(f"player {record.player} {record.status}")
         elif arguments.command == "restore":
-            record, token = restore_player(service_config,
-                                           player=arguments.player)
-            _print_invite(record, token, arguments.origin)
+            record, code, usable_at = restore_player(
+                service_config, player=arguments.player, instant=instant)
+            print(f"player {record.player} {record.status}")
+            _print_code(record.player, code, usable_at)
+        elif arguments.command == "recovery-code":
+            code, usable_at = operator_code(
+                service_config, player=arguments.player, instant=instant)
+            _print_code(arguments.player, code, usable_at)
+        elif arguments.command == "claim-names":
+            claimed = signin.claim_stored_names(
+                Path(service_config.store_root), instant)
+            print(f"claimed {len(claimed)} name(s): "
+                  f"{', '.join(claimed) or 'none - each name has its claim'}")
         elif arguments.command == "list":
             for line in player_lines(service_config):
                 print(line)

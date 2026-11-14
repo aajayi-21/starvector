@@ -18,6 +18,7 @@ additive path and a full assembly agree.
 import argparse
 import math
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from core import aggregate
@@ -46,6 +47,35 @@ class RollupError(ValueError):
 def skill_pair_path(data_root: Path, player: str,
                     scoring_hash: str) -> Path:
     return data_root / "skill" / f"{player}.{scoring_hash[:8]}.json"
+
+
+# Decision D12 of spec A2: the played days before a board's day that
+# put a player on the public daily board.
+DAILY_BOARD_FLOOR_DAYS = 3
+
+
+def public_board_rows(rows: Sequence[Mapping[str, object]],
+                      earlier_played: Mapping[str, int], caller: str,
+                      floor: int = DAILY_BOARD_FLOOR_DAYS) -> list[dict]:
+    """The rows of one daily board that one caller gets (spec A2
+    section 9.5).
+
+    rows are the board rows in board sequence, each with a "player"
+    key. earlier_played gives, for each player, the count of earlier
+    days with a stored submission. A row is public at the floor or
+    above it. The caller also gets the caller's own row below the
+    floor, marked not public. The output keeps the board sequence, and
+    each row gets a "public" key.
+
+    The floor moves no trial score: a trial score is a rank against
+    the decoys, and no row here changes.
+    """
+    kept = []
+    for row in rows:
+        public = earlier_played.get(str(row["player"]), 0) >= floor
+        if public or row["player"] == caller:
+            kept.append({**row, "public": public})
+    return kept
 
 
 def leaderboard_path(data_root: Path, day: str, scoring_hash: str) -> Path:

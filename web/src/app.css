@@ -347,6 +347,105 @@
   grid-row: 1;
 }
 
+/* — sign-in, sign-up, and the recovery code (spec A2) — */
+.password-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.password-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.password-row .btn-icon {
+  min-height: 44px;
+  min-width: 44px;
+}
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  color: var(--text-2);
+}
+.rule-list li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.rule-list svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--text-3);
+}
+.rule-list .rule-ok,
+.rule-list .rule-ok svg {
+  color: var(--good);
+}
+.recovery-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.recovery-step h2:focus {
+  outline: none;
+}
+.recovery-code {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  user-select: all;
+}
+.recovery-input {
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.recovery-input::placeholder {
+  letter-spacing: 0;
+}
+#gate-heading:focus {
+  outline: none;
+}
+
+/* — the notice of an operator's recovery code (spec A2 §6.1) — */
+.operator-notice {
+  background: var(--warn-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  color: var(--text);
+}
+.operator-notice-body {
+  display: flex;
+  align-items: center;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 12px 24px;
+  font-size: 15px;
+}
+.operator-notice-body > svg {
+  flex: none;
+  color: var(--warn);
+}
+.operator-notice-text {
+  flex: 1;
+  min-width: 240px;
+}
+
 /* — the phone pass — */
 @media (max-width: 760px) {
   .topbar {
@@ -401,6 +500,12 @@
   }
   .side-panel {
     position: static;
+  }
+  .operator-notice-body {
+    padding: 12px 16px;
+  }
+  .recovery-code {
+    font-size: 19px;
   }
   .canvas-panel {
     padding: 12px;

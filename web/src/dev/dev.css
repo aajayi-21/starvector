@@ -139,7 +139,7 @@
 /* — text — */
 .dev-mono,
 .dev-code,
-.dev-device-code,
+.dev-recovery-code,
 .dev-sql,
 .dev-pre {
   font-family: var(--mono);
@@ -401,9 +401,11 @@
   font-size: 14px;
   color: var(--text);
 }
-.dev-device-code {
-  font-size: 28px;
-  letter-spacing: 0.15em;
+.dev-printed .dev-recovery-code {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  user-select: all;
 }
 
 /* — results database — */

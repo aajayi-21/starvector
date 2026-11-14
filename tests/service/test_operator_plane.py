@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from svc_fixture import mint_player
 from svc_fixture import FIXED_CLOCK, build_service_fixture
 
 from service import auth, players, store
@@ -38,7 +39,7 @@ _LIFECYCLE = ("/api/day/open", "/api/day/close", "/api/day/reveal")
 def _world(tmp_path, *, dev_mode=False, minted=True):
     fixture = build_service_fixture(tmp_path)
     if minted:
-        players.mint_player(fixture["service_config"], player="ade",
+        mint_player(fixture["service_config"], player="ade",
                             display_name="Ade",
                             clock=lambda: FIXED_CLOCK,
                             secret="1" * 43)
@@ -130,7 +131,7 @@ def test_the_image_surface_falls_back_to_the_gate_without_the_bearer(
 def test_the_server_refuses_to_start_with_players_and_no_token(
         tmp_path) -> None:
     fixture = build_service_fixture(tmp_path)
-    players.mint_player(fixture["service_config"], player="ade",
+    mint_player(fixture["service_config"], player="ade",
                         display_name="Ade", clock=lambda: FIXED_CLOCK,
                         secret="1" * 43)
     with pytest.raises(ServiceConfigError,
@@ -150,7 +151,7 @@ def test_main_prints_the_refusal_and_returns_one(tmp_path, capsys) -> None:
     from service import server
 
     fixture = build_service_fixture(tmp_path)
-    players.mint_player(fixture["service_config"], player="ade",
+    mint_player(fixture["service_config"], player="ade",
                         display_name="Ade", clock=lambda: FIXED_CLOCK,
                         secret="1" * 43)
     config_path = tmp_path / "service.json"
@@ -171,85 +172,107 @@ def _config_json(fixture) -> str:
         "port": config.port})
 
 
-def test_the_player_commands_mint_list_turn_and_revoke(tmp_path) -> None:
+def test_the_player_commands_list_revoke_and_restore(tmp_path) -> None:
+    import datetime
+
+    from service import signin
+
     fixture = build_service_fixture(tmp_path)
     config = fixture["service_config"]
     root = Path(config.store_root)
 
-    record, token = players.mint_player(config, player="ade",
-                                        display_name="Ade",
-                                        clock=lambda: FIXED_CLOCK,
-                                        secret="1" * 43)
-    assert token == f"ade.{'1' * 43}"
+    record = players.make_player(config, player="ade", display_name="Ade",
+                                 clock=lambda: FIXED_CLOCK)
     assert record.status == "active"
+    assert record.token_hash is None
     assert players.player_lines(config) == ["ade  active  Ade"]
-
-    first_digest = store.read_player_record(root, "ade").token_hash
-    _turned, new_token = players.rotate_player(config, player="ade",
-                                               secret="2" * 43)
-    assert new_token == f"ade.{'2' * 43}"
-    assert store.read_player_record(root, "ade").token_hash != first_digest
 
     revoked = players.revoke_player(config, player="ade")
     assert revoked.status == "revoked"
-    # The digest moved too, thus a move back cannot revive it.
-    assert not auth.secret_matches(
-        "2" * 43, store.read_player_record(root, "ade").token_hash)
+    now = datetime.datetime.now(datetime.UTC)
+    # A revoked account gets no recovery, thus it gets no code.
+    with pytest.raises(store.StoreError, match="revoked"):
+        players.operator_code(config, player="ade", instant=now)
 
-    _back, third = players.restore_player(config, player="ade")
-    assert store.read_player_record(root, "ade").status == "active"
-    assert auth.secret_matches(third.split(".", 1)[1],
-                               store.read_player_record(
-                                   root, "ade").token_hash)
+    back, code, usable_at = players.restore_player(config, player="ade",
+                                                   instant=now)
+    assert back.status == "active"
+    assert auth.normalize_recovery_code(code) == code
+    assert usable_at == (now + datetime.timedelta(hours=24)).isoformat()
+    assert signin.operator_code_view(root, "ade")["usable_at"] == usable_at
 
 
 def test_the_player_listing_prints_no_secret(tmp_path) -> None:
+    import datetime
+
     fixture = build_service_fixture(tmp_path)
     config = fixture["service_config"]
-    _record, token = players.mint_player(config, player="ade",
-                                         display_name="Ade",
-                                         clock=lambda: FIXED_CLOCK,
-                                         secret="1" * 43)
-    secret = token.split(".", 1)[1]
+    players.make_player(config, player="ade", display_name="Ade",
+                        clock=lambda: FIXED_CLOCK)
+    code, _usable = players.operator_code(
+        config, player="ade", instant=datetime.datetime.now(datetime.UTC))
     joined = "\n".join(players.player_lines(config))
-    assert secret not in joined
-    assert store.read_player_record(
-        Path(config.store_root), "ade").token_hash not in joined
+    assert code not in joined
+    assert auth.recovery_code_hash(code) not in joined
 
 
-def test_the_player_cli_refuses_an_illegal_name(tmp_path, capsys) -> None:
+def test_the_player_cli_has_no_mint_and_no_rotate(tmp_path, capsys) -> None:
     fixture = build_service_fixture(tmp_path)
     config_path = tmp_path / "service.json"
     config_path.write_text(_config_json(fixture))
+    for command in ("mint", "rotate"):
+        with pytest.raises(SystemExit):
+            players.main(["--service-config", str(config_path),
+                          command, "ade"])
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_the_player_cli_prints_the_operator_code_one_time(
+        tmp_path, capsys) -> None:
+    fixture = build_service_fixture(tmp_path)
+    players.make_player(fixture["service_config"], player="ade",
+                        clock=lambda: FIXED_CLOCK)
+    config_path = tmp_path / "service.json"
+    config_path.write_text(_config_json(fixture))
     code = players.main(["--service-config", str(config_path),
-                         "mint", "A Player"])
-    assert code == 1
+                         "recovery-code", "ade"])
+    assert code == 0
+    printed = capsys.readouterr().out
+    assert "recovery code " in printed and "it works from " in printed
+    assert "one time" in printed
+    shown = printed.split("recovery code ")[1].split("\n")[0]
+    assert auth.normalize_recovery_code(shown) is not None
+    assert players.main(["--service-config", str(config_path),
+                         "recovery-code", "nobody"]) == 1
     assert "refused:" in capsys.readouterr().err
 
 
-def test_the_player_cli_mints_and_prints_the_invite_one_time(
-        tmp_path, capsys) -> None:
-    fixture = build_service_fixture(tmp_path)
-    config_path = tmp_path / "service.json"
-    config_path.write_text(_config_json(fixture))
-    code = players.main(["--service-config", str(config_path),
-                         "--origin", "https://game.example.com",
-                         "mint", "ade", "--display-name", "Ade"])
-    assert code == 0
-    printed = capsys.readouterr().out
-    assert "https://game.example.com/join/ade." in printed
-    assert "one time" in printed
-
-
-def test_the_mint_refuses_a_name_that_is_stored(tmp_path) -> None:
+def test_the_player_cli_claims_the_stored_names(tmp_path, capsys) -> None:
     fixture = build_service_fixture(tmp_path)
     config = fixture["service_config"]
-    players.mint_player(config, player="ade", display_name="Ade",
-                        clock=lambda: FIXED_CLOCK, secret="1" * 43)
-    digest = store.read_player_record(Path(config.store_root),
-                                      "ade").token_hash
+    for name in ("ade", "bru"):
+        players.make_player(config, player=name, clock=lambda: FIXED_CLOCK)
+    config_path = tmp_path / "service.json"
+    config_path.write_text(_config_json(fixture))
+    assert players.main(["--service-config", str(config_path),
+                         "claim-names"]) == 0
+    assert "claimed 2 name(s): ade, bru" in capsys.readouterr().out
+    assert players.main(["--service-config", str(config_path),
+                         "claim-names"]) == 0
+    assert "claimed 0 name(s)" in capsys.readouterr().out
+    players.make_player(config, player="a-de", clock=lambda: FIXED_CLOCK)
+    assert players.main(["--service-config", str(config_path),
+                         "claim-names"]) == 1
+    assert "folded shape" in capsys.readouterr().err
+
+
+def test_a_second_record_for_a_stored_name_is_refused(tmp_path) -> None:
+    fixture = build_service_fixture(tmp_path)
+    config = fixture["service_config"]
+    players.make_player(config, player="ade", display_name="Ade",
+                        clock=lambda: FIXED_CLOCK)
     with pytest.raises(store.StoreError, match="one-write"):
-        players.mint_player(config, player="ade", display_name="Other",
-                            clock=lambda: FIXED_CLOCK, secret="2" * 43)
+        players.make_player(config, player="ade", display_name="Other",
+                            clock=lambda: FIXED_CLOCK)
     assert store.read_player_record(Path(config.store_root),
-                                    "ade").token_hash == digest
+                                    "ade").display_name == "Ade"

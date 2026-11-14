@@ -85,12 +85,18 @@ describe("the signed-out landing page", () => {
       await screen.findByText("A new hidden photo every day."),
     ).toBeDefined();
     expect(screen.getByText("How it works")).toBeDefined();
-    expect(screen.getByText(/open the invite link/)).toBeDefined();
+    // The gate of spec A2 §3: a username and a password, and no
+    // invite to open.
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeDefined();
+    expect(screen.getByLabelText("Username")).toBeDefined();
+    expect(screen.getByLabelText("Password")).toBeDefined();
+    expect(screen.queryByText(/invite/i)).toBeNull();
     // The landing replaces the app: no navigation, no screen behind.
     expect(screen.queryByRole("navigation")).toBeNull();
     expect(screen.queryByText("Your results")).toBeNull();
-    // With the door off, the device code is the one thing to type.
-    expect(screen.getAllByRole("textbox")).toHaveLength(1);
+    // With the door off: the username and the device code. The
+    // password field has no textbox role while it hides its value.
+    expect(screen.getAllByRole("textbox")).toHaveLength(2);
     expect(screen.getByLabelText("Signed in on another device?")).toBeDefined();
     expect(screen.queryByText("Test server sign-in")).toBeNull();
   });
@@ -114,7 +120,7 @@ describe("the signed-out landing page", () => {
     };
     renderAt("/", api);
     const field = await screen.findByLabelText("Signed in on another device?");
-    const submit = screen.getByRole("button", { name: "Sign in" });
+    const submit = screen.getByRole("button", { name: "Use this code" });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(field, { target: { value: "abcd-efgh" } });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
@@ -132,7 +138,7 @@ describe("the signed-out landing page", () => {
     renderAt("/", api);
     const field = await screen.findByLabelText("Signed in on another device?");
     fireEvent.change(field, { target: { value: "ZZZZ-ZZZZ" } });
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use this code" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(
       /works once and expires after 10 minutes/,
     );
@@ -150,8 +156,8 @@ describe("the signed-out landing page", () => {
 
   it("does not render while the server is down", async () => {
     // A thrown fetch is ApiError(0) and a broken server is a 500;
-    // neither means "sign in here". Sending that reader to look
-    // for an invite sends them somewhere no invite helps.
+    // neither means "sign in here". Showing that reader a sign-in
+    // form sends them somewhere no password helps.
     for (const error of [
       new ApiError(0),
       new ApiError(500, undefined, "boom"),

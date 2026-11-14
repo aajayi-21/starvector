@@ -49,18 +49,31 @@ test("close and reveal over HTTP, then the results render", async ({
   await expect(page.getByText(LIVE_SECRET).first()).toBeVisible();
   await expect(page.getByText(/\| sha256sum$/)).toBeVisible();
 
-  // The live board serves both players who sent (spec M1 B8): the
-  // caller as "You", the other by display name.
+  // Two players sent this day (spec M1 B8), and the floor of spec A2
+  // §9.5 holds each of them off the public board: no fixture player
+  // has 3 earlier played days. The caller thus gets the caller's own
+  // row alone, as "You", with the mark that no other player sees it.
   const wire = await (
     await page.request.get(`${SERVER}/api/leaderboard`)
   ).json();
-  expect(wire.rows.length).toBe(2);
+  expect(wire.rows.length).toBe(1);
+  expect(wire.rows[0].player).toBe("ade");
+  expect(wire.rows[0].public).toBe(false);
+  expect(wire.floor.played_days).toBe(3);
+  expect(wire.floor.caller_played_days).toBeLessThan(3);
   const board = page
     .locator("section")
     .filter({ hasText: "Everyone this day" });
   await expect(board.locator("tbody tr")).toHaveCount(wire.rows.length);
   await expect(board.getByText("You", { exact: true })).toBeVisible();
-  await expect(board.getByText("Bru Lin")).toBeVisible();
+  await expect(board.getByText("Only you can see this row")).toBeVisible();
+  await expect(
+    board.getByText(
+      `once you have played on ${wire.floor.played_days} earlier days, and ` +
+        `you have played on ${wire.floor.caller_played_days}.`,
+    ),
+  ).toBeVisible();
+  await expect(board.getByText("bru", { exact: true })).toHaveCount(0);
 
   // The sketch replays from the live stored submission.
   await expect(page.locator(".picture-frame canvas")).toHaveCount(1);

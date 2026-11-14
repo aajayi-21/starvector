@@ -216,7 +216,10 @@ def test_the_leaderboard_serves_the_one_honest_row(
     # no stored record falls back to its store key, which is the
     # world this fixture builds.
     assert set(row) == {"player", "display_name", "avatar_hash", "p",
-                        "target_rank", "decoy_count", "streak"}
+                        "target_rank", "decoy_count", "streak", "public"}
+    # The caller's own row, below the floor of spec A2 section 9.5.
+    assert row["public"] is False
+    assert body["floor"] == {"played_days": 3, "caller_played_days": 0}
     assert row["display_name"] == "ade"
     from service import store as store_module
 

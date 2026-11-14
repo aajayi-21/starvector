@@ -373,6 +373,10 @@ select.input {
   background: var(--good-soft);
   color: var(--good);
 }
+.notice-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
 
 /* — tables — */
 .table {

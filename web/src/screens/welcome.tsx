@@ -1,14 +1,20 @@
 /**
- * The signed-out landing page (spec BR1 §4, §6). It replaces the
- * invite gate of spec M1 §9, which had nothing to type and no way
- * back in. It renders on a 401 and on nothing else: a server that is
- * down is ApiError(0), and sending that reader to hunt for a link
- * takes them somewhere no link helps.
+ * The signed-out gate screen (spec A2 §3, on the landing page of spec
+ * BR1 §6). It renders on a 401 and on nothing else: a server that is
+ * down is ApiError(0), and showing that reader a sign-in form sends
+ * them somewhere no password helps.
  *
- * Two ways in, both typed or opened on this device:
- * - the invite link, which the server turns into a session;
- * - a device code from a device that is signed in — the path that
- *   works in an iPhone home-screen app, which keeps its own cookies.
+ * The ways in, each typed on this device:
+ * - a username and a password (`Sign in`);
+ * - a new account (`Make an account`), when the server makes them;
+ * - a recovery code (`I do not have my password`);
+ * - a device code from a device that is signed in — the path with no
+ *   password to type (spec A2 §3.5).
+ *
+ * A sign-up and a recovery answer with a recovery code. The screen
+ * shows it one time and reads `me` again only after the player clicks
+ * `I have my code`, thus the app does not replace the code before the
+ * player has it.
  *
  * On a dev server the open door (spec A1 §4) adds a name field.
  */
@@ -18,11 +24,24 @@ import { useState } from "react";
 
 import { useApi } from "../api/client";
 import { friendlyMessage, isRefusal } from "../api/types";
+import { GateCard } from "../signin/gate-card";
+import { RecoveryCodeStep } from "../signin/recovery-code-step";
 import { LogoMark } from "../ui/logo";
 import { HowItWorksSteps, Premise } from "./how";
 
+/** The query keys this screen reads with no session. */
+const GATE_READS: ReadonlySet<string> = new Set(["about", "door", "signup"]);
+
+/** A recovery code that waits for its `I have my code` click. */
+interface ShownCode {
+  code: string;
+  /** True after a recovery: the earlier code is dead. */
+  replaces: boolean;
+}
+
 export function WelcomeScreen(): React.JSX.Element {
   const api = useApi();
+  const queryClient = useQueryClient();
   const about = useQuery({
     queryKey: ["about"],
     queryFn: () => api.getAbout(),
@@ -33,6 +52,23 @@ export function WelcomeScreen(): React.JSX.Element {
     queryFn: () => api.getDoor(),
     retry: false,
   });
+  // Read one time (spec A2 §8): the constant 404 means no sign-up.
+  const signup = useQuery({
+    queryKey: ["signup"],
+    queryFn: () => api.getSignup(),
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const [shown, setShown] = useState<ShownCode | null>(null);
+  // The cookie came with the answer. Each query of the app starts
+  // again, thus the shell reads me and renders signed in, and no
+  // screen shows a cached answer of an account that was signed in
+  // here before. The gate's own reads hold no player's data and stay:
+  // the sign-up switch is read one time (spec A2 §8).
+  const enter = () =>
+    void queryClient.resetQueries({
+      predicate: (query) => !GATE_READS.has(String(query.queryKey[0])),
+    });
   const photoCount = about.data?.photo_count;
   return (
     <>
@@ -44,8 +80,7 @@ export function WelcomeScreen(): React.JSX.Element {
       </header>
       {about.data?.test_season === true ? (
         <div className="season-note" role="note">
-          Test season — invited players only. Results won't carry over to the
-          public launch.
+          Test season — results won't carry over to the public launch.
         </div>
       ) : null}
       <main className="page">
@@ -64,12 +99,32 @@ export function WelcomeScreen(): React.JSX.Element {
         </div>
         {/* Sign-in comes first in the page flow: on a phone it is the
             first card, and a home-screen app that opens signed out
-            meets the code field at once. On a wide screen the grid
-            puts it in the right column (app.css .welcome-grid). */}
+            meets the form at once. On a wide screen the grid puts it
+            in the right column (app.css .welcome-grid). */}
         <div className="two-columns welcome-grid">
           <div className="stack welcome-signin">
-            <SignInCard />
-            {door.data?.open === true ? <DoorCard /> : null}
+            {shown === null ? (
+              <>
+                <GateCard
+                  signupOpen={signup.data?.open === true}
+                  signupClosed={isRefusal(signup.error)}
+                  onSignedIn={enter}
+                  onRecoveryCode={(code, replaces) =>
+                    setShown({ code, replaces })
+                  }
+                />
+                <DeviceCodeCard onSignedIn={enter} />
+                {door.data?.open === true ? <DoorCard /> : null}
+              </>
+            ) : (
+              <div className="card card-hero">
+                <RecoveryCodeStep
+                  code={shown.code}
+                  replaces={shown.replaces}
+                  onDone={enter}
+                />
+              </div>
+            )}
           </div>
           <section className="card" aria-labelledby="how-heading">
             <h2 id="how-heading">How it works</h2>
@@ -82,27 +137,23 @@ export function WelcomeScreen(): React.JSX.Element {
   );
 }
 
-function SignInCard(): React.JSX.Element {
+/**
+ * The device code (spec A2 §3.5): a signed-in device makes a code of
+ * 8 characters, and this device types it. No password is typed.
+ */
+function DeviceCodeCard(props: { onSignedIn: () => void }): React.JSX.Element {
   const api = useApi();
-  const queryClient = useQueryClient();
   const [code, setCode] = useState("");
   const redeem = useMutation({
     mutationFn: () => api.redeemDeviceCode(code),
-    onSuccess: () => {
-      // The cookie came with the answer; the shell reads me again
-      // and renders signed in.
-      void queryClient.invalidateQueries({ queryKey: ["me"] });
-    },
+    onSuccess: props.onSignedIn,
   });
   const typed = code.replaceAll(/[\s-]/g, "");
   return (
-    <section className="card card-hero" aria-labelledby="signin-heading">
-      <h2 id="signin-heading">Sign in</h2>
-      <p className="muted">
-        Starvector is invite-only for now. To sign in, open the invite link you
-        were sent on this device.
-      </p>
-      <hr className="divider" />
+    <section
+      className="card card-quiet"
+      aria-label="Sign in with a device code"
+    >
       <form
         className="stack-sm"
         onSubmit={(event) => {
@@ -117,7 +168,7 @@ function SignInCard(): React.JSX.Element {
         </label>
         <p className="hint" id="device-code-hint">
           On that device, open your account and choose “Add a device”. Then type
-          the 8-character code here.
+          the 8-character code here. You don't need your password.
         </p>
         <div className="row" style={{ flexWrap: "nowrap" }}>
           <input
@@ -139,10 +190,10 @@ function SignInCard(): React.JSX.Element {
           />
           <button
             type="submit"
-            className="btn btn-primary"
+            className="btn btn-secondary"
             disabled={typed.length !== 8 || redeem.isPending}
           >
-            {redeem.isPending ? "Signing in…" : "Sign in"}
+            {redeem.isPending ? "Signing in…" : "Use this code"}
           </button>
         </div>
         {redeem.isError ? (
@@ -159,16 +210,11 @@ function DoorCard(): React.JSX.Element {
   const api = useApi();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
-  const [label, setLabel] = useState("");
   const [token, setToken] = useState("");
 
   const enter = useMutation({
-    mutationFn: () =>
-      api.postDoor(
-        name.trim(),
-        label.trim() === "" ? undefined : label.trim(),
-        token,
-      ),
+    // No display name: the username is the one name (spec A2 ruling 3).
+    mutationFn: () => api.postDoor(name.trim(), undefined, token),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["me"] });
     },
@@ -179,7 +225,7 @@ function DoorCard(): React.JSX.Element {
       <h3 id="door-heading">Test server sign-in</h3>
       <p className="hint">
         This is a test server, so the operator can sign in with a name and the
-        operator token. Real servers don't show this.
+        operator token, with no password. Real servers don't show this.
       </p>
       <form
         className="stack-sm"
@@ -199,15 +245,6 @@ function DoorCard(): React.JSX.Element {
           placeholder="lowercase letters, digits, hyphens"
           value={name}
           onChange={(event) => setName(event.target.value)}
-        />
-        <label className="label" htmlFor="door-label">
-          Display name <span className="subtle">(optional)</span>
-        </label>
-        <input
-          id="door-label"
-          className="input"
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
         />
         <label className="label" htmlFor="door-token">
           Operator token

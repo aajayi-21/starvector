@@ -154,6 +154,13 @@ It keeps refusing `/dev` and `/ui/dev.js`, which name nothing in
 the server since the hand-written pages retired. A caller that
 tries a console-shaped path meets a 404 and not the app shell.
 
+*Note, 2026-11-13 (spec A2):* the player mint and the invite are gone.
+A person makes an account with a username and a password when the
+server config has `"signup": "open"`, and the environment file has a
+third secret, `STARVECTOR_PASSWORD_PEPPER`. `docs/droplet-deployment.md`
+section 13 has the procedure. The text about the mint below is the
+record of before that date.
+
 The mint wants the proxy refusal because of something the others
 do not have. It is the one operator path that needs no `--dev`,
 thus it is live in the public process, and that process must hold

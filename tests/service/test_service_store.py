@@ -15,7 +15,7 @@ from service.store import (DayRecord, PlayerRecord, StoreError, any_player,
                            list_days, list_players, list_submissions,
                            player_record_path, read_day_record,
                            read_player_or_none, read_player_record,
-                           replace_player_token, set_player_status,
+                           set_player_status,
                            submission_path, trial_row_path,
                            update_day_status, write_day_record,
                            write_once_json, write_player_record)
@@ -317,17 +317,15 @@ def test_a_record_whose_name_disagrees_with_its_file_refuses(
         read_player_record(tmp_path, "ade")
 
 
-def test_the_token_replace_is_guarded(tmp_path: Path) -> None:
-    write_player_record(tmp_path, _player())
-    with pytest.raises(StoreError, match="needs 'revoked'"):
-        replace_player_token(tmp_path, "ade", expect_status="revoked",
-                             new_token_hash="b" * 64)
-    moved = replace_player_token(tmp_path, "ade", expect_status="active",
-                                 new_token_hash="b" * 64)
-    assert moved.token_hash == "b" * 64
-    assert moved.player == "ade"
-    assert moved.created_at == _player().created_at
-    assert read_player_record(tmp_path, "ade").token_hash == "b" * 64
+def test_a_record_with_no_invite_digest_reads(tmp_path: Path) -> None:
+    # A record of spec A2 holds None there: the invite is gone.
+    import dataclasses
+
+    write_player_record(tmp_path,
+                        dataclasses.replace(_player(), token_hash=None))
+    assert read_player_record(tmp_path, "ade").token_hash is None
+    raw = json.loads(player_record_path(tmp_path, "ade").read_text())
+    assert raw["token_hash"] is None
 
 
 def test_the_player_status_move_is_guarded(tmp_path: Path) -> None:

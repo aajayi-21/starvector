@@ -186,13 +186,108 @@ describe("the leaderboard screen", () => {
   });
 
   it("marks the caller by store key, never by label", async () => {
-    // Two players share a display name in the mock population. A
-    // screen that compares on the label lights up strangers.
+    // The username is the key and the one name (spec A2 ruling 3).
+    // A screen that compares on a label lights up strangers.
     const board = await api().getSkillLeaderboard();
     renderAt("/leaderboard");
     const table = await screen.findByTestId("ranked-table");
     expect(within(table).queryAllByText("You").length).toBeLessThanOrEqual(1);
     expect(board.rows.filter((row) => row.player === "ade")).toHaveLength(1);
+  });
+});
+
+describe("the daily board after spec A2 (ruling 3, §9.5)", () => {
+  /** The mock with the daily board's own row and floor replaced. */
+  function daily(own: { public: boolean }, played: number) {
+    const base = api();
+    return {
+      ...base,
+      getLeaderboard: async (day?: string) => {
+        const board = await base.getLeaderboard(day);
+        return {
+          ...board,
+          rows: board.rows.map((row) =>
+            row.player === "ade" ? { ...row, public: own.public } : row,
+          ),
+          floor: { played_days: 3, caller_played_days: played },
+        };
+      },
+    };
+  }
+
+  async function dailyCard(): Promise<HTMLElement> {
+    const card = (await screen.findByText("Latest day")).closest(
+      "section",
+    ) as HTMLElement;
+    await within(card).findByRole("table");
+    return card;
+  }
+
+  it("shows the username on each row", async () => {
+    const board = await api().getLeaderboard();
+    renderAt("/leaderboard");
+    const card = await dailyCard();
+    for (const row of board.rows.filter((one) => one.player !== "ade")) {
+      expect(within(card).getByText(row.player)).toBeDefined();
+    }
+    expect(within(card).getAllByRole("row")).toHaveLength(
+      board.rows.length + 1,
+    );
+  });
+
+  it("marks nothing for a caller who is past the floor", async () => {
+    renderAt("/leaderboard", daily({ public: true }, 9));
+    const card = await dailyCard();
+    expect(within(card).getByText("You")).toBeDefined();
+    expect(within(card).queryByText("Only you can see this row")).toBeNull();
+    expect(within(card).queryByTestId("board-floor")).toBeNull();
+  });
+
+  it("marks the caller's own row below the floor, with the two counts", async () => {
+    renderAt("/leaderboard", daily({ public: false }, 2));
+    const card = await dailyCard();
+    const badge = await within(card).findByText("Only you can see this row");
+    // The mark is on the caller's row and on no other.
+    expect(badge.closest("tr")?.className).toBe("is-you");
+    expect(within(card).getAllByText("Only you can see this row")).toHaveLength(
+      1,
+    );
+    // The line reads the floor from the wire: 3 needed, 2 played.
+    expect(within(card).getByTestId("board-floor").textContent).toBe(
+      "Only you can see your row for now. It shows to other players once " +
+        "you have played on 3 earlier days, and you have played on 2.",
+    );
+  });
+
+  it("builds the line from the wire's floor and holds no number of its own", async () => {
+    const base = daily({ public: false }, 0);
+    renderAt("/leaderboard", {
+      ...base,
+      getLeaderboard: async (day?: string) => ({
+        ...(await base.getLeaderboard(day)),
+        floor: { played_days: 5, caller_played_days: 4 },
+      }),
+    });
+    const card = await dailyCard();
+    expect(within(card).getByTestId("board-floor").textContent).toContain(
+      "played on 5 earlier days, and you have played on 4.",
+    );
+  });
+
+  it("serves the mock's own floor: a day with no earlier play", async () => {
+    // The mock marks its own row on a day before each played day.
+    const base = api();
+    renderAt("/leaderboard", {
+      ...base,
+      getLeaderboard: () => base.getLeaderboard("1999-01-01"),
+    });
+    const card = await dailyCard();
+    expect(
+      await within(card).findByText("Only you can see this row"),
+    ).toBeDefined();
+    expect(within(card).getByTestId("board-floor").textContent).toContain(
+      "and you have played on 0.",
+    );
   });
 });
 

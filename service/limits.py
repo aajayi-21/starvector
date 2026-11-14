@@ -47,6 +47,17 @@ BODY_READ_SECONDS = 30.0
 STROKE_CAP = 2_000
 POINT_CAP = 20_000
 
+# The password counters (spec A2 section 9.2). Failures for a client
+# address and for the process use the window and the two caps at the
+# top of this module. A username has its own cap (decision D10), and
+# the accounts made have a window and two caps of their own (decision
+# D11).
+NAME_FAILURE_CAP = 10
+SIGNUP_WINDOW_SECONDS = 24 * 60 * 60
+SIGNUP_CLIENT_CAP = 10
+SIGNUP_GLOBAL_CAP = 1_000
+_NAME_KEY = re.compile(r"[a-z0-9-]{1,64}")
+
 _BODY_TOO_LARGE = b'{"cause":"body-too-large"}'
 _BODY_TOO_SLOW = b'{"cause":"body-too-slow"}'
 
@@ -130,6 +141,29 @@ def practice_limiter() -> WindowLimiter:
     return WindowLimiter(window_seconds=PRACTICE_WINDOW_SECONDS,
                          client_cap=PRACTICE_PLAYER_CAP,
                          global_cap=PRACTICE_GLOBAL_CAP)
+
+
+def name_failure_limiter() -> WindowLimiter:
+    """A limiter of failures for each username (spec A2 decision D10)."""
+    return WindowLimiter(client_cap=NAME_FAILURE_CAP)
+
+
+def signup_limiter() -> WindowLimiter:
+    """A limiter of the accounts made (spec A2 decision D11)."""
+    return WindowLimiter(window_seconds=SIGNUP_WINDOW_SECONDS,
+                         client_cap=SIGNUP_CLIENT_CAP,
+                         global_cap=SIGNUP_GLOBAL_CAP)
+
+
+def name_key(username: object) -> str:
+    """The key to count one failure against, for a typed username.
+
+    Text that cannot be a stored name shares one key, thus a caller
+    cannot fill the table with keys of its own invention.
+    """
+    if isinstance(username, str) and _NAME_KEY.fullmatch(username.lower()):
+        return username.lower()
+    return "(not a name)"
 
 
 def record_caps_refusal(record: object, *, stroke_cap: int = STROKE_CAP,

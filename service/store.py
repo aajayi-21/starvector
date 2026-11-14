@@ -126,14 +126,17 @@ class PlayerRecord:
     player is the store key, and it is the identity that submissions
     and trial rows hold today. A mint for a name that plays thus
     adopts that history and no stored record moves. display_name is
-    the board label, and two players can hold equal labels. The
-    store keeps token_hash, the digest of the invite secret. The
-    store does not keep the secret, which the mint answers one time.
+    the board label of the records before spec A2. From that spec the
+    boards read player, and a new record writes the name there too.
+
+    token_hash is the digest of an invite. The invite is gone (spec A2
+    ruling 2): a new record holds None, and an earlier digest stays in
+    its record and opens nothing.
     """
 
     player: str
     display_name: str
-    token_hash: str
+    token_hash: str | None
     created_at: str
     status: str
 
@@ -490,21 +493,21 @@ def _check_player_record(record: PlayerRecord) -> None:
     """Refuse a record the store must not write."""
     check_player_name(record.player, "player")
     check_display_name(record.display_name, "display_name")
-    if not _TOKEN_HASH_RULE.fullmatch(record.token_hash):
+    if record.token_hash is not None and (
+            not isinstance(record.token_hash, str)
+            or not _TOKEN_HASH_RULE.fullmatch(record.token_hash)):
         raise StoreError(
-            f"token_hash: expected 64 lowercase hex characters, "
+            "token_hash: expected 64 lowercase hex characters or null, "
             f"got {record.token_hash!r}")
     if not record.created_at:
         raise StoreError("created_at: expected a non-empty string")
 
 
 def write_player_record(store: Path, record: PlayerRecord) -> None:
-    """Write a new player record - the mint alone does this, one time.
+    """Write a new player record, one time.
 
-    The mint rides the one-write primitive. A second mint for the
-    name thus raises, and an invite cannot silently change the
-    credential that a name which plays today holds. The guarded
-    edit below turns the token.
+    The write rides the one-write primitive, thus a second record for
+    the name raises. Sign-up and the dev door make records (spec A2).
     """
     if record.status != "active":
         raise StoreError(
@@ -531,6 +534,8 @@ def read_player_record(store: Path, player: str) -> PlayerRecord:
             f"{path}: the player record must have the fields "
             f"{sorted(_PLAYER_FIELDS)}")
     for name in _PLAYER_FIELDS:
+        if name == "token_hash" and raw[name] is None:
+            continue
         if not isinstance(raw[name], str) or not raw[name]:
             raise StoreError(f"{path}.{name}: expected a non-empty string")
     if raw["status"] not in PLAYER_STATUSES:
@@ -541,9 +546,11 @@ def read_player_record(store: Path, player: str) -> PlayerRecord:
             f"{path}.player: the record names {raw['player']!r} and the "
             f"file names {player!r}")
     check_display_name(raw["display_name"], f"{path}.display_name")
-    if not _TOKEN_HASH_RULE.fullmatch(raw["token_hash"]):
+    if raw["token_hash"] is not None \
+            and not _TOKEN_HASH_RULE.fullmatch(raw["token_hash"]):
         raise StoreError(
-            f"{path}.token_hash: expected 64 lowercase hex characters")
+            f"{path}.token_hash: expected 64 lowercase hex characters "
+            "or null")
     return PlayerRecord(**raw)
 
 
@@ -561,33 +568,9 @@ def read_player_or_none(store: Path, player: str) -> PlayerRecord | None:
     return read_player_record(store, player)
 
 
-def replace_player_token(store: Path, player: str, *, expect_status: str,
-                         new_token_hash: str) -> PlayerRecord:
-    """A guarded player-record edit: the stored invite digest moves.
-
-    Reads the stored record again, refuses if its status is not
-    expect_status, then writes the moved record. The name and the
-    creation time do not move. The earlier invite stops at the read
-    which follows, and so does each cookie that holds it.
-    """
-    if expect_status not in PLAYER_STATUSES:
-        raise StoreError(f"unknown status: {expect_status!r}")
-    if not _TOKEN_HASH_RULE.fullmatch(new_token_hash):
-        raise StoreError(
-            "new_token_hash: expected 64 lowercase hex characters")
-    record = read_player_record(store, player)
-    if record.status != expect_status:
-        raise StoreError(
-            f"player {player} has status {record.status!r} and the move "
-            f"needs {expect_status!r}")
-    moved = replace(record, token_hash=new_token_hash)
-    _replace_json(player_record_path(store, player), _player_to_value(moved))
-    return moved
-
-
 def set_player_status(store: Path, player: str, *, expect_status: str,
                       new_status: str) -> PlayerRecord:
-    """The second guarded player edit: the status move.
+    """The guarded player edit: the status move.
 
     Revoke moves 'active' to 'revoked' and the opposite move puts
     it back. A move that repeats raises and names the two statuses,
@@ -1075,6 +1058,230 @@ def remove_device_code(store: Path, digest: str) -> bool:
     except FileNotFoundError:
         return False
     return True
+
+
+# -- credentials and name claims (spec A2 section 7) --------------------
+#
+# Two record classes, each in a directory of its own. The credential
+# record is the one record that sign-in alone opens: no board, no
+# index, and no export reads its directory. The name claim makes one
+# name of two names with one folded shape.
+
+_CREDENTIAL_FIELDS = (
+    "player", "password_digest", "password_set_at", "recovery_digest",
+    "recovery_issued_at", "operator_digest", "operator_issued_at",
+    "operator_usable_at", "updated_at")
+_CLAIM_FIELDS = ("folded", "player", "claimed_at")
+_FOLDED_RULE = re.compile(r"[a-z0-9]{1,64}")
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialRecord:
+    """What a player signs in and recovers with (spec A2 section 7.1).
+
+    password_digest is the text of the password digest, and the store
+    does not read into it. recovery_digest is the sha256 hex of the
+    player's own recovery code. The three operator fields are the
+    operator's code, which has its own slot and a time from which it
+    works (spec A2 section 6.1). A part that is not set is None, and
+    the fields of one part are set together.
+    """
+
+    player: str
+    password_digest: str | None
+    password_set_at: str | None
+    recovery_digest: str | None
+    recovery_issued_at: str | None
+    operator_digest: str | None
+    operator_issued_at: str | None
+    operator_usable_at: str | None
+    updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class NameClaim:
+    """One claimed folded shape and the player that holds it."""
+
+    folded: str
+    player: str
+    claimed_at: str
+
+
+def credentials_dir(store: Path) -> Path:
+    """The credential directory. Not below store/players/: a second
+    file class there reads as a phantom player (spec A1 section 3)."""
+    return store / "credentials"
+
+
+def credential_record_path(store: Path, player: str) -> Path:
+    return credentials_dir(store) / f"{player}.json"
+
+
+def any_credential(store: Path) -> bool:
+    """The store holds one credential record or more. The walk stops
+    at the first entry."""
+    root = credentials_dir(store)
+    if not root.is_dir():
+        return False
+    for entry in root.iterdir():
+        if entry.is_file() and entry.name.endswith(".json"):
+            return True
+    return False
+
+
+@contextmanager
+def credential_lock(store: Path, player: str) -> Iterator[None]:
+    """Hold the write lock of one player's credential record.
+
+    Each credential move is a read, a check, and a write. Two
+    recoveries with one code must not each read the code as live, thus
+    a move holds this exclusive file lock for its three steps. It is a
+    file lock, thus it also covers the operator's command line.
+    """
+    import fcntl
+
+    check_player_name(player, "player")
+    directory = credentials_dir(store)
+    directory.mkdir(parents=True, exist_ok=True)
+    handle = os.open(directory / f".{player}.lock", os.O_RDWR | os.O_CREAT,
+                     0o600)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        os.close(handle)
+
+
+def _credential_to_value(record: CredentialRecord) -> dict[str, JsonValue]:
+    return {name: getattr(record, name) for name in _CREDENTIAL_FIELDS}
+
+
+def _check_part(where: str, values: tuple[object, ...]) -> None:
+    """The fields of one part are each a non-empty string or each None."""
+    if all(value is None for value in values):
+        return
+    if not all(isinstance(value, str) and value for value in values):
+        raise StoreError(
+            f"{where}: the fields of this part are set together, each a "
+            "non-empty string, or each null")
+
+
+def _check_credential_record(record: CredentialRecord,
+                             where: str = "credential") -> None:
+    """Refuse a credential record the store must not hold."""
+    check_player_name(record.player, f"{where}.player")
+    _check_part(f"{where}.password",
+                (record.password_digest, record.password_set_at))
+    _check_part(f"{where}.recovery",
+                (record.recovery_digest, record.recovery_issued_at))
+    _check_part(f"{where}.operator",
+                (record.operator_digest, record.operator_issued_at,
+                 record.operator_usable_at))
+    for name in ("recovery_digest", "operator_digest"):
+        value = getattr(record, name)
+        if value is not None and not _TOKEN_HASH_RULE.fullmatch(value):
+            raise StoreError(
+                f"{where}.{name}: expected 64 lowercase hex characters "
+                "or null")
+    if not isinstance(record.updated_at, str) or not record.updated_at:
+        raise StoreError(f"{where}.updated_at: expected a non-empty string")
+
+
+def write_credential_record(store: Path, record: CredentialRecord) -> None:
+    """Write one credential record, replacing the earlier one.
+
+    The caller holds credential_lock for the read before this write.
+    The file is readable by its owner alone.
+    """
+    _check_credential_record(record)
+    text = canonical_json_pretty(_credential_to_value(record)) + "\n"
+    path = credential_record_path(store, record.player)
+    _write_bytes_replacing(path, text.encode("utf-8"))
+
+
+def read_credential_or_none(store: Path,
+                            player: str) -> CredentialRecord | None:
+    """One stored credential record, or None when the file is not there.
+
+    None is an ordinary answer: the player has no password and no
+    code. A stored record that does not validate raises. It does not
+    read as "no password" (spec A2 section 13).
+    """
+    import json
+
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    path = credential_record_path(store, player)
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise StoreError(
+            f"{path}: cannot read the credential record: {error}") from error
+    if not isinstance(raw, dict) or set(raw) != set(_CREDENTIAL_FIELDS):
+        raise StoreError(
+            f"{path}: the credential record must have the fields "
+            f"{sorted(_CREDENTIAL_FIELDS)}")
+    if raw["player"] != player:
+        raise StoreError(
+            f"{path}.player: the record names {raw['player']!r} and the "
+            f"file names {player!r}")
+    record = CredentialRecord(**raw)
+    _check_credential_record(record, str(path))
+    return record
+
+
+def names_dir(store: Path) -> Path:
+    return store / "names"
+
+
+def name_claim_path(store: Path, folded: str) -> Path:
+    return names_dir(store) / f"{folded}.json"
+
+
+def _check_folded(folded: object, where: str) -> None:
+    if not isinstance(folded, str) or not _FOLDED_RULE.fullmatch(folded):
+        raise StoreError(
+            f"{where}: expected 1 to 64 characters, a-z and 0-9, got "
+            f"{folded!r}")
+
+
+def claim_name(store: Path, claim: NameClaim) -> None:
+    """Claim one folded shape for one player, one time.
+
+    The write is the one-write primitive, which refuses a file that is
+    there. Of two sign-ups for one folded shape, one gets the claim and
+    the other gets StoreError. A claim is not removed (spec A2 section
+    4.3).
+    """
+    _check_folded(claim.folded, "folded")
+    check_player_name(claim.player, "player")
+    if not claim.claimed_at:
+        raise StoreError("claimed_at: expected a non-empty string")
+    write_once_json(name_claim_path(store, claim.folded),
+                    {"folded": claim.folded, "player": claim.player,
+                     "claimed_at": claim.claimed_at})
+
+
+def read_claim_or_none(store: Path, folded: str) -> NameClaim | None:
+    """The claim of one folded shape, or None when nobody holds it.
+
+    The lookup reads one file and walks nothing.
+    """
+    if not isinstance(folded, str) or not _FOLDED_RULE.fullmatch(folded):
+        return None
+    path = name_claim_path(store, folded)
+    if not path.is_file():
+        return None
+    raw = _read_record(path, _CLAIM_FIELDS)
+    if raw["folded"] != folded:
+        raise StoreError(
+            f"{path}.folded: the record names {raw['folded']!r} and the "
+            f"file names {folded!r}")
+    check_player_name(raw["player"], f"{path}.player")
+    return NameClaim(**raw)
 
 
 # The rollover's records (spec BR1 section 7.2): the operator's pause,

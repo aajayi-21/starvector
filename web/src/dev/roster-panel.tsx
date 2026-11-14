@@ -174,9 +174,9 @@ export function RosterPanel(props: {
         </p>
       ) : noAccounts ? (
         <div className="notice" role="note">
-          Nobody has an account on this server yet, so there is nobody to send a
-          new invite address to. Mint the first player in “Invite a player”
-          above. Until then, everyone who opens the app plays as{" "}
+          Nobody has an account on this server yet. A player makes their own
+          account on the app's sign-in page when the server config has sign-up
+          open. Until an account is stored, everyone who opens the app plays as{" "}
           {players[0]?.player} with no sign-in.
         </div>
       ) : (

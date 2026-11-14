@@ -27,7 +27,37 @@
  * chance everywhere and a player never meets a log value.
  */
 
-import type { BaselineBandPoint, SkillBoardRow } from "../api/types";
+import type {
+  BaselineBandPoint,
+  BoardFloor,
+  LeaderboardRow,
+  SkillBoardRow,
+} from "../api/types";
+
+/**
+ * The caller's own row when no other player gets it (spec A2 §9.5),
+ * or null. The server does the filter and sets the flag; this reads
+ * the flag and compares no count.
+ */
+export function privateOwnRow(
+  rows: ReadonlyArray<LeaderboardRow>,
+  self: string,
+): LeaderboardRow | null {
+  return rows.find((row) => row.player === self && !row.public) ?? null;
+}
+
+/** The line under a daily board for a caller below the floor. */
+export function floorSentence(floor: BoardFloor): string {
+  const needs =
+    floor.played_days === 1
+      ? "1 earlier day"
+      : `${floor.played_days} earlier days`;
+  return (
+    `Only you can see your row for now. It shows to other players once ` +
+    `you have played on ${needs}, and you have played on ` +
+    `${floor.caller_played_days}.`
+  );
+}
 
 /** Candidate trial-count gridlines. Labels, not statistics. */
 const TRIAL_TICKS = [1, 3, 10, 30, 100, 300, 1000, 3000];
@@ -42,8 +72,8 @@ const SKILL_TICK_LIMIT = 5;
 const RANGE_PADDING = 0.08;
 
 export interface FunnelPoint {
+  /** The username: the key and the label (spec A2 ruling 3). */
   player: string;
-  display_name: string;
   n: number;
   /** The skill number, for the point's own label. */
   theta: number;
@@ -148,7 +178,6 @@ export function funnelGeometry(
   return {
     points: rows.map((row) => ({
       player: row.player,
-      display_name: row.display_name,
       n: row.n,
       theta: row.theta,
       eligible: row.eligible,

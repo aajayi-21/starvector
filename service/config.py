@@ -23,7 +23,11 @@ _FIELDS = ("config_version", "player", "scoring_config", "data_root",
 
 # Optional fields parse when given and default when missing, so each
 # committed config stays readable (spec S2 ruling 3).
-_OPTIONAL_FIELDS = ("closes_at_utc",)
+_OPTIONAL_FIELDS = ("closes_at_utc", "signup")
+
+# The sign-up switch (spec A2 section 10.2). A config with no field
+# reads as "closed", thus each earlier config keeps its behavior.
+SIGNUP_VALUES = ("open", "closed")
 
 # The display close time: "HH:MM", 24-hour, UTC.
 _CLOSES_AT_RULE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -40,6 +44,9 @@ class ServiceConfig:
     closes_at_utc is display-only (spec S2 ruling 3): the day view
     computes closes_at from it for an open day. It does not enter
     the stored day record, and closing stays the operator's action.
+
+    signup is "open" or "closed" (spec A2 section 10.2). With "open"
+    the server makes accounts and has no fallback identity.
     """
 
     player: str
@@ -48,6 +55,7 @@ class ServiceConfig:
     store_root: str
     port: int
     closes_at_utc: str | None = None
+    signup: str = "closed"
 
 
 def parse_service_config(raw: object, source: str) -> ServiceConfig:
@@ -89,6 +97,10 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
             or not _CLOSES_AT_RULE.fullmatch(closes_at_utc)):
         raise ServiceConfigError(
             f"{source}.closes_at_utc: expected \"HH:MM\" (24-hour UTC)")
+    signup = raw.get("signup", "closed")
+    if signup not in SIGNUP_VALUES:
+        raise ServiceConfigError(
+            f"{source}.signup: expected one of {list(SIGNUP_VALUES)}")
     return ServiceConfig(
         player=raw["player"],
         scoring_config=raw["scoring_config"],
@@ -96,6 +108,7 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
         store_root=raw["store_root"],
         port=port,
         closes_at_utc=closes_at_utc,
+        signup=signup,
     )
 
 

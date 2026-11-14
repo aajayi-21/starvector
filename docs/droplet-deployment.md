@@ -442,6 +442,14 @@ set the spend cap first. The operator token comes from:
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
+*Note, 2026-11-13 (spec A2 §5.2):* the file gets a third value,
+`STARVECTOR_PASSWORD_PEPPER`, from the same command. Keep a copy of it
+away from the box: if it is gone, each stored password stops, and each
+player then uses a recovery code. The server config below also gets
+one optional field, `"signup": "open"`, which lets each visitor make an
+account with a username and a password. With no field, the server
+makes no account.
+
 The server config. The `starvector` user reads this one:
 
 Replace `<your-handle>` below before you send the file. The server
@@ -523,6 +531,9 @@ such behaviour, thus each check here runs from anywhere.
 
 - `https://<domain>/` loads the landing page with its sign-in card.
   That is success: no session, no play.
+- *Note, 2026-11-13 (spec A2):* this check answers 404 from that date,
+  with a JSON content type. `curl -s https://<domain>/api/signup`
+  answers `{"open":true}` when sign-up is open.
 - `curl -sI https://<domain>/join/bogus` answers 401 with a JSON
   content type. HTML here means the invite path fell to the app shell,
   and no invite URL can sign anybody in.
@@ -539,6 +550,33 @@ flag, thus a plain-HTTP visit cannot keep a session, and the failure
 names nothing.
 
 ## 13. Invite players
+
+*Note, 2026-11-13 (spec A2) — superseded:* the invite is gone. No
+command mints a player, and a `/join` address answers 404. The text
+below this note is the record of the procedure before that date.
+
+The procedure from that date:
+
+1. Put `STARVECTOR_PASSWORD_PEPPER` in `/etc/starvector/env` (section
+   10).
+2. If the store holds players of before, claim their names one time:
+   `python -m service.players --service-config
+   /etc/starvector/service.json claim-names`. The server refuses to
+   start with sign-up open and a stored name that has no claim.
+3. Put `"signup": "open"` in `/etc/starvector/service.json` and start
+   the server again. Each visitor then makes an account on the first
+   screen. To stop new accounts, set the field to `"closed"` and start
+   the server again. Sign-in and recovery continue to work.
+4. A player of before sets a password on the account screen while the
+   player's session lives.
+
+The operator's commands are `revoke <name>`, `restore <name>`,
+`recovery-code <name>`, `list`, `sessions <name>`, `signout <name>`,
+`prune`, and `claim-names`. `recovery-code` prints a code one time for
+a player with no password and no code. The code works from 24 hours
+after the command, and each signed-in device of the player shows a
+notice with a control that stops it. Give a code only to a person you
+know is the player: the server holds nothing that proves it.
 
 The console (section 14) has an invite panel with an `origin` field.
 The command line, on the box:
