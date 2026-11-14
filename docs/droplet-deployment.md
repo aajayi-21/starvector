@@ -759,6 +759,43 @@ remove the droplet and the backup together. Do the `restic restore`
 drill after the first snapshot — the commands are in
 `deploy/README.md` section 6.
 
+## 15a. Publish the results
+
+*Added 2026-11-13 (spec R1).* The public database is a snapshot that
+you make and publish by hand. Nothing publishes it for you.
+
+```
+cd /srv/starvector/app
+sudo -u starvector .venv/bin/python -m service.public \
+    --service-config /etc/starvector/service.json \
+    build --out /tmp/starvector-public
+```
+
+The command writes five files: the SQLite database, `README.md`,
+`LICENSE.txt`, `release.json`, and `SHA256SUMS`. It then proves the
+fences of those files and prints the counts. Read the output, open the
+database, and copy the directory off the box. Put it where readers can
+get it, and put that address in `public_data_url` of
+`/etc/starvector/service.json`.
+
+- The build wants the release manifest of the pool below the data
+  root: `data/curation/<corpus>/<config>/s09-release/manifest.jsonl`.
+  It gives each target its source page. Send it with the pool
+  (section 9).
+- `withhold <day> <player> --note <text>` keeps the text and the sketch
+  of one response out of each subsequent snapshot. Its scores stay.
+  `withheld` shows the table, and `release <day> <player>` puts a
+  response back. An earlier snapshot does not change, thus read a
+  snapshot before it goes out.
+- `identifiers` writes the anonymous name of each player that a
+  snapshot shows with no username. `revoke` writes it for the player
+  that it stops.
+- `check <directory>` proves the fences of a snapshot again, for a
+  copy that left the box.
+
+A snapshot holds revealed days of a production pool alone. It holds no
+day of the test season, no password, and no account text.
+
 ## 16. Update the deployment
 
 Code and pool artifacts move in one direction: development machine to
