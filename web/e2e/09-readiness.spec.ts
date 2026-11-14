@@ -102,11 +102,18 @@ test("the built app obeys the Caddyfile's content policy", async ({ page }) => {
   await page.route(
     (url) => url.port === "4173" && !url.pathname.startsWith("/api"),
     async (route) => {
-      const answer = await route.fetch();
-      await route.fulfill({
-        response: answer,
-        headers: { ...answer.headers(), "content-security-policy": policy },
-      });
+      try {
+        const answer = await route.fetch();
+        await route.fulfill({
+          response: answer,
+          headers: { ...answer.headers(), "content-security-policy": policy },
+        });
+      } catch {
+        // The spec moved to the next screen while this read was in
+        // flight, and the browser dropped it. A read of a page that is
+        // gone has no policy to check. The violations come from the
+        // console, and this does not hide one.
+      }
     },
   );
   const violations: string[] = [];
