@@ -1,0 +1,41 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "316661a7c16c9f3b2434331e505ec3ca59d5ae51178feec2bd4dd1e83f201208",
+  "created_at": "2026-11-11T02:04:20.723160+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "",
+  "decoy_count_max": 203,
+  "decoy_count_min": 203,
+  "dev_only": true,
+  "fit_record": "validation/records/fit-dev-wit-2-76056098.json",
+  "fusion_weights": {
+    "element": 0.45,
+    "outline": 0.55
+  },
+  "fusion_weights_fitted": true,
+  "harness": "v2",
+  "harness_config_hash": "5b90b875d7d549658dffd1a2e53c39c3f4a1ac758f91e5cdbf52438d4f8ee99c",
+  "index_id": "c6be475418ae64336e5289cfff85c4b6a9a48f3670d74bf1a785d58e71fd0b9b",
+  "ks_significance": 0.655547,
+  "ks_statistic": 0.032788,
+  "mean_p_at_max_decoy_count": 0.493921,
+  "mean_p_at_min_decoy_count": 0.493921,
+  "notes": "",
+  "preparation_version_id": "c6be475418ae64336e5289cfff85c4b6a9a48f3670d74bf1a785d58e71fd0b9b",
+  "provider_usage": {
+    "sketch_encoder": {
+      "cache_hits": 500,
+      "posts": 24
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    }
+  },
+  "reviewer": "",
+  "scoring_config_hash": "5b951a5baf2f7981695f7a93470627000bbbd46dde0baf80858d34a32d809e58",
+  "tag": "dev-wit-voyage-plain-sym",
+  "trial_count": 500,
+  "verdict": "pending"
+}

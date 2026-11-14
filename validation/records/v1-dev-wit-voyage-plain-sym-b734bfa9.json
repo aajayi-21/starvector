@@ -1,0 +1,53 @@
+{
+  "code_version": "dev",
+  "commonness_config_hash": "316661a7c16c9f3b2434331e505ec3ca59d5ae51178feec2bd4dd1e83f201208",
+  "created_at": "2026-11-11T02:12:02.467146+00:00",
+  "dataset_bytes_retrieved": 0,
+  "dataset_config_hash": "78aac91bd7eda678912b36deb93b9c400e15009952660c085ac1961a9e35bb8a",
+  "date": "",
+  "dev_only": true,
+  "first_rank_fraction": 0.27,
+  "fit_record": "validation/records/fit-dev-wit-2-76056098.json",
+  "fusion_weights": {
+    "element": 0.45,
+    "outline": 0.55
+  },
+  "fusion_weights_fitted": true,
+  "harness": "v1",
+  "harness_config_hash": "b734bfa96f839fc0f466b1dc7fdd41595cbcf4d776266e1ce5f6ab2bcf394289",
+  "index_id": "b332bacbdfa4ba11ca4e809c8d83e423aa125274023cf36641cf443f2895f311",
+  "mean_trial_score": 0.938337,
+  "median_rank": 5.0,
+  "notes": "",
+  "pair_count": 200,
+  "preparation_version_id": "c6be475418ae64336e5289cfff85c4b6a9a48f3670d74bf1a785d58e71fd0b9b",
+  "provider_usage": {
+    "describer": {
+      "cache_hits": 200,
+      "posts": 0
+    },
+    "image_encoder": {
+      "cache_hits": 0,
+      "posts": 40
+    },
+    "sketch_encoder": {
+      "cache_hits": 1400,
+      "posts": 4
+    },
+    "text_encoder": {
+      "cache_hits": 0,
+      "posts": 0
+    },
+    "union_text_encoder": {
+      "cache_hits": 766,
+      "posts": 0
+    }
+  },
+  "reference_first": 0.002475,
+  "reference_top_ten": 0.024752,
+  "reviewer": "",
+  "scoring_config_hash": "5b951a5baf2f7981695f7a93470627000bbbd46dde0baf80858d34a32d809e58",
+  "tag": "dev-wit-voyage-plain-sym",
+  "top_ten_fraction": 0.625,
+  "verdict": "pending"
+}
