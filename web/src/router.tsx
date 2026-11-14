@@ -4,7 +4,8 @@
  * optional history so tests run on memory history.
  *
  * "/" is the home screen and "/today" the drawing screen (spec BR1
- * §6). A signed-out browser gets the landing page on each path.
+ * §6). A signed-out browser gets the gate screen on each path (spec
+ * A2 §3).
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -30,6 +31,7 @@ import { WelcomeScreen } from "./screens/welcome";
 import { InstallHint } from "./ui/install-hint";
 import { SeasonNote, TabBar, TopBar } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
+import { OperatorCodeNotice } from "./ui/operator-code-notice";
 
 function Shell(): React.JSX.Element {
   const api = useApi();
@@ -43,6 +45,9 @@ function Shell(): React.JSX.Element {
   return (
     <>
       <TopBar />
+      {/* On each screen, thus no signed-in device misses it (spec A2
+          §6.1). */}
+      <OperatorCodeNotice />
       <SeasonNote />
       <OfflineBanner />
       <InstallHint />

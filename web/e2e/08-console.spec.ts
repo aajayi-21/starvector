@@ -18,10 +18,21 @@ test("the console reads players, devices, and the results database", async ({
   await page.getByRole("tab", { name: "Players" }).click();
   await page.getByRole("button", { name: "bru", exact: true }).click();
   await expect(page.getByText(/^Devices signed in · \d+$/)).toBeVisible();
-  await page.getByRole("button", { name: "Device code" }).click();
-  await expect(page.getByTestId("account-device-code")).toHaveText(
-    /^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/,
+  // The console's one procedure into an account (spec A2 §6.1): the
+  // operator's recovery code, with its hold of 24 hours. No invite
+  // control and no device-code control stand beside it.
+  await expect(page.getByRole("button", { name: "Device code" })).toHaveCount(
+    0,
   );
+  await expect(page.getByText("New invite address")).toHaveCount(0);
+  await page.getByRole("button", { name: "Recovery code" }).click();
+  await page.getByRole("button", { name: "Yes, make a recovery code" }).click();
+  await expect(page.getByTestId("account-recovery-code")).toHaveText(
+    /^([A-HJKMNP-Z2-9]{4}-){5}[A-HJKMNP-Z2-9]{4}$/,
+  );
+  await expect(page.getByText(/^It works only from .* UTC\.$/)).toBeVisible();
+  // The detail then holds the two times of the live code.
+  await expect(page.getByTestId("account-operator-code")).toBeVisible();
 
   await page.getByRole("tab", { name: "Results database" }).click();
   await page.getByRole("button", { name: "Players and accounts" }).click();

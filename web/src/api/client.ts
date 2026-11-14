@@ -17,11 +17,15 @@ import type {
   HistoryView,
   LeaderboardView,
   MeView,
+  PasswordAck,
   PracticeDays,
   PracticeScore,
+  RecoveryAck,
+  RecoveryCodeAck,
   RevealView,
   SessionsView,
   SignInAck,
+  SignupView,
   SkillBoardView,
   StoredSubmission,
   SubmissionAck,
@@ -94,6 +98,31 @@ export interface SessionApi {
   exportUrl(): string;
 }
 
+/**
+ * Accounts with a username and a password (spec A2 §8). A password
+ * and a recovery code travel in a POST body alone, never in a URL.
+ */
+export interface CredentialApi {
+  /** 200 when the server makes accounts; the constant 404 when not. */
+  getSignup(): Promise<SignupView>;
+  signUp(username: string, password: string): Promise<RecoveryAck>;
+  signIn(username: string, password: string): Promise<SignInAck>;
+  /** Replaces the password and answers with a new recovery code. */
+  recover(
+    username: string,
+    recoveryCode: string,
+    password: string,
+  ): Promise<RecoveryAck>;
+  /**
+   * No current password: the first password of a player from before
+   * spec A2, and the answer then holds the first recovery code.
+   */
+  setPassword(password: string, currentPassword?: string): Promise<PasswordAck>;
+  newRecoveryCode(currentPassword: string): Promise<RecoveryCodeAck>;
+  /** Removes the operator's code; the session alone is sufficient. */
+  stopOperatorCode(): Promise<{ stopped: boolean }>;
+}
+
 export type Api = DayApi &
   PracticeApi &
   HistoryApi &
@@ -102,7 +131,8 @@ export type Api = DayApi &
   AccountApi &
   DoorApi &
   AboutApi &
-  SessionApi;
+  SessionApi &
+  CredentialApi;
 
 export type ApiMode = "composite" | "mock";
 

@@ -72,7 +72,6 @@ export function TopBar(): React.JSX.Element {
           <Link to="/account" className="avatar-link" aria-label="Your account">
             <AvatarCircle
               player={me.data.player}
-              displayName={me.data.display_name}
               avatarHash={me.data.avatar_hash}
               size={34}
             />

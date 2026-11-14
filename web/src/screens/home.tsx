@@ -54,7 +54,7 @@ export function HomeScreen(): React.JSX.Element {
       <div className="page-header" style={{ marginBottom: 0 }}>
         <h1>
           {greeting()}
-          {me.data === undefined ? "" : `, ${me.data.display_name}`}
+          {me.data === undefined ? "" : `, ${me.data.player}`}
         </h1>
       </div>
 

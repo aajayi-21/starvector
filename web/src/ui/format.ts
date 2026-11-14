@@ -43,6 +43,19 @@ export function formatInstantDay(iso: string): string {
       }).format(date);
 }
 
+/** An ISO instant → "Sep 24, 6:00 PM", in the reader's own zone. */
+export function formatInstant(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(date);
+}
+
 /**
  * A result as a whole percent of the other photos beaten. Rounded
  * down, so a result never reads better than it is: 99.6% shows 99%,

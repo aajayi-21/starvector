@@ -67,12 +67,39 @@ describe("the results screen", () => {
       "section",
     ) as HTMLElement;
     expect(await within(card).findByText("You")).toBeDefined();
+    // Each other row shows the username (spec A2 ruling 3).
     const named = board.rows.filter((row) => row.player !== "ade");
     for (const row of named) {
-      expect(
-        within(card).getAllByText(row.display_name).length,
-      ).toBeGreaterThan(0);
+      expect(within(card).getAllByText(row.player).length).toBeGreaterThan(0);
     }
+    // The caller is past the floor on this day: nothing is marked.
+    expect(within(card).queryByText("Only you can see this row")).toBeNull();
+  });
+
+  it("marks the caller's own row while it is below the floor (spec A2 §9.5)", async () => {
+    const base = api();
+    const below = {
+      ...base,
+      getLeaderboard: async (day?: string) => {
+        const board = await base.getLeaderboard(day);
+        return {
+          ...board,
+          rows: board.rows.map((row) =>
+            row.player === "ade" ? { ...row, public: false } : row,
+          ),
+          floor: { played_days: 3, caller_played_days: 1 },
+        };
+      },
+    };
+    renderAt("/reveal", below);
+    const card = (await screen.findByText("Everyone this day")).closest(
+      "section",
+    ) as HTMLElement;
+    const badge = await within(card).findByText("Only you can see this row");
+    expect(badge.closest("tr")?.className).toBe("is-you");
+    expect(
+      within(card).getByText(/once you have played on 3 earlier days/),
+    ).toBeDefined();
   });
 
   it("folds the fairness check away, with the command to run", async () => {

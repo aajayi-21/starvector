@@ -154,9 +154,12 @@ export interface HistoryView {
 }
 
 export interface LeaderboardRow {
-  /** The store key: unique, the React key, the identity compare. */
+  /**
+   * The username (spec A2 ruling 3): the store key, the React key,
+   * the identity compare, and the one name a board shows.
+   */
   player: string;
-  /** The board label. NOT unique - two players may share one. */
+  /** Equal to `player` since spec A2. The boards read `player`. */
   display_name: string;
   /** Joined at read time (spec A1, D5). Null: no picture. */
   avatar_hash: string | null;
@@ -164,11 +167,26 @@ export interface LeaderboardRow {
   target_rank: number;
   decoy_count: number;
   streak: number;
+  /**
+   * False on the caller's own row while the caller is below the
+   * floor of the daily board (spec A2 §9.5): no other player gets
+   * that row. The server filters; the screen only marks the row.
+   */
+  public: boolean;
+}
+
+/** The floor of the daily board (spec A2 §9.5), from the wire. */
+export interface BoardFloor {
+  /** Earlier played days a row needs before it is public. */
+  played_days: number;
+  /** Earlier played days the caller has. */
+  caller_played_days: number;
 }
 
 export interface LeaderboardView {
   day: string;
   rows: LeaderboardRow[];
+  floor: BoardFloor;
 }
 
 export interface StoredSubmission {
@@ -176,8 +194,17 @@ export interface StoredSubmission {
   record: WireRecord;
 }
 
+/** The two times of a live operator's code (spec A2 §6.1). */
+export interface OperatorCodeView {
+  issued_at: string;
+  /** The code works from this instant: 24 hours after it was made. */
+  usable_at: string;
+}
+
 export interface MeView {
+  /** The username: the one name of a player (spec A2 ruling 3). */
   player: string;
+  /** Equal to `player` since spec A2. */
   display_name: string;
   streak: number;
   reminder: boolean;
@@ -185,6 +212,10 @@ export interface MeView {
   description: string;
   /** The stored avatar's digest, or null - the cache-busting key. */
   avatar_hash: string | null;
+  /** False for a player from before spec A2 with no password set. */
+  has_password: boolean;
+  /** Null, or the times of the operator's live recovery code. */
+  operator_code: OperatorCodeView | null;
 }
 
 // ── spec BR1: the season facts, sessions, and device codes ─────
@@ -219,6 +250,36 @@ export interface DeviceCodeView {
 export interface SignInAck {
   player: string;
   display_name: string;
+}
+
+// ── spec A2: sign-up, sign-in, and recovery ─────────────────────
+
+/** GET /api/signup answers this when sign-up is open; 404 when not. */
+export interface SignupView {
+  open: boolean;
+}
+
+/**
+ * The answer of a sign-up and of a recovery: the session cookie came
+ * with it, and the recovery code is in this answer one time.
+ */
+export interface RecoveryAck {
+  player: string;
+  display_name: string;
+  /** Six groups of four: "ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2". */
+  recovery_code: string;
+}
+
+export interface PasswordAck {
+  changed: boolean;
+  /** How many other devices the change signed out. */
+  signed_out: number;
+  /** A code only when this was the account's first password. */
+  recovery_code: string | null;
+}
+
+export interface RecoveryCodeAck {
+  recovery_code: string;
 }
 
 // ── spec A1: the account writers and the open door ──────────────
@@ -389,6 +450,24 @@ const CAUSE_COPY: Record<string, string> = {
   "bad-code":
     "That code didn't work. A code works once and expires after 10 minutes.",
   "too-many-attempts": "Too many tries. Wait a few minutes, then try again.",
+  // Spec A2 §8: the refusals of sign-up, sign-in, and recovery. The
+  // sign-in line does not say which of the two was wrong, because the
+  // server gives one answer for each wrong pair.
+  "name-rule":
+    "That username doesn't fit the rules. Use 3 to 20 characters: letters a to z, digits, and hyphens, starting with a letter.",
+  "name-reserved": "That username is reserved. Choose a different one.",
+  "name-taken":
+    "That username is taken, or it looks too much like one that is. Choose a different one.",
+  "password-rule":
+    "That password doesn't fit the rules. Use 12 to 128 characters, without your username in it.",
+  "password-usual":
+    "That password is one many people use, so it is easy to guess. Choose a different one.",
+  "sign-in": "The username or the password is wrong.",
+  recovery:
+    "That didn't work. Check the username and the recovery code. A recovery code works one time, and a code from the operator works 24 hours after it was made.",
+  password: "That isn't your current password.",
+  origin:
+    "This page couldn't prove where the request came from. Reload the page and try again.",
   "no-accounts": "This server has no accounts, so there's nothing to add.",
   "no-scoreable-atom":
     "Add at least one word or a few strokes before you send.",
@@ -407,15 +486,27 @@ export function isRefusal(error: unknown): boolean {
 }
 
 /**
- * True for the server's constant 401 - no invite on this device.
+ * True for the server's constant 401 - no session on this device.
  *
  * 401 exactly. A network failure is ApiError(0) and a 500 is a
- * 500, and neither means "your invite is not valid here". Telling
- * a player to hunt for a working link while the server is down
- * sends them somewhere no link helps.
+ * 500, and neither means "you are signed out". Showing a player
+ * the sign-in form while the server is down sends them somewhere
+ * no password helps.
  */
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
+}
+
+/**
+ * Player-facing copy for a failed credential call (spec A2 §8). The
+ * constant 404 on those paths means the server has no password
+ * sign-in at all — a server with one fixed player, or one with no
+ * pepper — and that is not "something went wrong".
+ */
+export function credentialMessage(error: unknown): string {
+  return isRefusal(error)
+    ? "This server doesn't use usernames and passwords."
+    : friendlyMessage(error);
 }
 
 /**

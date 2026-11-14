@@ -1,6 +1,7 @@
 /**
  * The avatar circle (spec A1): the stored picture when the account
- * holds one, else the display-name initials. One component serves
+ * holds one, else the first two characters of the username - the one
+ * name of a player (spec A2 ruling 3). One component serves
  * the nav, the account screen, and the board rows (D5 as ruled
  * 2026-08-21), so the fallback rule lives in one place.
  */
@@ -9,12 +10,11 @@ import { useApi } from "../api/client";
 
 export function AvatarCircle(props: {
   player: string;
-  displayName: string;
   avatarHash: string | null;
   size: number;
 }): React.JSX.Element {
   const api = useApi();
-  const { player, displayName, avatarHash, size } = props;
+  const { player, avatarHash, size } = props;
   if (avatarHash !== null) {
     return (
       <img
@@ -48,7 +48,7 @@ export function AvatarCircle(props: {
         flex: "none",
       }}
     >
-      {displayName.slice(0, 2).toUpperCase()}
+      {player.slice(0, 2).toUpperCase()}
     </span>
   );
 }

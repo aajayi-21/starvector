@@ -1,12 +1,16 @@
 /**
- * The account screen (spec A1 §3, grown by spec BR1 §4–5): the
- * picture and the description, the signed-in devices with "Add a
- * device" and sign-out, and the data download. The writers write for
- * the resolved caller alone — no player parameter on this screen.
+ * The account screen (spec A1 §3, grown by spec BR1 §4–5 and spec A2
+ * §3.4): the picture and the description, the password and the
+ * recovery code, the signed-in devices with "Add a device" and
+ * sign-out, and the data download. The writers write for the resolved
+ * caller alone — no player parameter on this screen.
+ *
+ * The username is the one name of a player (spec A2 ruling 3) and it
+ * does not change, thus this screen shows it and edits no name.
  *
  * A server with no accounts (spec M1 ruling 7) lists no session: the
- * device and sign-out sections then say so instead of offering
- * moves that do nothing.
+ * password, device, and sign-out sections then say so or stay away
+ * instead of offering moves that do nothing.
  */
 
 import { DeviceMobile, Laptop } from "@phosphor-icons/react";
@@ -15,7 +19,10 @@ import { useRef, useState } from "react";
 
 import { useApi } from "../api/client";
 import type { DeviceCodeView, MeView, SessionRow } from "../api/types";
-import { friendlyMessage } from "../api/types";
+import { credentialMessage, friendlyMessage } from "../api/types";
+import { PasswordField, RuleList } from "../signin/fields";
+import { RecoveryCodeStep } from "../signin/recovery-code-step";
+import { allOk, passwordChecks } from "../signin/rules";
 import { AvatarCircle } from "../ui/avatar";
 import { useNow } from "../ui/countdown";
 import { downscaleImage } from "../ui/downscale";
@@ -60,6 +67,10 @@ function AccountBody(props: { me: MeView }): React.JSX.Element {
       </div>
       <ProfileCard me={me} />
       <DescriptionCard me={me} />
+      {accounts === false ? null : <PasswordCard me={me} />}
+      {accounts === false || !me.has_password ? null : (
+        <RecoveryCodeCard me={me} />
+      )}
       {accounts === false ? (
         <section className="card card-quiet">
           <h2>Devices</h2>
@@ -85,7 +96,7 @@ function AccountBody(props: { me: MeView }): React.JSX.Element {
           </a>
         </div>
       </section>
-      {accounts === true ? <SignOutCard /> : null}
+      {accounts === true ? <SignOutCard me={me} /> : null}
     </div>
   );
 }
@@ -116,13 +127,15 @@ function ProfileCard(props: { me: MeView }): React.JSX.Element {
       <div className="row" style={{ gap: 20 }}>
         <AvatarCircle
           player={me.player}
-          displayName={me.display_name}
           avatarHash={me.avatar_hash}
           size={88}
         />
         <div className="stack-sm">
-          <h2 style={{ fontSize: 24 }}>{me.display_name}</h2>
-          <span className="subtle small">Player id: {me.player}</span>
+          <h2 style={{ fontSize: 24 }}>{me.player}</h2>
+          <span className="subtle small">
+            Your username. Other players see it on the boards, and it can't be
+            changed.
+          </span>
           {me.streak > 0 ? (
             <span
               className="badge badge-accent"
@@ -235,6 +248,212 @@ function DescriptionCard(props: { me: MeView }): React.JSX.Element {
           {friendlyMessage(saveDescription.error)}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+/** The password rule the screen cannot check: the server holds the table. */
+const USUAL_NOTE = "Not a password that many people use";
+
+/**
+ * A username field that a password manager reads and a person does
+ * not: it ties the password fields of a form to the account. It is
+ * out of the tab sequence and out of the accessibility tree.
+ */
+function ManagerUsername(props: { player: string }): React.JSX.Element {
+  return (
+    <input
+      className="visually-hidden"
+      type="text"
+      name="username"
+      autoComplete="username"
+      value={props.player}
+      readOnly
+      tabIndex={-1}
+      aria-hidden="true"
+    />
+  );
+}
+
+/**
+ * `Change password`, or `Set a password` for a player from before
+ * spec A2 (§3.4, §8). The first password asks for no current one —
+ * the session is sufficient — and its answer holds the first recovery
+ * code, which shows one time here.
+ */
+function PasswordCard(props: { me: MeView }): React.JSX.Element {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const { me } = props;
+  const first = !me.has_password;
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  // The first recovery code, until the player says they have it. It
+  // outlives the me read that turns this card into "Change password".
+  const [code, setCode] = useState<string | null>(null);
+  // What the last change did, in words. Written when the answer
+  // lands: `first` moves with the me read that follows.
+  const [done, setDone] = useState<string | null>(null);
+  const change = useMutation({
+    mutationFn: () => api.setPassword(next, first ? undefined : current),
+    onSuccess: (answer) => {
+      setCurrent("");
+      setNext("");
+      setCode(answer.recovery_code);
+      setDone(
+        `Your password is ${first ? "set" : "changed"}.${
+          answer.signed_out === 0
+            ? ""
+            : answer.signed_out === 1
+              ? " 1 other device was signed out."
+              : ` ${answer.signed_out} other devices were signed out.`
+        }`,
+      );
+      // has_password moved, and each other device signed out.
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+  const checks = passwordChecks(next, me.player);
+  const ready = allOk(checks) && (first || current !== "");
+  const title = first ? "Set a password" : "Change password";
+
+  if (code !== null) {
+    return (
+      <section className="card" aria-label="Your recovery code">
+        <RecoveryCodeStep code={code} onDone={() => setCode(null)} />
+      </section>
+    );
+  }
+  return (
+    <section className="card" aria-labelledby="password-heading">
+      <h2 id="password-heading">{title}</h2>
+      <p className="muted small">
+        {first
+          ? `This account has no password yet. Set one, and you can sign in on a new device with your username (${me.player}) and the password.`
+          : "Each other device signs out when you change your password."}
+      </p>
+      <form
+        className="stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (ready && !change.isPending) {
+            setDone(null);
+            change.mutate();
+          }
+        }}
+      >
+        <ManagerUsername player={me.player} />
+        {first ? null : (
+          <PasswordField
+            id="account-current-password"
+            label="Current password"
+            autoComplete="current-password"
+            value={current}
+            onChange={setCurrent}
+          />
+        )}
+        <div className="stack-sm">
+          <PasswordField
+            id="account-new-password"
+            label="New password"
+            autoComplete="new-password"
+            describedBy="account-password-rules"
+            value={next}
+            onChange={setNext}
+          />
+          <RuleList
+            id="account-password-rules"
+            checks={checks}
+            notes={[USUAL_NOTE]}
+          />
+        </div>
+        <div>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!ready || change.isPending}
+          >
+            {change.isPending ? "Saving…" : title}
+          </button>
+        </div>
+        {change.isError ? (
+          <div className="notice notice-bad" role="alert">
+            {credentialMessage(change.error)}
+          </div>
+        ) : done === null ? null : (
+          <div className="notice notice-good" role="status">
+            {done}
+          </div>
+        )}
+      </form>
+    </section>
+  );
+}
+
+/**
+ * `New recovery code` (spec A2 §3.4): the player types the current
+ * password, the earlier code is dead, and the new one shows one time.
+ */
+function RecoveryCodeCard(props: { me: MeView }): React.JSX.Element {
+  const api = useApi();
+  const [current, setCurrent] = useState("");
+  const [code, setCode] = useState<string | null>(null);
+  const make = useMutation({
+    mutationFn: () => api.newRecoveryCode(current),
+    onSuccess: (answer) => {
+      setCurrent("");
+      setCode(answer.recovery_code);
+    },
+  });
+
+  if (code !== null) {
+    return (
+      <section className="card" aria-label="Your new recovery code">
+        <RecoveryCodeStep code={code} replaces onDone={() => setCode(null)} />
+      </section>
+    );
+  }
+  return (
+    <section className="card" aria-labelledby="recovery-heading">
+      <h2 id="recovery-heading">Recovery code</h2>
+      <p className="muted small">
+        Your recovery code gets you back in if you lose your password. It was
+        shown one time, when it was made. If you don't have it, make a new one:
+        the earlier code stops working.
+      </p>
+      <form
+        className="stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (current !== "" && !make.isPending) {
+            make.mutate();
+          }
+        }}
+      >
+        <ManagerUsername player={props.me.player} />
+        <PasswordField
+          id="recovery-current-password"
+          label="Current password, to make a new code"
+          autoComplete="current-password"
+          value={current}
+          onChange={setCurrent}
+        />
+        <div>
+          <button
+            type="submit"
+            className="btn btn-secondary"
+            disabled={current === "" || make.isPending}
+          >
+            {make.isPending ? "Working…" : "New recovery code"}
+          </button>
+        </div>
+        {make.isError ? (
+          <div className="notice notice-bad" role="alert">
+            {credentialMessage(make.error)}
+          </div>
+        ) : null}
+      </form>
     </section>
   );
 }
@@ -405,8 +624,8 @@ function DeviceCodePanel(props: {
       ) : (
         <>
           <p>
-            On your other device, open Starvector and choose “Signed in on
-            another device?”. Then type this code:
+            On your other device, open Starvector and find “Signed in on another
+            device?”. Then type this code:
           </p>
           <div
             style={{
@@ -436,7 +655,7 @@ function DeviceCodePanel(props: {
   );
 }
 
-function SignOutCard(): React.JSX.Element {
+function SignOutCard(props: { me: MeView }): React.JSX.Element {
   const api = useApi();
   const queryClient = useQueryClient();
   const signOut = useMutation({
@@ -451,9 +670,16 @@ function SignOutCard(): React.JSX.Element {
     <section className="card card-quiet" aria-labelledby="signout-heading">
       <h2 id="signout-heading">Sign out</h2>
       <p className="muted small">
-        Sign out of this device. To sign back in, open your invite link again or
-        use a code from another device.
+        Sign out of this device. To sign back in, type your username and
+        password, or use a code from another device.
       </p>
+      {props.me.has_password ? null : (
+        <div className="notice notice-warn" role="note">
+          This account has no password yet. Set one before you sign out, or the
+          only ways back in are a code from another signed-in device and a
+          recovery code from the operator.
+        </div>
+      )}
       <div>
         <button
           type="button"

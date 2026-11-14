@@ -1,11 +1,14 @@
 /**
- * One player's account in the console (spec BR1 §7.4): the picture,
- * the description, the signed-in devices, the device codes that
- * wait, and the access controls — a new invite address, a device
- * code, sign-out, revoke, and restore.
+ * One player's account in the console (spec BR1 §7.4, changed by spec
+ * A2 §6.1 and §10.1): the picture, the description, the signed-in
+ * devices, the device codes that wait, and the access controls — a
+ * recovery code, sign-out, revoke, and restore.
  *
- * A new invite address and a device code print one time, like the
- * mint: the store keeps digests alone. Neither goes to localStorage.
+ * The operator's recovery code is the one procedure into an account
+ * that the console has. It prints one time: the store keeps its
+ * digest alone, and it does not go to localStorage. It works 24 hours
+ * after it is made, and the player's signed-in devices show a notice
+ * with a control that stops it.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -19,13 +22,11 @@ import {
   WorkingNote,
 } from "./controls";
 import { utcShort, utcStamp } from "./format";
-import { storedOrigin } from "./invite-panel";
-import type { DevDeviceCode, DevPlayerDetail, MintedInvite } from "./types";
+import type { DevPlayerDetail, DevRecoveryCode } from "./types";
 
 /** What the last access control printed, one time. */
 type Printed =
-  | { kind: "invite"; invite: MintedInvite }
-  | { kind: "code"; code: DevDeviceCode }
+  | { kind: "code"; code: DevRecoveryCode; restored: boolean }
   | { kind: "note"; text: string };
 
 export function PlayerAccount(props: {
@@ -117,31 +118,36 @@ export function PlayerAccount(props: {
   }
 
   const active = detail.status === "active";
-  const origin = storedOrigin().replace(/\/+$/, "");
 
   return (
     <section className="dev-account" aria-label={`${player} account`}>
       <div className="dev-row dev-top">
         {avatarUrl === null ? (
           <span className="dev-avatar dev-avatar-empty" aria-hidden="true">
-            {detail.display_name.slice(0, 2).toUpperCase()}
+            {detail.player.slice(0, 2).toUpperCase()}
           </span>
         ) : (
-          <img
-            className="dev-avatar"
-            src={avatarUrl}
-            alt={detail.display_name}
-          />
+          <img className="dev-avatar" src={avatarUrl} alt={detail.player} />
         )}
         <div className="dev-stack-sm">
           <div className="dev-row dev-wrap">
-            <h3 className="dev-name">{detail.display_name}</h3>
-            <span className="subtle">{detail.player}</span>
+            {/* The username is the one name on a board (spec A2
+                ruling 3). A label from before that spec stays in its
+                record and shows here alone. */}
+            <h3 className="dev-name">{detail.player}</h3>
+            {detail.display_name === detail.player ? null : (
+              <span className="subtle">
+                earlier label: {detail.display_name}
+              </span>
+            )}
             <StatusBadge status={detail.status} />
           </div>
           <span className="muted small">
             Player since {utcStamp(detail.created_at)} ·{" "}
-            {detail.sends === 1 ? "1 send" : `${detail.sends} sends`}
+            {detail.sends === 1 ? "1 send" : `${detail.sends} sends`} ·{" "}
+            <span data-testid="account-has-password">
+              {detail.has_password ? "has a password" : "no password set"}
+            </span>
           </span>
           <p className="dev-description">
             {detail.description === "" ? (
@@ -158,30 +164,18 @@ export function PlayerAccount(props: {
         {active ? (
           <>
             <ConfirmAction
-              label="New invite address"
-              question={`Make a new invite address for ${player}? The old address stops working; signed-in devices stay signed in.`}
-              confirmLabel="Yes, make a new address"
+              label="Recovery code"
+              question={`Make a recovery code for ${player}? It works only after 24 hours, and until then each signed-in device of ${player} shows a notice with a control that stops it. Their password, their own recovery code, and their devices stay as they are. Give a code only to the person the account belongs to.`}
+              confirmLabel="Yes, make a recovery code"
               disabled={busy}
               onConfirm={() =>
                 void act(async () => ({
-                  kind: "invite",
-                  invite: await api.rotatePlayer(player),
+                  kind: "code",
+                  code: await api.issueRecoveryCode(player),
+                  restored: false,
                 }))
               }
             />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => ({
-                  kind: "code",
-                  code: await api.issueDeviceCode(player),
-                }))
-              }
-            >
-              Device code
-            </button>
             <ConfirmAction
               label="Sign out every device"
               question={`Sign ${player} out on every device?`}
@@ -203,7 +197,7 @@ export function PlayerAccount(props: {
             />
             <ConfirmAction
               label="Revoke access"
-              question={`Revoke ${player}? Their invite address and every signed-in device stop working. Their play stays stored.`}
+              question={`Revoke ${player}? Every signed-in device stops working, and the password and each recovery code sign nobody in. Their play stays stored.`}
               confirmLabel="Yes, revoke"
               variant="danger"
               disabled={busy}
@@ -212,7 +206,7 @@ export function PlayerAccount(props: {
                   await api.revokePlayer(player);
                   return {
                     kind: "note",
-                    text: `${player} is revoked: the invite address and each device stop working.`,
+                    text: `${player} is revoked: each device, the password, and each recovery code stop working.`,
                   };
                 })
               }
@@ -221,13 +215,14 @@ export function PlayerAccount(props: {
         ) : (
           <ConfirmAction
             label="Restore access"
-            question={`Restore ${player}? They get a new invite address; no old device comes back.`}
+            question={`Restore ${player}? The account is active again and you get a recovery code for them, which works only after 24 hours. No old device comes back.`}
             confirmLabel="Yes, restore"
             disabled={busy}
             onConfirm={() =>
               void act(async () => ({
-                kind: "invite",
-                invite: await api.restorePlayer(player),
+                kind: "code",
+                code: await api.restorePlayer(player),
+                restored: true,
               }))
             }
           />
@@ -235,9 +230,17 @@ export function PlayerAccount(props: {
       </div>
       <p className="subtle small">
         {active
-          ? "A new invite address signs in any device that opens it. A device code is for the iPhone home-screen app, where a link opens in Safari instead."
-          : "A revoked player cannot sign in. Restoring gives them a new invite address."}
+          ? "A player signs in with their username and password. A recovery code is for a player with no password and no signed-in device: they use it under “I do not have my password” on the sign-in page."
+          : "A revoked player cannot sign in. Restoring makes the account active and gives you a recovery code for them."}
       </p>
+      {detail.operator_code === null ? null : (
+        <div className="notice" role="note" data-testid="account-operator-code">
+          An operator's recovery code is live for {player}: made{" "}
+          {utcStamp(detail.operator_code.issued_at)}, works from{" "}
+          {utcStamp(detail.operator_code.usable_at)}. Their signed-in devices
+          show a notice, and the player can stop it.
+        </div>
+      )}
 
       {busy ? <WorkingNote text="Working…" /> : null}
       <ErrorNote text={error} />
@@ -245,30 +248,32 @@ export function PlayerAccount(props: {
         <div className="notice notice-good" role="status">
           {printed.text}
         </div>
-      ) : printed.kind === "invite" ? (
-        <div className="dev-printed" role="status">
-          <span className="small">
-            New invite address for {printed.invite.player}:
-          </span>
-          <code className="dev-break" data-testid="account-invite-url">
-            {origin}
-            {printed.invite.join_path}
-          </code>
-          <CopyButton text={`${origin}${printed.invite.join_path}`} />
-          <span className="subtle small">
-            This is the one time it prints — copy it and send it to the player.
-            The site address comes from the invite panel above.
-          </span>
-        </div>
       ) : (
         <div className="dev-printed" role="status">
-          <span className="small">Device code for {printed.code.player}:</span>
-          <code className="dev-device-code" data-testid="account-device-code">
-            {printed.code.display}
+          <span className="small">
+            {printed.restored
+              ? `${printed.code.player} is active again. Recovery code for ${printed.code.player}:`
+              : `Recovery code for ${printed.code.player}:`}
+          </span>
+          <code
+            className="dev-recovery-code dev-break"
+            data-testid="account-recovery-code"
+          >
+            {printed.code.recovery_code}
           </code>
+          <CopyButton text={printed.code.recovery_code} />
+          <span className="small">
+            <strong>
+              It works only from {utcStamp(printed.code.usable_at)}.
+            </strong>{" "}
+            Before that time a recovery with it is refused. Until it is used,
+            each signed-in device of {printed.code.player} shows a notice with a
+            “Stop this” control.
+          </span>
           <span className="subtle small">
-            The player types it on the app's sign-in page. It works one time and
-            expires {utcStamp(printed.code.expires_at)}.
+            This is the one time it prints: the store keeps only a digest. Copy
+            it and give it to the player by hand. They type it under “I do not
+            have my password” with a new password, and it works one time.
           </span>
         </div>
       )}
@@ -351,7 +356,7 @@ function CopyButton(props: { text: string }): React.JSX.Element {
           .catch(() => setCopied(false));
       }}
     >
-      {copied ? "Copied" : "Copy the address"}
+      {copied ? "Copied" : "Copy the code"}
     </button>
   );
 }

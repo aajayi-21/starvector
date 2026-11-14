@@ -113,20 +113,29 @@ export interface DevHistory {
 }
 
 /**
- * One minted invite (spec M1 §8).
+ * The operator's recovery code for one player (spec A2 §6.1).
  *
- * `join_path` is a path and not a full address: the server does
- * not know its public origin and must not trust the Host header
- * for one. The caller puts the origin in front.
- *
- * The token is in this answer and nowhere else — the store keeps
- * its digest alone, so no later read can recover it.
+ * The code is in this answer and nowhere else — the store keeps its
+ * digest alone, so no later read can recover it. It works from
+ * `usable_at`, 24 hours after it is made, and the player's signed-in
+ * devices show a notice until then and after.
  */
-export interface MintedInvite {
+export interface DevRecoveryCode {
   player: string;
-  display_name: string;
-  token: string;
-  join_path: string;
+  /** Six groups of four: "ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2". */
+  recovery_code: string;
+  usable_at: string;
+}
+
+/** A restore: the account is active again, with an operator's code. */
+export interface DevRestored extends DevRecoveryCode {
+  status: "active" | "revoked";
+}
+
+/** The two times of a live operator's code; no code and no digest. */
+export interface DevOperatorCode {
+  issued_at: string;
+  usable_at: string;
 }
 
 // ── spec BR1 §7: the console's growth ───────────────────────────
@@ -222,16 +231,13 @@ export interface DevPlayerDetail {
   has_avatar: boolean;
   account_updated_at: string | null;
   sessions: DevSession[];
+  /** The player's own device codes that wait (spec A2 §3.5). */
   device_codes: Array<{ created_at: string; expires_at: string }>;
+  /** False: a player from before spec A2 with no password set. */
+  has_password: boolean;
+  /** Null, or the times of the operator's live recovery code. */
+  operator_code: DevOperatorCode | null;
   sends: number;
-}
-
-export interface DevDeviceCode {
-  player: string;
-  code: string;
-  /** "ABCD-EFGH" — the shape a player types. */
-  display: string;
-  expires_at: string;
 }
 
 export interface DevIndexTable {

@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { makeMockApi } from "../../src/api/mock";
 import type { BaselineBandPoint, SkillBoardRow } from "../../src/api/types";
-import { boardSlice, funnelGeometry } from "../../src/board/core";
+import {
+  boardSlice,
+  floorSentence,
+  funnelGeometry,
+  privateOwnRow,
+} from "../../src/board/core";
 
 const TODAY = "2026-08-14";
 
@@ -94,8 +99,9 @@ describe("the funnel geometry", () => {
   });
 
   it("marks the caller by store key and not by label", () => {
-    // Two players may share a display name; the store key is
-    // unique. A chart that highlights on the label lights up
+    // The compare reads the store key, the username. A record from
+    // before spec A2 may hold a label that a second record holds
+    // too, and a chart that highlights on the label lights up
     // strangers.
     const rows = [
       row({ n: 40, player: "ade", display_name: "Quiet Signal" }),
@@ -181,5 +187,41 @@ describe("the ranked slice", () => {
     const slice = boardSlice(rows, "new", 25);
     expect(slice.pinned).toBeNull();
     expect(slice.total).toBe(1);
+  });
+});
+
+describe("the floor of the daily board (spec A2 §9.5)", () => {
+  const base = {
+    display_name: "x",
+    avatar_hash: null,
+    p: 0.5,
+    target_rank: 2,
+    decoy_count: 119,
+    streak: 1,
+  };
+
+  it("finds the caller's own row only while no other player gets it", () => {
+    const rows = [
+      { ...base, player: "ade", public: false },
+      { ...base, player: "bru", public: true },
+    ];
+    expect(privateOwnRow(rows, "ade")?.player).toBe("ade");
+    // A public own row, a caller with no row, and a second player's
+    // row are each no mark.
+    expect(privateOwnRow(rows, "bru")).toBeNull();
+    expect(privateOwnRow(rows, "cyd")).toBeNull();
+    expect(
+      privateOwnRow([{ ...base, player: "ade", public: true }], "ade"),
+    ).toBeNull();
+  });
+
+  it("says when the row becomes public, from the wire's two counts", () => {
+    expect(floorSentence({ played_days: 3, caller_played_days: 1 })).toBe(
+      "Only you can see your row for now. It shows to other players once " +
+        "you have played on 3 earlier days, and you have played on 1.",
+    );
+    expect(floorSentence({ played_days: 1, caller_played_days: 0 })).toContain(
+      "played on 1 earlier day, and you have played on 0.",
+    );
   });
 });

@@ -22,10 +22,12 @@ import type {
   WireRecord,
 } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
+import { floorSentence, privateOwnRow } from "../board/core";
 import { ReplayCanvas } from "../sketch/canvas";
 import { AvatarCircle } from "../ui/avatar";
 import { ChanceMeter } from "../ui/chance-meter";
 import { formatDay, ordinal, percentBeaten } from "../ui/format";
+import { PrivateRowBadge } from "../ui/private-row-badge";
 
 function readSentCopy(day: string): WireRecord | null {
   try {
@@ -314,6 +316,8 @@ function DayBoard(props: {
   self: string;
 }): React.JSX.Element {
   const { view, pending, self } = props;
+  // The caller's own row while it is below the floor of spec A2 §9.5.
+  const hidden = view === undefined ? null : privateOwnRow(view.rows, self);
   return (
     <section className="card" aria-labelledby="day-board">
       <h2 id="day-board">Everyone this day</h2>
@@ -343,14 +347,12 @@ function DayBoard(props: {
                     >
                       <AvatarCircle
                         player={row.player}
-                        displayName={row.display_name}
                         avatarHash={row.avatar_hash}
                         size={24}
                       />
-                      <span>
-                        {row.player === self ? "You" : row.display_name}
-                      </span>
+                      <span>{row.player === self ? "You" : row.player}</span>
                     </span>
+                    {row === hidden ? <PrivateRowBadge /> : null}
                   </td>
                   <td className="num">{percentBeaten(row.p)}%</td>
                 </tr>
@@ -358,6 +360,9 @@ function DayBoard(props: {
             </tbody>
           </table>
         </div>
+      )}
+      {view === undefined || hidden === null ? null : (
+        <p className="hint">{floorSentence(view.floor)}</p>
       )}
     </section>
   );

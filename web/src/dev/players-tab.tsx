@@ -1,14 +1,14 @@
 /**
- * The Players tab (spec BR1 §7.4): the invite minter, the roster with
- * each player's devices and account, and the prune of expired
- * sign-ins.
+ * The Players tab (spec BR1 §7.4): the roster with each player's
+ * devices and account, and the prune of expired sign-ins. A player
+ * makes their own account (spec A2 §3.1), thus the console makes
+ * none.
  */
 
 import { useState } from "react";
 
 import type { DevApi } from "./api";
 import { DevApiError } from "./api";
-import { InvitePanel } from "./invite-panel";
 import { RosterPanel } from "./roster-panel";
 
 export function PlayersTab(props: {
@@ -16,8 +16,8 @@ export function PlayersTab(props: {
   reload: number;
 }): React.JSX.Element {
   const { api, reload } = props;
-  // A mint or a prune moves the roster; the count is added to the
-  // console's own reload, so either one reads the roster again.
+  // A prune moves the roster; the count is added to the console's
+  // own reload, so either one reads the roster again.
   const [local, setLocal] = useState(0);
   const [pruneNote, setPruneNote] = useState("");
   const [pruning, setPruning] = useState(false);
@@ -44,7 +44,6 @@ export function PlayersTab(props: {
 
   return (
     <div className="dev-stack">
-      <InvitePanel api={api} onMinted={() => setLocal((count) => count + 1)} />
       <RosterPanel api={api} reload={reload + local} />
       <section className="card" aria-label="Expired sign-ins">
         <div className="dev-row dev-wrap">

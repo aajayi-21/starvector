@@ -6,6 +6,17 @@
  * byte-identically.
  */
 
+import {
+  allOk,
+  compactRecoveryCode,
+  CODE_ALPHABET as DEVICE_ALPHABET,
+  displayRecoveryCode,
+  foldedName,
+  normalizeUsername,
+  passwordChecks,
+  RECOVERY_CODE_LENGTH,
+  usernameChecks,
+} from "../signin/rules";
 import type { Api } from "./client";
 import type {
   AboutView,
@@ -17,14 +28,19 @@ import type {
   LeaderboardRow,
   LeaderboardView,
   MeView,
+  OperatorCodeView,
+  PasswordAck,
   PracticeDays,
   PracticeScore,
   RankingHeadRow,
+  RecoveryAck,
+  RecoveryCodeAck,
   ReportRow,
   RevealView,
   SessionRow,
   SessionsView,
   SignInAck,
+  SignupView,
   SkillBoardRow,
   SkillBoardView,
   StoredSubmission,
@@ -132,6 +148,72 @@ export interface MockOptions {
   /** The anchor day — fixed so tests are byte-stable. */
   today?: string;
   player?: string;
+  /**
+   * False: a player from before spec A2, signed in with no password.
+   * The account screen then offers "Set a password".
+   */
+  hasPassword?: boolean;
+  /** A live operator's code, which lights the notice (spec A2 §6.1). */
+  operatorCode?: OperatorCodeView | null;
+  /** False: the mock starts signed out, at the gate screen. */
+  signedIn?: boolean;
+}
+
+/**
+ * The password of the mock's first player. A mock value for offline
+ * work and tests: no server holds it.
+ */
+export const MOCK_PASSWORD = "open sesame mock door";
+
+/** The floor of the daily board (spec A2 §9.5, decision D12). */
+const MOCK_BOARD_FLOOR_DAYS = 3;
+
+/** Spec A2 decision D2, mirrored for the name-reserved refusal. */
+const MOCK_RESERVED = new Set(
+  [
+    "admin",
+    "operator",
+    "moderator",
+    "staff",
+    "support",
+    "system",
+    "root",
+    "starvector",
+    "api",
+    "join",
+    "me",
+    "dev",
+    "null",
+    "undefined",
+  ].map(foldedName),
+);
+
+/**
+ * A stand-in for the server's table of usual passwords, which is a
+ * file the screen does not hold. Three entries are sufficient for the
+ * password-usual refusal to be reachable offline.
+ */
+const MOCK_USUAL = new Set([
+  "passwordpassword",
+  "123456789012",
+  "qwertyuiopasdf",
+]);
+
+interface MockAccount {
+  /** The NFKC shape, or null for an account with no password. */
+  password: string | null;
+  /** The compact live recovery code of the player, or null. */
+  recovery: string | null;
+}
+
+/** The cause that refuses a new password, or null (spec A2 §5.1). */
+function passwordRefusal(password: string, username: string): string | null {
+  if (!allOk(passwordChecks(password, username))) {
+    return "password-rule";
+  }
+  return MOCK_USUAL.has(password.normalize("NFKC").toLowerCase())
+    ? "password-usual"
+    : null;
 }
 
 /** The mock's photo credit: every revealed photo gets one. */
@@ -215,9 +297,8 @@ function normalDraw(key: string): number {
  * narrows as the trial count rises and the bands genuinely contain
  * it.
  *
- * 140 players across a 64-name space generates duplicate display
- * names on its own, thus the shared-label case is exercised
- * without being planted, while the store keys stay unique.
+ * Each name is a legal username of spec A2 §4.1, and the label is
+ * the username: one name for each player, and no two rows share one.
  */
 function skillBoard(player: string, ownScore: number): SkillBoardView {
   const rows: SkillBoardRow[] = [];
@@ -232,9 +313,11 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
       normalDraw(`pop:e:${index}`) / Math.sqrt(n);
     const first = STEM_A[Math.floor(draw(`pop:a:${index}`) * STEM_A.length)];
     const second = STEM_B[Math.floor(draw(`pop:b:${index}`) * STEM_B.length)];
+    const name = `${first}-${second}-${index}`;
     rows.push({
-      player: `${first}-${second}-${index}`,
-      display_name: `${first} ${second}`,
+      player: name,
+      // The username is the one name (spec A2 ruling 3).
+      display_name: name,
       avatar_hash: null,
       n,
       eligible: n >= MOCK_ELIGIBILITY_FLOOR,
@@ -356,7 +439,35 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
 
 export function makeMockApi(options: MockOptions = {}): Api {
   const today = options.today ?? "2026-08-14";
-  const player = options.player ?? "ade";
+  // The identity moves when a different account signs in.
+  let player = options.player ?? "ade";
+  let signedIn = options.signedIn ?? true;
+  let operatorCode = options.operatorCode ?? null;
+
+  // Full-mock accounts (spec A2): in memory for the session.
+  const accounts = new Map<string, MockAccount>([
+    [
+      player,
+      {
+        password: options.hasPassword === false ? null : MOCK_PASSWORD,
+        recovery: null,
+      },
+    ],
+  ]);
+  let recoveryCount = 0;
+
+  function nextRecoveryCode(): string {
+    recoveryCount += 1;
+    return fromAlphabet(
+      `recovery-code:${recoveryCount}`,
+      DEVICE_ALPHABET,
+      RECOVERY_CODE_LENGTH,
+    );
+  }
+
+  function refused<T>(status: number, cause: string): Promise<T> {
+    return Promise.reject(new ApiError(status, cause));
+  }
 
   /** The 30 days before today, newest first, ~70% played. */
   const playedDays: string[] = [];
@@ -443,6 +554,23 @@ export function makeMockApi(options: MockOptions = {}): Api {
     },
   ];
   let codeCount = 0;
+
+  /** A sign-in on this device: the identity moves to the account. */
+  function enter(name: string): void {
+    player = name;
+    signedIn = true;
+    if (!sessions.some((row) => row.current)) {
+      sessions = [
+        {
+          id: seededHex(`session:this:${name}`, 64),
+          label: "Chrome on Mac",
+          created_at: `${today}T09:14:00+00:00`,
+          current: true,
+        },
+        ...sessions,
+      ];
+    }
+  }
 
   return {
     // ── §6 surfaces: reachable only in full-mock mode ──────────
@@ -589,6 +717,10 @@ export function makeMockApi(options: MockOptions = {}): Api {
         return Promise.reject(new ApiError(404, undefined, "not revealed"));
       }
       const own = trialFor(day);
+      // The floor of spec A2 §9.5: the caller's own row travels with
+      // the public flag off until the caller has played 3 earlier
+      // days. The cast is past the floor.
+      const earlier = playedDays.filter((played) => played < day).length;
       const rows: LeaderboardRow[] = [
         {
           player,
@@ -598,6 +730,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
           target_rank: own.target_rank,
           decoy_count: own.decoy_count,
           streak: streak(),
+          public: earlier >= MOCK_BOARD_FLOOR_DAYS,
         },
       ];
       for (const name of CAST) {
@@ -610,10 +743,18 @@ export function makeMockApi(options: MockOptions = {}): Api {
           target_rank: trial.target_rank,
           decoy_count: trial.decoy_count,
           streak: 1 + Math.floor(21 * draw(`lbstreak:${day}:${name}`)),
+          public: true,
         });
       }
       rows.sort((a, b) => b.p - a.p);
-      return Promise.resolve({ day, rows });
+      return Promise.resolve({
+        day,
+        rows,
+        floor: {
+          played_days: MOCK_BOARD_FLOOR_DAYS,
+          caller_played_days: earlier,
+        },
+      });
     },
     getSubmission(day: string): Promise<StoredSubmission> {
       if (!playedSet.has(day)) {
@@ -657,6 +798,10 @@ export function makeMockApi(options: MockOptions = {}): Api {
       return Promise.resolve(skillBoard(player, trialFor("skill:self").p));
     },
     getMe(): Promise<MeView> {
+      if (!signedIn) {
+        // The server's constant 401: the shell shows the gate screen.
+        return Promise.reject(new ApiError(401, undefined, "unauthorized"));
+      }
       return Promise.resolve({
         player,
         display_name: player,
@@ -664,6 +809,8 @@ export function makeMockApi(options: MockOptions = {}): Api {
         reminder: false,
         description,
         avatar_hash: avatarHash,
+        has_password: (accounts.get(player)?.password ?? null) !== null,
+        operator_code: operatorCode === null ? null : { ...operatorCode },
       });
     },
     putAccount(text: string): Promise<{ description: string }> {
@@ -717,15 +864,12 @@ export function makeMockApi(options: MockOptions = {}): Api {
     },
     signOut(): Promise<{ signed_out: boolean }> {
       sessions = sessions.filter((row) => !row.current);
+      signedIn = false;
       return Promise.resolve({ signed_out: true });
     },
     issueDeviceCode(): Promise<DeviceCodeView> {
       codeCount += 1;
-      const code = fromAlphabet(
-        `device-code:${codeCount}`,
-        "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
-        8,
-      );
+      const code = fromAlphabet(`device-code:${codeCount}`, DEVICE_ALPHABET, 8);
       // The one clock read in the mock: a code's expiry is a live
       // countdown, and a fixed instant reads as expired in each
       // session after it. Nothing byte-compares this field.
@@ -739,6 +883,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{8}$/.test(compact)) {
         return Promise.reject(new ApiError(400, "bad-code"));
       }
+      enter(player);
       return Promise.resolve({ player, display_name: player });
     },
     exportUrl(): string {
@@ -750,13 +895,156 @@ export function makeMockApi(options: MockOptions = {}): Api {
     },
     postDoor(
       name: string,
-      displayName?: string,
+      _displayName?: string,
       _operatorToken?: string,
     ): Promise<{ player: string; display_name: string }> {
+      // A door record has no password (spec A2 §10.2), and the label
+      // on the wire is the name (ruling 3).
+      if (!accounts.has(name)) {
+        accounts.set(name, { password: null, recovery: null });
+      }
+      enter(name);
+      return Promise.resolve({ player: name, display_name: name });
+    },
+
+    // ── spec A2: accounts with a username and a password ───────
+    getSignup(): Promise<SignupView> {
+      // The full-mock world makes accounts, thus the gate offers it.
+      return Promise.resolve({ open: true });
+    },
+    signUp(username: string, password: string): Promise<RecoveryAck> {
+      // The server's sequence: the name rules, the password rules,
+      // then the claim of the folded shape.
+      const name = normalizeUsername(username);
+      if (!allOk(usernameChecks(name))) {
+        return refused(400, "name-rule");
+      }
+      if (MOCK_RESERVED.has(foldedName(name))) {
+        return refused(400, "name-reserved");
+      }
+      const cause = passwordRefusal(password, name);
+      if (cause !== null) {
+        return refused(400, cause);
+      }
+      const folded = foldedName(name);
+      if ([...accounts.keys()].some((held) => foldedName(held) === folded)) {
+        return refused(409, "name-taken");
+      }
+      const code = nextRecoveryCode();
+      accounts.set(name, {
+        password: password.normalize("NFKC"),
+        recovery: code,
+      });
+      enter(name);
       return Promise.resolve({
         player: name,
-        display_name: displayName ?? name,
+        display_name: name,
+        recovery_code: displayRecoveryCode(code),
       });
+    },
+    signIn(username: string, password: string): Promise<SignInAck> {
+      const name = normalizeUsername(username);
+      const account = accounts.get(name);
+      // One answer for no account, no password, and a bad password.
+      if (
+        account === undefined ||
+        account.password === null ||
+        account.password !== password.normalize("NFKC")
+      ) {
+        return refused(401, "sign-in");
+      }
+      enter(name);
+      return Promise.resolve({ player: name, display_name: name });
+    },
+    recover(
+      username: string,
+      recoveryCode: string,
+      password: string,
+    ): Promise<RecoveryAck> {
+      // The password rules read the typed values alone, thus they
+      // come first and say nothing about the account. The operator's
+      // code is not redeemable here: its hold reads a clock.
+      const name = normalizeUsername(username);
+      const cause = passwordRefusal(password, name);
+      if (cause !== null) {
+        return refused(400, cause);
+      }
+      const account = accounts.get(name);
+      if (
+        account === undefined ||
+        account.recovery === null ||
+        account.recovery !== compactRecoveryCode(recoveryCode)
+      ) {
+        return refused(401, "recovery");
+      }
+      const code = nextRecoveryCode();
+      accounts.set(name, {
+        password: password.normalize("NFKC"),
+        recovery: code,
+      });
+      if (name === player) {
+        // Each device of the player signs out, then this one signs in.
+        sessions = sessions.filter((row) => row.current);
+        operatorCode = null;
+      }
+      enter(name);
+      return Promise.resolve({
+        player: name,
+        display_name: name,
+        recovery_code: displayRecoveryCode(code),
+      });
+    },
+    setPassword(
+      password: string,
+      currentPassword?: string,
+    ): Promise<PasswordAck> {
+      const account = accounts.get(player) ?? {
+        password: null,
+        recovery: null,
+      };
+      const cause = passwordRefusal(password, player);
+      if (cause !== null) {
+        return refused(400, cause);
+      }
+      const first = account.password === null;
+      if (
+        !first &&
+        account.password !== (currentPassword ?? "").normalize("NFKC")
+      ) {
+        return refused(403, "password");
+      }
+      // The first password comes with the first recovery code; a
+      // change leaves the recovery code as it is.
+      const code = first ? nextRecoveryCode() : null;
+      accounts.set(player, {
+        password: password.normalize("NFKC"),
+        recovery: code ?? account.recovery,
+      });
+      const signedOut = sessions.filter((row) => !row.current).length;
+      sessions = sessions.filter((row) => row.current);
+      return Promise.resolve({
+        changed: true,
+        signed_out: signedOut,
+        recovery_code: code === null ? null : displayRecoveryCode(code),
+      });
+    },
+    newRecoveryCode(currentPassword: string): Promise<RecoveryCodeAck> {
+      const account = accounts.get(player);
+      if (
+        account === undefined ||
+        account.password === null ||
+        account.password !== currentPassword.normalize("NFKC")
+      ) {
+        return refused(403, "password");
+      }
+      const code = nextRecoveryCode();
+      accounts.set(player, { ...account, recovery: code });
+      return Promise.resolve({ recovery_code: displayRecoveryCode(code) });
+    },
+    stopOperatorCode(): Promise<{ stopped: boolean }> {
+      // The same answer with a code and with none.
+      operatorCode = null;
+      return Promise.resolve({ stopped: true });
     },
   };
 }

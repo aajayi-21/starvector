@@ -17,12 +17,16 @@ import type {
   HistoryView,
   LeaderboardView,
   MeView,
+  PasswordAck,
   PracticeDays,
   PracticeScore,
+  RecoveryAck,
+  RecoveryCodeAck,
   RefusalBody,
   RevealView,
   SessionsView,
   SignInAck,
+  SignupView,
   SkillBoardView,
   StoredSubmission,
   SubmissionAck,
@@ -183,6 +187,50 @@ export function makeRealApi(): Api {
     },
     exportUrl(): string {
       return "/api/me/export";
+    },
+    // Spec A2 §8. Each credential POST is JSON with its media type,
+    // which the server wants, and the browser adds the Origin header
+    // the server compares with the host. No credential goes in a URL.
+    getSignup(): Promise<SignupView> {
+      return request<SignupView>("/api/signup");
+    },
+    signUp(username: string, password: string): Promise<RecoveryAck> {
+      return postJson<RecoveryAck>("/api/signup", { username, password });
+    },
+    signIn(username: string, password: string): Promise<SignInAck> {
+      return postJson<SignInAck>("/api/signin", { username, password });
+    },
+    recover(
+      username: string,
+      recoveryCode: string,
+      password: string,
+    ): Promise<RecoveryAck> {
+      return postJson<RecoveryAck>("/api/recover", {
+        username,
+        recovery_code: recoveryCode,
+        password,
+      });
+    },
+    setPassword(
+      password: string,
+      currentPassword?: string,
+    ): Promise<PasswordAck> {
+      return postJson<PasswordAck>("/api/account/password", {
+        ...(currentPassword === undefined
+          ? {}
+          : { current_password: currentPassword }),
+        password,
+      });
+    },
+    newRecoveryCode(currentPassword: string): Promise<RecoveryCodeAck> {
+      return postJson<RecoveryCodeAck>("/api/account/recovery-code", {
+        current_password: currentPassword,
+      });
+    },
+    stopOperatorCode(): Promise<{ stopped: boolean }> {
+      return request<{ stopped: boolean }>("/api/account/recovery-code/stop", {
+        method: "POST",
+      });
     },
   };
 }

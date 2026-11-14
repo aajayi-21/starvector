@@ -122,3 +122,49 @@ describe("the console client after the review (spec BR1 §7.6)", () => {
     );
   });
 });
+
+describe("the console client after spec A2 (§6.1, §10.1)", () => {
+  it("asks for the operator's recovery code with a POST and the bearer", async () => {
+    const body = {
+      player: "ade",
+      recovery_code: "ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2",
+      usable_at: "2026-08-13T12:00:00+00:00",
+    };
+    const fetch = vi.fn(async () => answer(200, body));
+    vi.stubGlobal("fetch", fetch);
+    expect(await makeDevApi(() => "a-token").issueRecoveryCode("ade")).toEqual(
+      body,
+    );
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/dev/players/ade/recovery-code");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer a-token",
+    );
+  });
+
+  it("reads a restore as a recovery code with its hold", async () => {
+    const body = {
+      player: "ade",
+      status: "active",
+      recovery_code: "ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2",
+      usable_at: "2026-08-13T12:00:00+00:00",
+    };
+    const fetch = vi.fn(async () => answer(200, body));
+    vi.stubGlobal("fetch", fetch);
+    const restored = await makeDevApi(() => "a-token").restorePlayer("ade");
+    expect(restored.recovery_code).toBe(body.recovery_code);
+    expect(restored.usable_at).toBe(body.usable_at);
+    const [url] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/dev/players/ade/restore");
+  });
+
+  it("has no call that makes a player, an invite, or a device code", () => {
+    // The paths are gone on the server (spec A2 §10.1, decision D13),
+    // thus the client holds no name for them.
+    const api = makeDevApi() as unknown as Record<string, unknown>;
+    for (const gone of ["mintPlayer", "rotatePlayer", "issueDeviceCode"]) {
+      expect(api[gone]).toBeUndefined();
+    }
+  });
+});

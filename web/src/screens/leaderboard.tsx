@@ -39,10 +39,16 @@ import type {
   VariationReport,
 } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
-import { boardSlice, funnelGeometry } from "../board/core";
+import {
+  boardSlice,
+  floorSentence,
+  funnelGeometry,
+  privateOwnRow,
+} from "../board/core";
 import { AvatarCircle } from "../ui/avatar";
 import { formatDay, ordinal, percentBeaten } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
+import { PrivateRowBadge } from "../ui/private-row-badge";
 
 /** How many ranked rows the table shows before the caller's own. */
 const TABLE_LIMIT = 25;
@@ -132,6 +138,8 @@ function DailyBoard(props: {
   error: unknown;
 }): React.JSX.Element {
   const { view, self, pending, error } = props;
+  // The caller's own row while it is below the floor of spec A2 §9.5.
+  const hidden = view === undefined ? null : privateOwnRow(view.rows, self);
   return (
     <section className="card" aria-labelledby="daily-heading">
       <div className="stack-sm">
@@ -173,10 +181,10 @@ function DailyBoard(props: {
                   <td>
                     <PlayerCell
                       player={row.player}
-                      displayName={row.display_name}
                       avatarHash={row.avatar_hash}
                       self={self}
                     />
+                    {row === hidden ? <PrivateRowBadge /> : null}
                   </td>
                   <td className="num">{percentBeaten(row.p)}%</td>
                   <td className="num">
@@ -189,22 +197,27 @@ function DailyBoard(props: {
           </table>
         </div>
       )}
+      {view === undefined || hidden === null ? null : (
+        <p className="hint" data-testid="board-floor">
+          {floorSentence(view.floor)}
+        </p>
+      )}
     </section>
   );
 }
 
 /**
  * The board name cell (D5 as ruled 2026-08-21): the avatar beside
- * the label. The circle falls back to initials, so a board with no
- * pictures reads as it did before the ruling.
+ * the username, which is the one name of a player (spec A2 ruling
+ * 3). The circle falls back to initials, so a board with no pictures
+ * reads as it did before the ruling.
  */
 function PlayerCell(props: {
   player: string;
-  displayName: string;
   avatarHash: string | null;
   self: string;
 }): React.JSX.Element {
-  const { player, displayName, avatarHash, self } = props;
+  const { player, avatarHash, self } = props;
   return (
     <span
       style={{
@@ -214,13 +227,8 @@ function PlayerCell(props: {
         fontWeight: player === self ? 650 : 400,
       }}
     >
-      <AvatarCircle
-        player={player}
-        displayName={displayName}
-        avatarHash={avatarHash}
-        size={24}
-      />
-      <span>{player === self ? "You" : displayName}</span>
+      <AvatarCircle player={player} avatarHash={avatarHash} size={24} />
+      <span>{player === self ? "You" : player}</span>
     </span>
   );
 }
@@ -381,7 +389,7 @@ function Funnel(props: {
             {/* An SVG title is an element. The HTML title attribute
                 does not carry over. */}
             <title>
-              {point.self ? "You" : point.display_name} — skill number{" "}
+              {point.self ? "You" : point.player} — skill number{" "}
               {point.theta.toFixed(2)} after {point.n}{" "}
               {point.n === 1 ? "result" : "results"}
               {point.eligible ? "" : " (not ranked yet)"}
@@ -578,7 +586,6 @@ function RankedRow(props: {
       <td>
         <PlayerCell
           player={row.player}
-          displayName={row.display_name}
           avatarHash={row.avatar_hash}
           self={self}
         />
