@@ -7,8 +7,47 @@
  */
 
 import { useApi } from "../api/client";
+import { streakTier } from "./streak";
 
+/** The ring and the gap, in pixels, for an avatar of this outer size. */
+function ringMetrics(size: number): { ring: number; gap: number } {
+  if (size >= 60) {
+    return { ring: 4, gap: 3 };
+  }
+  return { ring: 2, gap: size >= 30 ? 2 : 1 };
+}
+
+/**
+ * The avatar with its streak ring (spec H1 §4). The outer size stays
+ * `size` at each tier, so a row does not move when a streak grows.
+ * A screen that does not hold the streak passes none and draws the
+ * plain circle.
+ */
 export function AvatarCircle(props: {
+  player: string;
+  avatarHash: string | null;
+  size: number;
+  streak?: number;
+}): React.JSX.Element {
+  const tier = streakTier(props.streak ?? 0);
+  if (tier === 0) {
+    return <AvatarPicture {...props} />;
+  }
+  const { ring, gap } = ringMetrics(props.size);
+  return (
+    <span
+      className="streak-ring"
+      data-tier={tier}
+      style={{ width: props.size, height: props.size, padding: ring }}
+    >
+      <span className="streak-ring-gap" style={{ padding: gap }}>
+        <AvatarPicture {...props} size={props.size - 2 * (ring + gap)} />
+      </span>
+    </span>
+  );
+}
+
+function AvatarPicture(props: {
   player: string;
   avatarHash: string | null;
   size: number;

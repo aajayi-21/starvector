@@ -6,7 +6,8 @@ Two properties no other test holds.
 Multiplayer adds a path for one player's answer to hold a fact
 about a second player's play. I7 forbids score information before
 the window closes, and a count of who has sent is score-adjacent:
-it says who is in contention.
+it says who is in contention. The one difference allowed is the
+anonymous total of the day view (spec H1 section 9, D5), with no name.
 
 **No answer length follows the target.** Section 22 asks for this
 and no test performed it. Length is the weaker property than
@@ -16,6 +17,7 @@ randomness that makes the bytes different.
 """
 
 import dataclasses
+import json
 from pathlib import Path
 
 from svc_fixture import mint_player
@@ -87,15 +89,34 @@ def test_no_open_day_answer_follows_the_other_players_sends(
 
     Two worlds equal in each fact but one - bru has sent in the
     first and has not in the second. Alice's bodies must agree
-    byte for byte. How many players have sent, and which, is not a
-    function that one open-day byte depends on.
+    byte for byte. Which players have sent is not a function that
+    one open-day byte depends on.
+
+    One field is the narrow difference allowed: `sends` of the day view is
+    the anonymous total of the day (spec H1 section 9, D5, the
+    owner's ruling of 2026-11-13). The test removes that field from
+    the two day views and compares the remaining bytes, so a second
+    byte that follows the sends fails here. The total must also be
+    one more in the first world, which is the positive control.
     """
     _sent, sent_client = _two_player_world(tmp_path / "sent", bru_sent=True)
     _quiet, quiet_client = _two_player_world(tmp_path / "quiet",
                                              bru_sent=False)
     for path in _OPEN_DAY_PATHS:
-        assert sent_client.get(path).content \
-            == quiet_client.get(path).content, path
+        sent_body = sent_client.get(path).content
+        quiet_body = quiet_client.get(path).content
+        if path == "/api/day":
+            sent_body, sent_total = _without_sends(sent_body)
+            quiet_body, quiet_total = _without_sends(quiet_body)
+            assert sent_total == quiet_total + 1
+        assert sent_body == quiet_body, path
+
+
+def _without_sends(body: bytes) -> tuple[bytes, int]:
+    """The day view bytes with `sends` removed, and the removed total."""
+    value = json.loads(body)
+    total = value.pop("sends")
+    return json.dumps(value, sort_keys=True).encode(), total
 
 
 def test_the_reveal_opens_the_board(tmp_path: Path) -> None:

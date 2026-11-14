@@ -74,6 +74,7 @@ export function TopBar(): React.JSX.Element {
               player={me.data.player}
               avatarHash={me.data.avatar_hash}
               size={34}
+              streak={me.data.streak}
             />
           </Link>
         )}

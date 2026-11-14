@@ -312,7 +312,9 @@ practice. The server accepts them today, thus each piece is in
 - **I7 and R3.** The new player surfaces are functions of the
   caller's own records alone. No answer holds a target, a score,
   or a count of other players' sends. Each new path joins the R3
-  walk with constant refusals.
+  walk with constant refusals. (Amended 2026-11-13: the day view
+  holds one anonymous total of the day, `sends`, by spec H1 §9
+  ruling D5. No other answer holds a count.)
 - **R4.** Account reads and writes cannot change with the open
   day's target. The two-world compare grows the new surfaces.
 - **The store snapshot.** Read paths keep the store byte-equal.

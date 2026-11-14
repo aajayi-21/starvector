@@ -49,6 +49,7 @@ import { AvatarCircle } from "../ui/avatar";
 import { formatDay, ordinal, percentBeaten } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
 import { PrivateRowBadge } from "../ui/private-row-badge";
+import { StreakName } from "../ui/streak-name";
 
 /** How many ranked rows the table shows before the caller's own. */
 const TABLE_LIMIT = 25;
@@ -182,6 +183,7 @@ function DailyBoard(props: {
                     <PlayerCell
                       player={row.player}
                       avatarHash={row.avatar_hash}
+                      streak={row.streak}
                       self={self}
                     />
                     {row === hidden ? <PrivateRowBadge /> : null}
@@ -215,9 +217,11 @@ function DailyBoard(props: {
 function PlayerCell(props: {
   player: string;
   avatarHash: string | null;
+  /** Absent on the skill board: its rows hold no streak (spec H1 §10). */
+  streak?: number;
   self: string;
 }): React.JSX.Element {
-  const { player, avatarHash, self } = props;
+  const { player, avatarHash, streak = 0, self } = props;
   return (
     <span
       style={{
@@ -227,8 +231,17 @@ function PlayerCell(props: {
         fontWeight: player === self ? 650 : 400,
       }}
     >
-      <AvatarCircle player={player} avatarHash={avatarHash} size={24} />
-      <span>{player === self ? "You" : player}</span>
+      <AvatarCircle
+        player={player}
+        avatarHash={avatarHash}
+        size={24}
+        streak={streak}
+      />
+      <span>
+        <StreakName streak={streak}>
+          {player === self ? "You" : player}
+        </StreakName>
+      </span>
     </span>
   );
 }

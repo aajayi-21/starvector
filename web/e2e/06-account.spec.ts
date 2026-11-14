@@ -108,7 +108,9 @@ test("a device code signs a second browser in", async ({ page, browser }) => {
     .fill(code.toLowerCase());
   await second.getByRole("button", { name: "Use this code" }).click();
   // The greeting names the username: the one name (spec A2 ruling 3).
-  await expect(second.getByText(/, ade$/)).toBeVisible();
+  await expect(
+    second.getByRole("heading", { level: 1, name: /, ade$/ }),
+  ).toBeVisible();
 
   // The first browser sees the new device arrive and names it.
   await expect(page.getByText("Safari on iPhone is signed in.")).toBeVisible({

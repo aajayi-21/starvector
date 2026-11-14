@@ -28,6 +28,9 @@
   --accent-hover: #2149ad;
   --accent-soft: #e8eefc;
   --accent-text: #2451bd;
+  --streak-a: #2856c7;
+  --streak-b: #7c3aed;
+  --streak-c: #b4440a;
   --on-accent: #ffffff;
   --good: #17784a;
   --good-soft: #e3f3ea;
@@ -67,6 +70,9 @@
     --accent-hover: #93b4ff;
     --accent-soft: #1b2944;
     --accent-text: #93b4ff;
+    --streak-a: #7ba3ff;
+    --streak-b: #b794ff;
+    --streak-c: #ffb36b;
     --on-accent: #0b1020;
     --good: #56c795;
     --good-soft: #13291e;
