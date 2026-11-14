@@ -107,6 +107,20 @@ def test_the_production_service_config_names_the_frozen_config() -> None:
 
     service = load_service_config(Path("configs/service/prod-wit.json"))
     assert service.scoring_config == "configs/scoring/prod-wit-mixed.json"
+    # The rollover hour (owner ruling 2026-11-13): each day is one UTC
+    # calendar date. The day timer fires on the hour, thus the hour has
+    # minute 00, and the rollover refuses a config with no hour.
+    assert service.closes_at_utc == "00:00"
+    import datetime
+
+    from service import schedule
+
+    assert schedule.rollover_minutes(service.closes_at_utc) % 60 == 0
+    midnight = datetime.datetime(2026, 12, 1, 0, 0, tzinfo=datetime.UTC)
+    assert schedule.label_at(midnight, service.closes_at_utc) \
+        == "2026-12-01"
+    assert schedule.closes_at_text("2026-12-01", service.closes_at_utc) \
+        == "2026-12-02T00:00:00+00:00"
 
 
 def test_the_stitched_boundary_config_forks_on_two_fields() -> None:

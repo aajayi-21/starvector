@@ -678,6 +678,12 @@ the day that is due, reveals it, and opens the next.
    `"closes_at_utc": "22:00"` (24-hour, UTC) and start the server
    again with `sudo systemctl restart starvector`. The app shows the
    countdown to that instant.
+
+   *Note, 2026-11-13:* the owner ruled the hour of the production pool:
+   `"closes_at_utc": "00:00"`. Each day is then one UTC calendar date:
+   the day with the label D opens at 00:00 UTC on D and closes at 00:00
+   UTC on the date after it. `configs/service/prod-wit.json` has that
+   value.
 2. Keep that hour on the hour, and clear of 04:30 (the update reboot)
    and 05:00 (the backup). `deploy/starvector-day.timer` fires each
    hour at minute 00, thus a different minute closes at the next firing
@@ -697,6 +703,24 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now starvector-day.timer
 systemctl list-timers starvector-day.timer
 ```
+
+The timer reads the clock of the box, thus make sure that the clock
+is correct:
+
+```
+timedatectl
+```
+
+The line `System clock synchronized: yes` must be there. The time zone
+of the box does not change the timer: the unit names UTC. With no
+synchronization, `sudo timedatectl set-ntp true` starts it.
+
+*Note, 2026-11-13:* a test does the timer's work for 7 days of
+firings, one each hour, against the server itself
+(`tests/service/test_rollover_week.py`). One day opens for each
+calendar day at the rollover hour, a box that was down opens the day
+of the calendar when it comes back, and the first firing on an empty
+store opens the first day.
 
 To see what the next rollover does, with no move:
 
