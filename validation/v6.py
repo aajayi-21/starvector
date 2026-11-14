@@ -74,6 +74,7 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
     tier1_hits = {width: 0 for width in fit_config.harness.v6_tier1_widths}
     tier2_hits = {width: 0 for width in fit_config.harness.v6_tier2_widths}
     trial_count = 0
+    refused_count = 0
     # The levels V6 reads come from the fit config (ruling
     # 2026-08-10): recall of a noise submission's source image
     # measures nothing, thus the committed value names levels 0 and 1.
@@ -83,6 +84,11 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
             seed=fit_config.harness.v6_seed,
             count=fit_config.harness.v6_trial_count,
             level_index=level)
+        # A record below the ink gate is not a submission, thus it is
+        # not a trial. The report counts each one.
+        rows, refused = harness.admitted_synthetic(
+            rows, gates, loaded.render.canvas_px)
+        refused_count += len(refused)
         harness.prewarm_records([row.record for row in rows], gates,
                                 loaded.render, encoders)
         for row in rows:
@@ -116,6 +122,7 @@ def run_v6(config: ScoringConfig, fit_config: FitConfig, *,
 
     aggregates: dict[str, JsonValue] = {
         "trial_count": trial_count,
+        "synthetic_refused": refused_count,
         "levels": list(fit_config.harness.v6_levels),
         "tier1_recall": {
             str(width): harness.quantized(tier1_hits[width] / trial_count)

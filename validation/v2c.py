@@ -27,7 +27,7 @@ from pipeline.context import build_scoring_context, load_pool_index
 from pipeline.score import score_trial
 from pool.artifacts import write_json_pretty, write_jsonl
 from validation import harness
-from validation.colorize import colorized_record
+from validation.colorize import PALETTE, colorized_record
 from validation.splits import select_keys
 from validation.v2 import ks_significance, ks_statistic, target_for_trial
 
@@ -217,6 +217,10 @@ def run_v2c(config: ScoringConfig, *, data_root: Path, records_root: Path,
             "fusion_weights": dict(config.fusion.weights),
             "fusion_weights_fitted": config.fusion.fit_record is not None,
             "fit_record": config.fusion.fit_record,
+            # The colors of this run. A palette change is a new
+            # measurement (spec C1 section 5), and the hashes do not
+            # cover the palette.
+            "palette": list(PALETTE),
             "created_at": clock(),
             "code_version": code_version,
             **harness.VERDICT_TEMPLATE,

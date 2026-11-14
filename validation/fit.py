@@ -250,6 +250,7 @@ class FitData:
     v1_pair_count: int
     union_contributors: Mapping[ChannelName, int]
     pool_contributors: Mapping[ChannelName, int]
+    synthetic_refused: Mapping[str, int]
 
 
 def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
@@ -330,6 +331,12 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         loaded.index, fit_config, table, placement,
         seed=fit_config.fit.synthetic_seed + 1,
         count=fit_config.fit.synthetic_count)
+    # A record below the ink gate is not a submission, thus it is not a
+    # labeled trial. The record of the run counts each one.
+    fit_synthetic, fit_refused = harness.admitted_synthetic(
+        fit_synthetic, gates, loaded.render.canvas_px)
+    holdout_synthetic, holdout_refused = harness.admitted_synthetic(
+        holdout_synthetic, gates, loaded.render.canvas_px)
 
     def background() -> list[tuple[str, JsonValue]]:
         return harness.full_background(
@@ -442,6 +449,8 @@ def collect_fit_data(scoring: ScoringConfig, fit_config: FitConfig, *,
         v1_pair_count=scoring.validation.v1_pair_count,
         union_contributors=dict(union_tables.contributors),
         pool_contributors=dict(pool_tables.contributors),
+        synthetic_refused={"fit": len(fit_refused),
+                           "holdout": len(holdout_refused)},
     )
 
 
@@ -542,6 +551,9 @@ def run_fit(scoring: ScoringConfig, fit_config: FitConfig, *,
         "v1_pair_count": data.v1_pair_count,
         "synthetic_seed": fit_config.fit.synthetic_seed,
         "synthetic_count": fit_config.fit.synthetic_count,
+        # Synthetic records that the Layer 0 ink gate refused. They are
+        # in synthetic_count and they are not trials.
+        "synthetic_refused": dict(data.synthetic_refused),
         "commonness_contributors": {
             "union": dict(data.union_contributors),
             "pool": dict(data.pool_contributors)},

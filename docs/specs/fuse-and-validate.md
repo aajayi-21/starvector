@@ -588,6 +588,20 @@ The build settled these points the spec did not cover:
    Layer 0 gates, the element channel reads the groups' labels, the
    rectangle strokes make the WHOLE-DRAWING atom, and nothing in
    Layer 0 or Layer 1 changes (I5).
+
+   *Note, 2026-11-13:* the rectangle ink does not clear the min-ink
+   gate for each record. On the first production pool, 0.1% of the
+   boxes have a perimeter below 50 pixels on the 512 canvas. One of
+   the 300 fit records had two such rectangles with 56 line pixels,
+   against the gate value of 100, and the fit stopped there.
+
+   Layer 0 refuses that record, thus it is not a submission and it
+   is not a trial. The fit, V3, and V6 remove a synthetic record
+   that the min-ink gate refuses, and each record of a run has the
+   count in `synthetic_refused`. A refusal with a different cause
+   stops the run. The generator, its hash, the gate value, and the
+   background of the commonness tables do not change. A background
+   record below the gate stops the table build, as before.
 3. **The weight table carries its provenance.** `fusion.fit_record`
    names the committed fit record with these weights as its winner,
    null when unfitted. Harness records read `fusion_weights_fitted`
