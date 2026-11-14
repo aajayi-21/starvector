@@ -8,13 +8,15 @@
  * pause control meets WCAG 2.2.2 (pause, stop, hide) for content that
  * moves by itself for more than five seconds.
  *
- * Each epigraph also renders, hidden, in the same grid cell, so the
- * frame is as tall as the tallest one at the current width and a change
- * never moves the page.
+ * The longest epigraphs also render, hidden, in the same grid cell, so
+ * the frame is as tall as the tallest one at the current width and a
+ * change never moves the page. Three by character count is sufficient:
+ * the height follows the length, and each hidden copy costs one span
+ * for each letter, so rendering all of them slowed the home screen.
  */
 
 import { Pause, Play } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { ResolveText } from "../ui/resolve-text";
 import type { Epigraph } from "./epigraphs";
@@ -46,6 +48,35 @@ function useReducedMotion(): boolean {
 }
 
 const STILL: Random = () => 0;
+
+/** How many of the longest epigraphs size the frame. */
+const SIZER_COUNT = 3;
+
+function longest(epigraphs: readonly Epigraph[]): Epigraph[] {
+  const size = (e: Epigraph): number =>
+    e.text.length + e.author.length + e.work.length;
+  return [...epigraphs].sort((a, b) => size(b) - size(a)).slice(0, SIZER_COUNT);
+}
+
+/** The hidden copies. Memoized: a rotation does not render them again. */
+const Sizers = memo(function Sizers(props: {
+  epigraphs: readonly Epigraph[];
+}): React.JSX.Element {
+  return (
+    <>
+      {props.epigraphs.map((each) => (
+        <div key={each.text} className="epigraph-sizer" aria-hidden="true">
+          <div className="epigraph-text">
+            <ResolveText text={each.text} random={STILL} />
+          </div>
+          <div className="epigraph-cite">
+            {each.author}, <cite>{each.work}</cite>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+});
 
 /**
  * True while the pointer or the focus is on the element. The hold is
@@ -91,6 +122,7 @@ export function EpigraphFigure(props: {
   const [paused, setPaused] = useState(false);
   const frame = useRef<HTMLDivElement>(null);
   const held = useHeld(frame);
+  const tallest = useMemo(() => longest(epigraphs), [epigraphs]);
   const reduced = useReducedMotion();
   const rotates = epigraphs.length >= 2 && !reduced;
   const stopped = !rotates || paused || held;
@@ -115,22 +147,7 @@ export function EpigraphFigure(props: {
   }
   return (
     <div ref={frame} className="epigraph-frame">
-      {epigraphs.map((each, eachIndex) => (
-        <div
-          // The set does not reorder: the key is the position.
-          // biome-ignore lint/suspicious/noArrayIndexKey: see above
-          key={eachIndex}
-          className="epigraph-sizer"
-          aria-hidden="true"
-        >
-          <div className="epigraph-text">
-            <ResolveText text={each.text} random={STILL} />
-          </div>
-          <div className="epigraph-cite">
-            {each.author}, <cite>{each.work}</cite>
-          </div>
-        </div>
-      ))}
+      <Sizers epigraphs={tallest} />
       <figure className="epigraph" data-testid="epigraph">
         <blockquote key={index} className="epigraph-text">
           <ResolveText text={epigraph.text} random={random} />

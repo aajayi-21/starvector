@@ -137,9 +137,11 @@ records the cause.
   2.2.2 asks for this on content that moves by itself for more than five
   seconds. With reduced movement set, the control does not show, because
   nothing moves.
-- Each epigraph also renders, hidden, in the grid cell of the figure. The
-  cell is as tall as the tallest epigraph at the current width, so a change
-  does not move the page. (Changed at build time: the draft said two lines,
+- The three longest epigraphs also render, hidden, in the grid cell of the
+  figure. The cell is as tall as the tallest epigraph at the current width,
+  so a change does not move the page. The height follows the length, so
+  three are sufficient, and a hidden copy of each epigraph slowed the home
+  screen. (Changed at build time: the draft said two lines,
   and an epigraph of 25 words needs three lines on a desktop and five on a
   phone.)
 - A change fades in the epigraph with the same resolve effect as the

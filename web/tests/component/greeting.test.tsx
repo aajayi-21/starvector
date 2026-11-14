@@ -170,10 +170,15 @@ describe("the epigraph figure (spec H1 §5)", () => {
     expect(shown()).toBe("alpha");
   });
 
-  it("renders each epigraph hidden, so the frame fits the tallest", () => {
-    const view = render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
+  it("renders the three longest hidden, so the frame fits the tallest", () => {
+    const four = [
+      ...THREE,
+      { ...THREE[0], text: "a much longer line than the other three" },
+    ] as Epigraph[];
+    const view = render(<EpigraphFigure epigraphs={four} random={() => 0} />);
     const sizers = view.container.querySelectorAll(".epigraph-sizer");
     expect(sizers).toHaveLength(3);
+    expect(sizers[0]?.textContent).toContain("a much longer line");
     for (const sizer of sizers) {
       expect(sizer.getAttribute("aria-hidden")).toBe("true");
     }
