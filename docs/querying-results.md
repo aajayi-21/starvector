@@ -6,6 +6,13 @@ The server keeps one SQLite file for programs to read:
 uv run python -m service.index path
 ```
 
+*Note, 2026-11-13 (spec R1):* this file is the operator's private
+index. The file for each other reader is the public database, which
+`python -m service.public build` makes from the store. It holds the
+revealed days of a production pool alone, and its `README.md` says what
+each table means. Do not publish the file of this document: it holds
+the responses of the day in play and the text of each account.
+
 The usual path is `data/index/results-v2.sqlite`. The file is a cache of
 the store (I4). A reveal builds it, and a console read builds it when the
 store moved. To build it by hand:

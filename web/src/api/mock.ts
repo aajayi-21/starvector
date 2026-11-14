@@ -6,6 +6,7 @@
  * byte-identically.
  */
 
+import { NOTICE_VERSION } from "../signin/notice";
 import {
   allOk,
   compactRecoveryCode,
@@ -21,6 +22,7 @@ import type { Api } from "./client";
 import type {
   AboutView,
   BaselineBandPoint,
+  ConsentAck,
   DayView,
   DeviceCodeView,
   HistoryDayRow,
@@ -157,6 +159,18 @@ export interface MockOptions {
   operatorCode?: OperatorCodeView | null;
   /** False: the mock starts signed out, at the gate screen. */
   signedIn?: boolean;
+  /**
+   * True: this mock server publishes results, thus a send needs the
+   * agreement to the notice (spec R1 §3.3). The default is false, and
+   * the offline flows then meet no notice screen.
+   */
+  noticeRequired?: boolean;
+  /** True: the first player has agreed to the current notice. */
+  noticeAgreed?: boolean;
+  /** The mock server's notice version. The default is the screen's. */
+  noticeVersion?: number;
+  /** Where the mock's published snapshots are, or null for none. */
+  publicDataUrl?: string | null;
 }
 
 /**
@@ -204,6 +218,8 @@ interface MockAccount {
   password: string | null;
   /** The compact live recovery code of the player, or null. */
   recovery: string | null;
+  /** The notice version the player agreed to, or null (spec R1 §3.2). */
+  agreedNotice: number | null;
 }
 
 /** The cause that refuses a new password, or null (spec A2 §5.1). */
@@ -443,6 +459,8 @@ export function makeMockApi(options: MockOptions = {}): Api {
   let player = options.player ?? "ade";
   let signedIn = options.signedIn ?? true;
   let operatorCode = options.operatorCode ?? null;
+  const noticeRequired = options.noticeRequired ?? false;
+  const noticeVersion = options.noticeVersion ?? NOTICE_VERSION;
 
   // Full-mock accounts (spec A2): in memory for the session.
   const accounts = new Map<string, MockAccount>([
@@ -451,9 +469,15 @@ export function makeMockApi(options: MockOptions = {}): Api {
       {
         password: options.hasPassword === false ? null : MOCK_PASSWORD,
         recovery: null,
+        agreedNotice: options.noticeAgreed === true ? noticeVersion : null,
       },
     ],
   ]);
+
+  /** True when the signed-in player agreed to the current notice. */
+  function agreed(): boolean {
+    return accounts.get(player)?.agreedNotice === noticeVersion;
+  }
   let recoveryCount = 0;
 
   function nextRecoveryCode(): string {
@@ -589,6 +613,10 @@ export function makeMockApi(options: MockOptions = {}): Api {
       });
     },
     submit(day: string, record: WireRecord): Promise<SubmissionAck> {
+      // The agreement comes first, as on the server (spec R1 §3.3).
+      if (noticeRequired && !agreed()) {
+        return Promise.reject(new ApiError(409, "notice"));
+      }
       if (day !== today) {
         return Promise.reject(new ApiError(409, "day-moved"));
       }
@@ -630,6 +658,11 @@ export function makeMockApi(options: MockOptions = {}): Api {
         `<text x="48" y="52" font-size="9" fill="#97a1b4" ` +
         `text-anchor="middle" font-family="monospace">${label}</text></svg>`;
       return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    },
+    startDay(): Promise<{ ok: boolean }> {
+      // One constant answer in each condition (spec R1 §4). The mock
+      // keeps no start record: it reads no clock.
+      return Promise.resolve({ ok: true });
     },
     getPracticeDays(): Promise<PracticeDays> {
       if (playedDays.length === 0) {
@@ -811,7 +844,26 @@ export function makeMockApi(options: MockOptions = {}): Api {
         avatar_hash: avatarHash,
         has_password: (accounts.get(player)?.password ?? null) !== null,
         operator_code: operatorCode === null ? null : { ...operatorCode },
+        notice: {
+          version: noticeVersion,
+          agreed: agreed(),
+          required: noticeRequired,
+        },
       });
+    },
+    postConsent(notice: number): Promise<ConsentAck> {
+      // The player agrees to the text the player read: a number that
+      // is not the current one is refused (spec R1 §3.2).
+      if (notice !== noticeVersion) {
+        return refused(409, "notice-version");
+      }
+      const account = accounts.get(player) ?? {
+        password: null,
+        recovery: null,
+        agreedNotice: null,
+      };
+      accounts.set(player, { ...account, agreedNotice: noticeVersion });
+      return Promise.resolve({ agreed: true, notice: noticeVersion });
     },
     putAccount(text: string): Promise<{ description: string }> {
       description = text;
@@ -844,6 +896,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         test_season: true,
         photo_count: DECOY_COUNT + 1,
         closes_at_utc: "22:00",
+        public_data_url: options.publicDataUrl ?? null,
       });
     },
     getSessions(): Promise<SessionsView> {
@@ -901,7 +954,11 @@ export function makeMockApi(options: MockOptions = {}): Api {
       // A door record has no password (spec A2 §10.2), and the label
       // on the wire is the name (ruling 3).
       if (!accounts.has(name)) {
-        accounts.set(name, { password: null, recovery: null });
+        accounts.set(name, {
+          password: null,
+          recovery: null,
+          agreedNotice: null,
+        });
       }
       enter(name);
       return Promise.resolve({ player: name, display_name: name });
@@ -910,11 +967,19 @@ export function makeMockApi(options: MockOptions = {}): Api {
     // ── spec A2: accounts with a username and a password ───────
     getSignup(): Promise<SignupView> {
       // The full-mock world makes accounts, thus the gate offers it.
-      return Promise.resolve({ open: true });
+      return Promise.resolve({ open: true, notice_version: noticeVersion });
     },
-    signUp(username: string, password: string): Promise<RecoveryAck> {
-      // The server's sequence: the name rules, the password rules,
-      // then the claim of the folded shape.
+    signUp(
+      username: string,
+      password: string,
+      agreesPublic: boolean,
+    ): Promise<RecoveryAck> {
+      // No account without the agreement to the notice (spec R1
+      // §3.2). Then the server's sequence: the name rules, the
+      // password rules, and the claim of the folded shape.
+      if (agreesPublic !== true) {
+        return refused(400, "notice");
+      }
       const name = normalizeUsername(username);
       if (!allOk(usernameChecks(name))) {
         return refused(400, "name-rule");
@@ -931,9 +996,11 @@ export function makeMockApi(options: MockOptions = {}): Api {
         return refused(409, "name-taken");
       }
       const code = nextRecoveryCode();
+      // The sign-up writes the agreement with the account.
       accounts.set(name, {
         password: password.normalize("NFKC"),
         recovery: code,
+        agreedNotice: noticeVersion,
       });
       enter(name);
       return Promise.resolve({
@@ -979,6 +1046,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       }
       const code = nextRecoveryCode();
       accounts.set(name, {
+        ...account,
         password: password.normalize("NFKC"),
         recovery: code,
       });
@@ -1001,6 +1069,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       const account = accounts.get(player) ?? {
         password: null,
         recovery: null,
+        agreedNotice: null,
       };
       const cause = passwordRefusal(password, player);
       if (cause !== null) {
@@ -1017,6 +1086,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       // change leaves the recovery code as it is.
       const code = first ? nextRecoveryCode() : null;
       accounts.set(player, {
+        ...account,
         password: password.normalize("NFKC"),
         recovery: code ?? account.recovery,
       });

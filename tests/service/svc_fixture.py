@@ -34,19 +34,40 @@ def _png_bytes(seed: int) -> bytes:
 
 
 def build_service_fixture(root: Path, count: int = 40,
-                          prep_overrides: dict | None = None) -> dict:
+                          prep_overrides: dict | None = None,
+                          dev_only: bool = True,
+                          with_credits: bool = False) -> dict:
     """One warm offline server world below root. Output keys:
     service_config, providers, store, data, scoring_config_path,
     image_ids. prep_overrides reaches the preparation config - the
     spec C1 tests build an rgb world with
-    {"linedraw.stroke_color": "rgb"}.
+    {"linedraw.stroke_color": "rgb"}. With dev_only off, the world is
+    the world of a production pool: its days can be in a public snapshot (spec
+    R1). with_credits writes a pool release record and its manifest,
+    thus each image has a source page.
     """
     from conftest import (build_direct_prepared_pool, scoring_config_dict,
                           scoring_fakes)
 
-    prepared = build_direct_prepared_pool(root / "pool", count,
-                                          overrides=prep_overrides)
+    release_path = root / "pool-release.json"
+    prepared = build_direct_prepared_pool(
+        root / "pool", count, overrides=prep_overrides, dev_only=dev_only,
+        release_record_path=str(release_path) if with_credits
+        else "unused.json")
     data = prepared["data"]
+    if with_credits:
+        release_path.write_text(json.dumps(
+            {"corpus_id": "c" * 64, "curation_config_hash": "d" * 64}),
+            encoding="utf-8")
+        manifest = (data / "curation" / ("c" * 8) / ("d" * 8) / "s09-release"
+                    / "manifest.jsonl")
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("".join(
+            json.dumps({"image_id": image_id, "source_key":
+                        "https://upload.wikimedia.org/wikipedia/commons/"
+                        f"a/ab/Test_photo_{position}.jpg"}) + "\n"
+            for position, image_id in enumerate(prepared["image_ids"])),
+            encoding="utf-8")
     for position, image_id in enumerate(prepared["image_ids"]):
         write_bytes_atomic(image_path(data, image_id), _png_bytes(position))
 
@@ -55,7 +76,9 @@ def build_service_fixture(root: Path, count: int = 40,
         **{"validation.submission_mode": "mixed",
            "commonness.dataset.fake_pair_count": 24,
            "commonness.background_count": 6,
-           "validation.tag": "dev-service-test"})
+           "report.dev_only": dev_only,
+           "validation.tag": "dev-service-test" if dev_only
+           else "prod-service-test"})
     scoring_config_path = root / "scoring-config.json"
     scoring_config_path.write_text(json.dumps(document, indent=2) + "\n",
                                    encoding="utf-8")
@@ -63,7 +86,7 @@ def build_service_fixture(root: Path, count: int = 40,
     providers = scoring_fakes(pair_count=24)
 
     loaded = load_pool_index(prepared["prep_record_path"], data,
-                             dev_only=True)
+                             dev_only=dev_only)
     slot_hashes = harness.scoring_provider_hashes(config, providers)
     commonness_hash = commonness_config_hash(
         config, loaded.render, slot_hashes["sketch_encoder"],

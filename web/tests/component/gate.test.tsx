@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "../../src/api/client";
 import { MOCK_PASSWORD, makeMockApi } from "../../src/api/mock";
 import { ApiError } from "../../src/api/types";
+import {
+  NOTICE_BODY,
+  NOTICE_LEAD,
+  NOTICE_VERSION,
+} from "../../src/signin/notice";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
 const GOOD = "four quiet amber lanterns";
@@ -342,7 +347,7 @@ describe("make an account (spec A2 §3.1)", () => {
 describe("get back in with the recovery code (spec A2 §3.3)", () => {
   it("trades the code for a new password and shows the new code", async () => {
     const api = signedOut();
-    const made = await api.signUp("nova", GOOD);
+    const made = await api.signUp("nova", GOOD, true);
     await api.signOut();
     renderAt("/", api);
     fireEvent.click(
@@ -421,5 +426,110 @@ describe("get back in with the recovery code (spec A2 §3.3)", () => {
         (screen.getByLabelText("Password") as HTMLInputElement).value,
       ).toBe(""),
     );
+  });
+});
+
+describe("the notice on the sign-up card (spec R1 §3.1)", () => {
+  async function openSignUp(api: Api): Promise<void> {
+    renderAt("/", api);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Make an account" }),
+    );
+    await screen.findByRole("heading", { name: "Make an account" });
+  }
+
+  it("holds the ruled text, version 1", () => {
+    expect(NOTICE_VERSION).toBe(1);
+    expect(`${NOTICE_LEAD} ${NOTICE_BODY}`).toBe(
+      "Your results are public. Your username, score, words and sketches " +
+        "are published in an open database after each day closes. Do not " +
+        "type anything private.",
+    );
+  });
+
+  it("shows the notice above the control that makes the account", async () => {
+    await openSignUp(signedOut());
+    const lead = screen.getByText(NOTICE_LEAD);
+    expect(lead.tagName).toBe("STRONG");
+    const note = lead.closest('[role="note"]') as HTMLElement;
+    expect(note.textContent).toContain(`${NOTICE_LEAD} ${NOTICE_BODY}`);
+    // No box to tick: the click is the agreement, and the card says so.
+    expect(note.textContent).toMatch(/When you make an account, you agree/);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    // In the form of the username facts, and before its one control.
+    const facts = screen
+      .getByText("Before you make it:")
+      .closest('[role="note"]') as HTMLElement;
+    expect(note.closest("form")).toBe(facts.closest("form"));
+    const make = button("Make an account");
+    expect(make.form).toBe(note.closest("form"));
+    expect(
+      note.compareDocumentPosition(make) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    // A screen reader hears the notice at the control.
+    expect(make.getAttribute("aria-describedby")).toBe(note.id);
+  });
+
+  it("sends the agreement with the sign-up", async () => {
+    const sent: Array<[string, string, boolean]> = [];
+    const base = signedOut();
+    await openSignUp(
+      signedOut({
+        ...base,
+        signUp: (username, password, agreesPublic) => {
+          sent.push([username, password, agreesPublic]);
+          return base.signUp(username, password, agreesPublic);
+        },
+      }),
+    );
+    type("Username", "nova");
+    type("Password", GOOD);
+    fireEvent.click(button("Make an account"));
+    await screen.findByRole("heading", { name: "Save your recovery code" });
+    expect(sent).toEqual([["nova", GOOD, true]]);
+  });
+
+  it("makes no account from a page with an earlier notice version", async () => {
+    let signUps = 0;
+    const base = signedOut();
+    renderAt(
+      "/",
+      signedOut({
+        ...base,
+        getSignup: () =>
+          Promise.resolve({ open: true, notice_version: NOTICE_VERSION + 1 }),
+        signUp: (username, password, agreesPublic) => {
+          signUps += 1;
+          return base.signUp(username, password, agreesPublic);
+        },
+      }),
+    );
+    expect(
+      await screen.findByText(/out of date, so it can't make an account/),
+    ).toBeDefined();
+    expect(button("Reload")).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Make an account" }),
+    ).toBeNull();
+    expect(screen.queryByText(NOTICE_LEAD)).toBeNull();
+    expect(signUps).toBe(0);
+    // Sign-in and recovery do not agree to a notice, thus they stay.
+    expect(button("Sign in")).toBeDefined();
+    expect(button("I do not have my password")).toBeDefined();
+  });
+
+  it("says so when the server refuses a sign-up for the notice", async () => {
+    await openSignUp(
+      signedOut({
+        signUp: () => Promise.reject(new ApiError(400, "notice")),
+      }),
+    );
+    type("Username", "nova");
+    type("Password", GOOD);
+    fireEvent.click(button("Make an account"));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/agreement that your results are public/);
+    expect(alert.textContent).not.toMatch(/Something went wrong/);
+    expect(screen.queryByTestId("recovery-code")).toBeNull();
   });
 });

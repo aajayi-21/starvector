@@ -108,6 +108,7 @@ export function WelcomeScreen(): React.JSX.Element {
                 <GateCard
                   signupOpen={signup.data?.open === true}
                   signupClosed={isRefusal(signup.error)}
+                  noticeVersion={signup.data?.notice_version}
                   onSignedIn={enter}
                   onRecoveryCode={(code, replaces) =>
                     setShown({ code, replaces })

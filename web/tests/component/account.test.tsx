@@ -235,6 +235,71 @@ describe("devices and sign-out (spec BR1 §4)", () => {
   });
 });
 
+describe("Public data (spec R1 §3.1)", () => {
+  function section(): HTMLElement {
+    return screen
+      .getByRole("heading", { name: "Public data" })
+      .closest("section") as HTMLElement;
+  }
+
+  it("says the facts the short notice does not say", async () => {
+    renderAt("/account");
+    await screen.findByRole("heading", { name: "Public data" });
+    const facts = within(section())
+      .getAllByRole("listitem")
+      .map((item) => item.textContent?.replaceAll(/\s+/g, " "));
+    expect(facts).toEqual([
+      "The database holds your username, each score, the words you typed, and each sketch.",
+      "Anyone can download it and study it.",
+      "A published snapshot stays published, with your username in it, also after your account is gone.",
+    ]);
+  });
+
+  it("says no snapshot is published when the server names no address", async () => {
+    renderAt("/account");
+    await screen.findByRole("heading", { name: "Public data" });
+    expect(
+      await within(section()).findByText("No snapshot is published yet."),
+    ).toBeDefined();
+    expect(within(section()).queryByRole("link")).toBeNull();
+  });
+
+  it("links the address of the published snapshots", async () => {
+    const address = "https://data.example/starvector";
+    renderAt(
+      "/account",
+      makeMockApi({ today: HARNESS_TODAY, publicDataUrl: address }),
+    );
+    await screen.findByRole("heading", { name: "Public data" });
+    const link = (await within(section()).findByRole("link", {
+      name: "Get the public database",
+    })) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(address);
+    // A different site: a new tab, with no way back to this one.
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toContain("noopener");
+    expect(
+      within(section()).queryByText("No snapshot is published yet."),
+    ).toBeNull();
+  });
+
+  it("keeps the facts when the address read fails", async () => {
+    const api: Api = {
+      ...makeMockApi({ today: HARNESS_TODAY }),
+      getAbout: () => Promise.reject(new ApiError(0)),
+    };
+    renderAt("/account", api);
+    await screen.findByRole("heading", { name: "Public data" });
+    expect(within(section()).getAllByRole("listitem")).toHaveLength(3);
+    expect((await within(section()).findByRole("alert")).textContent).toMatch(
+      /Can't reach Starvector/,
+    );
+    expect(
+      within(section()).queryByText("No snapshot is published yet."),
+    ).toBeNull();
+  });
+});
+
 const GOOD = "four quiet amber lanterns";
 
 function typeInto(label: string, value: string): HTMLInputElement {

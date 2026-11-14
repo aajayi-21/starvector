@@ -260,6 +260,7 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
         test_season: true,
         photo_count: 40,
         closes_at_utc: "22:00",
+        public_data_url: null,
       }),
     getSchedule: () => Promise.resolve(scheduleFixture()),
     setPause: (paused, note) => {

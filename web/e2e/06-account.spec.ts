@@ -52,6 +52,36 @@ test("the account page edits the description and the picture", async ({
   await expect(page.getByLabel("Your account").locator("img")).toHaveCount(0);
 });
 
+// Spec R1 §3.1: `Public data` says the facts of the public database
+// that the short notice does not say, and where the snapshots are.
+test("the account page says what is public", async ({ page }) => {
+  await signIn(page);
+  await blockExternalHosts(page);
+  await page.goto("/account");
+  const section = page.locator("section", {
+    has: page.getByRole("heading", { name: "Public data" }),
+  });
+  await expect(section).toBeVisible();
+  await expect(section.getByRole("listitem")).toHaveText([
+    "The database holds your username, each score, the words you typed, and each sketch.",
+    "Anyone can download it and study it.",
+    "A published snapshot stays published, with your username in it, also after your account is gone.",
+  ]);
+  // The address comes from the season facts: a link when the server
+  // names one, and a plain line when no snapshot is published.
+  const about = await (await page.request.get("/api/about")).json();
+  if (about.public_data_url === null) {
+    await expect(
+      section.getByText("No snapshot is published yet."),
+    ).toBeVisible();
+    await expect(section.getByRole("link")).toHaveCount(0);
+  } else {
+    await expect(
+      section.getByRole("link", { name: "Get the public database" }),
+    ).toHaveAttribute("href", about.public_data_url);
+  }
+});
+
 // Spec BR1 §4: a device code signs a second browser in — the path a
 // phone's home-screen app takes — and that device signs itself out.
 test("a device code signs a second browser in", async ({ page, browser }) => {

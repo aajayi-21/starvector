@@ -2,8 +2,10 @@
  * The account screen (spec A1 §3, grown by spec BR1 §4–5 and spec A2
  * §3.4): the picture and the description, the password and the
  * recovery code, the signed-in devices with "Add a device" and
- * sign-out, and the data download. The writers write for the resolved
- * caller alone — no player parameter on this screen.
+ * sign-out, the data download, and `Public data` (spec R1 §3.1): the
+ * facts of the public database that the short notice does not say.
+ * The writers write for the resolved caller alone — no player
+ * parameter on this screen.
  *
  * The username is the one name of a player (spec A2 ruling 3) and it
  * does not change, thus this screen shows it and edits no name.
@@ -96,8 +98,61 @@ function AccountBody(props: { me: MeView }): React.JSX.Element {
           </a>
         </div>
       </section>
+      <PublicDataCard />
       {accounts === true ? <SignOutCard me={me} /> : null}
     </div>
+  );
+}
+
+/**
+ * `Public data` (spec R1 §3.1): what the public database holds, who
+ * can read it, how long a snapshot stays, and where the snapshots are.
+ */
+function PublicDataCard(): React.JSX.Element {
+  const api = useApi();
+  // The key each reader of the season facts uses: one request.
+  const about = useQuery({
+    queryKey: ["about"],
+    queryFn: () => api.getAbout(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const address = about.data?.public_data_url;
+  return (
+    <section className="card" aria-labelledby="public-data-heading">
+      <h2 id="public-data-heading">Public data</h2>
+      <p className="muted small">
+        Your results are published in an open database after each day closes.
+      </p>
+      <ul className="fact-list">
+        <li>
+          The database holds your username, each score, the words you typed, and
+          each sketch.
+        </li>
+        <li>Anyone can download it and study it.</li>
+        <li>
+          A published snapshot stays published, with your username in it, also
+          after your account is gone.
+        </li>
+      </ul>
+      {about.isError ? (
+        <div className="notice notice-bad" role="alert">
+          {friendlyMessage(about.error)}
+        </div>
+      ) : address === undefined ? null : address === null ? (
+        <p className="muted small">No snapshot is published yet.</p>
+      ) : (
+        <div>
+          <a
+            className="btn btn-secondary"
+            href={address}
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            Get the public database
+          </a>
+        </div>
+      )}
+    </section>
   );
 }
 

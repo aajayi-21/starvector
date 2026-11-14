@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeRealApi } from "../../src/api/real";
+import type { WireRecord } from "../../src/api/types";
 import {
   ApiError,
   credentialMessage,
@@ -50,10 +51,21 @@ function sent(call: Call | undefined): {
 
 const CODE = "ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2";
 
+const RECORD: WireRecord = {
+  impressions: ["cold"],
+  canvas_strokes: [],
+  groups: [],
+  relations: [],
+  pasted_text: null,
+};
+
 describe("the credential calls of the live client (spec A2 §8)", () => {
   it("reads if the server makes accounts", async () => {
-    const calls = answering(200, { open: true });
-    expect(await makeRealApi().getSignup()).toEqual({ open: true });
+    const calls = answering(200, { open: true, notice_version: 1 });
+    expect(await makeRealApi().getSignup()).toEqual({
+      open: true,
+      notice_version: 1,
+    });
     expect(sent(calls[0])).toMatchObject({
       url: "/api/signup",
       method: undefined,
@@ -70,7 +82,7 @@ describe("the credential calls of the live client (spec A2 §8)", () => {
   it("posts each credential as JSON, with its media type, in the body", async () => {
     const calls = answering(200, {});
     const api = makeRealApi();
-    await api.signUp("nova", "a pass phrase");
+    await api.signUp("nova", "a pass phrase", true);
     await api.signIn("nova", "a pass phrase");
     await api.recover("nova", CODE, "a new pass phrase");
     await api.setPassword("a new pass phrase", "a pass phrase");
@@ -80,7 +92,12 @@ describe("the credential calls of the live client (spec A2 §8)", () => {
         url: "/api/signup",
         method: "POST",
         mediaType: "application/json",
-        body: { username: "nova", password: "a pass phrase" },
+        // The agreement to the notice goes with the pair (spec R1 §3.2).
+        body: {
+          username: "nova",
+          password: "a pass phrase",
+          agrees_public: true,
+        },
       },
       {
         url: "/api/signin",
@@ -148,9 +165,9 @@ describe("the credential calls of the live client (spec A2 §8)", () => {
       recovery_code: CODE,
     });
     const api = makeRealApi();
-    expect((await api.signUp("nova", "a pass phrase")).recovery_code).toBe(
-      CODE,
-    );
+    expect(
+      (await api.signUp("nova", "a pass phrase", true)).recovery_code,
+    ).toBe(CODE);
     expect(
       (await api.recover("nova", CODE, "a new pass phrase")).recovery_code,
     ).toBe(CODE);
@@ -158,8 +175,11 @@ describe("the credential calls of the live client (spec A2 §8)", () => {
 
   it("throws the cause of each refusal", async () => {
     const cases: Array<[number, string, () => Promise<unknown>]> = [
-      [400, "name-rule", () => makeRealApi().signUp("x", "y")],
-      [409, "name-taken", () => makeRealApi().signUp("x", "y")],
+      [400, "name-rule", () => makeRealApi().signUp("x", "y", true)],
+      [409, "name-taken", () => makeRealApi().signUp("x", "y", true)],
+      [400, "notice", () => makeRealApi().signUp("x", "y", false)],
+      [409, "notice-version", () => makeRealApi().postConsent(1)],
+      [409, "notice", () => makeRealApi().submit("2026-08-14", RECORD)],
       [401, "sign-in", () => makeRealApi().signIn("x", "y")],
       [401, "recovery", () => makeRealApi().recover("x", CODE, "y")],
       [403, "password", () => makeRealApi().setPassword("y", "z")],
@@ -172,6 +192,51 @@ describe("the credential calls of the live client (spec A2 §8)", () => {
         refusalCause: cause,
       });
     }
+  });
+});
+
+describe("the calls of the public results notice (spec R1 §3, §4)", () => {
+  it("posts the agreement as JSON, with the version the screen showed", async () => {
+    const calls = answering(200, { agreed: true, notice: 1 });
+    expect(await makeRealApi().postConsent(1)).toEqual({
+      agreed: true,
+      notice: 1,
+    });
+    expect(sent(calls[0])).toEqual({
+      url: "/api/account/consent",
+      method: "POST",
+      mediaType: "application/json",
+      body: { notice: 1 },
+    });
+  });
+
+  it("reports the start with a POST and no body", async () => {
+    const calls = answering(200, { ok: true });
+    expect(await makeRealApi().startDay()).toEqual({ ok: true });
+    const [url, init] = calls[0] as Call;
+    expect(url).toBe("/api/day/start");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeUndefined();
+  });
+
+  it("reads the notice of me and the address of about as the server sends them", async () => {
+    const notice = { version: 1, agreed: false, required: true };
+    answering(200, { player: "nova", notice });
+    expect((await makeRealApi().getMe()).notice).toEqual(notice);
+    answering(200, { public_data_url: "https://data.example/starvector" });
+    expect((await makeRealApi().getAbout()).public_data_url).toBe(
+      "https://data.example/starvector",
+    );
+  });
+
+  it("has a sentence for each refusal, with no cause token", () => {
+    const refused = friendlyMessage(new ApiError(400, "notice"));
+    expect(refused).toMatch(/agreement that your results are public/);
+    const stale = friendlyMessage(new ApiError(409, "notice-version"));
+    expect(stale).toMatch(/out of date/);
+    expect(stale).toMatch(/Reload/);
+    expect(stale).not.toContain("notice-version");
+    expect(refused).not.toBe(stale);
   });
 });
 

@@ -17,7 +17,7 @@ from collections.abc import Container
 from dataclasses import replace
 from pathlib import Path
 
-from service import auth, names, passwords, store
+from service import auth, names, notice, passwords, store
 from service.digests import PasswordDigester
 
 # Decision D9 of spec A2: the operator's code works from this long
@@ -72,6 +72,7 @@ def _empty_credential(player: str, stamp: str) -> store.CredentialRecord:
 
 
 def sign_up(root: Path, *, username: object, password: object,
+            agrees_public: object,
             digester: PasswordDigester, usual: Container[str],
             instant: datetime.datetime,
             recovery_code: str | None = None) -> tuple[str, str]:
@@ -83,11 +84,18 @@ def sign_up(root: Path, *, username: object, password: object,
     (spec A2 section 7.2). A stop after the claim leaves a claimed name
     with no account, which signs nobody in.
 
+    Without agrees_public the sign-up is refused: publication is a
+    condition of the
+    account (spec R1 section 3), and the screen sends it when it showed
+    the notice. The sign-up writes the consent record with the account.
+
     recovery_code arrives as an argument for the tests that pin one.
 
-    Raises Refused with the cause name-rule, name-reserved,
+    Raises Refused with the cause notice, name-rule, name-reserved,
     password-rule, password-usual, or name-taken.
     """
+    if agrees_public is not True:
+        raise Refused(notice.NOTICE_REFUSED)
     name = names.normalize_username(username)
     if name is None:
         raise Refused(names.NAME_RULE)
@@ -112,6 +120,7 @@ def sign_up(root: Path, *, username: object, password: object,
             created_at=stamp, status="active"))
     except store.StoreError as error:
         raise Refused(NAME_TAKEN) from error
+    notice.record_agreement(root, name, instant)
     code = recovery_code or auth.make_recovery_code()
     with store.credential_lock(root, name):
         store.write_credential_record(root, replace(

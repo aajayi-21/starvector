@@ -346,7 +346,7 @@ in. An answer that holds a recovery code has `Cache-Control: no-store`.
 | Path | Body | What it does |
 |---|---|---|
 | `GET /api/signup` | | `{open: true}` when the server makes accounts, and the constant 404 when it does not. The gate screen reads it one time. |
-| `POST /api/signup` | `username`, `password` | Makes the account, signs this device in, and answers 201 with the recovery code. |
+| `POST /api/signup` | `username`, `password` | Makes the account, signs this device in, and answers 201 with the recovery code. *Note, 2026-11-13 (spec R1 §3.2):* the body also needs `agrees_public` `true`, and the answer of `GET /api/signup` has `notice_version`. |
 | `POST /api/signin` | `username`, `password` | Opens a session on this device. |
 | `POST /api/recover` | `username`, `recovery_code`, `password` | The procedure of §3.3. Answers 200 with the new recovery code. |
 | `POST /api/account/password` | `current_password`, `password` | Replaces the password and ends each other session. |

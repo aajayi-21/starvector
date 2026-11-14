@@ -10,6 +10,7 @@ import type {
   AboutView,
   AccountAck,
   AvatarAck,
+  ConsentAck,
   DayView,
   DeviceCodeView,
   DoorAck,
@@ -84,6 +85,11 @@ export function makeRealApi(): Api {
     imageUrl(imageId: string): string {
       return `/image/${imageId}`;
     },
+    startDay(): Promise<{ ok: boolean }> {
+      // No body: the server reads the session and its own clock (spec
+      // R1 §4).
+      return request<{ ok: boolean }>("/api/day/start", { method: "POST" });
+    },
     getPracticeDays(): Promise<PracticeDays> {
       return request<PracticeDays>("/api/practice");
     },
@@ -138,6 +144,10 @@ export function makeRealApi(): Api {
       // The hash is the cache-busting key: a new picture changes
       // the URL and no stale copy survives an edit.
       return `/api/avatar/${encodeURIComponent(player)}?v=${avatarHash.slice(0, 8)}`;
+    },
+    postConsent(notice: number): Promise<ConsentAck> {
+      // JSON with its media type, as each credential POST (spec A2 §8).
+      return postJson<ConsentAck>("/api/account/consent", { notice });
     },
     getDoor(): Promise<DoorView> {
       return request<DoorView>("/api/door");
@@ -194,8 +204,16 @@ export function makeRealApi(): Api {
     getSignup(): Promise<SignupView> {
       return request<SignupView>("/api/signup");
     },
-    signUp(username: string, password: string): Promise<RecoveryAck> {
-      return postJson<RecoveryAck>("/api/signup", { username, password });
+    signUp(
+      username: string,
+      password: string,
+      agreesPublic: boolean,
+    ): Promise<RecoveryAck> {
+      return postJson<RecoveryAck>("/api/signup", {
+        username,
+        password,
+        agrees_public: agreesPublic,
+      });
     },
     signIn(username: string, password: string): Promise<SignInAck> {
       return postJson<SignInAck>("/api/signin", { username, password });

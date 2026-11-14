@@ -23,7 +23,7 @@ _FIELDS = ("config_version", "player", "scoring_config", "data_root",
 
 # Optional fields parse when given and default when missing, so each
 # committed config stays readable (spec S2 ruling 3).
-_OPTIONAL_FIELDS = ("closes_at_utc", "signup")
+_OPTIONAL_FIELDS = ("closes_at_utc", "signup", "public_data_url")
 
 # The sign-up switch (spec A2 section 10.2). A config with no field
 # reads as "closed", thus each earlier config keeps its behavior.
@@ -47,6 +47,9 @@ class ServiceConfig:
 
     signup is "open" or "closed" (spec A2 section 10.2). With "open"
     the server makes accounts and has no fallback identity.
+
+    public_data_url is display-only (spec R1 section 3.1): the address
+    of the published snapshots, which the account screen shows.
     """
 
     player: str
@@ -56,6 +59,7 @@ class ServiceConfig:
     port: int
     closes_at_utc: str | None = None
     signup: str = "closed"
+    public_data_url: str | None = None
 
 
 def parse_service_config(raw: object, source: str) -> ServiceConfig:
@@ -101,6 +105,12 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
     if signup not in SIGNUP_VALUES:
         raise ServiceConfigError(
             f"{source}.signup: expected one of {list(SIGNUP_VALUES)}")
+    public_data_url = raw.get("public_data_url")
+    if public_data_url is not None and (
+            not isinstance(public_data_url, str)
+            or not public_data_url.startswith(("https://", "http://"))):
+        raise ServiceConfigError(
+            f"{source}.public_data_url: expected an http or https address")
     return ServiceConfig(
         player=raw["player"],
         scoring_config=raw["scoring_config"],
@@ -109,6 +119,7 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
         port=port,
         closes_at_utc=closes_at_utc,
         signup=signup,
+        public_data_url=public_data_url,
     )
 
 

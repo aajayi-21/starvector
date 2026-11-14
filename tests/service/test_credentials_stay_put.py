@@ -45,7 +45,8 @@ def test_no_credential_is_in_the_output_an_answer_or_the_index(
 
     with caplog.at_level(logging.DEBUG):
         made = post("/api/signup", {"username": "marker-name",
-                                    "password": FIRST_PASSWORD})
+                                    "password": FIRST_PASSWORD,
+                                    "agrees_public": True})
         assert made.status_code == 201
         first_code = made.json()["recovery_code"]
         assert post("/api/signin", {"username": "marker-name",
@@ -132,7 +133,7 @@ def test_the_index_builder_reads_no_credential_directory(tmp_path) -> None:
     fixture = build_service_fixture(tmp_path)
     root = Path(fixture["service_config"].store_root)
     signin.sign_up(root, username="alice",
-                   password="correct horse battery",
+                   password="correct horse battery", agrees_public=True,
                    digester=QuickDigester(), usual=frozenset(),
                    instant=datetime.datetime.now(datetime.UTC))
     assert store.credential_record_path(root, "alice").is_file()

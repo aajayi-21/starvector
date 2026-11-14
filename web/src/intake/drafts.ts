@@ -88,6 +88,14 @@ function draftDays(): string[] {
   }
 }
 
+/** True when this device holds an unsent daily draft with content. */
+export function hasUnsentDraft(): boolean {
+  return draftDays().some((day) => {
+    const draft = readDraft(day);
+    return draft !== null && hasContent(draft);
+  });
+}
+
 /** The newest draft with content from a day before this one. */
 export function findEarlierDraft(
   day: string,

@@ -10,6 +10,7 @@ import type {
   AboutView,
   AccountAck,
   AvatarAck,
+  ConsentAck,
   DayView,
   DeviceCodeView,
   DoorAck,
@@ -39,6 +40,12 @@ export interface DayApi {
   /** No argument: the latest day. With a day: that day's reveal. */
   getReveal(day?: string): Promise<RevealView>;
   imageUrl(imageId: string): string;
+  /**
+   * Tells the server that the drawing screen shows the open day (spec
+   * R1 §4). The server records the first one for each player and each
+   * day with its own clock, and the answer is one constant body.
+   */
+  startDay(): Promise<{ ok: boolean }>;
 }
 
 export interface PracticeApi {
@@ -68,6 +75,12 @@ export interface AccountApi {
   deleteAvatar(): Promise<AvatarAck>;
   /** The hash rides the URL as the cache-busting key. */
   avatarUrl(player: string, avatarHash: string): string;
+  /**
+   * Records the caller's agreement to the notice that results are
+   * public (spec R1 §3.2). `notice` is the version the screen showed:
+   * a number that is not the server's current one is a 409.
+   */
+  postConsent(notice: number): Promise<ConsentAck>;
 }
 
 /** The open door (spec A1 §4): dev servers only, 404 elsewhere. */
@@ -105,7 +118,15 @@ export interface SessionApi {
 export interface CredentialApi {
   /** 200 when the server makes accounts; the constant 404 when not. */
   getSignup(): Promise<SignupView>;
-  signUp(username: string, password: string): Promise<RecoveryAck>;
+  /**
+   * `agreesPublic` is the agreement to the notice that results are
+   * public (spec R1 §3.2). The server makes no account without it.
+   */
+  signUp(
+    username: string,
+    password: string,
+    agreesPublic: boolean,
+  ): Promise<RecoveryAck>;
   signIn(username: string, password: string): Promise<SignInAck>;
   /** Replaces the password and answers with a new recovery code. */
   recover(

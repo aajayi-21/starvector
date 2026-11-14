@@ -595,3 +595,145 @@ describe("the stale tab and the rollover", () => {
     expect(view.container.textContent).not.toMatch(/on the right/);
   });
 });
+
+/** The link of a place in the top bar: the tab bar holds it too. */
+function topLink(name: string): HTMLElement {
+  const link = screen.getAllByRole("link", { name })[0];
+  if (link === undefined) {
+    throw new Error(`no link named ${name}`);
+  }
+  return link;
+}
+
+describe("the start report (spec R1 §4)", () => {
+  /** The mock with a count of the start reports and the day reads. */
+  function counting(overrides: Partial<Api> = {}): {
+    api: Api;
+    count: { starts: number; dayReads: number };
+  } {
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const count = { starts: 0, dayReads: 0 };
+    const api: Api = {
+      ...mock,
+      getDay: () => {
+        count.dayReads += 1;
+        return mock.getDay();
+      },
+      startDay: () => {
+        count.starts += 1;
+        return mock.startDay();
+      },
+      ...overrides,
+    };
+    return { api, count };
+  }
+
+  it("goes out one time when the drawing screen shows the open day", async () => {
+    const { api, count } = counting();
+    renderAt("/today", api);
+    await screen.findByText(REVIEW);
+    await waitFor(() => expect(count.starts).toBe(1));
+    // A new render of the open day sends nothing.
+    await typeWord("cold");
+    await openReview();
+    fireEvent.click(screen.getByText("Keep editing"));
+    expect(count.starts).toBe(1);
+  });
+
+  it("does not go out again on a refocus or a second visit", async () => {
+    const { api, count } = counting();
+    renderAt("/today", api);
+    await screen.findByText(REVIEW);
+    await waitFor(() => expect(count.starts).toBe(1));
+    // The tab comes back: the day is read again, and no start is sent.
+    const reads = count.dayReads;
+    window.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(count.dayReads).toBeGreaterThan(reads));
+    await screen.findByText(REVIEW);
+    expect(count.starts).toBe(1);
+    // The player leaves the drawing screen and comes back.
+    fireEvent.click(topLink("Home"));
+    await screen.findByText(/Today's photo is hidden/);
+    fireEvent.click(topLink("Today"));
+    await screen.findByText(REVIEW);
+    expect(count.starts).toBe(1);
+  });
+
+  it("does not go out from the home screen", async () => {
+    const { api, count } = counting();
+    renderAt("/", api);
+    await screen.findByRole("link", { name: "Start today's session" });
+    expect(count.starts).toBe(0);
+  });
+
+  it("does not go out for a day that is not open, or that is sent", async () => {
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const cases: Array<[Partial<Api>, RegExp]> = [
+      [
+        { getDay: async () => ({ ...(await mock.getDay()), submitted: true }) },
+        /you're in for today/,
+      ],
+      [
+        {
+          getDay: async () => ({ ...(await mock.getDay()), status: "closing" }),
+        },
+        /Today's session has closed/,
+      ],
+      [
+        {
+          getDay: async () => ({ ...(await mock.getDay()), status: "closed" }),
+        },
+        /Today's session has closed/,
+      ],
+      [
+        {
+          getDay: async () => ({
+            ...(await mock.getDay()),
+            status: "revealed",
+          }),
+        },
+        /You beat \d+% of the photos/,
+      ],
+      [
+        {
+          getDay: () =>
+            Promise.reject(new ApiError(404, undefined, "no day open")),
+        },
+        /No session is open right now/,
+      ],
+    ];
+    for (const [overrides, shown] of cases) {
+      const { api, count } = counting(overrides);
+      const view = renderAt("/today", api);
+      expect(await view.findAllByText(shown)).not.toHaveLength(0);
+      expect(count.starts).toBe(0);
+      view.unmount();
+    }
+  });
+
+  it("leaves the drawing screen as it is when the report fails", async () => {
+    const sent: WireRecord[] = [];
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const { api, count } = counting({
+      startDay: () => {
+        count.starts += 1;
+        return Promise.reject(new ApiError(0));
+      },
+      submit: (day, record) => {
+        sent.push(record);
+        return mock.submit(day, record);
+      },
+    });
+    renderAt("/today", api);
+    await screen.findByText(REVIEW);
+    await waitFor(() => expect(count.starts).toBe(1));
+    // No error shows, and the send works.
+    expect(screen.queryByRole("alert")).toBeNull();
+    await typeWord("cold");
+    fireEvent.click(await openReview());
+    await screen.findByText(/you're in for today/);
+    expect(sent[0]?.impressions).toEqual(["cold"]);
+    // A failed report is not sent a second time.
+    expect(count.starts).toBe(1);
+  });
+});

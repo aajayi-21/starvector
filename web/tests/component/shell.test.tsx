@@ -66,6 +66,7 @@ describe("the shell", () => {
           test_season: false,
           photo_count: 7500,
           closes_at_utc: "22:00",
+          public_data_url: null,
         }),
     };
     renderAt("/", api);

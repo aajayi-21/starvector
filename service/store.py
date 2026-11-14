@@ -1284,6 +1284,253 @@ def read_claim_or_none(store: Path, folded: str) -> NameClaim | None:
     return NameClaim(**raw)
 
 
+# -- the records of the public database (spec R1) ------------------------
+#
+# Four record classes. The consent record says that a player agreed to
+# one version of the notice. The start record is the time a player
+# opened the drawing screen of a day. The withhold record keeps the
+# text and the sketch of one response out of a public snapshot. The
+# identifier record is the name that a snapshot shows for a player
+# with no username in it. Each one is a raw fact (I4): no other record
+# gives it.
+
+_CONSENT_FIELDS = ("player", "notice", "agreed_at")
+_START_FIELDS = ("day", "player", "started_at")
+_WITHHELD_FIELDS = ("day", "player", "withheld_at", "note")
+_IDENTIFIER_FIELDS = ("player", "identifier", "made_at")
+_IDENTIFIER_RULE = re.compile(r"anon-[0-9a-f]{16}")
+WITHHELD_NOTE_LIMIT = 200
+
+
+@dataclass(frozen=True, slots=True)
+class WithheldRecord:
+    """One response that a public snapshot shows with no text and no
+    sketch (spec R1 section 9). note is for the operator alone."""
+
+    day: str
+    player: str
+    withheld_at: str
+    note: str
+
+
+def _check_day(day: object, where: str) -> None:
+    if not isinstance(day, str) or not _DAY_RULE.fullmatch(day):
+        raise StoreError(f"{where}: expected a day, got {day!r}")
+
+
+def consent_path(store: Path, player: str, notice: int) -> Path:
+    """One file for each player and each notice version. An earlier
+    agreement thus stays when a new version gets its own."""
+    return store / "consents" / player / f"{notice}.json"
+
+
+def write_consent(store: Path, player: str, notice: int,
+                  agreed_at: str) -> bool:
+    """Record that a player agreed to one notice version, one time.
+
+    The answer says if this write made the record. A record that was
+    there stays: the first agreement keeps its time.
+    """
+    check_player_name(player, "player")
+    if not isinstance(notice, int) or isinstance(notice, bool) or notice < 1:
+        raise StoreError(f"notice: expected a version number, got {notice!r}")
+    if not agreed_at:
+        raise StoreError("agreed_at: expected a non-empty string")
+    try:
+        write_once_json(consent_path(store, player, notice),
+                        {"player": player, "notice": notice,
+                         "agreed_at": agreed_at})
+    except StoreError:
+        if consent_path(store, player, notice).is_file():
+            return False
+        raise
+    return True
+
+
+def read_consent_or_none(store: Path, player: str,
+                         notice: int) -> dict | None:
+    """The consent record of one player and one version, or None.
+
+    A stored record that does not validate raises: it does not read as
+    an agreement.
+    """
+    import json
+
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    path = consent_path(store, player, notice)
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise StoreError(f"{path}: cannot read: {error}") from error
+    if not isinstance(raw, dict) or set(raw) != set(_CONSENT_FIELDS) \
+            or raw["player"] != player or raw["notice"] != notice \
+            or not isinstance(raw["agreed_at"], str) or not raw["agreed_at"]:
+        raise StoreError(f"{path}: not the consent record of {player!r} "
+                         f"for notice {notice}")
+    return raw
+
+
+def start_path(store: Path, day: str, player: str) -> Path:
+    return day_dir(store, day) / "starts" / f"{player}.json"
+
+
+def write_start(store: Path, day: str, player: str, started_at: str) -> bool:
+    """Record the first start of one player on one day, one time.
+
+    The answer says if this write made the record. A second start
+    changes nothing (spec R1 section 4).
+    """
+    _check_day(day, "day")
+    check_player_name(player, "player")
+    if not started_at:
+        raise StoreError("started_at: expected a non-empty string")
+    path = start_path(store, day, player)
+    if path.is_file():
+        return False
+    try:
+        write_once_json(path, {"day": day, "player": player,
+                               "started_at": started_at})
+    except StoreError:
+        if path.is_file():
+            return False
+        raise
+    return True
+
+
+def read_start_or_none(store: Path, day: str, player: str) -> str | None:
+    """The start time of one player on one day, or None."""
+    path = start_path(store, day, player)
+    if not path.is_file():
+        return None
+    raw = _read_record(path, _START_FIELDS)
+    if raw["day"] != day or raw["player"] != player:
+        raise StoreError(f"{path}: the record names {raw['day']!r} and "
+                         f"{raw['player']!r}")
+    return raw["started_at"]
+
+
+def withheld_path(store: Path, day: str, player: str) -> Path:
+    return store / "public" / "withheld" / day / f"{player}.json"
+
+
+def write_withheld(store: Path, record: WithheldRecord) -> None:
+    """Withhold one response from the public snapshots, or change the
+    note of a withheld one. The stored response does not change."""
+    _check_day(record.day, "day")
+    check_player_name(record.player, "player")
+    if not record.withheld_at:
+        raise StoreError("withheld_at: expected a non-empty string")
+    if not isinstance(record.note, str) \
+            or not 1 <= len(record.note) <= WITHHELD_NOTE_LIMIT \
+            or not record.note.isprintable():
+        raise StoreError(
+            f"note: expected 1 to {WITHHELD_NOTE_LIMIT} printable characters")
+    _replace_json(withheld_path(store, record.day, record.player),
+                  {"day": record.day, "player": record.player,
+                   "withheld_at": record.withheld_at, "note": record.note})
+
+
+def remove_withheld(store: Path, day: str, player: str) -> bool:
+    """Remove one response from the withhold table, and say if it was
+    there."""
+    _check_day(day, "day")
+    check_player_name(player, "player")
+    try:
+        withheld_path(store, day, player).unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def read_withheld_or_none(store: Path, day: str,
+                          player: str) -> WithheldRecord | None:
+    path = withheld_path(store, day, player)
+    if not path.is_file():
+        return None
+    raw = _read_record(path, _WITHHELD_FIELDS)
+    if raw["day"] != day or raw["player"] != player:
+        raise StoreError(f"{path}: the record names {raw['day']!r} and "
+                         f"{raw['player']!r}")
+    return WithheldRecord(**raw)
+
+
+def list_withheld(store: Path) -> tuple[WithheldRecord, ...]:
+    """Each withheld response, by day and then by player."""
+    root = store / "public" / "withheld"
+    if not root.is_dir():
+        return ()
+    found = []
+    for directory in sorted(root.iterdir()):
+        if not (directory.is_dir() and _DAY_RULE.fullmatch(directory.name)):
+            continue
+        for entry in sorted(directory.iterdir()):
+            if entry.is_file() and entry.name.endswith(".json") \
+                    and not entry.name.endswith(".tmp"):
+                record = read_withheld_or_none(store, directory.name,
+                                               entry.name[:-5])
+                if record is not None:
+                    found.append(record)
+    return tuple(found)
+
+
+def identifier_path(store: Path, player: str) -> Path:
+    return store / "public" / "identifiers" / f"{player}.json"
+
+
+def read_identifier_or_none(store: Path, player: str) -> str | None:
+    """The anonymous identifier of one player, or None when there is
+    no record."""
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    path = identifier_path(store, player)
+    if not path.is_file():
+        return None
+    raw = _read_record(path, _IDENTIFIER_FIELDS)
+    if raw["player"] != player \
+            or not _IDENTIFIER_RULE.fullmatch(raw["identifier"]):
+        raise StoreError(f"{path}: not the identifier record of {player!r}")
+    return raw["identifier"]
+
+
+def ensure_identifier(store: Path, player: str, made_at: str,
+                      identifier: str | None = None) -> str:
+    """The anonymous identifier of one player, made at the first use.
+
+    The identifier is random: it comes from no datum of the player,
+    thus no reader can go from it to the username (spec R1 section 8).
+    The record is written one time, thus a player has one identifier in
+    each snapshot. identifier arrives as an argument for the tests that
+    pin one.
+    """
+    import secrets as _secrets
+
+    check_player_name(player, "player")
+    found = read_identifier_or_none(store, player)
+    if found is not None:
+        return found
+    chosen = identifier or f"anon-{_secrets.token_hex(8)}"
+    if not _IDENTIFIER_RULE.fullmatch(chosen):
+        raise StoreError(f"identifier: expected anon- and 16 hexadecimal "
+                         f"characters, got {chosen!r}")
+    if not made_at:
+        raise StoreError("made_at: expected a non-empty string")
+    try:
+        write_once_json(identifier_path(store, player),
+                        {"player": player, "identifier": chosen,
+                         "made_at": made_at})
+    except StoreError:
+        # A second process made the record between the read and the
+        # write. Its identifier is the one.
+        found = read_identifier_or_none(store, player)
+        if found is None:
+            raise
+        return found
+    return chosen
+
+
 # The rollover's records (spec BR1 section 7.2): the operator's pause,
 # one record for each rollover, and the lock. Operations records, not
 # play: removing them loses no play.

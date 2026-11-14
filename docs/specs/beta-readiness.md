@@ -228,6 +228,11 @@ file goes in the `meta` table. `ensure_current` builds again when the
 store's fingerprint differs. At beta scale the fingerprint costs one
 directory walk.
 
+*Note, 2026-11-13 (spec R1):* this index stays private. The public
+database is a second file with its own build, `service/public.py`, and
+its own fences: revealed days of a production pool alone, no account
+text, and no pool.
+
 ### 5.2 The fences
 
 - **I7.** Trial rows enter for `revealed` days alone, and a day's
