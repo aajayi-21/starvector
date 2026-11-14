@@ -165,6 +165,12 @@ player. Each answers the constant 401.
 | `POST /api/device-code` | An 8-character code for the caller, 10 minutes, one use. A server with no player records refuses. |
 | `POST /api/device-code/redeem` | Trades a code for a session on this device. One constant 400 covers each code that does not work. |
 
+*Note, 2026-11-13 (spec A2 §8 and §10.1):* `GET /join/{token}` answers
+the constant 404 from this date. A session opens through
+`POST /api/signup`, `POST /api/signin`, `POST /api/recover`, and the
+device code of this table. The console path that makes a device code
+for a player answers the constant 404.
+
 The alphabet of the device code has no 0, O, 1, I, or L. Capitals,
 spaces, and hyphens do not count, thus "abcd efgh" and "ABCD-EFGH"
 are one code. The redemption claims a code by removing its file, thus
@@ -187,6 +193,12 @@ is read. Behind Caddy, the address is the last entry of
   no device of before.
 - **New operator commands:** `service.players sessions <name>`,
   `signout <name>`, and `prune` (expired sessions and device codes).
+  *Note, 2026-11-13 (spec A2 §10):* `mint` and `rotate` are removed.
+  `restore` gives an operator's recovery code and not an invite.
+  `recovery-code <name>` and `claim-names` are new. With
+  `"signup": "open"` in the server config, the server starts with no
+  player record and has no fallback identity. It wants the operator
+  token and the password pepper.
 - **Start-up guards** (`service/server.py` `main`): with no player
   record and no `--dev`, the server refuses to start unless it gets
   `--single-player`: with no record, each visitor plays as the

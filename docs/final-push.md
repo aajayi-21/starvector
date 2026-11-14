@@ -241,6 +241,12 @@ Three changes, in this sequence:
    policy, and rate limits on the code endpoints. Passkeys are a
    possible next step.
 
+*Note, 2026-11-13 (spec A2):* item 3 is superseded. The owner ruled
+no email address: a person makes an account with a username and a
+password, and a recovery code that works one time gets the player
+back in. `docs/specs/sign-up.md` is the contract. No email provider
+and no account of a different company is in it.
+
 The scoring invariants do not move: identity is upstream of nothing
 in Layers 0 to 9. Each new refusal keeps the constant-body pattern
 of R3, and no sign-in answer carries a byte that depends on the

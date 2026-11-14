@@ -196,6 +196,11 @@ surface. The door thus lives at its own path, `/api/door`.
   refused caller gets the constant 404. With no player record stored,
   ruling 7 of spec M1 leaves the door open for the first name.
 
+  *Note, 2026-11-13 (spec A2 §10.2):* the door stays for dev servers.
+  A door record has no invite and no password. The answer of the door
+  names the username in `display_name`, and the typed label stays in
+  the record and shows on no screen.
+
 The name goes through `check_player_name` and the label through
 `check_display_name` — the same boundary checks as the mint
 endpoint.

@@ -147,6 +147,13 @@ invite and keeps each session, and a revoke ends each session.
 Sign-out, the devices of a player, and device codes are spec BR1
 §4.2.
 
+*Note, 2026-11-13 (spec A2) — superseded:* the invite is gone.
+`GET /join/{token}` answers the constant 404 for each token, the mint
+and `rotate` are removed, and a new player record holds `null` in
+`token_hash`. A person makes an account with a username and a password
+(spec A2 §3), and the password opens a session of the shape above. The
+boards show `player` and not `display_name`.
+
 ### The operator plane
 
 The day lifecycle POSTs and the dev surfaces want
