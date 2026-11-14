@@ -180,6 +180,21 @@ records the cause.
 
 Each item is one commit, green and Vale-clean on the touched prose.
 
+**Results of the build, 2026-11-13.**
+
+- **Scan cost.** `count_submissions` takes 0.46 ms on a folder of 3,000
+  files, as the mean of 50 reads. `list_submissions` takes 7.92 ms on the
+  same folder, so the new function is about 17 times faster. At 880 active
+  players and a poll interval of 5 minutes, the scan adds about 3 reads for
+  each second.
+- **Epigraphs.** The data holds 16: five from the Gateway and GRILL FLAME
+  papers released by the CIA, and eleven from the King James Bible,
+  Shakespeare, Lao Tzu, Plato, Heraclitus, Emerson, James, Confucius, and
+  Homer. The wording of each was checked against the page in its `source`
+  field. One more paper, the 1995 analysis by the American Institutes for
+  Research, is out because the scan does not say that it is a government
+  work. The years of the translations are out where no page gave them.
+
 ## 9. Decisions, ruled 2026-11-13
 
 - **D1 — the tier cut points.** The owner ruled 3, 7, and 30 days. The

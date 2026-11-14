@@ -27,7 +27,9 @@ test("the leaderboard serves the day's board and gates the skill board", async (
   ).json();
   const board = page.locator("section").filter({ hasText: "Latest day" });
   await expect(board.locator("tbody tr")).toHaveCount(wire.rows.length);
-  await expect(board.getByText("You", { exact: true })).toBeVisible();
+  // A row with a streak mark adds a hidden "N-day streak" label to the
+  // name (spec H1 §4), so the match starts at "You" and does not end there.
+  await expect(board.getByText(/^You/)).toBeVisible();
 
   // One revealed day means nobody is near the 30-trial floor, so
   // the skill board gates itself with no operator step. That is

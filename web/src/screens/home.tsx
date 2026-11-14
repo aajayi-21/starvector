@@ -8,6 +8,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { useApi } from "../api/client";
 import { useDayQuery } from "../api/day-query";
@@ -23,22 +24,19 @@ import {
   percentBeaten,
   sendCountText,
 } from "../ui/format";
+import { ResolveText } from "../ui/resolve-text";
+import { EpigraphFigure } from "./epigraph-figure";
+import { EPIGRAPHS } from "./epigraphs";
+import { pickGreeting } from "./greeting";
 import { HowItWorksSteps, Premise } from "./how";
-
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 5) {
-    return "Good evening";
-  }
-  if (hour < 12) {
-    return "Good morning";
-  }
-  return hour < 18 ? "Good afternoon" : "Good evening";
-}
 
 export function HomeScreen(): React.JSX.Element {
   const api = useApi();
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
+  // One greeting for the visit, drawn when the screen opens (spec H1 §5).
+  const [greeting] = useState(() =>
+    pickGreeting(new Date().getHours(), Math.random),
+  );
   const day = useDayQuery();
   const history = useQuery({
     queryKey: ["history"],
@@ -54,10 +52,13 @@ export function HomeScreen(): React.JSX.Element {
     <div className="stack-lg">
       <div className="page-header" style={{ marginBottom: 0 }}>
         <h1>
-          {greeting()}
-          {me.data === undefined ? "" : `, ${me.data.player}`}
+          <ResolveText text={greeting} />
+          {me.data === undefined ? null : (
+            <ResolveText text={`, ${me.data.player}`} />
+          )}
         </h1>
       </div>
+      <EpigraphFigure epigraphs={EPIGRAPHS} />
 
       <TodayCard
         day={day.data}

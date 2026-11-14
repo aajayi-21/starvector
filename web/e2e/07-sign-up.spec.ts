@@ -75,7 +75,9 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   expect(firstCode).toMatch(/^([A-HJKMNP-Z2-9]{4}-){5}[A-HJKMNP-Z2-9]{4}$/);
   await expect(page.getByRole("link", { name: "Today" })).toBeHidden();
   await page.getByRole("button", { name: "I have my code" }).click();
-  await expect(page.getByText(new RegExp(`, ${username}$`))).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: new RegExp(`, ${username}$`) }),
+  ).toBeVisible();
 
   // The account has a password, and no operator's code is live.
   const me = await (await page.request.get("/api/me")).json();

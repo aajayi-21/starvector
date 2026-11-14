@@ -237,9 +237,11 @@ function PlayerCell(props: {
         size={24}
         streak={streak}
       />
-      <StreakName streak={streak}>
-        {player === self ? "You" : player}
-      </StreakName>
+      <span>
+        <StreakName streak={streak}>
+          {player === self ? "You" : player}
+        </StreakName>
+      </span>
     </span>
   );
 }

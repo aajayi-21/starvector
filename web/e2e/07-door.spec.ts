@@ -31,7 +31,9 @@ test("the name sign-in turns a typed name into a session", async ({ page }) => {
   await page.getByRole("button", { name: "Sign in by name" }).click();
 
   // The cookie landed and the shell renders signed in.
-  await expect(page.getByText(/, walkin$/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: /, walkin$/ }),
+  ).toBeVisible();
   await page.getByLabel("Your account").click();
   await expect(page.getByRole("heading", { name: "walkin" })).toBeVisible();
   // A door record has no password (spec A2 §10.2), thus the account
