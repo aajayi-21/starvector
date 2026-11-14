@@ -138,3 +138,56 @@ def test_the_hash_moves_with_each_field() -> None:
     others = [base._replace(labels=LABELS[:2]), base._replace(template="{label_phrases}!"),
               base._replace(input_canvas_px=512), base._replace(model="other")]
     assert len({screener_config_hash(item) for item in [base, *others]}) == 5
+
+
+class SequenceRecorder(Recorder):
+    """One answer for each POST, in the sequence of the POSTs."""
+
+    def __init__(self, answers: list[dict]) -> None:
+        super().__init__()
+        self._answers = answers
+
+    def transport(self) -> httpx.MockTransport:
+        def handle(request: httpx.Request) -> httpx.Response:
+            answer = self._answers[len(self.bodies)]
+            self.bodies.append(json.loads(request.content))
+            return httpx.Response(200, json={"choices": [
+                {"message": {"content": json.dumps(answer)}}]})
+        return httpx.MockTransport(handle)
+
+
+def test_a_bad_answer_keeps_the_good_answers_of_its_group(tmp_path: Path) -> None:
+    # A group of three with a refused answer in the middle. The two good
+    # answers have their cost, thus they must be in the cache when the
+    # error stops the group.
+    images = [PNG + b"-a", PNG + b"-b", PNG + b"-c"]
+    refused = {**ANSWER, "person_role": "maybe"}
+    first = SequenceRecorder([ANSWER, refused, ANSWER])
+    with pytest.raises(OpenRouterResponseError, match="person_role is not in the set"):
+        screener(first, tmp_path).estimate_text_coverage(images)
+    assert len(first.bodies) == 3
+
+    second = SequenceRecorder([ANSWER])
+    provider = screener(second, tmp_path)
+    np.testing.assert_allclose(provider.estimate_text_coverage(images),
+                               [0.02, 0.02, 0.02])
+    assert len(second.bodies) == 1
+    assert provider.cache_hit_count == 2
+
+
+@pytest.mark.parametrize("stated", ["photograph", "diagram"])
+def test_a_contradictory_label_gives_a_row_with_no_winner(
+        tmp_path: Path, stated: str) -> None:
+    # Confidence at or below 1/L: the stated label does not win its own
+    # row. The owner ruling of 2026-11-11 (spec PP1 section 5d) makes
+    # that a row with no winner, not an error, and s04 puts the image
+    # out. The answer is in the cache, thus a second read makes no POST.
+    recorder = Recorder({**ANSWER, "label": stated, "confidence": 0.05})
+    provider = screener(recorder, tmp_path)
+    row = provider.classify([PNG], LABELS)[0]
+    np.testing.assert_allclose(row.sum(), 1.0)
+    assert np.count_nonzero(row == row.max()) == 2
+    assert row[LABELS.index(stated)] < row.max()
+    provider.classify([PNG], LABELS)
+    assert len(recorder.bodies) == 1
+    assert provider.cache_hit_count == 1

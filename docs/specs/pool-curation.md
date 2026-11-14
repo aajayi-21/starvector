@@ -530,6 +530,12 @@ label's probability stored. Spaces in the label become hyphens, for
 example `class-coat-of-arms`. The argmax rule and the template are open
 decisions D1 and D2.
 
+*Note, 2026-11-11 (owner ruling, spec PP1 §5d):* a row where two or
+more labels have the highest value has no winner. Its candidate goes
+out with the cause `class-no-winner`, and the highest value is stored.
+Before this note the lowest label index won. `photograph` is the first
+label, thus a row with no information kept its candidate.
+
 ### s05 object — R6
 
 `SalientObjectEstimator` on the survivor images: the fraction of image

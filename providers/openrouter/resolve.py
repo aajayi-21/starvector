@@ -216,8 +216,10 @@ def resolve_chat[T](
     raises. A cache miss becomes one POST with the body_at(index)
     body, and the validated response is then stored - with the
     entry_extra_at(index) fields merged in when that callable is not
-    None. The output rows are index-aligned with keys. The second
-    output is the cache hit count.
+    None. A response that the parser refuses is not stored. The
+    function stores each good response of the group first and then
+    raises for the first refused one. The output rows are index-aligned
+    with keys. The second output is the cache hit count.
     """
     paths = [response_cache_path(cache_root, config_hash, key) for key in keys]
     values: list[T | None] = [None] * len(keys)
@@ -239,13 +241,20 @@ def resolve_chat[T](
         cache_hits += 1
     if miss_indexes:
         responses = client.map_requests(miss_bodies)
+        refused: OpenRouterResponseError | None = None
         for index, response_body in zip(miss_indexes, responses, strict=True):
             try:
                 value = parse(response_body)
             except OpenRouterResponseError as error:
-                raise OpenRouterResponseError(
-                    f"image {names[index]} (model {model}): {error}"
-                ) from error
+                # Each response in this group has its cost at this
+                # point. The good ones go to the cache before the error
+                # stops the group, thus a second start posts only the
+                # refused items.
+                if refused is None:
+                    refused = OpenRouterResponseError(
+                        f"image {names[index]} (model {model}): {error}")
+                    refused.__cause__ = error
+                continue
             entry = {
                 "key": keys[index],
                 "config_hash": config_hash,
@@ -258,4 +267,6 @@ def resolve_chat[T](
                 entry.update(entry_extra_at(index))
             store_response(paths[index], entry)
             values[index] = value
+        if refused is not None:
+            raise refused
     return [value for value in values], cache_hits  # type: ignore[misc]

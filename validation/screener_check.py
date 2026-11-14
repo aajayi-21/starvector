@@ -22,18 +22,26 @@ from core.canonical import sha256_hex
 from pool.artifacts import load_image_bytes
 from pool.curation.config import CurationConfig, load_curation_config
 from pool.curation.run import wire_slot
+from pool.curation.stages.classify import (NO_WINNER_REASON, reason_for_label,
+                                           winning_label)
 
 _THUMBNAIL_PX = 256
 KEPT = "kept"
 
 
-def screen_group(text: float, label: str, object_fraction: float, person_main: float,
-                 config: CurationConfig) -> str:
-    """The first rule that rejects one image, in stage sequence."""
+def screen_group(text: float, label: str | None, object_fraction: float,
+                 person_main: float, config: CurationConfig) -> str:
+    """The first rule that rejects one image, in stage sequence.
+
+    label is the one winner of the label row, or None for a row with no
+    winner (the s04 rule).
+    """
     if text > config.text.max_text_coverage:
         return "text-coverage"
+    if label is None:
+        return NO_WINNER_REASON
     if label != config.classify.keep_label:
-        return f"class-{label.replace(' ', '-')}"
+        return reason_for_label(label)
     if object_fraction <= config.objectsize.min_object_fraction:
         return "object-size"
     if config.person is not None and person_main > 0.0:
@@ -50,7 +58,7 @@ def screen_groups(image_bytes: Sequence[bytes], provider: object,
     objects = provider.estimate_salient_object_fraction(image_bytes)
     people = provider.person_is_main_subject(image_bytes)
     return [
-        screen_group(float(texts[i]), labels[int(classes[i].argmax())],
+        screen_group(float(texts[i]), winning_label(classes[i], labels),
                      float(objects[i]), float(people[i]), config)
         for i in range(len(image_bytes))
     ]

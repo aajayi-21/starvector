@@ -224,9 +224,12 @@ def screened_config():
     (0.0, "coat of arms", 0.0, 1.0, "class-coat-of-arms"),
     (0.0, "photograph", 0.1, 1.0, "object-size"),
     (0.0, "photograph", 0.5, 1.0, "person-focus"),
+    (0.0, None, 0.5, 0.0, "class-no-winner"),
+    (0.5, None, 0.5, 0.0, "text-coverage"),
 ])
 def test_the_group_is_the_first_rule_in_stage_sequence(
-        text: float, label: str, size: float, person: float, expected: str) -> None:
+        text: float, label: str | None, size: float, person: float,
+        expected: str) -> None:
     assert screener_check.screen_group(text, label, size, person,
                                        screened_config()) == expected
 

@@ -110,17 +110,10 @@ def _fraction_value(payload: Mapping[str, object], json_key: str) -> float:
     return number
 
 
-def _choice_row(
+def _stated_choice(
     payload: Mapping[str, object], phrases: tuple[str, ...]
-) -> tuple[float, ...]:
-    """The probability row for one selected label, in phrase sequence.
-
-    The winner cell holds the confidence. The remaining mass spreads
-    equally on the other labels, thus the row sums to 1 and the
-    protocol contract holds. The confidence must be more than 1/L, or
-    the stated label could not be the argmax of its own row - that
-    answer is contradictory and raises (R14).
-    """
+) -> tuple[str, float]:
+    """The stated label and its confidence, each validated (R14)."""
     if "label" not in payload or "confidence" not in payload:
         raise OpenRouterResponseError('response JSON needs "label" and "confidence"')
     label = payload["label"]
@@ -132,16 +125,40 @@ def _choice_row(
     confidence = float(raw)
     if not 0.0 <= confidence <= 1.0:
         raise OpenRouterResponseError(f"confidence is out of [0, 1]: {confidence}")
+    return label, confidence
+
+
+def _spread_row(
+    label: str, confidence: float, phrases: tuple[str, ...]
+) -> tuple[float, ...]:
+    """The stated cell holds the confidence, and the other cells divide
+    the remaining mass equally. The row sums to 1, in phrase sequence."""
+    count = len(phrases)
+    if count == 1:
+        return (1.0,)
+    rest = (1.0 - confidence) / (count - 1)
+    return tuple(confidence if phrase == label else rest for phrase in phrases)
+
+
+def _choice_row(
+    payload: Mapping[str, object], phrases: tuple[str, ...]
+) -> tuple[float, ...]:
+    """The probability row for one selected label, in phrase sequence.
+
+    The winner cell holds the confidence. The remaining mass spreads
+    equally on the other labels, thus the row sums to 1 and the
+    protocol contract holds. The confidence must be more than 1/L, or
+    the stated label could not be the argmax of its own row - that
+    answer is contradictory and raises (R14).
+    """
+    label, confidence = _stated_choice(payload, phrases)
     count = len(phrases)
     if count > 1 and confidence * count <= 1.0:
         raise OpenRouterResponseError(
             f"confidence {confidence} for {label!r} is at or below 1/{count} - "
             "the stated label would not win its own row"
         )
-    if count == 1:
-        return (1.0,)
-    rest = (1.0 - confidence) / (count - 1)
-    return tuple(confidence if phrase == label else rest for phrase in phrases)
+    return _spread_row(label, confidence, phrases)
 
 
 def _resolved_values[T](
