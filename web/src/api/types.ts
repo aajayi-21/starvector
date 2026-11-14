@@ -216,6 +216,29 @@ export interface MeView {
   has_password: boolean;
   /** Null, or the times of the operator's live recovery code. */
   operator_code: OperatorCodeView | null;
+  /** The notice that results are public (spec R1 §3). */
+  notice: NoticeView;
+}
+
+/**
+ * Where a player stands with the notice that results are public
+ * (spec R1 §3). The screen compares `version` with the number it was
+ * built with before it shows the text.
+ */
+export interface NoticeView {
+  /** The server's current notice version. */
+  version: number;
+  /** True when this player has agreed to that version. */
+  agreed: boolean;
+  /** True when this server publishes results: a send then needs it. */
+  required: boolean;
+}
+
+/** The answer of POST /api/account/consent (spec R1 §3.2). */
+export interface ConsentAck {
+  agreed: boolean;
+  /** The notice version the agreement is to. */
+  notice: number;
 }
 
 // ── spec BR1: the season facts, sessions, and device codes ─────
@@ -227,6 +250,11 @@ export interface AboutView {
   photo_count: number;
   /** The daily rollover hour, "HH:MM" UTC, or null when unset. */
   closes_at_utc: string | null;
+  /**
+   * Where the published snapshots of the public database can be
+   * downloaded (spec R1 §3.1), or null when none is published yet.
+   */
+  public_data_url: string | null;
 }
 
 export interface SessionRow {
@@ -257,6 +285,8 @@ export interface SignInAck {
 /** GET /api/signup answers this when sign-up is open; 404 when not. */
 export interface SignupView {
   open: boolean;
+  /** The server's notice version (spec R1 §3.2). */
+  notice_version: number;
 }
 
 /**
@@ -469,6 +499,13 @@ const CAUSE_COPY: Record<string, string> = {
   origin:
     "This page couldn't prove where the request came from. Reload the page and try again.",
   "no-accounts": "This server has no accounts, so there's nothing to add.",
+  // Spec R1 §3: the two refusals of the notice that results are
+  // public. The drawing screen has its own line for a refused send,
+  // which says that the sketch stays.
+  notice:
+    "This needs your agreement that your results are public. Reload the page and try again.",
+  "notice-version":
+    "This page is out of date, so it shows an earlier notice. Reload it and try again.",
   "no-scoreable-atom":
     "Add at least one word or a few strokes before you send.",
   // The Layer 0 gates (core/types.py INTAKE_CAUSES), in plain words.

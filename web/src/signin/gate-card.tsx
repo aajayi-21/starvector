@@ -4,6 +4,13 @@
  * when the server makes accounts, and `I do not have my password`
  * opens the recovery form.
  *
+ * The sign-up form shows the notice that results are public above the
+ * control that makes the account (spec R1 §3.1). Publication is a
+ * condition of the account, thus the form has no box to tick: the
+ * click on `Make an account` is the agreement, and the form says so.
+ * A page with a notice version that is not the server's does not make
+ * accounts.
+ *
  * Each form is a real `<form>` with `autocomplete` tokens, thus a
  * password manager fills and saves it. A password and a recovery code
  * live in component state for the life of the form and go nowhere
@@ -16,6 +23,8 @@ import { useEffect, useRef, useState } from "react";
 import { useApi } from "../api/client";
 import { credentialMessage } from "../api/types";
 import { PasswordField, RuleList } from "./fields";
+import { NOTICE_VERSION } from "./notice";
+import { NoticeText, OutOfDate } from "./notice-text";
 import {
   allOk,
   isRecoveryCodeShape,
@@ -40,6 +49,8 @@ export function GateCard(props: {
   signupOpen: boolean;
   /** True when that read answered the constant 404. */
   signupClosed: boolean;
+  /** The notice version that read gave, when it answered. */
+  noticeVersion: number | undefined;
   /** A session is open on this device and no code waits to be shown. */
   onSignedIn: () => void;
   /** A session is open, and this recovery code shows one time first. */
@@ -65,6 +76,10 @@ export function GateCard(props: {
     setMode(next);
   };
   const typeUsername = (typed: string) => setUsername(normalizeUsername(typed));
+  // The server's notice is not the text this page holds (spec R1
+  // §3.2): a sign-up here would agree to a text the player did not see.
+  const signupStale =
+    props.signupOpen && props.noticeVersion !== NOTICE_VERSION;
 
   return (
     <section className="card card-hero" aria-labelledby="gate-heading">
@@ -94,7 +109,7 @@ export function GateCard(props: {
       {mode === "signin" ? (
         <div className="stack-sm">
           <div className="row">
-            {props.signupOpen ? (
+            {props.signupOpen && !signupStale ? (
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -113,6 +128,12 @@ export function GateCard(props: {
           </div>
           {props.signupClosed ? (
             <p className="hint">This server isn't making new accounts now.</p>
+          ) : null}
+          {signupStale ? (
+            <OutOfDate>
+              This page is out of date, so it can't make an account. Reload it
+              and try again.
+            </OutOfDate>
           ) : null}
         </div>
       ) : (
@@ -222,7 +243,9 @@ function SignUpForm(props: {
   const api = useApi();
   const [password, setPassword] = useState("");
   const signUp = useMutation({
-    mutationFn: () => api.signUp(props.username, password),
+    // The form shows the notice above its one control, thus a click on
+    // that control is the agreement (spec R1 §3.2).
+    mutationFn: () => api.signUp(props.username, password, true),
     onSuccess: (answer) => props.onRecoveryCode(answer.recovery_code),
   });
   const nameChecks = usernameChecks(props.username);
@@ -273,10 +296,17 @@ function SignUpForm(props: {
           other player, and it can never be changed. Don't use your real name.
         </span>
       </div>
+      <div className="notice notice-warn" role="note" id="signup-notice">
+        <div className="stack-sm">
+          <NoticeText />
+          <p>When you make an account, you agree to this.</p>
+        </div>
+      </div>
       <div>
         <button
           type="submit"
           className="btn btn-primary"
+          aria-describedby="signup-notice"
           disabled={!ready || signUp.isPending}
         >
           {signUp.isPending ? "Making your account…" : "Make an account"}

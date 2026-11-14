@@ -9,6 +9,11 @@
  * (spec PL1 §8); drafts stay in localStorage as disposable caches (W1
  * §8). A sketch outlives its day: when the day moves, the sketch stays
  * on the canvas until the player says what to do with it (PL1 §4).
+ *
+ * The open view sends the start report (spec R1 §4), one time. A send
+ * that the server refuses for the notice that results are public keeps
+ * the sketch and reads `me` again, and the shell then shows the notice
+ * screen (spec R1 §3.3).
  */
 
 import { CheckCircle } from "@phosphor-icons/react";
@@ -18,6 +23,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
 import { useDayQuery } from "../api/day-query";
+import { reportDayStart } from "../api/day-start";
 import type { DayView, SubmissionAck, WireRecord } from "../api/types";
 import { ApiError, friendlyMessage, isRefusal } from "../api/types";
 import { CanvasPanel } from "../intake/canvas-panel";
@@ -70,6 +76,19 @@ const wordingOf = (name: string): string =>
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
+}
+
+/** The cause of a send refused for the notice (spec R1 §3.3). */
+const NOTICE_CAUSE = "notice";
+
+/**
+ * The words for a failed send. A send refused for the notice says
+ * that the sketch stays: the general line for that cause does not.
+ */
+function sendMessage(error: unknown): string {
+  return error instanceof ApiError && error.refusalCause === NOTICE_CAUSE
+    ? "Before you send, you need to agree that your results are public. Your sketch and words are still here."
+    : friendlyMessage(error);
 }
 
 function MessageCard(props: {
@@ -182,6 +201,13 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const queryClient = useQueryClient();
   const { view } = props;
 
+  // The drawing screen shows the open day: tell the server one time
+  // (spec R1 §4). The sent, closed, and revealed views do not come
+  // here, thus they send no report.
+  useEffect(() => {
+    reportDayStart(api, view.player, view.day);
+  }, [api, view.player, view.day]);
+
   // Read one time: a draft for this day, or the newest unsent one from a
   // day that has closed, which comes back with its day named.
   const [restored] = useState(() => {
@@ -269,6 +295,13 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
         // screen follows the day as soon as the read comes back.
         setReviewing(false);
         void queryClient.invalidateQueries({ queryKey: ["day"] });
+      }
+      if (error.refusalCause === NOTICE_CAUSE) {
+        // Nothing was stored, and the sketch stays. The read of me
+        // brings the notice screen, and the save at unmount keeps the
+        // sketch on this device for the way back.
+        setReviewing(false);
+        void queryClient.invalidateQueries({ queryKey: ["me"] });
       }
     },
     onSettled: () => {
@@ -737,7 +770,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
             </p>
             {send.isError && !sent ? (
               <div className="notice notice-bad" role="alert">
-                {friendlyMessage(send.error)}
+                {sendMessage(send.error)}
               </div>
             ) : null}
           </section>

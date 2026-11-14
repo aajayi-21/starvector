@@ -21,6 +21,9 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
     probe.status() !== 200,
     "the fixture server has sign-up closed (GET /api/signup is not 200)",
   );
+  // The server names the notice version this build holds (spec R1
+  // §3.2): with a different number the gate offers no account.
+  expect((await probe.json()).notice_version).toBe(1);
   // One name for each run of this spec: a claimed name stays claimed.
   const username = `e2e-${Date.now().toString(36)}`;
 
@@ -36,12 +39,31 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   await expect(page.getByText(/can never be changed/)).toBeVisible();
   const make = page.getByRole("button", { name: "Make an account" });
   await expect(make).toBeDisabled();
+  // The notice that results are public shows before the account is
+  // made, and the control that makes it is described by it (spec R1
+  // §3.1).
+  await expect(page.getByText("Your results are public.")).toBeVisible();
+  await expect(
+    page.getByText(
+      /Your username, score, words and sketches are published in an open database after each day closes\. Do not type anything private\./,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("When you make an account, you agree to this."),
+  ).toBeVisible();
+  await expect(make).toHaveAccessibleDescription(/Your results are public\./);
 
   // Typed capitals become small letters.
   await page.getByLabel("Username").fill(username.toUpperCase());
   await expect(page.getByLabel("Username")).toHaveValue(username);
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  const signUpPost = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && request.url().endsWith("/api/signup"),
+  );
   await make.click();
+  // The agreement goes with the sign-up (spec R1 §3.2).
+  expect((await signUpPost).postDataJSON().agrees_public).toBe(true);
 
   // The recovery code shows one time, and the app waits for the click.
   await expect(
@@ -61,6 +83,10 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   expect(me.display_name).toBe(username);
   expect(me.has_password).toBe(true);
   expect(me.operator_code).toBeNull();
+  // The sign-up wrote the agreement to the current notice with the
+  // account, thus no notice screen came before the app.
+  expect(me.notice.version).toBe(1);
+  expect(me.notice.agreed).toBe(true);
 
   // Sign out, then sign in with the pair.
   await page.goto("/account");

@@ -6,6 +6,7 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await signIn(page);
   await blockExternalHosts(page);
   let posts = 0;
+  let starts = 0;
   page.on("request", (request) => {
     if (
       request.method() === "POST" &&
@@ -13,13 +14,34 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
     ) {
       posts += 1;
     }
+    if (
+      request.method() === "POST" &&
+      request.url().endsWith("/api/day/start")
+    ) {
+      starts += 1;
+    }
   });
 
   // Home points at today with one primary step.
   await page.goto("/");
-  await page.getByRole("link", { name: "Start today's session" }).click();
+  const start = page.getByRole("link", { name: "Start today's session" });
+  await expect(start).toBeVisible();
+  // The home screen shows the code and sends no start (spec R1 §4).
+  expect(starts).toBe(0);
+  const startPost = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/api/day/start"),
+  );
+  await start.click();
   await expect(page).toHaveURL(/\/today$/);
   await expect(page.locator(".code-cell")).toHaveCount(6);
+  // The drawing screen reports the start, with no body, and the
+  // answer is the one constant body.
+  const started = await startPost;
+  expect(started.request().postData()).toBeNull();
+  expect(started.status()).toBe(200);
+  expect(await started.json()).toEqual({ ok: true });
 
   // The fixture config sets the close time — the day view carries
   // the computed timestamp while open (spec S2 B1, spec BR1 §3).
@@ -65,4 +87,7 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await page.getByRole("link", { name: "Back to home" }).click();
   await expect(page.getByText("You're in for today")).toBeVisible();
   expect(posts).toBe(1);
+  // One start for the open day: the sent view after the reload sends
+  // no second one.
+  expect(starts).toBe(1);
 });

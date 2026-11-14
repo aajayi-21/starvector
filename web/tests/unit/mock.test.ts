@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MOCK_PASSWORD, makeMockApi } from "../../src/api/mock";
+import { NOTICE_VERSION } from "../../src/signin/notice";
 import {
   allOk,
   isRecoveryCodeShape,
@@ -247,7 +248,10 @@ describe("the mock accounts (spec A2 §8)", () => {
 
   it("says sign-up is open and gives me the two new fields", async () => {
     const api = makeMockApi({ today: TODAY });
-    expect(await api.getSignup()).toEqual({ open: true });
+    expect(await api.getSignup()).toEqual({
+      open: true,
+      notice_version: NOTICE_VERSION,
+    });
     const me = await api.getMe();
     expect(me.has_password).toBe(true);
     expect(me.operator_code).toBeNull();
@@ -256,7 +260,7 @@ describe("the mock accounts (spec A2 §8)", () => {
 
   it("makes an account, signs it in, and shows a recovery code", async () => {
     const api = makeMockApi({ today: TODAY });
-    const made = await api.signUp("Nova-7", GOOD);
+    const made = await api.signUp("Nova-7", GOOD, true);
     // Capitals become small letters, and the label is the username.
     expect(made.player).toBe("nova-7");
     expect(made.display_name).toBe("nova-7");
@@ -282,7 +286,7 @@ describe("the mock accounts (spec A2 §8)", () => {
       ["a-d-e", GOOD, 409, "name-taken"],
     ];
     for (const [username, password, status, cause] of cases) {
-      await expect(api.signUp(username, password)).rejects.toMatchObject({
+      await expect(api.signUp(username, password, true)).rejects.toMatchObject({
         status,
         refusalCause: cause,
       });
@@ -324,7 +328,7 @@ describe("the mock accounts (spec A2 §8)", () => {
 
   it("recovers with the code one time and gives a new code", async () => {
     const api = makeMockApi({ today: TODAY });
-    const made = await api.signUp("nova", GOOD);
+    const made = await api.signUp("nova", GOOD, true);
     await api.signOut();
     const next = "five slow north harbors";
     // The new password is checked first and says nothing of the account.
@@ -436,5 +440,116 @@ describe("the mock daily board's floor (spec A2 §9.5)", () => {
     for (const row of board.rows.filter((one) => one.player !== "ade")) {
       expect(row.public).toBe(true);
     }
+  });
+});
+
+describe("the mock notice that results are public (spec R1 §3, §4)", () => {
+  const GOOD = "four quiet amber lanterns";
+  const record = {
+    impressions: ["tall vertical structure"],
+    canvas_strokes: [],
+    groups: [],
+    relations: [],
+    pasted_text: null,
+  };
+
+  it("asks for no agreement by default, thus the offline flows send", async () => {
+    const api = makeMockApi({ today: TODAY });
+    expect((await api.getMe()).notice).toEqual({
+      version: NOTICE_VERSION,
+      agreed: false,
+      required: false,
+    });
+    expect((await api.submit(TODAY, record)).day).toBe(TODAY);
+  });
+
+  it("refuses a sign-up with no agreement and makes no account", async () => {
+    const api = makeMockApi({ today: TODAY, signedIn: false });
+    await expect(api.signUp("nova", GOOD, false)).rejects.toMatchObject({
+      status: 400,
+      refusalCause: "notice",
+    });
+    // No account: the pair does not sign in, and nobody is signed in.
+    await expect(api.signIn("nova", GOOD)).rejects.toMatchObject({
+      status: 401,
+    });
+    await expect(api.getMe()).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("writes the agreement with the account at a sign-up", async () => {
+    const api = makeMockApi({ today: TODAY, noticeRequired: true });
+    await api.signUp("nova", GOOD, true);
+    expect((await api.getMe()).notice).toEqual({
+      version: NOTICE_VERSION,
+      agreed: true,
+      required: true,
+    });
+    expect((await api.submit(TODAY, record)).day).toBe(TODAY);
+  });
+
+  it("refuses a send with no agreement, and stores nothing", async () => {
+    const api = makeMockApi({ today: TODAY, noticeRequired: true });
+    await expect(api.submit(TODAY, record)).rejects.toMatchObject({
+      status: 409,
+      refusalCause: "notice",
+    });
+    expect((await api.getDay()).submitted).toBe(false);
+    expect(await api.postConsent(NOTICE_VERSION)).toEqual({
+      agreed: true,
+      notice: NOTICE_VERSION,
+    });
+    expect((await api.getMe()).notice.agreed).toBe(true);
+    expect((await api.submit(TODAY, record)).day).toBe(TODAY);
+  });
+
+  it("starts with the agreement when asked", async () => {
+    const api = makeMockApi({
+      today: TODAY,
+      noticeRequired: true,
+      noticeAgreed: true,
+    });
+    expect((await api.getMe()).notice.agreed).toBe(true);
+  });
+
+  it("refuses an agreement to a version that is not current", async () => {
+    const api = makeMockApi({
+      today: TODAY,
+      noticeRequired: true,
+      noticeVersion: NOTICE_VERSION + 1,
+    });
+    expect((await api.getSignup()).notice_version).toBe(NOTICE_VERSION + 1);
+    await expect(api.postConsent(NOTICE_VERSION)).rejects.toMatchObject({
+      status: 409,
+      refusalCause: "notice-version",
+    });
+    const notice = (await api.getMe()).notice;
+    expect(notice.version).toBe(NOTICE_VERSION + 1);
+    expect(notice.agreed).toBe(false);
+  });
+
+  it("keeps the agreement across a new password and a recovery", async () => {
+    const api = makeMockApi({ today: TODAY, noticeRequired: true });
+    const made = await api.signUp("nova", GOOD, true);
+    await api.setPassword("five slow north harbors", GOOD);
+    expect((await api.getMe()).notice.agreed).toBe(true);
+    await api.recover("nova", made.recovery_code, "six pale far embers");
+    expect((await api.getMe()).notice.agreed).toBe(true);
+  });
+
+  it("answers a start with one constant body", async () => {
+    const api = makeMockApi({ today: TODAY });
+    expect(await api.startDay()).toEqual({ ok: true });
+    expect(await api.startDay()).toEqual({ ok: true });
+  });
+
+  it("gives the address of the public data, or null", async () => {
+    expect(
+      (await makeMockApi({ today: TODAY }).getAbout()).public_data_url,
+    ).toBeNull();
+    const address = "https://data.example/starvector";
+    expect(
+      (await makeMockApi({ today: TODAY, publicDataUrl: address }).getAbout())
+        .public_data_url,
+    ).toBe(address);
   });
 });

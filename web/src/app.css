@@ -416,8 +416,20 @@
 .recovery-input::placeholder {
   letter-spacing: 0;
 }
-#gate-heading:focus {
+#gate-heading:focus,
+#notice-heading:focus {
   outline: none;
+}
+
+/* — the facts of the public database (spec R1 §3.1) — */
+.fact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  color: var(--text-2);
 }
 
 /* — the notice of an operator's recovery code (spec A2 §6.1) — */

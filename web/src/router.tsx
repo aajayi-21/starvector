@@ -5,7 +5,8 @@
  *
  * "/" is the home screen and "/today" the drawing screen (spec BR1
  * §6). A signed-out browser gets the gate screen on each path (spec
- * A2 §3).
+ * A2 §3), and a player who must agree to the notice gets the notice
+ * screen on each path (spec R1 §3).
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -24,6 +25,7 @@ import { HistoryScreen } from "./screens/history";
 import { HomeScreen } from "./screens/home";
 import { HowItWorksScreen } from "./screens/how";
 import { LeaderboardScreen } from "./screens/leaderboard";
+import { NoticeScreen, needsAgreement } from "./screens/notice";
 import { PracticeScreen } from "./screens/practice";
 import { RevealScreen } from "./screens/reveal";
 import { TodayScreen } from "./screens/today";
@@ -42,6 +44,11 @@ function Shell(): React.JSX.Element {
   if (isUnauthorized(me.error)) {
     return <WelcomeScreen />;
   }
+  // No send before the agreement (spec R1 §3.3): the notice screen
+  // takes the place of the app, the drawing screen with it.
+  if (me.data !== undefined && needsAgreement(me.data.notice)) {
+    return <NoticeScreen notice={me.data.notice} />;
+  }
   return (
     <>
       <TopBar />
@@ -52,7 +59,16 @@ function Shell(): React.JSX.Element {
       <OfflineBanner />
       <InstallHint />
       <main className="page">
-        <Outlet />
+        {/* No screen before me answers: a player who must agree to
+            the notice does not get the drawing screen for a moment,
+            and no start is sent for that player (spec R1 §4). */}
+        {me.isPending ? (
+          <p className="subtle" aria-busy="true">
+            Loading…
+          </p>
+        ) : (
+          <Outlet />
+        )}
       </main>
       <TabBar />
     </>
