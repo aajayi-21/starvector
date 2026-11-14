@@ -20,6 +20,7 @@ OTHER = "a second good password"
 
 
 def _up(root, name="alice", password=GOOD, digester=None, **more):
+    more.setdefault("agrees_public", True)
     return signin.sign_up(root, username=name, password=password,
                           digester=digester or QuickDigester(), usual=USUAL,
                           instant=NOW, **more)

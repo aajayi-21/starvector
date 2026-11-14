@@ -42,7 +42,8 @@ from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
 from service import (access, auth, console, credits, digests, limits,
-                     passwords, rollover, rollup, schedule, signin, store)
+                     notice, passwords, rollover, rollup, schedule, signin,
+                     store)
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 
@@ -77,6 +78,12 @@ _BAD_SIGN_IN = b'{"cause":"sign-in"}'
 _BAD_RECOVERY = b'{"cause":"recovery"}'
 _WRONG_PASSWORD = b'{"cause":"password"}'
 _BAD_ORIGIN = b'{"cause":"origin"}'
+# The notice refusals (spec R1 section 3). A send with no agreement
+# gets the first, before a store write and before a read of the day.
+_NO_AGREEMENT = b'{"cause":"notice"}'
+_NOTICE_VERSION = b'{"cause":"notice-version"}'
+# The one answer of the start path (spec R1 section 4).
+_STARTED = b'{"ok":true}'
 _BAD_CONTENT_TYPE = b'{"cause":"content-type"}'
 # The practice limit (spec PL1 section 1).
 _PRACTICE_LIMIT = b'{"cause":"practice-limit"}'
@@ -306,7 +313,11 @@ def create_app(service_config: ServiceConfig,
     # surface (spec P1a R13). The app labels them as test numbers.
     about_value = {"test_season": record.dev_only,
                    "photo_count": record.image_count,
-                   "closes_at_utc": service_config.closes_at_utc}
+                   "closes_at_utc": service_config.closes_at_utc,
+                   "public_data_url": service_config.public_data_url}
+    # A day of this pool can be in a public snapshot (spec R1 section
+    # 5), thus a send needs the agreement to the notice.
+    publishes = not record.dev_only
     image_credits = credits.load_credits(
         Path(record.pool_release_record_path), Path(service_config.data_root))
     root = Path(service_config.store_root)
@@ -571,7 +582,8 @@ def create_app(service_config: ServiceConfig,
         the constant 404."""
         if not signup_open:
             return _constant(_DEV_OFF, 404)
-        return JSONResponse({"open": True})
+        return JSONResponse({"open": True,
+                             "notice_version": notice.NOTICE_VERSION})
 
     @app.post("/api/signup")
     async def signup_make(request: Request) -> Response:
@@ -593,7 +605,8 @@ def create_app(service_config: ServiceConfig,
         try:
             name, code = await asyncio.to_thread(
                 signin.sign_up, root, username=body.get("username"),
-                password=body.get("password"), digester=digester,
+                password=body.get("password"),
+                agrees_public=body.get("agrees_public"), digester=digester,
                 usual=usual_passwords, instant=utc_now())
         except signin.Refused as refused:
             status = 409 if refused.cause == signin.NAME_TAKEN else 400
@@ -739,6 +752,58 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse(
             {"recovery_code": auth.display_recovery_code(code)},
             headers={"cache-control": "no-store"})
+
+    def _needs_agreement(caller: str) -> bool:
+        """A send of this caller needs an agreement that is not there.
+
+        The rule reads the consent file of the caller and the pool's
+        own flag. It reads nothing of a day, thus the refusal says
+        nothing of a target (I7).
+        """
+        return publishes and _access_on() and not notice.agreed(root, caller)
+
+    @app.post("/api/account/consent")
+    async def account_consent(request: Request) -> Response:
+        """Record the caller's agreement to the notice (spec R1 section
+        3.2). The body names the version that the screen showed, and a
+        version that is not the current one is refused: the player
+        agrees to the text that the player read."""
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        if not _access_on():
+            return _constant(_NO_ACCOUNTS, 409)
+        body = await _credential_body(request)
+        if isinstance(body, Response):
+            return body
+        if body.get("notice") != notice.NOTICE_VERSION:
+            return _constant(_NOTICE_VERSION, 409)
+        notice.record_agreement(root, caller, utc_now())
+        return JSONResponse({"agreed": True,
+                             "notice": notice.NOTICE_VERSION})
+
+    @app.post("/api/day/start")
+    async def day_start(request: Request) -> Response:
+        """Record the first time the caller opens the drawing screen of
+        the open day (spec R1 section 4).
+
+        The server writes its own time, one time for each player and
+        each day. The answer is one constant body in each condition: a
+        first start, a second one, and a day that is not open. It
+        holds no time and no datum of the day.
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        latest = store.latest_day(root)
+        # A start after the send is not the start of that send: a
+        # second device that opens the screen then writes nothing.
+        if latest is not None \
+                and store.read_day_record(root, latest).status == "open" \
+                and not store.submission_path(root, latest,
+                                              caller).is_file():
+            store.write_start(root, latest, caller, utc_now().isoformat())
+        return _constant(_STARTED, 200)
 
     @app.post("/api/account/recovery-code/stop")
     async def account_recovery_stop(request: Request) -> Response:
@@ -1571,6 +1636,11 @@ def create_app(service_config: ServiceConfig,
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
+        # The agreement to the notice comes first (spec R1 section
+        # 3.3): each published trial has one that is earlier than it.
+        if _needs_agreement(caller):
+            return Response(content=_NO_AGREEMENT, status_code=409,
+                            media_type="application/json")
         latest = store.latest_day(root)
         if latest is None:
             return Response(content=_NO_DAY, status_code=404,
@@ -1953,6 +2023,11 @@ def create_app(service_config: ServiceConfig,
             and signin.has_password(root, caller),
             "operator_code": signin.operator_code_view(root, caller)
             if _access_on() else None,
+            # The notice that results are public (spec R1 section 3).
+            "notice": {
+                "version": notice.NOTICE_VERSION,
+                "agreed": _access_on() and notice.agreed(root, caller),
+                "required": publishes and _access_on()},
         })
 
     @app.put("/api/account")

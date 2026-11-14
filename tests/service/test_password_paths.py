@@ -43,19 +43,20 @@ def _client(app, cookie: str | None = None) -> TestClient:
 def _sign_up(app, name="alice", password=GOOD) -> tuple[TestClient, dict]:
     client = _client(app)
     answer = client.post("/api/signup",
-                         json={"username": name, "password": password})
+                         json={"username": name, "password": password, "agrees_public": True})
     assert answer.status_code == 201, answer.text
     return client, answer.json()
 
 
 def test_the_signup_probe_follows_the_switch(tmp_path) -> None:
     _config, app = _world(tmp_path)
-    assert _client(app).get("/api/signup").json() == {"open": True}
+    assert _client(app).get("/api/signup").json() \
+        == {"open": True, "notice_version": 1}
     _config, closed = _world(tmp_path / "closed", signup="closed")
     probe = _client(closed).get("/api/signup")
     assert probe.status_code == 404
     made = _client(closed).post(
-        "/api/signup", json={"username": "alice", "password": GOOD})
+        "/api/signup", json={"username": "alice", "password": GOOD, "agrees_public": True})
     assert made.status_code == 404
     assert made.content == probe.content
 
@@ -86,7 +87,7 @@ def test_an_answer_with_a_recovery_code_is_not_stored_by_a_cache(
     _config, app = _world(tmp_path)
     client = _client(app)
     made = client.post("/api/signup",
-                       json={"username": "alice", "password": GOOD})
+                       json={"username": "alice", "password": GOOD, "agrees_public": True})
     assert made.headers["cache-control"] == "no-store"
     assert "HttpOnly" in made.headers["set-cookie"]
     assert "Secure" in made.headers["set-cookie"]
@@ -102,7 +103,7 @@ def test_sign_up_names_the_rule_that_refuses(tmp_path, name, password,
                                              status, cause) -> None:
     _config, app = _world(tmp_path)
     answer = _client(app).post(
-        "/api/signup", json={"username": name, "password": password})
+        "/api/signup", json={"username": name, "password": password, "agrees_public": True})
     assert answer.status_code == status
     assert answer.json() == {"cause": cause}
     assert "set-cookie" not in answer.headers
@@ -112,7 +113,7 @@ def test_a_claimed_folded_shape_is_taken(tmp_path) -> None:
     _config, app = _world(tmp_path)
     _sign_up(app, name="no-one")
     answer = _client(app).post(
-        "/api/signup", json={"username": "n0one", "password": GOOD})
+        "/api/signup", json={"username": "n0one", "password": GOOD, "agrees_public": True})
     assert answer.status_code == 409
     assert answer.json() == {"cause": "name-taken"}
 
@@ -352,12 +353,14 @@ def test_the_signup_cap_counts_the_accounts_made(tmp_path) -> None:
     for number in range(limits.SIGNUP_CLIENT_CAP):
         # A refused sign-up is not an account made and does not count.
         assert client.post("/api/signup", json={
-            "username": "al", "password": GOOD}).status_code == 400
+            "username": "al", "password": GOOD,
+            "agrees_public": True}).status_code == 400
         assert client.post("/api/signup", json={
-            "username": f"player-{number}",
-            "password": GOOD}).status_code == 201
+            "username": f"player-{number}", "password": GOOD,
+            "agrees_public": True}).status_code == 201
     assert client.post("/api/signup", json={
-        "username": "one-more", "password": GOOD}).status_code == 429
+        "username": "one-more", "password": GOOD,
+        "agrees_public": True}).status_code == 429
     assert limits.SIGNUP_CLIENT_CAP == 10
     assert limits.SIGNUP_GLOBAL_CAP == 1_000
     assert limits.SIGNUP_WINDOW_SECONDS == 24 * 60 * 60

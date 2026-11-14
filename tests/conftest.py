@@ -578,7 +578,10 @@ def clone_preparation(prepared: dict, destination: Path) -> dict:
 
 def build_direct_prepared_pool(root: Path, count: int,
                                dimension: int = 32, seed: int = 11,
-                               overrides: dict | None = None) -> dict:
+                               overrides: dict | None = None,
+                               dev_only: bool = True,
+                               release_record_path: str = "unused.json",
+                               ) -> dict:
     """Hand-build one prepared pool: artifacts, record, config file.
 
     The fast fixture for statistical tests — no pipeline run. Seeded
@@ -586,6 +589,8 @@ def build_direct_prepared_pool(root: Path, count: int,
     the measured digest of each written file in its inventory.
     overrides merges more prep_config_dict entries — the spec C1
     tests build an rgb world with {"linedraw.stroke_color": "rgb"}.
+    With dev_only off, the record is the record of a production pool,
+    for the tests of the public database (spec R1).
     """
     import numpy as np
 
@@ -609,6 +614,8 @@ def build_direct_prepared_pool(root: Path, count: int,
            "providers.image_encoder": {
             "provider": "fake", "model": None,
             "instruction_template": None, "dimension": dimension},
+           **({} if dev_only else {"release.dev_only": False,
+                                   "release.tag": "prod-test-prep"}),
            **(overrides or {})})
     config_path = root / "prep-config.json"
     config_path.write_text(canonical_json_pretty(document) + "\n",
@@ -731,19 +738,20 @@ def build_direct_prepared_pool(root: Path, count: int,
         ("".join(line + "\n" for line in box_lines)).encode("utf-8"))
 
     record = {
-        "label": f"dev-direct-{prep_version[:8]}",
+        "label": f"{'dev' if dev_only else 'prod'}-direct-"
+                 f"{prep_version[:8]}",
         "preparation_version_id": prep_version,
         "preparation_config_hash": prep_hash,
         "config_path": str(config_path),
         "image_count": count,
         "artifacts": artifacts_index,
         "pool": {
-            "label": "dev-direct-pool",
+            "label": "dev-direct-pool" if dev_only else "prod-direct-pool",
             "pool_version_id": pool_version,
-            "release_record_path": "unused.json",
+            "release_record_path": release_record_path,
         },
         "provider_config_hashes": provider_hashes,
-        "dev_only": True,
+        "dev_only": dev_only,
         "code_version": "test",
         "created_at": FIXED_CLOCK,
         "provider_usage": {},

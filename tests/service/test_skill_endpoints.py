@@ -297,7 +297,11 @@ def test_the_me_surface_holds_no_flag_that_cannot_vary(tmp_path) -> None:
     body = _as(client, tokens["ade"]).get("/api/me").json()
     assert set(body) == {"player", "display_name", "streak", "reminder",
                          "description", "avatar_hash", "has_password",
-                         "operator_code"}
+                         "operator_code", "notice"}
+    # The pool of this world is a development pool, thus no send needs
+    # the agreement (spec R1 section 3.3).
+    assert body["notice"] == {"version": 1, "agreed": False,
+                              "required": False}
     # A player of before spec A2 has no password and no operator's code.
     assert body["has_password"] is False
     assert body["operator_code"] is None

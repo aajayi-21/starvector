@@ -66,6 +66,9 @@ def revoke_player(service_config: ServiceConfig, *,
     record = store.set_player_status(root, player, expect_status="active",
                                      new_status="revoked")
     store.delete_player_sessions(root, player)
+    # A public snapshot shows this player with no username (spec R1
+    # section 8). The identifier is made here, one time.
+    store.ensure_identifier(root, player, default_clock())
     return record
 
 
