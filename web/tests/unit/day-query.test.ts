@@ -19,6 +19,7 @@ function view(status: DayStatus, closesAt: string | null): DayView {
     commitment: "c",
     player: "ade",
     submitted: false,
+    sends: 0,
     relation_vocabulary: [],
     canvas_px: 512,
     min_strokes: 2,

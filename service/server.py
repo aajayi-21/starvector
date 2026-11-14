@@ -1587,6 +1587,9 @@ def create_app(service_config: ServiceConfig,
             # One stat and not a walk of the day's sends: an open tab
             # polls this path (spec PL1 section 4).
             "submitted": store.submission_path(root, day, caller).is_file(),
+            # The number of sends and nothing of a score or the target
+            # (spec H1 section 3): the same for each target, so R3 holds.
+            "sends": store.count_submissions(root, day),
             "relation_vocabulary": relation_vocabulary,
             "canvas_px": canvas_px,
             "min_strokes": gates.min_strokes_whole_drawing,

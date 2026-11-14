@@ -29,6 +29,7 @@ import { AvatarCircle } from "../ui/avatar";
 import { useNow } from "../ui/countdown";
 import { downscaleImage } from "../ui/downscale";
 import { formatInstantDay, formatRemaining } from "../ui/format";
+import { StreakName } from "../ui/streak-name";
 
 /** The D1 cap, mirrored for the counter — the server owns the rule. */
 const DESCRIPTION_LIMIT = 500;
@@ -184,9 +185,12 @@ function ProfileCard(props: { me: MeView }): React.JSX.Element {
           player={me.player}
           avatarHash={me.avatar_hash}
           size={88}
+          streak={me.streak}
         />
         <div className="stack-sm">
-          <h2 style={{ fontSize: 24 }}>{me.player}</h2>
+          <h2 style={{ fontSize: 24 }}>
+            <StreakName streak={me.streak}>{me.player}</StreakName>
+          </h2>
           <span className="subtle small">
             Your username. Other players see it on the boards, and it can't be
             changed.

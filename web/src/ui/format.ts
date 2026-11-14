@@ -65,6 +65,20 @@ export function percentBeaten(p: number): number {
   return Math.max(0, Math.min(100, Math.floor(p * 100 + 1e-9)));
 }
 
+/**
+ * The home page line for the day's send count (spec H1 §3). While the
+ * day is open, zero is an invitation and not a count, so a quiet day
+ * does not read as empty. After the close, zero says what happened.
+ */
+export function sendCountText(sends: number, open: boolean): string {
+  if (sends === 0) {
+    return open ? "Be the first to send today" : "No one sent today";
+  }
+  return sends === 1
+    ? "1 player has sent today"
+    : `${sends.toLocaleString("en-US")} players have sent today`;
+}
+
 /** 1 → "1st", 22 → "22nd", 113 → "113th". */
 export function ordinal(n: number): string {
   const tens = n % 100;
