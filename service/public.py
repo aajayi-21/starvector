@@ -45,9 +45,11 @@ from pool.preparation.config import load_preparation_config
 from service import credits, notice, store
 from service.config import ServiceConfigError, load_service_config
 from service.day import day_commitment
+from service.pick_rule import vp1_faults
+from service.pulse import chain_named, pulse_time
 from service.index import _counts, _trial_files
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 LICENSE_NAME = "CC BY 4.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
 
@@ -66,8 +68,18 @@ CREATE TABLE days (
   day TEXT PRIMARY KEY,
   trial_code TEXT NOT NULL,
   target_id TEXT NOT NULL,
-  commitment TEXT NOT NULL,
-  secret TEXT NOT NULL,
+  protocol TEXT NOT NULL,
+  commitment TEXT,
+  secret TEXT,
+  pool_root TEXT,
+  beacon_chain TEXT,
+  beacon_round INTEGER,
+  round_time TEXT,
+  beacon_signature TEXT,
+  randomness TEXT,
+  target_index INTEGER,
+  target_salt TEXT,
+  target_proof TEXT,
   opened_at TEXT NOT NULL,
   closed_at TEXT NOT NULL,
   revealed_at TEXT NOT NULL,
@@ -189,10 +201,12 @@ CREATE INDEX trials_by_player ON trials (player, day);
 _TABLES: dict[str, tuple[str, ...]] = {
     "meta": ("key", "value"),
     "players": ("player", "named", "first_day", "trial_count"),
-    "days": ("day", "trial_code", "target_id", "commitment", "secret",
-             "opened_at", "closed_at", "revealed_at", "scoring_config_hash",
-             "preparation_version_id", "pool_label", "pool_image_count",
-             "player_count"),
+    "days": ("day", "trial_code", "target_id", "protocol", "commitment",
+             "secret", "pool_root", "beacon_chain", "beacon_round",
+             "round_time", "beacon_signature", "randomness", "target_index",
+             "target_salt", "target_proof", "opened_at", "closed_at",
+             "revealed_at", "scoring_config_hash", "preparation_version_id",
+             "pool_label", "pool_image_count", "player_count"),
     "targets": ("target_id", "source", "title", "page"),
     "configs": ("scoring_config_hash", "path", "config_json",
                 "weights_json"),
@@ -262,12 +276,50 @@ def _preparation_of(record: store.DayRecord) -> PreparationRecord:
     return preparation
 
 
+# The beacon chains that a public pick can name (spec VP1 section 7). The
+# fake chain of the tests and the development box is not one of them, so
+# a day that it picked does not pass as a public pick.
+PUBLIC_CHAINS = ("drand-quicknet",)
+
+
+def _day_faults(record: store.DayRecord) -> list[str]:
+    """The faults of one revealed day under its pick protocol."""
+    if record.protocol == "vp1" and record.beacon_chain not in PUBLIC_CHAINS:
+        return [f"day {record.day}: the beacon {record.beacon_chain!r} is "
+                "not a public beacon"]
+    if record.protocol != "vp1":
+        if day_commitment(str(record.target_id), str(record.secret)) \
+                != record.commitment:
+            return [f"day {record.day}: the commitment does not agree "
+                    "with the target and the secret"]
+        return []
+    return vp1_faults(
+        day=record.day, target_id=str(record.target_id),
+        signature=str(record.beacon_signature),
+        randomness=str(record.pick_seed),
+        target_index=int(record.target_index or 0),
+        target_salt=str(record.target_salt),
+        target_proof=record.target_proof or (),
+        pool_count=int(record.pool_count or 0),
+        pool_root=str(record.pool_root))
+
+
+def _round_time(record: store.DayRecord) -> str | None:
+    if record.protocol != "vp1" or record.beacon_chain is None \
+            or record.beacon_round is None:
+        return None
+    moment = pulse_time(record.beacon_round, chain_named(record.beacon_chain))
+    return datetime.datetime.fromtimestamp(
+        moment, datetime.UTC).isoformat().replace("+00:00", "Z")
+
+
 def public_days(root: Path) -> list[PublicDay]:
     """The days that a snapshot holds (spec R1 section 5), ascending.
 
     A day is in when it is revealed and its pool is not a development
-    pool. The commitment of each such day is calculated again from its
-    target and its secret, and a difference raises.
+    pool. The commitment of each commit-v1 day is calculated again from
+    its target and its secret, and each vp1 day gets the checks of spec
+    VP1 section 3.5. A difference raises.
     """
     found = []
     for day in store.list_days(root):
@@ -277,11 +329,9 @@ def public_days(root: Path) -> list[PublicDay]:
         preparation = _preparation_of(record)
         if preparation.dev_only:
             continue
-        if day_commitment(record.target_id, record.secret) \
-                != record.commitment:
-            raise PublicBuildError(
-                f"day {day}: the commitment does not agree with the target "
-                "and the secret")
+        faults = _day_faults(record)
+        if faults:
+            raise PublicBuildError("; ".join(faults))
         found.append(PublicDay(record=record, preparation=preparation))
     return found
 
@@ -354,10 +404,17 @@ def _fill(connection: sqlite3.Connection, root: Path, data_root: Path,
         record = day.record
         name = record.day
         submissions = store.list_submissions(root, name)
+        vp1 = record.protocol == "vp1"
         connection.execute(
-            "INSERT INTO days VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (name, record.trial_code, record.target_id, record.commitment,
-             record.secret, record.opened_at, record.closed_at,
+            "INSERT INTO days VALUES (" + ", ".join("?" * 23) + ")",
+            (name, record.trial_code, record.target_id, record.protocol,
+             record.commitment, record.secret, record.pool_root,
+             record.beacon_chain, record.beacon_round, _round_time(record),
+             record.beacon_signature, record.pick_seed if vp1 else None,
+             record.target_index, record.target_salt,
+             json.dumps(list(record.target_proof))
+             if record.target_proof is not None else None,
+             record.opened_at, record.closed_at,
              record.revealed_at, record.scoring_config_hash,
              record.preparation_version_id, day.preparation.pool_label,
              day.preparation.image_count, len(submissions)))
@@ -617,11 +674,18 @@ README_EXAMPLES: tuple[tuple[str, str], ...] = (
      "AS mean_similarity\n"
      "FROM trial_atoms WHERE element IS NOT NULL\n"
      "GROUP BY element ORDER BY uses DESC LIMIT 20;"),
-    ("Check that the target of each day was fixed before the play: the "
-     "commitment is the SHA-256 of the target, a colon, and the secret. "
-     "This query lists the three values, and a script calculates the "
-     "digest.",
-     "SELECT day, target_id, secret, commitment FROM days ORDER BY day;"),
+    ("Check that the target of each commit-v1 day was fixed before the "
+     "play: the commitment is the SHA-256 of the target, a colon, and the "
+     "secret. This query lists the three values, and a script calculates "
+     "the digest.",
+     "SELECT day, target_id, secret, commitment FROM days\n"
+     "WHERE protocol = 'commit-v1' ORDER BY day;"),
+    ("Check that a beacon pulse after the close picked the target of each "
+     "vp1 day: `uv run python tools/check_day.py --database <file>` does "
+     "it for each such day.",
+     "SELECT day, beacon_round, round_time, randomness, target_index,\n"
+     "       pool_image_count, pool_root FROM days\n"
+     "WHERE protocol = 'vp1' ORDER BY day;"),
 )
 
 
@@ -667,7 +731,7 @@ and so is a player below the floors of the game's boards.
 |---|---|---|
 | `meta` | a fact of this snapshot | `key`, `value` |
 | `players` | a player with a response in the file | `player` is the username. `named` is 0 for a player whose account is gone: `player` is then an anonymous identifier, the same one in each snapshot |
-| `days` | a revealed day | `trial_code` is what the players saw. `target_id` names the hidden photograph. `commitment` and `secret`: see below |
+| `days` | a revealed day | `trial_code` is what the players saw. `target_id` names the photograph. `protocol` says how the target was picked: see below |
 | `targets` | the photograph of a revealed day | `page` is the source page, where the author and the license are named |
 | `configs` | the scoring configuration of a day | `config_json` is the full configuration text, and `weights_json` its channel weights |
 | `submissions` | a response | `received_at` and `started_at` are UTC times. `seconds_from_start` is the time from the first opening of the drawing screen to the send. `record_json` is the raw response |
@@ -687,11 +751,23 @@ first opened the drawing screen of that day. It is not the first sight
 of the day's code and not the first stroke. A response of an earlier
 build of the game has NULL there.
 
-**The commitment.** When a day opens, the server publishes `commitment`,
-the SHA-256 digest of the text `target_id`, a colon, and `secret`. The
-target and the secret are not public before the reveal. Calculate the
-digest again from the two columns: it shows that the target did not
-change after the play.
+**The commitment (`protocol` is `commit-v1`).** When such a day opens,
+the server publishes `commitment`, the SHA-256 digest of the text
+`target_id`, a colon, and `secret`. The target and the secret are not
+public before the reveal. Calculate the digest again from the two
+columns: it shows that the target did not change after the play.
+
+**The pick after the close (`protocol` is `vp1`).** Such a day has no
+target during the play. When it opens, the server names `beacon_round`,
+a pulse of the drand quicknet beacon a minute after the close, and the
+`pool_root` of a pool committed in the public repository before the
+open. After the close, the pulse picks the target:
+`randomness` is the SHA-256 of `beacon_signature`, `target_index` is the
+first 16 hex characters of SHA-256(`day-target:` day `:` randomness) as
+a number, modulo `pool_image_count`, and `target_salt` with
+`target_proof` takes `target_id` up to `pool_root`.
+`uv run python tools/check_day.py --database <file>` does these checks,
+and `--fetch` also reads the pulse from two drand relays.
 
 **A withheld response.** The operator can withhold the text and the
 sketch of a response that must not be public. Its row has `withheld` 1
@@ -792,10 +868,20 @@ def check(directory: Path) -> list[str]:
             faults.append("meta.schema_version is not "
                           f"{SCHEMA_VERSION}")
 
-        for day, target_id, secret, commitment, label in connection.execute(
-                "SELECT day, target_id, secret, commitment, pool_label "
+        for (day, target_id, protocol, secret, commitment, label, signature,
+             randomness, index, salt, proof, count, root) in connection.execute(
+                "SELECT day, target_id, protocol, secret, commitment, "
+                "pool_label, beacon_signature, randomness, target_index, "
+                "target_salt, target_proof, pool_image_count, pool_root "
                 "FROM days"):
-            if day_commitment(target_id, secret) != commitment:
+            if protocol == "vp1":
+                faults.extend(vp1_faults(
+                    day=day, target_id=target_id, signature=signature or "",
+                    randomness=randomness or "", target_index=index or 0,
+                    target_salt=salt or "",
+                    target_proof=json.loads(proof or "[]"),
+                    pool_count=count, pool_root=root or ""))
+            elif day_commitment(target_id, secret) != commitment:
                 faults.append(f"day {day}: the commitment does not agree")
             if label.startswith("dev-"):
                 faults.append(f"day {day}: a day of a development pool")

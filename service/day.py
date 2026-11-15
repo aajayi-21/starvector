@@ -26,6 +26,7 @@ from core.canonical import canonical_json_pretty, sha256_hex
 from pipeline.config import ConfigError, load_scoring_config
 from service import pool_keys, schedule, scoring, store
 from service.beacon import BeaconSource, fetch_pulse, make_source
+from service.pick_rule import pick_index
 from service.pool_root import leaf_salt, proof_agrees, proof_of
 from service.pulse import day_pulse_number
 from service.config import (ServiceConfig, ServiceConfigError,
@@ -33,21 +34,12 @@ from service.config import (ServiceConfig, ServiceConfigError,
 from validation import harness
 
 
-def pick_index(count: int, day: str, pick_seed: str) -> int:
-    """The position of the day's target in the pool sequence (R6).
-
-    The validation.v2 target rule with the day and the seed in the
-    digest. The modulo bias is below N / 2**64 and is accepted, as
-    there. Under spec VP1 the seed is the randomness of the pulse, and
-    a reader calculates this position again (section 3.5).
-    """
-    value = int(sha256_hex(f"day-target:{day}:{pick_seed}")[:16], 16)
-    return value % count
-
-
 def pick_target(image_ids: tuple[str, ...], day: str,
                 pick_seed: str) -> str:
-    """The day's target: a seeded, equally likely pick (R6)."""
+    """The day's target: a seeded, equally likely pick (R6).
+
+    service.pick_rule holds the rule, so a reader runs the same one.
+    """
     return image_ids[pick_index(len(image_ids), day, pick_seed)]
 
 

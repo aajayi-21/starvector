@@ -117,3 +117,4 @@ def test_the_root_changes_when_the_set_changes() -> None:
     assert pr.pool_root(ids, KEY) != pr.pool_root(
         [*ids[:-1], "img-other"], KEY)
     assert pr.pool_root(ids, KEY) != pr.pool_root(ids, bytes(32))
+

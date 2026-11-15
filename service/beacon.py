@@ -25,6 +25,10 @@ from service.pulse import (DRAND_QUICKNET, FAKE_CHAIN, BeaconChain, Pulse,
 BEACON_KINDS = ("drand", "fake")
 DRAND_RELAYS = ("https://api.drand.sh", "https://drand.cloudflare.com")
 
+# A plain client name: the Cloudflare relay refuses the default name of
+# urllib with HTTP 403 (seen 2026-11-14).
+_USER_AGENT = "starvector-beacon/1"
+
 # The longest pause between two attempts while a pulse is late.
 _BACKOFF_CAP_SECONDS = 30.0
 
@@ -86,9 +90,11 @@ class DrandRelays:
         found = []
         for relay in self.relays:
             address = f"{relay}/{self.chain.chain_hash}/public/{number}"
+            request = urllib.request.Request(
+                address, headers={"User-Agent": _USER_AGENT})
             try:
                 with urllib.request.urlopen(
-                        address, timeout=self.timeout_seconds) as reply:
+                        request, timeout=self.timeout_seconds) as reply:
                     raw = json.loads(reply.read())
             except (urllib.error.URLError, TimeoutError, OSError) as error:
                 raise BeaconUnavailable(f"{address}: {error}") from error
@@ -199,3 +205,28 @@ def parse_beacon_config(raw: object, source: str) -> BeaconConfig:
             raise ValueError(f"{source}.{name}: expected an integer from 0")
         values[name] = value
     return BeaconConfig(kind=kind, relays=tuple(relays), **values)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Read one pulse from the two drand relays and check it.
+
+        uv run python -m service.beacon 28832419
+
+    The live check of spec VP1 section 11. It runs by hand, because the
+    test suite refuses each network connection (CLAUDE.md section 7).
+    """
+    import sys
+
+    numbers = [int(value) for value in (argv or sys.argv[1:])]
+    if len(numbers) != 1:
+        print("usage: python -m service.beacon <pulse number>")
+        return 2
+    pulse = checked_pulse(DrandRelays(relays=DRAND_RELAYS).answers(numbers[0]),
+                          numbers[0])
+    print(f"pulse {pulse.number}: the two relays agree, randomness "
+          f"{pulse.randomness}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
