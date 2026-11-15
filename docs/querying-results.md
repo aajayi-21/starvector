@@ -13,7 +13,7 @@ revealed days of a production pool alone, and its `README.md` says what
 each table means. Do not publish the file of this document: it holds
 the responses of the day in play and the text of each account.
 
-The usual path is `data/index/results-v2.sqlite`. The file is a cache of
+The usual path is `data/index/results-v3.sqlite`. The file is a cache of
 the store (I4). A reveal builds it, and a console read builds it when the
 store moved. To build it by hand:
 
@@ -64,7 +64,7 @@ has none, and it stays byte-equal.
 Open the file read-only:
 
 ```bash
-sqlite3 -readonly data/index/results-v2.sqlite
+sqlite3 -readonly data/index/results-v3.sqlite
 ```
 
 Each player's mean trial score. Chance is 0.5.
@@ -124,7 +124,7 @@ one time. Tested with DuckDB 2.0.0.
 ```sql
 INSTALL sqlite;
 LOAD sqlite;
-ATTACH 'data/index/results-v2.sqlite' AS results (TYPE sqlite, READ_ONLY);
+ATTACH 'data/index/results-v3.sqlite' AS results (TYPE sqlite, READ_ONLY);
 SELECT player, COUNT(*) AS trials, ROUND(AVG(p), 3) AS mean_p
 FROM results.revealed_trials
 GROUP BY player;
