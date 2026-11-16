@@ -20,7 +20,7 @@ NOW = datetime.datetime(2026, 12, 4, 12, 0, tzinfo=datetime.UTC)
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     # The fake chain stands in for drand here: the build refuses it in a
-    # real snapshot (the test below), and this world has no network.
+    # published snapshot (the test below), and this world has no network.
     patch = pytest.MonkeyPatch()
     patch.setattr(public, "PUBLIC_CHAINS", ("drand-quicknet", "fake"))
     base = tmp_path_factory.mktemp("vp1-public")

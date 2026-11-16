@@ -240,7 +240,7 @@ def mint_player(service_config, *, player: str, display_name: str,
 def make_vp1(fixture: dict, root: Path, *, kind: str = "fake",
              closes_at_utc: str = "00:00") -> dict:
     """Turn a fixture world into a spec VP1 world: a pool key, a
-    committed pool root, a beacon block, and a close hour. The output
+    committed pool root, a beacon part, and a close hour. The output
     adds pool_roots_dir, key_path, and preparation_version_id."""
     import dataclasses
 

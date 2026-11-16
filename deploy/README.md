@@ -247,7 +247,49 @@ STARVECTOR_EXPORT_SALT=<a secret> .venv/bin/python -m service.index \
 script reads the revealed trial rows with the bearer:
 `GET /api/ops/trials?from=2026-09-01&to=2026-09-30&player=<name>`.
 
-## 8. The smoke checklist
+## 8. The pick after the close (spec VP1)
+
+From the first day after the player records start again (ruling D8), the
+production server picks each target from a drand pulse after the close.
+Do these steps on the box, in this sequence, before that day opens:
+
+1. The production pool is prepared, and the server config names its
+   scoring config.
+2. Make the pool key and the root file:
+
+   ```
+   uv run python -m service.pool_keys make \
+       --service-config configs/service/prod-wit.json
+   ```
+
+   The key goes to `data/pool-keys/<preparation version>.key`, mode
+   600, and the daily backup holds it with `data/`. Without the key a
+   close cannot make its proof and refuses to start. Do not put the key
+   in the repository.
+3. Commit `configs/pool-roots/<preparation version>.json` and push it to
+   the public default branch. The push must come before the first vp1
+   day opens: the repository history is the timestamp of the root.
+4. Add the two fields to `configs/service/prod-wit.json`:
+
+   ```
+   "pick_protocol": "vp1",
+   "beacon": {"kind": "drand"}
+   ```
+
+   The defaults are the two relays of the spec, a margin of 60 seconds,
+   a grace of 30 seconds, and 10 minutes of retries (ruling D2).
+5. `timedatectl` says `System clock synchronized: yes`. Each rollover
+   compares the clock with one of the drand relays, and an offset above 5
+   seconds
+   sends the failure ping.
+6. `uv run python -m service.beacon <a recent pulse number>` says that
+   the two relays agree.
+7. Stop and start the server unit.
+
+When a pool version retires, publish its key adjacent to its root file
+(ruling D5), so each reader can calculate the full root.
+
+## 9. The smoke checklist
 
 - The site answers on HTTPS with the app. `/history`,
   `/leaderboard`, and the other app paths load when typed into the

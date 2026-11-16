@@ -278,12 +278,12 @@ def _preparation_of(record: store.DayRecord) -> PreparationRecord:
 
 # The beacon chains that a public pick can name (spec VP1 section 7). The
 # fake chain of the tests and the development box is not one of them, so
-# a day that it picked does not pass as a public pick.
+# a day that it picked does not go public.
 PUBLIC_CHAINS = ("drand-quicknet",)
 
 
 def _day_faults(record: store.DayRecord) -> list[str]:
-    """The faults of one revealed day under its pick protocol."""
+    """The faults of one revealed day, by its pick protocol."""
     if record.protocol == "vp1" and record.beacon_chain not in PUBLIC_CHAINS:
         return [f"day {record.day}: the beacon {record.beacon_chain!r} is "
                 "not a public beacon"]

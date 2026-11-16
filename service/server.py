@@ -61,7 +61,7 @@ def _vp1_day_fields(record: store.DayRecord) -> dict:
     """The public pick facts of a vp1 day before the close (spec VP1 §6).
 
     Each is a function of the day label, the config, and the committed
-    pool root: none follows the target, which does not exist yet (R3).
+    pool root: none follows the target, which is not picked (R3).
     """
     assert record.beacon_chain is not None and record.beacon_round
     chain = chain_named(record.beacon_chain)
@@ -1651,7 +1651,7 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse(value)
 
     def _vp1_past_close(record: store.DayRecord) -> bool:
-        """True at or after the scheduled close of a vp1 day."""
+        """Checks if the clock is at or after the close of a vp1 day."""
         assert service_config.closes_at_utc is not None
         return schedule.is_due(record.day, utc_now(),
                                service_config.closes_at_utc)

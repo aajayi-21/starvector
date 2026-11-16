@@ -1,7 +1,7 @@
 # Spec VP1 — the pick after the close: a target that nobody knows during play
 
-**Status:** draft 2026-11-14. The owner chose the protocol on 2026-11-14.
-The values in §13 wait for rulings.
+**Status:** ruled 2026-11-14 (§13, D1 to D8 as proposed), built on branch
+`feat/post-close-pick`. §15 records the changes made at build time.
 **Phase:** protocol hardening before the first public day. It must land
 before the player records start again and before the first production
 pool, because a day that opened with the first protocol cannot get the
@@ -317,16 +317,16 @@ branch as the code.
   store keeps its commitment check.
 - **Public database.** A changed proof, a changed salt, or a changed
   randomness stops the build.
-- **One live check.** A test marked as network, not in the default
-  suite, gets pulse 28832419 from the two relays and checks the digest.
+- **One live check.** `uv run python -m service.beacon 28832419` gets the
+  pulse from the two relays and checks the digest. It runs by hand (§15).
 - **Prose.** Vale on this spec, the changed architecture text, and each
   docstring that the build writes.
 
 ## 12. Build items
 
 1. **VP1.1.** The rulings of §13 and the text of §9.
-2. **VP1.2.** The pure pieces in `core/`: the pulse formula, the Merkle
-   tree, the proof check. Unit tests with fixed vectors.
+2. **VP1.2.** The pure pieces in `service/` (§15): the pulse formula, the
+   Merkle tree, the proof check. Unit tests with fixed vectors.
 3. **VP1.3.** The pool key and root tool, and the first root file for the
    production pool.
 4. **VP1.4.** The beacon client in the shell (a protocol, a drand client,
@@ -337,7 +337,10 @@ branch as the code.
 
 Each item is one commit, green and Vale-clean on the touched prose.
 
-## 13. Open decisions
+## 13. Decisions, ruled 2026-11-14
+
+The owner ruled each value below as proposed on 2026-11-14.
+
 
 - **D1 — the beacon.** Proposed: drand quicknet through the two relays of
   §3.4. drand has some operators that work independently and a threshold
@@ -358,7 +361,7 @@ Each item is one commit, green and Vale-clean on the touched prose.
 - **D5 — the pool key at retirement.** Proposed: publish `pool_key` when a
   pool version retires. Then each reader can calculate each leaf and the
   full root.
-- **D6 — the words of §8.**
+- **D6 — the words of §8.** Proposed: the words of the table in §8.
 - **D7 — an external timestamp of the sends.** Proposed for a subsequent
   phase: at the close instant, a digest of the set of sends goes to a
   public timestamp server before the pulse time. It closes the last risk
@@ -375,3 +378,38 @@ Each item is one commit, green and Vale-clean on the touched prose.
 - **Hiding the pool count.** `N` is in the root and public from the open.
   It says how many photos the pool holds and nothing about which.
 - **The practice screen.** It replays revealed days and does not change.
+
+## 15. Changes at build time
+
+- **The pure pieces are in `service/`, not `core/`.** `service/pulse.py`,
+  `service/pool_root.py`, and `service/pick_rule.py` sit adjacent to
+  `pick_target`. `core/` holds the scoring layers, and the test
+  of invariant I1 refuses a name with "target" in a module of `core/`. The
+  pick is not a scoring layer.
+- **The relays get a plain client name.** One of the Cloudflare relays answers
+  HTTP 403 to the default name of `urllib`, seen on 2026-11-14. Each read
+  sends `starvector-beacon/1`. A pulse that is not published gets
+  HTTP 425 from `api.drand.sh` and HTTP 404 from `drand.cloudflare.com`,
+  and the close waits on the two answers.
+- **The live check is a command.** The test suite refuses each network
+  connection (`tests/conftest.py`), so §11's live check is
+  `python -m service.beacon <pulse>`, run by hand. It passed on
+  2026-11-14 for pulse 28832419.
+- **The clock check is in the rollover.** The health check of spec PL1 is
+  a ping with no lines. On a vp1 server, each rollover compares the server
+  clock with the `Date` header of one of the relays. Above 5 seconds it
+  writes a warning and sends the failure ping. It does not stop the steps. On
+  2026-11-14 the offset of the development box was 0.25 seconds.
+- **The words of §8 follow the protocol.** A vp1 day shows the words of
+  §8. A `commit-v1` day keeps the earlier words, because they are correct
+  for it, and the test season plays `commit-v1` days until ruling D8.
+  `GET /api/about` names `pick_protocol`, so the landing page says the
+  correct thing before a sign-in.
+- **A fake pick does not go public.** The public build refuses a vp1
+  day with a chain other than drand quicknet. The reveal screen shows a
+  notice on such a day.
+- **Schema versions.** The results index moves to schema 3 (a null
+  commitment), and the public database to schema 2 (the vp1 columns).
+- **The production config stays `commit-v1`.** Ruling D8 starts vp1 after
+  the player records start again, on the first production pool. The
+  runbook in `deploy/README.md` names the steps.

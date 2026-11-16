@@ -129,7 +129,7 @@ def test_the_reveal_answer_holds_the_proof(world) -> None:
 
 
 class _Late:
-    """A drand-like source: the pulse is at its time, never before."""
+    """A drand-like source: the pulse is at its time, not before."""
 
     chain = FAKE_CHAIN
 

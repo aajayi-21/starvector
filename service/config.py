@@ -62,7 +62,7 @@ class ServiceConfig:
 
     pick_protocol "vp1" (spec VP1) needs closes_at_utc, because the
     pulse that picks the target comes from the scheduled close, and a
-    beacon block. pool_roots_dir holds the committed pool roots.
+    beacon part. pool_roots_dir holds the committed pool roots.
     """
 
     player: str

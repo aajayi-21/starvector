@@ -118,3 +118,28 @@ def test_the_root_changes_when_the_set_changes() -> None:
         [*ids[:-1], "img-other"], KEY)
     assert pr.pool_root(ids, KEY) != pr.pool_root(ids, bytes(32))
 
+
+
+def test_the_offset_reads_an_http_date() -> None:
+    from service.beacon import offset_from_date
+
+    header = "Mon, 16 Nov 2026 00:00:00 GMT"
+    midnight = 1794787200.0
+    assert offset_from_date(header, midnight) == 0.0
+    assert offset_from_date(header, midnight + 7.5) == 7.5
+
+
+def test_the_rollover_warns_on_a_clock_that_is_off() -> None:
+    from service.beacon import BeaconUnavailable
+    from service.rollover import clock_agrees
+
+    lines: list[str] = []
+    assert clock_agrees(say=lines.append, offset=lambda: 1.0)
+    assert not clock_agrees(say=lines.append, offset=lambda: -9.0)
+    assert "off by -9.0 s" in lines[-1]
+
+    def unreachable() -> float:
+        raise BeaconUnavailable("no answer")
+
+    assert clock_agrees(say=lines.append, offset=unreachable)
+    assert "did not read a relay" in lines[-1]

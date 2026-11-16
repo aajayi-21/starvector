@@ -6,7 +6,7 @@ leaf has a secret salt, so a proof that names the hash of a sibling
 names no other image to a reader who tries image names.
 
 Each digest is the SHA-256 of a text, written as lowercase hex, so a
-reader with any SHA-256 tool can calculate it again:
+reader with a SHA-256 tool can calculate it again:
 
     salt  = HMAC-SHA256(pool_key, image_id)            (hex)
     leaf  = SHA-256("vp1-leaf:" + salt + ":" + image_id)
@@ -50,7 +50,7 @@ def root_digest(count: int, top: str) -> str:
 
 
 def _levels(leaves: Sequence[str]) -> list[list[str]]:
-    """Each level of the tree, from the leaves up to the top node."""
+    """Each level of the tree, from the leaves to the top node."""
     if not leaves:
         raise ProofError("a pool root needs at least one image")
     levels = [list(leaves)]
@@ -77,7 +77,7 @@ def pool_root(image_ids: Sequence[str], pool_key: bytes) -> str:
 
 def proof_of(image_ids: Sequence[str], pool_key: bytes,
              index: int) -> tuple[str, ...]:
-    """The proof of the leaf at index, from the leaf up to the top."""
+    """The proof of the leaf at index, from the leaf to the top."""
     if not 0 <= index < len(image_ids):
         raise ProofError(
             f"index {index} is not in a pool of {len(image_ids)}")
@@ -99,8 +99,8 @@ def root_from_proof(image_id: str, salt: str, index: int, count: int,
     """The pool root that a leaf and its proof give, or ProofError.
 
     The position and the count say at which levels the node carries
-    up with no step, so a proof with a step too many or too few, or a
-    step on the wrong side, raises.
+    up with no step, so a proof with one step more or less, or a step
+    on the incorrect side, raises.
     """
     if not 0 <= index < count:
         raise ProofError(f"index {index} is not in a pool of {count}")
@@ -128,7 +128,7 @@ def root_from_proof(image_id: str, salt: str, index: int, count: int,
 
 def proof_agrees(image_id: str, salt: str, index: int, count: int,
                  steps: Sequence[str], expected_root: str) -> bool:
-    """True when the leaf and its proof give the expected pool root."""
+    """Checks if the leaf and its proof give the expected pool root."""
     try:
         return root_from_proof(image_id, salt, index, count,
                                steps) == expected_root

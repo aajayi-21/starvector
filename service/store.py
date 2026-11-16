@@ -50,8 +50,8 @@ _DAY_FIELDS = ("day", "trial_code", "target_id", "pick_seed", "secret",
                "preparation_version_id", "status", "opened_at", "closed_at",
                "revealed_at")
 
-# The fields of a day under the pick after the close (spec VP1 section 6).
-# A record without them is a "commit-v1" day and keeps its stored form.
+# The fields of a day with the pick after the close (spec VP1 section 6).
+# A record without them is a "commit-v1" day and keeps its stored shape.
 _VP1_FIELDS = ("protocol", "pool_root", "pool_count", "beacon_chain",
                "beacon_round", "beacon_signature", "target_index",
                "target_salt", "target_proof")
@@ -463,7 +463,7 @@ def record_pick(store: Path, day: str, *, target_id: str, pick_seed: str,
 
     The caller holds the day's write lock. The day must be a vp1 day in
     "closing". A day with a pick keeps it: the same values answer the
-    stored record, and different values raise, because a close that
+    stored record, and different values stop it, because a close that
     runs again gets the same pulse and must get the same target.
     """
     record = read_day_record(store, day)

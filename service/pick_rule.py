@@ -17,7 +17,7 @@ def pick_index(count: int, day: str, pick_seed: str) -> int:
 
     The validation.v2 target rule with the day and the seed in the
     digest. The modulo bias is below N / 2**64 and is accepted, as
-    there. Under spec VP1 the seed is the randomness of the pulse.
+    there. In spec VP1 the seed is the randomness of the pulse.
     """
     digest = hashlib.sha256(f"day-target:{day}:{pick_seed}".encode())
     return int(digest.hexdigest()[:16], 16) % count
@@ -32,7 +32,7 @@ def vp1_faults(*, day: str, target_id: str, signature: str, randomness: str,
     An empty answer means the randomness is the digest of the signature,
     the position follows from the randomness, and the target with its
     salt and proof gives the committed pool root. Check 1, the BLS
-    signature, and check 5, the times, need the beacon key and the
+    signature, and check 5, the times, use the beacon key and the
     repository history.
     """
     faults = []

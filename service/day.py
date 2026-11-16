@@ -7,7 +7,7 @@ publishes the commitment and spends nothing (R5). Close is the one
 live step: it moves the day to "closing" before it scores, thus a
 late send refuses. Reveal publishes the secret.
 
-Under the pick after the close (spec VP1) the open stores no target. It
+With the pick after the close (spec VP1) the open stores no target. It
 names the beacon pulse that picks it, from the scheduled close. The
 close gets that pulse, records the pick with its pool proof, and then
 scores as before. No command prints
@@ -38,7 +38,7 @@ def pick_target(image_ids: tuple[str, ...], day: str,
                 pick_seed: str) -> str:
     """The day's target: a seeded, equally likely pick (R6).
 
-    service.pick_rule holds the rule, so a reader runs the same one.
+    `pick_rule.py` holds the rule, so a reader runs the same one.
     """
     return image_ids[pick_index(len(image_ids), day, pick_seed)]
 
@@ -228,8 +228,8 @@ def _check_vp1_due(record: store.DayRecord, source: BeaconSource,
                    service_config: ServiceConfig, now: float) -> None:
     """Refuse a close that starts too long before the pulse (spec VP1 §5).
 
-    The close waits for its pulse, and a close that starts hours early
-    blocks for hours and ends play early. The window is the margin plus
+    The close waits for its pulse, and a close that starts hours before
+    it waits for hours and ends play before its time. The window is the margin plus
     the grace, so the timer firing at the close instant goes through.
     """
     assert service_config.beacon is not None and record.beacon_round
@@ -301,8 +301,8 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
     comes from the day record's pinned config path, as before.
 
     A vp1 day (spec VP1) gets its pulse after the move to "closing" and
-    records the pick before it scores. beacon, now, and sleep are the
-    seams of the tests. A pulse that does not arrive raises, and the
+    records the pick before it scores. The beacon, clock, and sleep
+    arguments are the seams of the tests. A pulse that does not come raises, and the
     day stays in "closing" for a subsequent close.
     """
     import time

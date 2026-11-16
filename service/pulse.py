@@ -2,7 +2,7 @@
 
 Pure functions: the pulse number of an instant, the time of a pulse,
 and the check of the answers of the beacon sources for one pulse. The
-fetch is the shell's work (service/beacon.py). No clock and no network
+fetch is the shell's work (`beacon.py`). No clock and no network
 here.
 """
 
@@ -16,7 +16,7 @@ _HEX_RULE = re.compile(r"[0-9a-f]+")
 
 
 class PulseError(ValueError):
-    """An answer of a beacon source did not pass the checks."""
+    """An answer of a beacon source did not agree with the checks."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,7 +139,7 @@ def checked_pulse(answers: Sequence[Mapping[str, object]],
     Each answer must name the pulse, hold hex values, and have a
     randomness equal to the digest of its signature. The answers must
     agree on the signature (spec VP1 section 3.4). The check of the
-    BLS signature against the chain key is ruling D3's later step.
+    BLS signature against the chain key is a subsequent step (D3).
     """
     if len(answers) < 2:
         raise PulseError(

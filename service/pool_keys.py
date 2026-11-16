@@ -1,14 +1,13 @@
 """The pool key and the committed pool root (spec VP1 sections 3.1 and 6).
 
 The pool key is 32 random bytes for each pool version, in the data root
-and never in the repository. The pool root goes into the repository as
+and not in the repository. The pool root goes into the repository as
 `configs/pool-roots/<preparation_version_id>.json`, and its commit must
 be on the public default branch before the first day of that pool
 version opens: the history of the public repository is its timestamp.
 
-    uv run python -m service.pool_keys make --service-config <file>
-
-makes the key when there is none and writes the root file. It refuses
+The make command of this module (the runbook in deploy/README.md gives
+it) makes the key when there is none and writes the root file. It refuses
 to change a root file that holds a different root.
 """
 

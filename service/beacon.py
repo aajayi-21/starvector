@@ -2,8 +2,8 @@
 
 The shell side of the pick after the close: the HTTP reads of the drand
 relays, a fake source for the tests and the development box, and the
-wait for a pulse that is not published yet. The checks of an answer are
-pure and live in service/pulse.py.
+wait for a pulse that is not published. The checks of an answer are
+pure and live in `pulse.py`.
 
 There is no local fallback. A close that cannot get its pulse raises,
 and the day stays in "closing" until a subsequent close gets it. A
@@ -25,7 +25,7 @@ from service.pulse import (DRAND_QUICKNET, FAKE_CHAIN, BeaconChain, Pulse,
 BEACON_KINDS = ("drand", "fake")
 DRAND_RELAYS = ("https://api.drand.sh", "https://drand.cloudflare.com")
 
-# A plain client name: the Cloudflare relay refuses the default name of
+# A plain client name: the Cloudflare relays refuse the default name of
 # urllib with HTTP 403 (seen 2026-11-14).
 _USER_AGENT = "starvector-beacon/1"
 
@@ -38,12 +38,12 @@ class BeaconUnavailable(RuntimeError):
 
 
 class BeaconError(RuntimeError):
-    """The pulse did not arrive before the deadline, or did not check."""
+    """The pulse did not come before the deadline, or did not check."""
 
 
 @dataclass(frozen=True, slots=True)
 class BeaconConfig:
-    """The beacon block of the server config (spec VP1 rulings D1, D2).
+    """The beacon part of the server config (spec VP1 rulings D1, D2).
 
     margin_seconds puts the pulse after the scheduled close. grace and
     retry are the waits of section 5: the close tries until the pulse
@@ -77,7 +77,7 @@ class BeaconSource(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class DrandRelays:
-    """The drand HTTP relays: one GET for each relay."""
+    """The drand HTTP relays, with one read from each of them."""
 
     relays: tuple[str, ...]
     chain: BeaconChain = DRAND_QUICKNET
@@ -113,17 +113,17 @@ def fake_signature(number: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class FakeBeacon:
-    """A source that answers each pulse at once, with two equal answers.
+    """A source that answers each pulse with no wait, with two equal answers.
 
     It is for the tests and the development box. Its chain name is
-    "fake", which the day record holds, so a fake pick does not pass
+    "fake", which the day record holds, so a fake pick does not go
     as a public one.
     """
 
     chain: BeaconChain = FAKE_CHAIN
 
     def ready_at(self, number: int) -> int:
-        # Each fake pulse exists at once, so a test or a development box
+        # Each fake pulse is there with no wait, so a test or a development box
         # can close a day before its scheduled close.
         return 0
 
@@ -151,10 +151,10 @@ def fetch_pulse(source: BeaconSource, number: int, config: BeaconConfig, *,
                 sleep: Callable[[float], None] = time.sleep) -> Pulse:
     """The checked pulse, with the waits of spec VP1 section 5.
 
-    The close tries at once, and while the sources say the pulse is not
+    The close tries with no wait, and while the sources say the pulse is not
     there, it tries again with a growing pause until the pulse time
     plus the grace plus the retry window. An answer that does not
-    check raises at once: a wait does not repair it.
+    check raises with no wait: a wait does not repair it.
     """
     deadline = pulse_time(number, source.chain) + config.grace_seconds \
         + config.retry_seconds
@@ -176,8 +176,45 @@ def fetch_pulse(source: BeaconSource, number: int, config: BeaconConfig, *,
                 f"checks: {error}") from error
 
 
+# The clock offset above which the rollover warns (spec VP1 section 4).
+CLOCK_WARNING_SECONDS = 5.0
+
+
+def offset_from_date(date_header: str, local: float) -> float:
+    """The local clock minus the time in an HTTP Date header, in seconds.
+
+    The header has a resolution of one second, which is sufficient to
+    see an offset that matters against a margin of 60 seconds.
+    """
+    import email.utils
+
+    stamp = email.utils.parsedate_to_datetime(date_header)
+    return local - stamp.timestamp()
+
+
+def clock_offset(relay: str = DRAND_RELAYS[0],
+                 now: Callable[[], float] = time.time) -> float:
+    """The offset of the local clock from the Date header of the relays.
+
+    The send gate reads the server clock and the pulse reads the drand
+    clock, so a server clock that is late lets a send land after the
+    pulse (spec VP1 section 4). The read takes the middle of the
+    time of the read as the local instant.
+    """
+    request = urllib.request.Request(
+        f"{relay}/{DRAND_QUICKNET.chain_hash}/info",
+        headers={"User-Agent": _USER_AGENT})
+    before = now()
+    with urllib.request.urlopen(request, timeout=10.0) as reply:
+        date_header = reply.headers.get("Date")
+    after = now()
+    if date_header is None:
+        raise BeaconUnavailable(f"{relay}: the answer has no Date header")
+    return offset_from_date(date_header, (before + after) / 2)
+
+
 def parse_beacon_config(raw: object, source: str) -> BeaconConfig:
-    """Validate the beacon block of a server config file."""
+    """Check the beacon part of a server config file."""
     if not isinstance(raw, dict):
         raise ValueError(f"{source}: expected an object")
     known = {"kind", "relays", "margin_seconds", "grace_seconds",
@@ -210,9 +247,8 @@ def parse_beacon_config(raw: object, source: str) -> BeaconConfig:
 def main(argv: list[str] | None = None) -> int:
     """Read one pulse from the two drand relays and check it.
 
-        uv run python -m service.beacon 28832419
-
-    The live check of spec VP1 section 11. It runs by hand, because the
+    The argument is the pulse number. The live check of spec VP1
+    section 11, with the command in section 15. It runs by hand, because the
     test suite refuses each network connection (CLAUDE.md section 7).
     """
     import sys
