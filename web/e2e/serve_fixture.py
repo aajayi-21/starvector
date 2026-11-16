@@ -52,9 +52,9 @@ import datetime  # noqa: E402
 
 import uvicorn  # noqa: E402
 from svc_fixture import (FIXED_CLOCK, build_service_fixture,  # noqa: E402
-                         mixed_wire_record)
+                         make_vp1, mixed_wire_record)
 
-from service import access, players, signin, store  # noqa: E402
+from service import access, players, schedule, signin, store  # noqa: E402
 from service.day import close_day, open_day, reveal_day  # noqa: E402
 from service.digests import Argon2Digester  # noqa: E402
 from service.server import create_app  # noqa: E402
@@ -78,6 +78,13 @@ def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="sv-e2e-"))
     print(f"building the fixture store in {root}", file=sys.stderr, flush=True)
     fixture = build_service_fixture(root)
+    # SV_E2E_PROTOCOL=vp1 builds a world of the pick after the close
+    # (spec VP1) with the fake beacon, for a look at its screens by hand.
+    # Its days are dated from today, because a vp1 day refuses each send
+    # after its close by the clock. The Playwright suite runs the default.
+    vp1 = os.environ.get("SV_E2E_PROTOCOL") == "vp1"
+    if vp1:
+        fixture = make_vp1(fixture, root, closes_at_utc="22:00")
     # The close time lights the countdown field (spec S2 B8).
     config = dataclasses.replace(fixture["service_config"],
                                  closes_at_utc="22:00", signup="open")
@@ -86,6 +93,13 @@ def main() -> None:
         return FIXED_CLOCK
 
     now = datetime.datetime.now(datetime.UTC)
+    practice_day, live_day = PRACTICE_DAY, LIVE_DAY
+    if vp1:
+        live_day = schedule.label_at(now, "22:00")
+        practice_day = (datetime.date.fromisoformat(live_day)
+                        - datetime.timedelta(days=2)).isoformat()
+    seeds = {} if vp1 else {"pick_seed": "a" * 32, "secret": "b" * 64}
+    live_seeds = {} if vp1 else {"pick_seed": "c" * 32, "secret": "d" * 64}
     for name, label in CAST:
         players.make_player(config, player=name, display_name=label,
                             clock=clock)
@@ -96,23 +110,21 @@ def main() -> None:
 
     # A revealed, played day: the live history, leaderboard, and
     # stored-submission surfaces then hold one honest row.
-    open_day(config, date=PRACTICE_DAY, clock=clock,
-             pick_seed="a" * 32, secret="b" * 64)
+    open_day(config, date=practice_day, clock=clock, **seeds)
     store.write_once_json(
-        store.submission_path(root / "store", PRACTICE_DAY, "ade"),
-        {"day": PRACTICE_DAY, "player": "ade", "trial_id": "e" * 32,
+        store.submission_path(root / "store", practice_day, "ade"),
+        {"day": practice_day, "player": "ade", "trial_id": "e" * 32,
          "received_at": FIXED_CLOCK, "record": mixed_wire_record()})
     close_day(config, clock=clock)
     reveal_day(config, clock=clock)
-    open_day(config, date=LIVE_DAY, clock=clock,
-             pick_seed="c" * 32, secret="d" * 64)
+    open_day(config, date=live_day, clock=clock, **live_seeds)
     # The second player sends on the live day and the first does
     # not, thus the board the reveal spec opens holds two rows in a
     # sequence the scores set. This record is not the one the
     # browser draws, thus the two scores are different.
     store.write_once_json(
-        store.submission_path(root / "store", LIVE_DAY, "bru"),
-        {"day": LIVE_DAY, "player": "bru", "trial_id": "b" * 32,
+        store.submission_path(root / "store", live_day, "bru"),
+        {"day": live_day, "player": "bru", "trial_id": "b" * 32,
          "received_at": FIXED_CLOCK,
          "record": {**mixed_wire_record(),
                     "impressions": ["a wide flat plain", "warm light"]}})
