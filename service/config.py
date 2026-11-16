@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from service.beacon import BeaconConfig, parse_beacon_config
+
 CONFIG_VERSION = 1
 
 # The player name becomes a file name below store/days/<day>/, thus
@@ -23,7 +25,14 @@ _FIELDS = ("config_version", "player", "scoring_config", "data_root",
 
 # Optional fields parse when given and default when missing, so each
 # committed config stays readable (spec S2 ruling 3).
-_OPTIONAL_FIELDS = ("closes_at_utc", "signup", "public_data_url")
+_OPTIONAL_FIELDS = ("closes_at_utc", "signup", "public_data_url",
+                    "pick_protocol", "beacon", "pool_roots_dir")
+
+# The pick protocols (spec VP1 section 6). "commit-v1" picks at the open
+# and publishes a commitment. "vp1" picks after the close from a beacon
+# pulse. A config with no field reads as "commit-v1", thus each earlier
+# config keeps its behavior until the owner moves it (ruling D8).
+PICK_PROTOCOLS = ("commit-v1", "vp1")
 
 # The sign-up switch (spec A2 section 10.2). A config with no field
 # reads as "closed", thus each earlier config keeps its behavior.
@@ -50,6 +59,10 @@ class ServiceConfig:
 
     public_data_url is display-only (spec R1 section 3.1): the address
     of the published snapshots, which the account screen shows.
+
+    pick_protocol "vp1" (spec VP1) needs closes_at_utc, because the
+    pulse that picks the target comes from the scheduled close, and a
+    beacon part. pool_roots_dir holds the committed pool roots.
     """
 
     player: str
@@ -60,6 +73,9 @@ class ServiceConfig:
     closes_at_utc: str | None = None
     signup: str = "closed"
     public_data_url: str | None = None
+    pick_protocol: str = "commit-v1"
+    beacon: BeaconConfig | None = None
+    pool_roots_dir: str = "configs/pool-roots"
 
 
 def parse_service_config(raw: object, source: str) -> ServiceConfig:
@@ -111,6 +127,24 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
             or not public_data_url.startswith(("https://", "http://"))):
         raise ServiceConfigError(
             f"{source}.public_data_url: expected an http or https address")
+    pick_protocol = raw.get("pick_protocol", "commit-v1")
+    if pick_protocol not in PICK_PROTOCOLS:
+        raise ServiceConfigError(
+            f"{source}.pick_protocol: expected one of {list(PICK_PROTOCOLS)}")
+    beacon = None
+    if raw.get("beacon") is not None:
+        try:
+            beacon = parse_beacon_config(raw["beacon"], f"{source}.beacon")
+        except ValueError as error:
+            raise ServiceConfigError(str(error)) from error
+    if pick_protocol == "vp1" and (beacon is None or closes_at_utc is None):
+        raise ServiceConfigError(
+            f"{source}: pick_protocol \"vp1\" needs a beacon block and "
+            "closes_at_utc - the pulse comes from the scheduled close")
+    pool_roots_dir = raw.get("pool_roots_dir", "configs/pool-roots")
+    if not isinstance(pool_roots_dir, str) or not pool_roots_dir:
+        raise ServiceConfigError(
+            f"{source}.pool_roots_dir: expected a non-empty string")
     return ServiceConfig(
         player=raw["player"],
         scoring_config=raw["scoring_config"],
@@ -120,6 +154,9 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
         closes_at_utc=closes_at_utc,
         signup=signup,
         public_data_url=public_data_url,
+        pick_protocol=pick_protocol,
+        beacon=beacon,
+        pool_roots_dir=pool_roots_dir,
     )
 
 

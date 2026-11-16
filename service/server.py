@@ -46,11 +46,50 @@ from service import (access, auth, console, credits, digests, limits,
                      store)
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
+from service.pulse import chain_named, pulse_time
 
 # The D5 solo display inputs (spec S1 section 14a): display-only, a
 # fitted population comes with live players.
 POPULATION_MEAN = 0.0
 POPULATION_SPREAD = 0.15
+
+# The command of spec VP1 section 3.5 that checks a revealed vp1 day.
+_VP1_CHECK = "uv run python tools/check_day.py --reveal reveal.json"
+
+
+def _vp1_day_fields(record: store.DayRecord) -> dict:
+    """The public pick facts of a vp1 day before the close (spec VP1 §6).
+
+    Each is a function of the day label, the config, and the committed
+    pool root: none follows the target, which is not picked (R3).
+    """
+    assert record.beacon_chain is not None and record.beacon_round
+    chain = chain_named(record.beacon_chain)
+    return {
+        "protocol": record.protocol,
+        "pool_root": record.pool_root,
+        "pool_count": record.pool_count,
+        "beacon_chain": record.beacon_chain,
+        "beacon_chain_hash": chain.chain_hash,
+        "beacon_round": record.beacon_round,
+        "round_time": datetime.datetime.fromtimestamp(
+            pulse_time(record.beacon_round, chain),
+            datetime.UTC).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def _vp1_pick_fields(record: store.DayRecord) -> dict:
+    """The pick and its proof, for a revealed vp1 day (spec VP1 §3.3)."""
+    return {
+        **_vp1_day_fields(record),
+        "beacon_signature": record.beacon_signature,
+        "randomness": record.pick_seed,
+        "target_index": record.target_index,
+        "target_salt": record.target_salt,
+        "target_proof": None if record.target_proof is None
+        else list(record.target_proof),
+    }
+
 
 # Constant pre-reveal refusal bytes (R3): one body for each refused
 # path, with no target-dependent work before it.
@@ -314,7 +353,10 @@ def create_app(service_config: ServiceConfig,
     about_value = {"test_season": record.dev_only,
                    "photo_count": record.image_count,
                    "closes_at_utc": service_config.closes_at_utc,
-                   "public_data_url": service_config.public_data_url}
+                   "public_data_url": service_config.public_data_url,
+                   # The landing page says when the photo is picked
+                   # (spec VP1 section 8), before a sign-in.
+                   "pick_protocol": service_config.pick_protocol}
     # A day of this pool can be in a public snapshot (spec R1 section
     # 5), thus a send needs the agreement to the notice.
     publishes = not record.dev_only
@@ -1080,6 +1122,12 @@ def create_app(service_config: ServiceConfig,
                                            "day"}, status_code=404)
         from service.scoring import dev_rankings
 
+        if record.target_id is None:
+            # A vp1 day holds no target until the close (spec VP1).
+            return JSONResponse({"cause": "no-target-yet",
+                                 "detail": "the pulse after the close picks "
+                                           "this day's target"},
+                                status_code=409)
         try:
             # An earlier day scores with the resident context - a
             # drifted config gives the browser numbers different
@@ -1595,10 +1643,18 @@ def create_app(service_config: ServiceConfig,
             "min_strokes": gates.min_strokes_whole_drawing,
             "closes_at": closes_at,
         }
+        if record.protocol == "vp1":
+            value.update(_vp1_day_fields(record))
         if record.status == "revealed":
             value["target_id"] = record.target_id
             value["secret"] = record.secret
         return JSONResponse(value)
+
+    def _vp1_past_close(record: store.DayRecord) -> bool:
+        """Checks if the clock is at or after the close of a vp1 day."""
+        assert service_config.closes_at_utc is not None
+        return schedule.is_due(record.day, utc_now(),
+                               service_config.closes_at_utc)
 
     def _store_submission(day: str, caller: str, trial_id: str,
                           wire_record: object) -> Response | None:
@@ -1612,7 +1668,9 @@ def create_app(service_config: ServiceConfig,
         to the disk.
         """
         with store.day_write_lock(root, day):
-            if store.read_day_record(root, day).status != "open":
+            held = store.read_day_record(root, day)
+            if held.status != "open" or (
+                    held.protocol == "vp1" and _vp1_past_close(held)):
                 return JSONResponse({"cause": "day-closed"}, status_code=409)
             try:
                 store.write_once_json(
@@ -1658,6 +1716,11 @@ def create_app(service_config: ServiceConfig,
                                 status_code=409)
         record = store.read_day_record(root, day)
         if record.status != "open":
+            return JSONResponse({"cause": "day-closed"}, status_code=409)
+        # A vp1 day refuses by the clock too (spec VP1 section 3.3): the
+        # timer closes the day after its close instant, and a send in
+        # that time can come after the pulse that picks the target.
+        if record.protocol == "vp1" and _vp1_past_close(record):
             return JSONResponse({"cause": "day-closed"}, status_code=409)
         if store.submission_path(root, day, caller).is_file():
             return JSONResponse({"cause": "already-submitted"},
@@ -1715,9 +1778,13 @@ def create_app(service_config: ServiceConfig,
                         with resident_lock:
                             resident = resident_state.get("wired")
                         record = open_day(service_config, wired=resident)
-                        return 200, {"day": record.day,
-                                     "trial_code": record.trial_code,
-                                     "commitment": record.commitment}
+                        opened = {"day": record.day,
+                                  "trial_code": record.trial_code,
+                                  "commitment": record.commitment}
+                        if record.protocol == "vp1":
+                            opened |= {"protocol": record.protocol,
+                                       "beacon_round": record.beacon_round}
+                        return 200, opened
                     case "close":
                         # The one live step (R5): the server process
                         # needs the provider key in its environment for
@@ -1790,7 +1857,10 @@ def create_app(service_config: ServiceConfig,
             "target_id": record.target_id,
             "secret": record.secret,
             "commitment": record.commitment,
-            "check": "printf '%s:%s' TARGET SECRET | sha256sum",
+            "check": _VP1_CHECK if record.protocol == "vp1"
+            else "printf '%s:%s' TARGET SECRET | sha256sum",
+            **({"protocol": "commit-v1"} if record.protocol != "vp1"
+               else _vp1_pick_fields(record)),
             "trial": None if row is None else {
                 "p": row["p"], "decoy_count": row["decoy_count"],
                 "beaten": row["beaten"], "tied": row["tied"],

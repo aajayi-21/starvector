@@ -24,6 +24,7 @@ import {
   percentBeaten,
   sendCountText,
 } from "../ui/format";
+import { isPostClose } from "../ui/pick-copy";
 import { ResolveText } from "../ui/resolve-text";
 import { EpigraphFigure } from "./epigraph-figure";
 import { EPIGRAPHS } from "./epigraphs";
@@ -75,7 +76,7 @@ export function HomeScreen(): React.JSX.Element {
             </Link>
           </div>
           <Premise />
-          <HowItWorksSteps />
+          <HowItWorksSteps protocol={day.data?.protocol} />
         </section>
       ) : null}
 
@@ -145,7 +146,7 @@ function TodayCard(props: {
         <h2>The photo is revealed</h2>
         <p className="muted">
           {day.submitted
-            ? "See the hidden photo next to your sketch, and how close you came."
+            ? `See ${isPostClose(day.protocol) ? "the photo" : "the hidden photo"} next to your sketch, and how close you came.`
             : "You didn't send this one, but you can still see the photo."}
         </p>
         <SendCount day={day} />
@@ -195,7 +196,9 @@ function TodayCard(props: {
         <div className="stack">
           <div className="eyebrow">{eyebrow}</div>
           <h2 id="today-heading" style={{ fontSize: 26 }}>
-            Today's photo is hidden behind this code
+            {isPostClose(day.protocol)
+              ? "Today's photo is picked after the close"
+              : "Today's photo is hidden behind this code"}
           </h2>
           <CodeCells code={day.trial_code} />
           <p className="muted">

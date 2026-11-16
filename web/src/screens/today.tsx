@@ -61,6 +61,7 @@ import {
 import { CodeCells } from "../ui/code-cells";
 import { ClosesIn, ClosesInBadge } from "../ui/countdown";
 import { formatCloseMoment, formatDay } from "../ui/format";
+import { isPostClose } from "../ui/pick-copy";
 
 const DRAFT_DEBOUNCE_MS = 500;
 
@@ -494,8 +495,10 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
           <div className="row" style={{ gap: 16 }}>
             <CodeCells code={view.trial_code} />
             <p className="muted" style={{ maxWidth: 360 }}>
-              A photo is hidden behind this code. Sketch and describe whatever
-              comes to mind.{" "}
+              {isPostClose(view.protocol)
+                ? "The photo for this code is picked when the session closes."
+                : "A photo is hidden behind this code."}{" "}
+              Sketch and describe whatever comes to mind.{" "}
               <Link to="/how" className="small">
                 How it works
               </Link>
@@ -513,8 +516,10 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
         >
           <p>
             You started this sketch for the session of {formatDay(draftDay)},
-            and that session has closed, so it wasn't scored. A new photo is now
-            hidden behind a new code.
+            and that session has closed, so it wasn't scored.{" "}
+            {isPostClose(view.protocol)
+              ? "A new session has started with a new code."
+              : "A new photo is now hidden behind a new code."}
           </p>
           <div className="row">
             <button

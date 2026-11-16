@@ -364,6 +364,31 @@ def lock_is_held(path: Path) -> bool:
     return False
 
 
+def clock_agrees(*, say: Callable[[str], None],
+                 offset: Callable[[], float] | None = None) -> bool:
+    """Checks if the server clock is in the warning limit.
+
+    The health check of a vp1 server (spec VP1 section 4): a failure
+    ping tells the operator, and the steps of this run are not held
+    back, because a close is safe at each clock. Relays that do not
+    answer is a warning line and not a failure: the close itself waits
+    for the beacon.
+    """
+    from service.beacon import (CLOCK_WARNING_SECONDS, BeaconUnavailable,
+                                clock_offset)
+
+    try:
+        seconds = (offset or clock_offset)()
+    except (BeaconUnavailable, OSError, ValueError) as error:
+        say(f"rollover: the clock check did not read a relay: {error}")
+        return True
+    if abs(seconds) > CLOCK_WARNING_SECONDS:
+        say(f"rollover: the server clock is off by {seconds:+.1f} s from "
+            "the beacon - make the clock synchronization service run")
+        return False
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="service.rollover")
     parser.add_argument("--service-config",
@@ -446,6 +471,8 @@ def main(argv: list[str] | None = None) -> int:
     # The operator sets a pause, and a pause is not a failure: the
     # health check gets a success (spec BR1 section 7.2).
     failed = run.outcome == "failed"
+    if config.pick_protocol == "vp1" and not clock_agrees(say=print):
+        failed = True
     if failed:
         print("rollover failed - the run record in store/rollover/runs "
               "holds each line", file=sys.stderr)

@@ -38,7 +38,7 @@
 
 ## 1. What this system does
 
-Each day the application picks one image at random from a fixed collection and hides it. A player is given only a random identifier and attempts to describe or draw what the image shows. They submit some mixture of written impressions and sketches. The system must convert that submission into a number that measures how well it corresponds to the hidden image — and it must do so in a way where "no ability at all" produces a known, fixed baseline score.
+Each day a player gets only a random identifier and tries to describe or sketch an image that the system picks at random from a fixed collection after the submission window closes. They send some mixture of written impressions and sketches. The system must convert that submission into a number that measures its correspondence to the image that is picked — and it must do so such that "no ability at all" produces a known, fixed baseline score.
 
 The core design decision is that **the number is a rank, not a similarity.** The system compares the submission against every image in the collection, sorts them, and reports where the true image landed. If the player has no information about the target, the true image is just as likely to land anywhere in that sorted list, so the average score is exactly the midpoint. That baseline holds by construction — it does not depend on any calibration, threshold, or property of the models involved.
 
@@ -54,7 +54,7 @@ Every specialized term used in this document, defined once. Terms are used consi
 
 **Pool** — The fixed, curated set of images the system uses. Written `P`. Its size is written `N`. Every ranking is against the pool. Around 20,000 images. *Production ruling, 2026-09-02 (`docs/specs/production-pool.md`):* `N = 7,500`. The 20,000 figure stays as the ceiling the tiers of §18 are sized for.
 
-**Target** — The single hidden image chosen for a given day's trial. Written `t`. Always a member of the pool.
+**Target** — The single image chosen for a given day's trial, picked by a public beacon pulse after the submission window closes (§22). Written `t`. Always a member of the pool.
 
 **Decoy** — Every pool image that is not the target on a given trial. The player is ranked against these.
 
@@ -1108,9 +1108,9 @@ Failures here invalidate results no matter how good the scoring is.
 
 **Identifier hygiene.** The trial identifier must be a fresh random value with no derivation from image content, filename, pool index, or timestamp. Do not send the image to the client before reveal. Do not use guessable content addresses. Check that response size and timing do not correlate with properties of the target.
 
-**Shared-target leakage.** One shared daily target means one leak spoils the day for everyone. Either use per-player targets — which breaks cross-player comparison on a given day, but you are scoring ranks anyway, so it does not matter much — or accept the risk and add a submission lockout.
+**Shared-target leakage.** One shared daily target means one leak spoils the day for everyone. The pick after the close removes the risk: no target exists while the day is open, so there is nothing to leak (see below).
 
-**Commitment.** Publish a hash of the target identifier plus a secret when the day opens; publish the secret at close. Cheap, and it is the difference between "trust our database" and a claim anyone can verify.
+**The pick after the close.** The target comes from a public randomness beacon (drand quicknet) at a pulse after the scheduled close, from a pool fixed by a salted Merkle root committed to the public repository before the day opens. No target exists during play, so there is nothing to commit to, leak, or select. The open names the pulse. The reveal publishes the pulse, the target's position, and its proof, and anyone can recompute the pick. Sends are refused by the clock at the scheduled close, and the pulse comes from the scheduled instant plus a margin, not from the moment the operator closes. Spec VP1 (`docs/specs/post-close-pick.md`) defines it. This replaces the earlier commitment (a hash of the target and a secret published at open). That commitment proved the target did not change, but not that it was picked fairly. Days opened with it keep that check.
 
 **Autocomplete leakage.** If the impressions field offers autocomplete built from pool element lists, **it reveals the pool's composition to the player.** This is an integrity bug independent of scoring. Either build the suggestion list from an external dictionary, or drop autocomplete — do not build it from the pool and still call the trial blind.
 

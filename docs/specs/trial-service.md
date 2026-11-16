@@ -111,7 +111,9 @@ subsequent multi-player stage adds players, not migrations.
   alone.
 - **R4 — commitment before play.** Open publishes the commitment.
   Reveal publishes the secret and the target identifier, thus the
-  player can check the day was not rewritten (§22).
+  player can check the day was not rewritten (§22). (Changed by spec
+  VP1 for vp1 days: open publishes the beacon pulse and the pool root,
+  and the reveal publishes the pulse and the proof of the pick.)
 - **R5 — the context is precomputed, the close task is deliberate.**
   Open requires the pool index and the commonness tables to load and
   stops loudly when they are missing — it builds nothing and posts
@@ -123,6 +125,8 @@ subsequent multi-player stage adds players, not migrations.
   record. The decoy set is the pool minus the target's near-duplicate
   group (`core/ranking.py`, unchanged), and the decoy count is stored
   with the trial row (§16).
+  (Changed by spec VP1 for vp1 days: the seed is the randomness of
+  the beacon pulse after the close, and the pick is unchanged.)
 - **R7 — Layer 9 is pure, with no new dependency.** `core/aggregate.py`
   implements §17 as given: `skill number = n / S` with the
   `(n - 1) / S` unbiased variant, the evidence value from `2S`

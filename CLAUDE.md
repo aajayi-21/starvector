@@ -7,9 +7,11 @@ Working agreement for this repository. Read this before writing any code.
 ## 1. What this project is
 
 A scoring engine for a daily remote-viewing game. A player is shown only a random
-identifier and submits written impressions and/or a sketch describing a hidden image
-(the **target**). The system ranks the target against every other image in a fixed
-**pool** and reports the fraction of decoys it beat.
+identifier and submits written impressions and/or a sketch describing an image
+(the **target**) that a public beacon picks from the pool after the submission window
+closes, so no target exists during play (spec VP1). The system ranks the target
+against each other image in a fixed **pool** and reports the fraction of decoys it
+beat.
 
 **The output is a rank, not a similarity.** With no information the target is equally
 likely to land anywhere in the sorted list, so chance is exactly 0.5 by construction —

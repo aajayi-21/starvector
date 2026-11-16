@@ -4,7 +4,8 @@ Spec: S1 (in docs/specs/) section 5. The store is not a cache -
 nothing in it is rebuildable from elsewhere (Rule 4). Submissions
 and trial rows are one-write files: the writer makes them with an
 atomic, refusing primitive, and no code path edits them. The day
-record has one sanctioned edit path, the guarded status move.
+record has two sanctioned edit paths: the guarded status move, and
+the guarded record of the pick after the close (spec VP1).
 """
 
 import os
@@ -49,6 +50,12 @@ _DAY_FIELDS = ("day", "trial_code", "target_id", "pick_seed", "secret",
                "preparation_version_id", "status", "opened_at", "closed_at",
                "revealed_at")
 
+# The fields of a day with the pick after the close (spec VP1 section 6).
+# A record without them is a "commit-v1" day and keeps its stored shape.
+_VP1_FIELDS = ("protocol", "pool_root", "pool_count", "beacon_chain",
+               "beacon_round", "beacon_signature", "target_index",
+               "target_salt", "target_proof")
+
 _PLAYER_FIELDS = ("player", "display_name", "token_hash", "created_at",
                   "status")
 
@@ -79,18 +86,24 @@ class StoreError(ValueError):
 class DayRecord:
     """The stored facts of one day (spec S1 sections 3 and 5).
 
-    trial_code is the player-facing identifier of the hidden target:
-    six random characters, A-Z and 0-9, with no derivation from the
-    image (the section 22 hygiene rule and the section 14b ruling
-    of 2026-08-12). The page shows it front and center.
+    trial_code is the player-facing identifier of the day: six
+    random characters, A-Z and 0-9, with no derivation from the image
+    (the section 22 hygiene rule and the section 14b ruling of
+    2026-08-12). The page shows it front and center.
+
+    A "commit-v1" day holds the target, the seed, the secret, and the
+    commitment from the open. A "vp1" day (spec VP1) holds no target
+    and no seed until the close records the pulse, and it holds no
+    secret and no commitment at all. pick_seed is then the randomness
+    of the pulse, and target_proof is the sequence of Merkle steps.
     """
 
     day: str
     trial_code: str
-    target_id: str
-    pick_seed: str
-    secret: str
-    commitment: str
+    target_id: str | None
+    pick_seed: str | None
+    secret: str | None
+    commitment: str | None
     scoring_config_path: str
     scoring_config_hash: str
     preparation_version_id: str
@@ -98,6 +111,15 @@ class DayRecord:
     opened_at: str
     closed_at: str | None
     revealed_at: str | None
+    protocol: str = "commit-v1"
+    pool_root: str | None = None
+    pool_count: int | None = None
+    beacon_chain: str | None = None
+    beacon_round: int | None = None
+    beacon_signature: str | None = None
+    target_index: int | None = None
+    target_salt: str | None = None
+    target_proof: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,7 +320,18 @@ def _day_to_value(record: DayRecord) -> dict[str, JsonValue]:
         "opened_at": record.opened_at,
         "closed_at": record.closed_at,
         "revealed_at": record.revealed_at,
-    }
+    } | ({} if record.protocol == "commit-v1" else {
+        "protocol": record.protocol,
+        "pool_root": record.pool_root,
+        "pool_count": record.pool_count,
+        "beacon_chain": record.beacon_chain,
+        "beacon_round": record.beacon_round,
+        "beacon_signature": record.beacon_signature,
+        "target_index": record.target_index,
+        "target_salt": record.target_salt,
+        "target_proof": None if record.target_proof is None
+        else list(record.target_proof),
+    })
 
 
 def write_day_record(store: Path, record: DayRecord) -> None:
@@ -320,22 +353,33 @@ def read_day_record(store: Path, day: str) -> DayRecord:
     except (OSError, json.JSONDecodeError) as error:
         raise StoreError(f"{path}: cannot read the day record: {error}") \
             from error
-    if not isinstance(raw, dict) or set(raw) != set(_DAY_FIELDS):
+    legacy = set(_DAY_FIELDS)
+    if not isinstance(raw, dict) or set(raw) not in (
+            legacy, legacy | set(_VP1_FIELDS)):
         if isinstance(raw, dict) \
-                and set(_DAY_FIELDS) - set(raw) == {"trial_code"} \
-                and set(raw) <= set(_DAY_FIELDS):
+                and legacy - set(raw) == {"trial_code"} \
+                and set(raw) <= legacy:
             raise StoreError(
                 f"{path}: a day record from before the section 14b "
                 "trial-code amendment - run `uv run python -m "
                 "service.day migrate` one time to backfill it")
         raise StoreError(
             f"{path}: the day record must have the fields "
-            f"{sorted(_DAY_FIELDS)}")
+            f"{sorted(_DAY_FIELDS)}, with the spec VP1 fields or none")
+    vp1 = "protocol" in raw
+    if vp1 and raw["protocol"] != "vp1":
+        raise StoreError(f"{path}.protocol: expected \"vp1\"")
     for name in _DAY_FIELDS:
         value = raw[name]
         if name in ("closed_at", "revealed_at"):
             if value is not None and not isinstance(value, str):
                 raise StoreError(f"{path}.{name}: expected a string or null")
+            continue
+        if vp1 and name in ("secret", "commitment"):
+            if value is not None:
+                raise StoreError(f"{path}.{name}: a vp1 day holds none")
+            continue
+        if vp1 and name in ("target_id", "pick_seed") and value is None:
             continue
         if not isinstance(value, str) or not value:
             raise StoreError(f"{path}.{name}: expected a non-empty string")
@@ -345,7 +389,39 @@ def read_day_record(store: Path, day: str) -> DayRecord:
     if not re.fullmatch(r"[A-Z0-9]{6}", raw["trial_code"]):
         raise StoreError(
             f"{path}.trial_code: expected six characters, A-Z and 0-9")
+    if vp1:
+        _check_vp1_fields(path, raw)
+        raw = {**raw, "target_proof": None if raw["target_proof"] is None
+               else tuple(raw["target_proof"])}
     return DayRecord(**raw)
+
+
+def _check_vp1_fields(path: Path, raw: dict) -> None:
+    """The types of the spec VP1 fields, and the pick that is all or none."""
+    for name in ("pool_root", "beacon_chain"):
+        if not isinstance(raw[name], str) or not raw[name]:
+            raise StoreError(f"{path}.{name}: expected a non-empty string")
+    for name in ("pool_count", "beacon_round"):
+        value = raw[name]
+        if not isinstance(value, int) or isinstance(value, bool) \
+                or value < 1:
+            raise StoreError(f"{path}.{name}: expected a positive integer")
+    pick = ("target_id", "pick_seed", "beacon_signature", "target_index",
+            "target_salt", "target_proof")
+    present = [raw[name] is not None for name in pick]
+    if any(present) and not all(present):
+        raise StoreError(f"{path}: the pick fields are all set or all null")
+    if all(present):
+        index = raw["target_index"]
+        if not isinstance(index, int) or isinstance(index, bool) \
+                or not 0 <= index < raw["pool_count"]:
+            raise StoreError(f"{path}.target_index: not in the pool")
+        steps = raw["target_proof"]
+        if not isinstance(steps, list) or not all(
+                isinstance(step, str) for step in steps):
+            raise StoreError(f"{path}.target_proof: expected strings")
+    elif raw["status"] in ("closed", "revealed"):
+        raise StoreError(f"{path}: a {raw['status']} vp1 day has no pick")
 
 
 def update_day_status(store: Path, day: str, *, expect_status: str,
@@ -378,6 +454,35 @@ def update_day_status(store: Path, day: str, *, expect_status: str,
                      **{timestamp_field: timestamp})
     _replace_json(day_record_path(store, day), _day_to_value(moved))
     return moved
+
+
+def record_pick(store: Path, day: str, *, target_id: str, pick_seed: str,
+                beacon_signature: str, target_index: int, target_salt: str,
+                target_proof: tuple[str, ...]) -> DayRecord:
+    """The second sanctioned day-record edit: the pick of a vp1 day.
+
+    The caller holds the day's write lock. The day must be a vp1 day in
+    "closing". A day with a pick keeps it: the same values answer the
+    stored record, and different values stop it, because a close that
+    runs again gets the same pulse and must get the same target.
+    """
+    record = read_day_record(store, day)
+    if record.protocol != "vp1" or record.status != "closing":
+        raise StoreError(
+            f"day {day}: a pick is recorded on a vp1 day in 'closing', "
+            f"got {record.protocol} in {record.status!r}")
+    picked = replace(record, target_id=target_id, pick_seed=pick_seed,
+                     beacon_signature=beacon_signature,
+                     target_index=target_index, target_salt=target_salt,
+                     target_proof=tuple(target_proof))
+    if record.target_id is not None:
+        if picked != record:
+            raise StoreError(
+                f"day {day}: a different pick is recorded - the pulse or "
+                "the pool moved between close runs")
+        return record
+    _replace_json(day_record_path(store, day), _day_to_value(picked))
+    return picked
 
 
 def read_json_or_none(path: Path) -> dict | None:

@@ -247,7 +247,83 @@ STARVECTOR_EXPORT_SALT=<a secret> .venv/bin/python -m service.index \
 script reads the revealed trial rows with the bearer:
 `GET /api/ops/trials?from=2026-09-01&to=2026-09-30&player=<name>`.
 
-## 8. The smoke checklist
+## 8. The pick after the close (spec VP1)
+
+From the first day after the player records start again (ruling D8), the
+production server picks each target from a drand pulse after the close.
+Do these steps before that day opens. The box reads
+`/etc/starvector/service.json` and runs the app as `starvector` in
+`/srv/starvector/app`.
+
+1. The production pool is prepared and copied into `data/`, and
+   `/etc/starvector/service.json` names its scoring config and holds
+   `"closes_at_utc"`.
+2. On the box, make the pool key and the root file:
+
+   ```
+   cd /srv/starvector/app
+   sudo -u starvector .venv/bin/python -m service.pool_keys make \
+       --service-config /etc/starvector/service.json
+   ```
+
+   The key goes to `data/pool-keys/<preparation version>.key`, mode
+   600, and the daily backup holds it with `data/`. Without the key a
+   close cannot make its proof and refuses to start. Do not put the key
+   in the repository, and do not make a second one: a new key gives a
+   new root.
+3. Put the root file in the public repository. Copy it to the laptop,
+   commit it, and push it to the default branch:
+
+   ```
+   scp <box>:/srv/starvector/app/configs/pool-roots/<version>.json \
+       configs/pool-roots/
+   git add configs/pool-roots && git commit -m "Pool root of <version>"
+   git push
+   ```
+
+   The push must come before the first vp1 day opens: the repository
+   history is the timestamp of the root. Then, on the box, remove the
+   copy that the make command wrote and get the commit, so the checkout
+   is clean:
+
+   ```
+   sudo -u starvector rm configs/pool-roots/<version>.json
+   sudo -u starvector git pull
+   ```
+
+4. Add the two fields to `/etc/starvector/service.json`:
+
+   ```
+   "pick_protocol": "vp1",
+   "beacon": {"kind": "drand"}
+   ```
+
+   The defaults are the two relays of the spec, a margin of 60 seconds,
+   a grace of 30 seconds, and 10 minutes of retries (ruling D2).
+5. `timedatectl` says `System clock synchronized: yes`. Each rollover
+   compares the clock with one of the drand relays, and an offset above
+   5 seconds sends the failure ping.
+6. Check that the two relays agree on a recent pulse:
+
+   ```
+   ROUND=$(curl -s https://api.drand.sh/52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971/public/latest \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)["round"])')
+   sudo -u starvector .venv/bin/python -m service.beacon "$ROUND"
+   ```
+
+7. Load the new config:
+
+   ```
+   sudo systemctl restart starvector
+   ```
+
+   The next day that opens is a vp1 day. `GET /api/day` then holds
+   `"protocol": "vp1"` and the pulse number.
+
+When a pool version retires, publish its key adjacent to its root file
+(ruling D5), so each reader can calculate the full root.
+
+## 9. The smoke checklist
 
 - The site answers on HTTPS with the app. `/history`,
   `/leaderboard`, and the other app paths load when typed into the

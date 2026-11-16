@@ -27,6 +27,7 @@ import { ReplayCanvas } from "../sketch/canvas";
 import { AvatarCircle } from "../ui/avatar";
 import { ChanceMeter } from "../ui/chance-meter";
 import { formatDay, ordinal, percentBeaten } from "../ui/format";
+import { isPostClose, photoNoun } from "../ui/pick-copy";
 import { PrivateRowBadge } from "../ui/private-row-badge";
 import { ShareResultButton } from "../ui/share-button";
 
@@ -105,7 +106,9 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
         <div className="eyebrow">Results · {formatDay(view.day)}</div>
         <h1>
           {trial === null
-            ? "The hidden photo"
+            ? isPostClose(view.protocol)
+              ? "The day's photo"
+              : "The hidden photo"
             : `You beat ${percentBeaten(trial.p)}% of the photos`}
         </h1>
       </div>
@@ -115,10 +118,18 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
           {trial === null ? (
             <p className="muted">
               You didn't send a sketch this day, so there's no result — but
-              here's the photo that was hidden.
+              here's{" "}
+              {isPostClose(view.protocol)
+                ? "the day's photo"
+                : "the photo that was hidden"}
+              .
             </p>
           ) : (
-            <ResultSummary trial={trial} day={view.day} />
+            <ResultSummary
+              trial={trial}
+              day={view.day}
+              protocol={view.protocol}
+            />
           )}
         </section>
         <div className="pictures">
@@ -128,12 +139,14 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
                 src={api.imageUrl(view.target_id)}
                 alt={
                   view.credit?.title ??
-                  `Hidden target of ${formatDay(view.day)}`
+                  `${isPostClose(view.protocol) ? "The photo" : "Hidden target"} of ${formatDay(view.day)}`
                 }
               />
             </div>
             <figcaption className="stack-sm">
-              <span style={{ fontWeight: 600 }}>The hidden photo</span>
+              <span style={{ fontWeight: 600 }}>
+                {isPostClose(view.protocol) ? "The photo" : "The hidden photo"}
+              </span>
               <Credit credit={view.credit} />
             </figcaption>
           </figure>
@@ -175,7 +188,11 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
         />
       </div>
 
-      <Fairness view={view} />
+      {isPostClose(view.protocol) ? (
+        <PulseFairness view={view} />
+      ) : (
+        <Fairness view={view} />
+      )}
     </div>
   );
 }
@@ -208,15 +225,17 @@ function SketchReplay(props: {
 function ResultSummary(props: {
   trial: TrialValue;
   day: string;
+  protocol: RevealView["protocol"];
 }): React.JSX.Element {
   const { trial } = props;
+  const noun = photoNoun(props.protocol);
   const percent = percentBeaten(trial.p);
   const total = trial.decoy_count + 1;
   return (
     <div className="stack">
       <div className="big-number">{percent}%</div>
       <p style={{ fontSize: 17 }}>
-        Your sketch matched the hidden photo better than{" "}
+        Your sketch matched {noun} better than{" "}
         <strong>
           {trial.beaten} of the other {trial.decoy_count}
         </strong>{" "}
@@ -224,8 +243,9 @@ function ResultSummary(props: {
       </p>
       <ChanceMeter p={trial.p} />
       <p className="muted small">
-        The hidden photo was your {ordinal(trial.target_rank)}-closest match out
-        of {total}. Guessing averages 50%, and one day says little on its own —{" "}
+        {noun.charAt(0).toUpperCase() + noun.slice(1)} was your{" "}
+        {ordinal(trial.target_rank)}-closest match out of {total}. Guessing
+        averages 50%, and one day says little on its own —{" "}
         <Link to="/history">your results</Link> combine many days.
       </p>
       <div>
@@ -412,6 +432,119 @@ function Fairness(props: { view: RevealView }): React.JSX.Element {
           <code style={mono}>
             printf '%s:%s' {view.target_id} {view.secret} | sha256sum
           </code>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+/** The fields a reader's check reads (spec VP1 §3.5), as one file. */
+function checkFile(view: RevealView): string {
+  return `${JSON.stringify(
+    {
+      day: view.day,
+      protocol: view.protocol,
+      target_id: view.target_id,
+      beacon_chain: view.beacon_chain,
+      beacon_round: view.beacon_round,
+      round_time: view.round_time,
+      beacon_signature: view.beacon_signature,
+      randomness: view.randomness,
+      target_index: view.target_index,
+      target_salt: view.target_salt,
+      target_proof: view.target_proof,
+      pool_count: view.pool_count,
+      pool_root: view.pool_root,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function saveCheckFile(view: RevealView): void {
+  const blob = new Blob([checkFile(view)], { type: "application/json" });
+  const address = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = address;
+  anchor.download = "reveal.json";
+  anchor.click();
+  URL.revokeObjectURL(address);
+}
+
+/**
+ * The fairness check of a vp1 day (spec VP1 §3.5): the pulse that
+ * picked the photo, its position in the committed set, and the command
+ * that rechecks it from a saved file.
+ */
+function PulseFairness(props: { view: RevealView }): React.JSX.Element {
+  const { view } = props;
+  const mono: React.CSSProperties = {
+    fontFamily: "var(--mono)",
+    fontSize: 13,
+    wordBreak: "break-all",
+    background: "var(--surface-2)",
+    padding: "8px 10px",
+    borderRadius: 8,
+  };
+  const publicBeacon = view.beacon_chain === "drand-quicknet";
+  const pulseAddress = `https://api.drand.sh/${view.beacon_chain_hash}/public/${view.beacon_round}`;
+  return (
+    <details className="card disclosure">
+      <summary>Check that this day was fair</summary>
+      <div className="disclosure-body">
+        <p className="muted small">
+          No photo was chosen while this day was open, so nobody could know it.
+          A minute after the close, pulse {view.beacon_round} of the drand
+          public randomness beacon picked it from a set of {view.pool_count}{" "}
+          photos. The set's fingerprint was published before the day opened, so
+          it couldn't be changed to suit the pulse.
+        </p>
+        {publicBeacon ? null : (
+          <div className="notice" role="note">
+            This day used a test beacon, not the public one, so its pick proves
+            nothing.
+          </div>
+        )}
+        <div className="stack-sm">
+          <span className="label">Beacon pulse</span>
+          <code style={mono}>
+            {publicBeacon ? (
+              <a href={pulseAddress} target="_blank" rel="noreferrer">
+                {view.beacon_round}
+              </a>
+            ) : (
+              view.beacon_round
+            )}{" "}
+            at {view.round_time}
+          </code>
+        </div>
+        <div className="stack-sm">
+          <span className="label">Randomness from that pulse</span>
+          <code style={mono}>{view.randomness}</code>
+        </div>
+        <div className="stack-sm">
+          <span className="label">Photo id and its place in the set</span>
+          <code style={mono}>
+            {view.target_id}, position {view.target_index} (from 0) of{" "}
+            {view.pool_count}
+          </code>
+        </div>
+        <div className="stack-sm">
+          <span className="label">Fingerprint of the set</span>
+          <code style={mono}>{view.pool_root}</code>
+        </div>
+        <div className="stack-sm">
+          <span className="label">Check it yourself</span>
+          <div className="row">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => saveCheckFile(view)}
+            >
+              Save the check file
+            </button>
+          </div>
+          <code style={mono}>{view.check}</code>
         </div>
       </div>
     </details>

@@ -45,7 +45,7 @@ from pathlib import Path
 from service import store
 from service.config import ServiceConfigError, load_service_config
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE meta (
@@ -68,7 +68,7 @@ CREATE TABLE days (
   day TEXT PRIMARY KEY,
   trial_code TEXT NOT NULL,
   status TEXT NOT NULL,
-  commitment TEXT NOT NULL,
+  commitment TEXT,
   target_id TEXT,
   secret TEXT,
   scoring_config_path TEXT NOT NULL,

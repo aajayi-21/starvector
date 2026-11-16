@@ -261,6 +261,7 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
         photo_count: 40,
         closes_at_utc: "22:00",
         public_data_url: null,
+        pick_protocol: "commit-v1",
       }),
     getSchedule: () => Promise.resolve(scheduleFixture()),
     setPause: (paused, note) => {

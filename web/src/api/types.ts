@@ -13,11 +13,30 @@
  */
 export type DayStatus = "open" | "closing" | "closed" | "revealed";
 
-export interface DayView {
+/** How the day's target is picked (spec VP1 §6). */
+export type PickProtocol = "commit-v1" | "vp1";
+
+/**
+ * The public pick facts of a vp1 day (spec VP1 §3.3). Each is known at
+ * the open: the pulse that picks the target, and the committed pool.
+ */
+export interface PulseFacts {
+  protocol: "vp1";
+  pool_root: string;
+  pool_count: number;
+  beacon_chain: string;
+  beacon_chain_hash: string;
+  beacon_round: number;
+  /** The UTC time of the pulse, ISO 8601. */
+  round_time: string;
+}
+
+export interface DayView extends Partial<PulseFacts> {
   day: string;
   trial_code: string;
   status: DayStatus;
-  commitment: string;
+  /** Null on a vp1 day: no target exists to commit to. */
+  commitment: string | null;
   player: string;
   submitted: boolean;
   /** Stored sends for the day, all players (spec H1 §3). */
@@ -94,14 +113,22 @@ export interface ImageCredit {
   page: string;
 }
 
-export interface RevealView {
+export interface RevealView extends Partial<Omit<PulseFacts, "protocol">> {
   day: string;
+  protocol: PickProtocol;
   /** Null when the server holds no release manifest. */
   credit: ImageCredit | null;
   target_id: string;
-  secret: string;
-  commitment: string;
+  /** Null on a vp1 day. */
+  secret: string | null;
+  commitment: string | null;
   check: string;
+  /** The pick and its proof, on a vp1 day (spec VP1 §3.3). */
+  beacon_signature?: string;
+  randomness?: string;
+  target_index?: number;
+  target_salt?: string;
+  target_proof?: string[];
   trial: TrialValue | null;
   report: ReportRow[];
 }
@@ -257,6 +284,8 @@ export interface AboutView {
    * downloaded (spec R1 §3.1), or null when none is published yet.
    */
   public_data_url: string | null;
+  /** When the server picks the target (spec VP1 §8). */
+  pick_protocol: PickProtocol;
 }
 
 export interface SessionRow {

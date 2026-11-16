@@ -235,3 +235,33 @@ def mint_player(service_config, *, player: str, display_name: str,
     record = players.make_player(service_config, player=player,
                                  display_name=display_name, **more)
     return record, f"{player}.{secret or 's' * 43}"
+
+
+def make_vp1(fixture: dict, root: Path, *, kind: str = "fake",
+             closes_at_utc: str = "00:00") -> dict:
+    """Turn a fixture world into a spec VP1 world: a pool key, a
+    committed pool root, a beacon part, and a close hour. The output
+    adds pool_roots_dir, key_path, and preparation_version_id."""
+    import dataclasses
+
+    from pipeline.config import load_scoring_config
+    from service import pool_keys, scoring
+    from service.beacon import parse_beacon_config
+
+    config = fixture["service_config"]
+    wired = scoring.wire_for_open(
+        load_scoring_config(Path(config.scoring_config)),
+        config.scoring_config, Path(config.data_root))
+    version = wired.preparation_version_id
+    key_path = pool_keys.key_path(Path(config.data_root), version)
+    key = pool_keys.make_key(key_path)
+    roots_dir = root / "pool-roots"
+    pool_keys.write_root_file(wired.context.index.image_ids, key, roots_dir,
+                              version, "2026-08-01")
+    vp1_config = dataclasses.replace(
+        config, closes_at_utc=closes_at_utc, pick_protocol="vp1",
+        beacon=parse_beacon_config({"kind": kind}, "test.beacon"),
+        pool_roots_dir=str(roots_dir))
+    return {**fixture, "service_config": vp1_config,
+            "pool_roots_dir": roots_dir, "key_path": key_path,
+            "pool_key": key, "preparation_version_id": version}

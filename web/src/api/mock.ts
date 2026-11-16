@@ -542,6 +542,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
   function revealFor(day: string): RevealView {
     return {
       day,
+      protocol: "commit-v1",
       credit: creditFor(targetId(day)),
       target_id: targetId(day),
       secret: seededHex(`secret:${day}`, 64),
@@ -898,6 +899,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         photo_count: DECOY_COUNT + 1,
         closes_at_utc: "22:00",
         public_data_url: options.publicDataUrl ?? null,
+        pick_protocol: "commit-v1",
       });
     },
     getSessions(): Promise<SessionsView> {

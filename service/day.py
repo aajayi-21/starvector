@@ -5,7 +5,12 @@ docs/specs/beta-readiness.md section 3. Each status move is
 deliberate, repeatable, and refuses to run out of sequence. Open
 publishes the commitment and spends nothing (R5). Close is the one
 live step: it moves the day to "closing" before it scores, thus a
-late send refuses. Reveal publishes the secret. No command prints
+late send refuses. Reveal publishes the secret.
+
+With the pick after the close (spec VP1) the open stores no target. It
+names the beacon pulse that picks it, from the scheduled close. The
+close gets that pulse, records the pick with its pool proof, and then
+scores as before. No command prints
 score information while the day is open (R3 covers the terminal).
 """
 
@@ -19,7 +24,11 @@ from pathlib import Path
 
 from core.canonical import canonical_json_pretty, sha256_hex
 from pipeline.config import ConfigError, load_scoring_config
-from service import schedule, scoring, store
+from service import pool_keys, schedule, scoring, store
+from service.beacon import BeaconSource, fetch_pulse, make_source
+from service.pick_rule import pick_index
+from service.pool_root import leaf_salt, proof_agrees, proof_of
+from service.pulse import day_pulse_number
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from validation import harness
@@ -29,12 +38,9 @@ def pick_target(image_ids: tuple[str, ...], day: str,
                 pick_seed: str) -> str:
     """The day's target: a seeded, equally likely pick (R6).
 
-    The validation.v2 target rule with the day and the seed in the
-    digest. The modulo bias is below N / 2**64 and is accepted, as
-    there.
+    `pick_rule.py` holds the rule, so a reader runs the same one.
     """
-    value = int(sha256_hex(f"day-target:{day}:{pick_seed}")[:16], 16)
-    return image_ids[value % len(image_ids)]
+    return image_ids[pick_index(len(image_ids), day, pick_seed)]
 
 
 def day_commitment(target_id: str, secret: str) -> str:
@@ -148,9 +154,18 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
         config = load_scoring_config(Path(config_path))
         wired = scoring.wire_for_open(config, config_path,
                                       Path(service_config.data_root))
+    trial_code = trial_code or make_trial_code()
+    if service_config.pick_protocol == "vp1":
+        if pick_seed is not None or secret is not None:
+            raise ValueError("a vp1 day takes no seed and no secret at the "
+                             "open - the pulse after the close picks it")
+        record = _vp1_open_record(service_config, wired, day, trial_code,
+                                  config_path, clock())
+        store.ensure_store(root)
+        store.write_day_record(root, record)
+        return record
     pick_seed = pick_seed or secrets.token_hex(16)
     secret = secret or secrets.token_hex(32)
-    trial_code = trial_code or make_trial_code()
     target_id = pick_target(wired.context.index.image_ids, day, pick_seed)
     record = store.DayRecord(
         day=day, trial_code=trial_code, target_id=target_id,
@@ -165,10 +180,107 @@ def open_day(service_config: ServiceConfig, *, date: str | None = None,
     return record
 
 
+def _vp1_open_record(service_config: ServiceConfig,
+                     wired: scoring.WiredScoring, day: str, trial_code: str,
+                     config_path: str, opened_at: str) -> store.DayRecord:
+    """The record of a vp1 day at the open: no target, a named pulse.
+
+    The committed pool root must agree with the pool and the pool key,
+    or the day does not open (spec VP1 section 3.1).
+    """
+    beacon = service_config.beacon
+    assert beacon is not None and service_config.closes_at_utc is not None
+    version = wired.preparation_version_id
+    key = pool_keys.read_key(
+        pool_keys.key_path(Path(service_config.data_root), version))
+    root_file = pool_keys.checked_root(
+        wired.context.index.image_ids, key,
+        Path(service_config.pool_roots_dir), version)
+    closes_at = schedule.closes_at_for(day, service_config.closes_at_utc)
+    number = day_pulse_number(int(closes_at.timestamp()),
+                              beacon.margin_seconds, beacon.chain)
+    return store.DayRecord(
+        day=day, trial_code=trial_code, target_id=None, pick_seed=None,
+        secret=None, commitment=None, scoring_config_path=config_path,
+        scoring_config_hash=wired.scoring_hash,
+        preparation_version_id=version, status="open", opened_at=opened_at,
+        closed_at=None, revealed_at=None, protocol="vp1",
+        pool_root=root_file.pool_root, pool_count=root_file.pool_count,
+        beacon_chain=beacon.chain.name, beacon_round=number)
+
+
+def _vp1_source(service_config: ServiceConfig, record: store.DayRecord,
+                beacon: BeaconSource | None) -> BeaconSource:
+    """The source of the day's pulse, which must be on the day's chain."""
+    if service_config.beacon is None:
+        raise store.StoreError(
+            f"day {record.day} is a vp1 day and the server config has no "
+            "beacon block")
+    source = beacon or make_source(service_config.beacon)
+    if source.chain.name != record.beacon_chain:
+        raise store.StoreError(
+            f"day {record.day} names the beacon {record.beacon_chain!r} and "
+            f"the server reads {source.chain.name!r}")
+    return source
+
+
+def _check_vp1_due(record: store.DayRecord, source: BeaconSource,
+                   service_config: ServiceConfig, now: float) -> None:
+    """Refuse a close that starts too long before the pulse (spec VP1 §5).
+
+    The close waits for its pulse, and a close that starts hours before
+    it waits for hours and ends play before its time. The window is the margin plus
+    the grace, so the timer firing at the close instant goes through.
+    """
+    assert service_config.beacon is not None and record.beacon_round
+    early = source.ready_at(record.beacon_round) - now
+    window = service_config.beacon.margin_seconds \
+        + service_config.beacon.grace_seconds
+    if early > window:
+        raise store.StoreError(
+            f"day {record.day}: its pulse {record.beacon_round} comes in "
+            f"{int(early)} s - close it at its scheduled close")
+
+
+def _record_vp1_pick(service_config: ServiceConfig, record: store.DayRecord,
+                     wired: scoring.WiredScoring, source: BeaconSource,
+                     now: Callable[[], float],
+                     sleep: Callable[[float], None]) -> store.DayRecord:
+    """Get the pulse, pick, prove, and record the pick (spec VP1 §3.3)."""
+    assert service_config.beacon is not None and record.beacon_round
+    root = Path(service_config.store_root)
+    image_ids = wired.context.index.image_ids
+    if len(image_ids) != record.pool_count:
+        raise store.StoreError(
+            f"day {record.day}: the pool holds {len(image_ids)} images and "
+            f"the open committed {record.pool_count}")
+    pulse = fetch_pulse(source, record.beacon_round, service_config.beacon,
+                        now=now, sleep=sleep)
+    index = pick_index(len(image_ids), record.day, pulse.randomness)
+    target_id = image_ids[index]
+    key = pool_keys.read_key(pool_keys.key_path(
+        Path(service_config.data_root), record.preparation_version_id))
+    salt = leaf_salt(key, target_id)
+    steps = proof_of(image_ids, key, index)
+    if not proof_agrees(target_id, salt, index, len(image_ids), steps,
+                        str(record.pool_root)):
+        raise store.StoreError(
+            f"day {record.day}: the proof does not give the committed pool "
+            "root - the pool or the key changed after the open")
+    with store.day_write_lock(root, record.day):
+        return store.record_pick(
+            root, record.day, target_id=target_id,
+            pick_seed=pulse.randomness, beacon_signature=pulse.signature,
+            target_index=index, target_salt=salt, target_proof=steps)
+
+
 def close_day(service_config: ServiceConfig, *, date: str | None = None,
               providers: Mapping[str, object] | None = None,
               clock: Callable[[], str] | None = None,
-              wired: scoring.WiredScoring | None = None) -> int:
+              wired: scoring.WiredScoring | None = None,
+              beacon: BeaconSource | None = None,
+              now: Callable[[], float] | None = None,
+              sleep: Callable[[float], None] | None = None) -> int:
     """Close one day: stop the sends, score each one, flip the status.
 
     The sequence (spec BR1 section 3): wire and check the pinned
@@ -187,8 +299,17 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
     hash guard runs the same, thus a context that does not match the
     pinned config refuses loudly. With no wired context the wiring
     comes from the day record's pinned config path, as before.
+
+    A vp1 day (spec VP1) gets its pulse after the move to "closing" and
+    records the pick before it scores. The beacon, clock, and sleep
+    arguments are the seams of the tests. A pulse that does not come raises, and the
+    day stays in "closing" for a subsequent close.
     """
+    import time
+
     clock = clock or harness.default_clock
+    now = now or time.time
+    sleep = sleep or time.sleep
     root = Path(service_config.store_root)
     day = _resolve_day(service_config, date)
     record = store.read_day_record(root, day)
@@ -207,11 +328,19 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
             f"({wired.scoring_hash[:8]} against "
             f"{record.scoring_config_hash[:8]}) - the config file changed "
             "after the day opened")
+    source = None
+    if record.protocol == "vp1" and record.target_id is None:
+        source = _vp1_source(service_config, record, beacon)
+        if record.status == "open":
+            _check_vp1_due(record, source, service_config, now())
     if record.status == "open":
         with store.day_write_lock(root, day):
             store.update_day_status(root, day, expect_status="open",
                                     new_status="closing",
                                     timestamp_field=None, timestamp=None)
+    if source is not None:
+        record = _record_vp1_pick(service_config, record, wired, source,
+                                  now, sleep)
     # Read and check each submission first, then one batched encode
     # across the day (P5 R7): each cold atom rides a shared batch.
     # A submission that does not parse stops the close before a row
