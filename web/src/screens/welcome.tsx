@@ -27,6 +27,7 @@ import { friendlyMessage, isRefusal } from "../api/types";
 import { GateCard } from "../signin/gate-card";
 import { RecoveryCodeStep } from "../signin/recovery-code-step";
 import { LogoMark } from "../ui/logo";
+import { isPostClose } from "../ui/pick-copy";
 import { HowItWorksSteps, Premise } from "./how";
 
 /** The query keys this screen reads with no session. */
@@ -47,6 +48,7 @@ export function WelcomeScreen(): React.JSX.Element {
     queryFn: () => api.getAbout(),
     staleTime: Number.POSITIVE_INFINITY,
   });
+  const postClose = isPostClose(about.data?.pick_protocol);
   const door = useQuery({
     queryKey: ["door"],
     queryFn: () => api.getDoor(),
@@ -86,11 +88,17 @@ export function WelcomeScreen(): React.JSX.Element {
       <main className="page">
         <div className="home-hero" style={{ marginBottom: 40 }}>
           <div className="stack">
-            <h1 style={{ fontSize: 36 }}>A new hidden photo every day.</h1>
+            <h1 style={{ fontSize: 36 }}>
+              {postClose
+                ? "A new photo every day."
+                : "A new hidden photo every day."}
+            </h1>
             <p className="muted" style={{ fontSize: 18, maxWidth: 560 }}>
-              Each day a photo is hidden behind a short code. You sketch and
-              describe whatever comes to mind, and when the day closes you see
-              the photo — and how close you came
+              {postClose
+                ? "Each day a photo is picked at random after the session closes, and nobody knows it while you play."
+                : "Each day a photo is hidden behind a short code."}{" "}
+              You sketch and describe whatever comes to mind, and when the day
+              closes you see the photo — and how close you came
               {photoCount === undefined
                 ? "."
                 : `, measured against ${photoCount} photos.`}
@@ -130,7 +138,7 @@ export function WelcomeScreen(): React.JSX.Element {
           <section className="card" aria-labelledby="how-heading">
             <h2 id="how-heading">How it works</h2>
             <Premise />
-            <HowItWorksSteps />
+            <HowItWorksSteps protocol={about.data?.pick_protocol} />
           </section>
         </div>
       </main>

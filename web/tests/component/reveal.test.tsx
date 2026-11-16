@@ -107,8 +107,8 @@ describe("the results screen", () => {
     renderAt("/reveal");
     const summary = await screen.findByText("Check that this day was fair");
     fireEvent.click(summary);
-    expect(screen.getByText(view.secret)).toBeDefined();
-    expect(screen.getByText(view.commitment)).toBeDefined();
+    expect(screen.getByText(view.secret ?? "")).toBeDefined();
+    expect(screen.getByText(view.commitment ?? "")).toBeDefined();
     expect(
       screen.getByText(
         `printf '%s:%s' ${view.target_id} ${view.secret} | sha256sum`,

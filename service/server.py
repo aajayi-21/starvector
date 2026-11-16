@@ -353,7 +353,10 @@ def create_app(service_config: ServiceConfig,
     about_value = {"test_season": record.dev_only,
                    "photo_count": record.image_count,
                    "closes_at_utc": service_config.closes_at_utc,
-                   "public_data_url": service_config.public_data_url}
+                   "public_data_url": service_config.public_data_url,
+                   # The landing page says when the photo is picked
+                   # (spec VP1 section 8), before a sign-in.
+                   "pick_protocol": service_config.pick_protocol}
     # A day of this pool can be in a public snapshot (spec R1 section
     # 5), thus a send needs the agreement to the notice.
     publishes = not record.dev_only
