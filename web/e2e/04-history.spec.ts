@@ -13,8 +13,14 @@ test("your results render the live numbers", async ({ page }) => {
   expect(theta).toBeDefined();
 
   await page.goto("/history");
-  await expect(page.getByText("Skill number")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Skill number" }),
+  ).toBeVisible();
   await expect(page.getByText(theta as string, { exact: true })).toBeVisible();
+  // The hit number of spec AG1 shows the server's value.
+  await expect(page.getByTestId("hit-number")).toHaveText(
+    expected.skill.hit_number.toFixed(2),
+  );
   const table = page.locator("section").filter({ hasText: "Every day" });
   await expect(table.locator("tbody tr")).toHaveCount(expected.days.length);
   await expect(
