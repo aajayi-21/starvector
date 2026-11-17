@@ -1,6 +1,7 @@
 # Spec AG1 — the Layer 9 repairs: the corrected score, the hit number, the day-level test
 
-**Status:** ruled 2026-11-16 (§10). Not built.
+**Status:** ruled 2026-11-16 (§10), built on branch
+`feat/aggregation-repairs`. §13 records the changes made at build time.
 **Phase:** before the player records start again and before the first
 public day. Layer 9 is in the no-change tier of `CLAUDE.md` §5 after a
 score is published, and no score is published today. This is the last
@@ -50,23 +51,27 @@ not correct:
 - `ARCHITECTURE.md` §17 says that this statistic detects occasional strong
   hits better than the mean trial score does.
 
-The simulations of 2026-11-16 (`validation/aggregate_null.py` after
-build item AG1.6, seed 20261116):
+The simulations of 2026-11-16 come from `validation/aggregate_null.py`
+at seed 20261116, with 200 seasons for each row. The record is
+`validation/records/aggregate-null-20261116.json`.
 
 | Condition | Measure | Today | Repaired |
 |---|---|---|---|
-| 200 players with no skill, 100 days | the variation report fires | 1.000 | 0.030 (corrected score) |
-| the same | the baseline check fires | 0.290 | 0.035 (corrected score) |
-| 100 trials, 5% of them in the first position | power at 5% | 0.135 | 0.786 (the two directions) |
-| 100 trials, a constant edge, Beta(1.25, 1) | power at 5% | 0.714 | 0.596 (the two directions) |
-| no skill, the two directions together | rate of alarms | | 0.046 |
-| 200 players, 60% attendance, a day correlation of 0.02 | the baseline check fires | 0.220 | the day-level test (§5) |
-| the same at 0.10 | the baseline check fires | 0.510 | the day-level test (§5) |
-| the same at 0.02 and at 0.10 | the variation report fires | 0.040, 0.035 | no change necessary |
+| 200 players with no skill, 100 days | the variation report fires | 1.000 | 0.070 (corrected score) |
+| the same | the baseline check fires | 0.290 | 0.050 (corrected score) |
+| 100 trials, 5% of them in the first position | power at 5% | 0.133 | 0.782 (the two directions) |
+| 100 trials, a constant edge, Beta(1.25, 1) | power at 5% | 0.722 | 0.642 (the two directions) |
+| no skill, the two directions together | rate of alarms | | 0.040 |
+| 200 players, 60% attendance, a day correlation of 0.02 | the baseline check fires | 0.170 | 0.040 (the day check, §5) |
+| the same at 0.10 | the baseline check fires | 0.475 | 0.030 (the day check, §5) |
+| the same at 0.02 and at 0.10 | the variation report fires | 0.040, 0.015 | no change necessary |
 
 The nominal level of each test is 0.05. The top-tail statistic alone
-gets 0.854 on the strong hits and 0.434 on the constant edge, and the mean
-trial score gets 0.244 and 0.631.
+gets 0.843 on the strong hits and 0.428 on the constant edge. The day
+check rows use a pool of 200 images, 60 players, and seasons of 60
+days, because the level of the day rank does not change with the pool
+count. The first numbers of this section came from a scratch run of the
+same model, and these replace them.
 
 ## 3. The corrected score
 
@@ -267,3 +272,42 @@ Each item is one commit, green and Vale-clean on the touched prose.
 - **The test-season days.** The player records start again before the
   first public day, so no published number changes. The boards of the
   test season are made again from their trial rows with the new rules.
+
+## 13. Changes at build time
+
+- **The day rank is calculated at the close.** §5 said the reveal. The
+  close holds the pool index and the target, and it writes the trial
+  rows at the same time. The day rank sits in the day-score file, and
+  the boards and the public database give it after the reveal alone,
+  as they give the trial rows (I7). The rollup does not load the pool.
+- **The day check stays with the operator.** §6 put `day_check` on the
+  player wire. Ruling 5 of 2026-08-15 keeps the baseline check and the
+  stopping monitor off it, because they hold no player-facing copy, and
+  the day check takes the position of the baseline check. It is in the
+  stored board and not in `GET /api/leaderboard/skill`.
+- **The mixture of the hit side.** The hit parameter `β` is the exponent
+  of the law of `1 − p̃`, and `β` below one puts trials near the top.
+  The mixture is flat on (0, 1), which is the hit side alone, in the
+  manner of the cut of the skill side. Its value is `exp(T) n! /
+  T^(n + 1)` times the bottom gamma tail at shape `n + 1`. Above `T = n
+  + 1` that tail comes from the top tail. Below it, a series with a term
+  count that is a closed function of `n` gives it. The two branches
+  agree at `T = n + 1`, and the area of each side against the no-skill
+  law is one, which a test measures.
+- **The skill side reads its tail on the logarithmic scale.** The top
+  gamma tail goes to 0.0 when `S` is far above `n`, and its logarithm
+  stopped the board for a player far below chance. A test holds a
+  player at `S` near 8n.
+- **The pool scores have a function of their own.**
+  `pipeline.score.fused_pool_scores` gives Layers 0 to 6 with no
+  target, and `score_trial` ranks its output, thus the cache and the
+  trial row read one number.
+- **The commands.** `python -m service.day day-scores [--date]` makes
+  the day-score files again, and a rescore at a new configuration
+  writes the files of that configuration. A stale pair makes the reveal
+  assemble each pair again, and a stored skill board of the first
+  format reads as not built until the next reveal or an assembly.
+- **After the deploy.** On a store with days from before this build:
+  run `python -m service.day day-scores` and then
+  `python -m service.rollup assemble`.
+

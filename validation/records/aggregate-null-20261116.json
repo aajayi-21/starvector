@@ -1,0 +1,60 @@
+{
+  "config": {
+    "attendance": 0.6,
+    "correlations": [
+      0.02,
+      0.1
+    ],
+    "day_players": 60,
+    "day_pool": 200,
+    "day_season": 60,
+    "days": 100,
+    "decoys": 1392,
+    "edge_theta": 1.25,
+    "hit_rate": 0.05,
+    "players": 200,
+    "power_reps": 2000,
+    "power_trials": 100,
+    "reps": 200,
+    "seed": 20261116
+  },
+  "correlated": {
+    "0.02": {
+      "baseline": 0.17,
+      "day_check": 0.04,
+      "variation": 0.04
+    },
+    "0.10": {
+      "baseline": 0.475,
+      "day_check": 0.03,
+      "variation": 0.015
+    }
+  },
+  "no_skill": {
+    "corrected": {
+      "baseline": 0.05,
+      "variation": 0.07
+    },
+    "first_format": {
+      "baseline": 0.29,
+      "variation": 1.0
+    }
+  },
+  "power": {
+    "constant_edge": {
+      "hit_side": 0.4275,
+      "skill_side": 0.722,
+      "two_directions": 0.642
+    },
+    "no_skill": {
+      "hit_side": 0.046,
+      "skill_side": 0.047,
+      "two_directions": 0.04
+    },
+    "strong_hits": {
+      "hit_side": 0.843,
+      "skill_side": 0.1325,
+      "two_directions": 0.782
+    }
+  }
+}
