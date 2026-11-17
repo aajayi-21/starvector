@@ -1,6 +1,7 @@
 # Spec MD1 — moderation and account deletion
 
-**Status:** ruled 2026-11-16 (§8). Not built.
+**Status:** ruled 2026-11-16 (§8), and built on branch
+`feat/moderation-deletion` with the changes of §9.
 **Phase:** before the first public day. The boards show usernames,
 descriptions, and avatars to each player, and today the operator's one
 tool is to revoke the full account.
@@ -180,3 +181,26 @@ Each item is one commit, green and Vale-clean on the touched prose.
   username typed, then a red button. No hold.
 - **D5 — moderation.** The operator changes or clears the description and
   replaces or removes the avatar, with no revoke.
+
+## 9. Changes at build time
+
+- **An incorrect password of the player.** §4.3 gives the limit on
+  incorrect sign-ins. The server counts each failure with the counter of
+  the other account moves, keyed by the account. An incorrect password
+  answers 403 with the cause `password`, as the password change does. A
+  401 tells the web app that the session ended, and the session stays
+  live.
+- **The identifier in the preview.** A player with no anonymous
+  identifier gets one at the deletion, and the preview changes nothing,
+  thus it says `a new anonymous identifier` for such a player.
+- **What stays, in the preview,** includes each public snapshot that is
+  published before the deletion, with the username in it.
+- **`restore` of a deleted account** refuses with its own message, and
+  not with the error of a missing record.
+- **The journal.** Each operator edit and each deletion writes one line
+  with the player and the field, and with no text. The lines go to the
+  journal with the name `starvector.moderation`. The player's own
+  deletion writes one line too.
+- **The console.** After a deletion the roster drops the player and
+  shows the identifier that the earlier results show. The red button
+  style moves to the shared theme, because the account page uses it too.
