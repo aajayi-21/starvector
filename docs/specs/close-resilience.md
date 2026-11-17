@@ -1,6 +1,7 @@
 # Spec CR1 — close resilience: whitespace text, the blind run, and the automatic skip
 
-**Status:** ruled 2026-11-16 (§10). Not built.
+**Status:** ruled 2026-11-16 (§10), built on branch
+`feat/close-resilience`. §14 records the changes made at build time.
 **Phase:** before sign-up opens and before the first public day. With
 sign-up open, each account can send a crafted record, and one record that
 does not score holds the close of the day for each player.
@@ -243,3 +244,23 @@ Each item is one commit, green and Vale-clean on the touched prose.
 - **A shorter hold on an outage.** The next day waits while the close
   holds an outage day. The hourly firing and the failure ping of spec PL1
   stay the repair.
+
+## 14. Changes at build time
+
+- **Which statuses are a refusal.** §5 said each 4xx status other than
+  408 and 429. A 401, 402, 403, or 404 names a key, a balance, or a model
+  that is missing, which is the setup and not the input, thus OpenRouter
+  raises `InputRefused` for 400, 413, and 422 alone, in the answer and in
+  an error body. The other statuses stop the close as before.
+- **The batch step.** The close continues when the batch step raises
+  `InputRefused` or an `IntakeError`, and the run of each send finds the
+  send. Each other error of the batch stops the close with no wait,
+  before a retry.
+- **The words of the screens.** The reveal adds one sentence to the fixed
+  message of §7: the day is not part of the results, and the streak
+  stands. An empty history notes the day in one line. The console
+  shows the count in the message of a close and in the day picker.
+- **The wire.** The history answer holds the days with no score in the
+  `not_scored` field, and the reveal answer holds `quarantined` for each
+  caller. The results index and the public database move to schema 4.
+
