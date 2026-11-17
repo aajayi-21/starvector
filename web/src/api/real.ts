@@ -12,6 +12,7 @@ import type {
   AvatarAck,
   ConsentAck,
   DayView,
+  DeletedAck,
   DeviceCodeView,
   DoorAck,
   DoorView,
@@ -248,6 +249,12 @@ export function makeRealApi(): Api {
     stopOperatorCode(): Promise<{ stopped: boolean }> {
       return request<{ stopped: boolean }>("/api/account/recovery-code/stop", {
         method: "POST",
+      });
+    },
+    deleteAccount(username: string, password: string): Promise<DeletedAck> {
+      return postJson<DeletedAck>("/api/account/delete", {
+        username,
+        password,
       });
     },
   };

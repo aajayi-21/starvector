@@ -174,13 +174,6 @@
   background: var(--surface-2);
   max-width: 560px;
 }
-.btn-danger-solid {
-  background: var(--bad);
-  color: var(--on-accent);
-}
-.btn-danger-solid:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bad) 85%, black);
-}
 .badge-bad {
   background: var(--bad-soft);
   color: var(--bad);

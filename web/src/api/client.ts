@@ -12,6 +12,7 @@ import type {
   AvatarAck,
   ConsentAck,
   DayView,
+  DeletedAck,
   DeviceCodeView,
   DoorAck,
   DoorView,
@@ -142,6 +143,11 @@ export interface CredentialApi {
   newRecoveryCode(currentPassword: string): Promise<RecoveryCodeAck>;
   /** Removes the operator's code; the session alone is sufficient. */
   stopOperatorCode(): Promise<{ stopped: boolean }>;
+  /**
+   * Deletes the caller's account (spec MD1 §4.3). The username typed
+   * again and the password; the answer removes the cookie.
+   */
+  deleteAccount(username: string, password: string): Promise<DeletedAck>;
 }
 
 export type Api = DayApi &

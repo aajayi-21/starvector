@@ -24,6 +24,7 @@ import type {
   BaselineBandPoint,
   ConsentAck,
   DayView,
+  DeletedAck,
   DeviceCodeView,
   HistoryDayRow,
   HistoryView,
@@ -489,6 +490,9 @@ export function makeMockApi(options: MockOptions = {}): Api {
       RECOVERY_CODE_LENGTH,
     );
   }
+
+  /** The folded names of deleted accounts: closed for each sign-up. */
+  const deletedNames = new Set<string>();
 
   function refused<T>(status: number, cause: string): Promise<T> {
     return Promise.reject(new ApiError(status, cause));
@@ -1005,7 +1009,10 @@ export function makeMockApi(options: MockOptions = {}): Api {
         return refused(400, cause);
       }
       const folded = foldedName(name);
-      if ([...accounts.keys()].some((held) => foldedName(held) === folded)) {
+      if (
+        deletedNames.has(folded) ||
+        [...accounts.keys()].some((held) => foldedName(held) === folded)
+      ) {
         return refused(409, "name-taken");
       }
       const code = nextRecoveryCode();
@@ -1128,6 +1135,28 @@ export function makeMockApi(options: MockOptions = {}): Api {
       // The same answer with a code and with none.
       operatorCode = null;
       return Promise.resolve({ stopped: true });
+    },
+    deleteAccount(username: string, password: string): Promise<DeletedAck> {
+      const account = accounts.get(player);
+      if (username !== player) {
+        return refused(400, "name-mismatch");
+      }
+      if (account === undefined || account.password === null) {
+        return refused(409, "no-password");
+      }
+      if (account.password !== password.normalize("NFKC")) {
+        return refused(403, "password");
+      }
+      // The name stays closed (spec MD1 §4.1): the claim outlives the
+      // account, thus a sign-up for it refuses as taken.
+      deletedNames.add(foldedName(player));
+      accounts.delete(player);
+      sessions = [];
+      signedIn = false;
+      return Promise.resolve({
+        deleted: true,
+        identifier: `anon-${fromAlphabet(`deleted:${player}`, "0123456789abcdef", 16)}`,
+      });
     },
   };
 }

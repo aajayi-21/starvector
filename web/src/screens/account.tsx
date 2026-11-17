@@ -7,6 +7,9 @@
  * The writers write for the resolved caller alone — no player
  * parameter on this screen.
  *
+ * `Delete my account` (spec MD1 §4.3) is the last section: the username
+ * typed again and the password, then a red button.
+ *
  * The username is the one name of a player (spec A2 ruling 3) and it
  * does not change, thus this screen shows it and edits no name.
  *
@@ -101,6 +104,7 @@ function AccountBody(props: { me: MeView }): React.JSX.Element {
       </section>
       <PublicDataCard />
       {accounts === true ? <SignOutCard me={me} /> : null}
+      {accounts === true ? <DeleteAccountCard me={me} /> : null}
     </div>
   );
 }
@@ -754,6 +758,122 @@ function SignOutCard(props: { me: MeView }): React.JSX.Element {
           {friendlyMessage(signOut.error)}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * `Delete my account` (spec MD1 §4.3). It says what goes and what
+ * stays, and that a published snapshot keeps the username. The player
+ * types the username and the password; the red button stays off until
+ * the username agrees. An account with no password sets one first.
+ */
+function DeleteAccountCard(props: { me: MeView }): React.JSX.Element {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const { me } = props;
+  const [typed, setTyped] = useState("");
+  const [password, setPassword] = useState("");
+  const [identifier, setIdentifier] = useState<string | null>(null);
+  const remove = useMutation({
+    mutationFn: () => api.deleteAccount(typed, password),
+    onSuccess: (answer) => {
+      setPassword("");
+      setIdentifier(answer.identifier);
+    },
+  });
+
+  if (identifier !== null) {
+    return (
+      <section className="card" aria-label="Your account is deleted">
+        <div className="notice notice-good" role="status">
+          Your account is deleted. Your earlier results show as {identifier}.
+        </div>
+        <div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            // Each query reads again: me answers 401 and the shell
+            // shows the landing page.
+            onClick={() => void queryClient.resetQueries()}
+          >
+            Done
+          </button>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section className="card card-quiet" aria-labelledby="delete-heading">
+      <h2 id="delete-heading">Delete my account</h2>
+      <ul className="fact-list">
+        <li>
+          Your account, your picture, your description, your password, your
+          recovery code, and each signed-in device go.
+        </li>
+        <li>
+          Your earlier sends and results stay in the results, under an anonymous
+          name, with no picture.
+        </li>
+        <li>No one can register your username again, you included.</li>
+        <li>
+          A public snapshot that is already published keeps your username.
+        </li>
+        <li>This can't be undone.</li>
+      </ul>
+      {me.has_password ? (
+        <form
+          className="stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (typed === me.player && password !== "" && !remove.isPending) {
+              remove.mutate();
+            }
+          }}
+        >
+          <div className="field">
+            <label htmlFor="delete-username">
+              Type your username ({me.player}) to confirm
+            </label>
+            <input
+              id="delete-username"
+              className="input"
+              value={typed}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setTyped(event.target.value)}
+            />
+          </div>
+          <PasswordField
+            id="delete-password"
+            label="Your password"
+            autoComplete="current-password"
+            value={password}
+            onChange={setPassword}
+          />
+          <div>
+            <button
+              type="submit"
+              className="btn btn-danger-solid"
+              disabled={
+                typed !== me.player || password === "" || remove.isPending
+              }
+            >
+              {remove.isPending ? "Working…" : "Delete my account"}
+            </button>
+          </div>
+          {remove.isError ? (
+            <div className="notice notice-bad" role="alert">
+              {credentialMessage(remove.error)}
+            </div>
+          ) : null}
+        </form>
+      ) : (
+        <div className="notice notice-warn" role="note">
+          This account has no password yet. Set a password first, then you can
+          delete the account here. Or send the operator a message.
+        </div>
+      )}
     </section>
   );
 }

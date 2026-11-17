@@ -272,6 +272,15 @@ textarea {
 .btn-danger:hover:not(:disabled) {
   background: var(--bad-soft);
 }
+/* The one button that cannot be undone: the console's confirmations
+   and the player's account deletion (spec MD1). */
+.btn-danger-solid {
+  background: var(--bad);
+  color: var(--on-accent);
+}
+.btn-danger-solid:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 85%, black);
+}
 .btn-large {
   min-height: 52px;
   padding: 12px 22px;

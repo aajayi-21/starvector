@@ -55,6 +55,7 @@ export function RosterPanel(props: {
   const [dayNote, setDayNote] = useState("");
   const [rankings, setRankings] = useState<DevRankings | null>(null);
   const [rankNote, setRankNote] = useState("");
+  const [deletedNote, setDeletedNote] = useState("");
   // Each switch takes the next token; a stale response belongs to
   // a player or day the operator left and is dropped.
   const switchToken = useRef(0);
@@ -83,6 +84,7 @@ export function RosterPanel(props: {
     switchToken.current += 1;
     const token = switchToken.current;
     setSelected(name);
+    setDeletedNote("");
     setHistory(null);
     setOpenedDay(null);
     setStored(null);
@@ -246,6 +248,11 @@ export function RosterPanel(props: {
         </div>
       )}
       <ErrorNote text={note} />
+      {deletedNote === "" ? null : (
+        <div className="notice notice-good" role="status">
+          {deletedNote}
+        </div>
+      )}
 
       {selected === null || noAccounts ? null : (
         <>
@@ -255,6 +262,15 @@ export function RosterPanel(props: {
             api={api}
             player={selected}
             onChanged={() => void loadPlayers()}
+            onDeleted={(deleted) => {
+              switchToken.current += 1;
+              setSelected(null);
+              setHistory(null);
+              setDeletedNote(
+                `${deleted.player} is deleted. The earlier results show as ${deleted.identifier}.`,
+              );
+              void loadPlayers();
+            }}
           />
           <div className="dev-subhead">{selected} — history</div>
           {history === null ? (

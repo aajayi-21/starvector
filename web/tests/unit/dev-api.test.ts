@@ -168,3 +168,32 @@ describe("the console client after spec A2 (§6.1, §10.1)", () => {
     }
   });
 });
+
+describe("the moderation and deletion calls (spec MD1)", () => {
+  it("sends each to its route, with the bearer and the method", async () => {
+    const calls = watching();
+    const api = makeDevApi(() => "a-token");
+    await api.setDescription("ade", "new words");
+    await api.setAvatar("ade", new Blob([new Uint8Array([1, 2])]));
+    await api.removeAvatar("ade");
+    await api.getDeletionPreview("ade");
+    await api.deletePlayer("ade", "ade");
+    expect(calls.map(([url, init]) => [url, init?.method ?? "GET"])).toEqual([
+      ["/api/dev/players/ade/description", "PUT"],
+      ["/api/dev/players/ade/avatar", "PUT"],
+      ["/api/dev/players/ade/avatar", "DELETE"],
+      ["/api/dev/players/ade/deletion", "GET"],
+      ["/api/dev/players/ade/delete", "POST"],
+    ]);
+    for (const [, init] of calls) {
+      expect(headerOf(init)).toBe("Bearer a-token");
+    }
+    expect(calls[0]?.[1]?.body).toBe(
+      JSON.stringify({ description: "new words" }),
+    );
+    expect(
+      (calls[0]?.[1]?.headers as Record<string, string>)["content-type"],
+    ).toBe("application/json");
+    expect(calls[4]?.[1]?.body).toBe(JSON.stringify({ confirm: "ade" }));
+  });
+});

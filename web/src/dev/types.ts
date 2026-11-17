@@ -242,6 +242,28 @@ export interface DevPlayerDetail {
   sends: number;
 }
 
+/** Step one of the operator's deletion (spec MD1 §4.4). */
+export interface DevDeletionPreview {
+  player: string;
+  status: "active" | "revoked";
+  days_played: number;
+  first_day: string | null;
+  last_day: string | null;
+  sessions: number;
+  has_password: boolean;
+  /** Null when the deletion makes a new one. */
+  identifier: string | null;
+  removes: string[];
+  keeps: string[];
+}
+
+export interface DevDeleted {
+  player: string;
+  deleted: true;
+  /** The name that the earlier results show from now on. */
+  identifier: string;
+}
+
 export interface DevIndexTable {
   name: string;
   rows: number;

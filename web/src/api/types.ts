@@ -356,6 +356,13 @@ export interface PasswordAck {
   recovery_code: string | null;
 }
 
+/** The answer of the player's own deletion (spec MD1 §4.3). */
+export interface DeletedAck {
+  deleted: true;
+  /** The name that the earlier results show from now on. */
+  identifier: string;
+}
+
 export interface RecoveryCodeAck {
   recovery_code: string;
 }
@@ -545,6 +552,11 @@ const CAUSE_COPY: Record<string, string> = {
   recovery:
     "That didn't work. Check the username and the recovery code. A recovery code works one time, and a code from the operator works 24 hours after it was made.",
   password: "That isn't your current password.",
+  // Spec MD1 §4.3: the two refusals of the player's own deletion.
+  "name-mismatch":
+    "That isn't your username. Type it exactly as it shows on this page.",
+  "no-password":
+    "Set a password first, then you can delete the account. Or send the operator a message.",
   origin:
     "This page couldn't prove where the request came from. Reload the page and try again.",
   "no-accounts": "This server has no accounts, so there's nothing to add.",
