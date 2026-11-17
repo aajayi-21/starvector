@@ -1815,3 +1815,79 @@ def list_rollover_runs(store: Path, limit: int) -> tuple[RolloverRun, ...]:
                     if entry.is_file() and entry.name.endswith(".json")),
                    reverse=True)
     return tuple(_read_run(base / name) for name in names[:limit])
+
+
+# ---- spec CR1: the quarantine of a send that the provider refuses ----
+
+_QUARANTINE_FIELDS = ("day", "player", "trial_id", "submission_digest",
+                      "cause", "error", "tries", "decided_by", "note",
+                      "quarantined_at")
+QUARANTINE_DECIDERS = ("close", "operator")
+
+
+@dataclass(frozen=True, slots=True)
+class QuarantineRecord:
+    """One send that the close skips (spec CR1 section 6).
+
+    A record of play and permanent (Rule 4): it says that the send was
+    not given a score and why. The send stays in the store unchanged, and
+    submission_digest is the SHA-256 of its stored bytes, thus a reader
+    can see which bytes the record names. note is for the operator
+    alone and does not go on a player's wire.
+    """
+
+    day: str
+    player: str
+    trial_id: str
+    submission_digest: str
+    cause: str
+    error: str
+    tries: int
+    decided_by: str
+    note: str | None
+    quarantined_at: str
+
+
+def quarantine_path(store: Path, day: str, player: str) -> Path:
+    return day_dir(store, day) / "quarantine" / f"{player}.json"
+
+
+def submission_digest(store: Path, day: str, player: str) -> str:
+    """The SHA-256 of the stored bytes of one send."""
+    return sha256_hex(submission_path(store, day, player).read_bytes())
+
+
+def write_quarantine(store: Path, record: QuarantineRecord) -> None:
+    """Write one quarantine record, one time. A second write raises."""
+    _check_day(record.day, "quarantine.day")
+    check_player_name(record.player, "quarantine.player")
+    if record.decided_by not in QUARANTINE_DECIDERS:
+        raise StoreError(f"quarantine.decided_by: expected one of "
+                         f"{list(QUARANTINE_DECIDERS)}")
+    if not isinstance(record.tries, int) or record.tries < 1:
+        raise StoreError("quarantine.tries: expected a positive integer")
+    write_once_json(quarantine_path(store, record.day, record.player), {
+        name: getattr(record, name) for name in _QUARANTINE_FIELDS})
+
+
+def read_quarantine_or_none(store: Path, day: str,
+                            player: str) -> QuarantineRecord | None:
+    """The quarantine record of one send, or None. A bad file raises."""
+    value = read_json_or_none(quarantine_path(store, day, player))
+    if value is None:
+        return None
+    if set(value) != set(_QUARANTINE_FIELDS):
+        raise StoreError(
+            f"{quarantine_path(store, day, player)}: the record must have "
+            f"the fields {sorted(_QUARANTINE_FIELDS)}")
+    return QuarantineRecord(**value)
+
+
+def list_quarantined(store: Path, day: str) -> tuple[str, ...]:
+    """The player names with a quarantine record on one day, ascending."""
+    root = day_dir(store, day) / "quarantine"
+    if not root.is_dir():
+        return ()
+    return tuple(sorted(
+        entry.name[:-5] for entry in root.iterdir()
+        if entry.is_file() and entry.name.endswith(".json")))

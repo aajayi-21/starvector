@@ -14,9 +14,14 @@ from typing import NamedTuple
 
 import httpx
 
-from providers.openrouter.errors import (OpenRouterRequestError,
+from providers.openrouter.errors import (OpenRouterInputRefused,
+                                         OpenRouterRequestError,
                                          OpenRouterResponseError,
                                          OpenRouterTimeoutError)
+
+# The statuses that name the content of a POST as the fault (spec CR1
+# section 5). Each other status that is not retried names the setup.
+_INPUT_REFUSED_STATUSES = (400, 413, 422)
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 _BACKOFF_BASE_SECONDS = 1.0
@@ -190,7 +195,10 @@ class OpenRouterClient:
                     delay = _BACKOFF_BASE_SECONDS * (2.0 ** attempt_index)
                 continue
             if status >= 400:
-                raise OpenRouterRequestError(
+                error_type = OpenRouterInputRefused \
+                    if status in _INPUT_REFUSED_STATUSES \
+                    else OpenRouterRequestError
+                raise error_type(
                     f"OpenRouter POST got status {status} and is not retried: "
                     f"{response.text[:300]}"
                 )
@@ -211,7 +219,10 @@ class OpenRouterClient:
                     detail = f"in-body error code {code}: {message[:160]}"
                     delay = _BACKOFF_BASE_SECONDS * (2.0 ** attempt_index)
                     continue
-                raise OpenRouterRequestError(
+                error_type = OpenRouterInputRefused \
+                    if code in _INPUT_REFUSED_STATUSES \
+                    else OpenRouterRequestError
+                raise error_type(
                     f"OpenRouter answered 2xx with an error body "
                     f"(code {code}): {message[:300]}"
                 )

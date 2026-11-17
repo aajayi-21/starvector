@@ -1517,11 +1517,18 @@ def create_app(service_config: ServiceConfig,
         return await asyncio.to_thread(json.loads, await request.body())
 
     def _checked_or_refusal(wire_record: object) -> Submission | Response:
-        """The caps, Layer 0, and the channel pre-check, in sequence."""
+        """The caps, the whitespace check, Layer 0, and the channel
+        pre-check, in sequence."""
         too_large = limits.record_caps_refusal(wire_record)
         if too_large is not None:
             return JSONResponse({"cause": "too-much-drawing",
                                  "detail": too_large}, status_code=400)
+        # Spec CR1 section 3: a whitespace-only text atom reaches the
+        # encoder of the close, and a refusal there holds the day.
+        blank = limits.blank_text_refusal(wire_record)
+        if blank is not None:
+            return JSONResponse({"cause": "blank-text", "detail": blank},
+                                status_code=400)
         try:
             submission = validate_submission(wire_record, gates, canvas_px)
         except IntakeError as error:

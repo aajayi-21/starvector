@@ -367,6 +367,35 @@ def test_400_raises_with_no_retry() -> None:
     assert client.post_count == 1
 
 
+def test_a_content_status_is_an_input_refusal_and_a_key_status_is_not(
+) -> None:
+    """Spec CR1 section 5: the close can skip a refused input alone."""
+    from providers.protocols import InputRefused
+
+    for status in (400, 413, 422):
+        client = make_client(
+            lambda request, status=status: httpx.Response(
+                status, json={"error": "bad input"}))
+        with pytest.raises(InputRefused):
+            client.post_embeddings({"model": "test/embed"})
+    for status in (401, 402, 403, 404):
+        client = make_client(
+            lambda request, status=status: httpx.Response(
+                status, json={"error": "setup"}))
+        with pytest.raises(OpenRouterRequestError) as raised:
+            client.post_embeddings({"model": "test/embed"})
+        assert not isinstance(raised.value, InputRefused)
+
+
+def test_an_error_body_with_a_content_code_is_an_input_refusal() -> None:
+    from providers.protocols import InputRefused
+
+    client = make_client(lambda request: httpx.Response(
+        200, json={"error": {"code": 400, "message": "empty input"}}))
+    with pytest.raises(InputRefused):
+        client.post_embeddings({"model": "test/embed"})
+
+
 def test_retry_limit_reached_raises() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, headers={"Retry-After": "0"}, json={"error": "boom"})

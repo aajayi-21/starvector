@@ -12,6 +12,18 @@ from typing import NamedTuple, Protocol
 from core.types import FloatArray, StrokePath, Vectors
 
 
+class InputRefused(Exception):
+    """The model server refused one input, and a wait does not help.
+
+    Spec CR1 section 5. A provider raises this for an answer that names
+    the input as the fault: a status that says the content is bad, not a
+    rate limit, a timeout, a server fault, or a missing key. The close
+    of a day can skip a send that gets this answer on each fast retry,
+    and it stops for each other error. The text names the provider and
+    the status and holds no secret.
+    """
+
+
 class CorpusIdentity(NamedTuple):
     """The tuple that pins one source corpus revision."""
 
