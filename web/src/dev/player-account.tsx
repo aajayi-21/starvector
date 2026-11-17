@@ -1,8 +1,9 @@
 /**
  * One player's account in the console (spec BR1 §7.4, changed by spec
- * A2 §6.1 and §10.1): the picture, the description, the signed-in
- * devices, the device codes that wait, and the access controls — a
- * recovery code, sign-out, revoke, and restore.
+ * A2 §6.1 and §10.1, and by spec MD1): the picture, the description,
+ * the signed-in devices, the device codes that wait, the access
+ * controls — a recovery code, sign-out, revoke, and restore — the
+ * moderation of the description and the picture, and the deletion.
  *
  * The operator's recovery code is the one procedure into an account
  * that the console has. It prints one time: the store keeps its
@@ -11,7 +12,7 @@
  * with a control that stops it.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
 import {
@@ -22,7 +23,16 @@ import {
   WorkingNote,
 } from "./controls";
 import { utcShort, utcStamp } from "./format";
-import type { DevPlayerDetail, DevRecoveryCode } from "./types";
+import type {
+  DevDeleted,
+  DevDeletionPreview,
+  DevPlayerDetail,
+  DevRecoveryCode,
+} from "./types";
+
+/** The cap and the kinds of the player's own edits (spec A1). */
+const DESCRIPTION_CAP = 500;
+const AVATAR_KINDS = "image/png,image/jpeg,image/webp,image/gif";
 
 /** What the last access control printed, one time. */
 type Printed =
@@ -34,8 +44,10 @@ export function PlayerAccount(props: {
   player: string;
   /** Tells the roster a count moved (devices, status). */
   onChanged: () => void;
+  /** The account is gone: the roster drops it and says so. */
+  onDeleted: (deleted: DevDeleted) => void;
 }): React.JSX.Element {
-  const { api, player, onChanged } = props;
+  const { api, player, onChanged, onDeleted } = props;
   const [detail, setDetail] = useState<DevPlayerDetail | null>(null);
   const [note, setNote] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -338,7 +350,264 @@ export function PlayerAccount(props: {
           .
         </p>
       )}
+
+      <ModerationControls
+        api={api}
+        player={player}
+        description={detail.description}
+        hasAvatar={detail.has_avatar}
+        onSaved={async () => {
+          await load();
+        }}
+      />
+
+      <DeletionControls api={api} player={player} onDeleted={onDeleted} />
     </section>
+  );
+}
+
+/**
+ * The operator's edits of the description and the picture (spec MD1
+ * §3). They keep the sessions and the status: no revoke.
+ */
+function ModerationControls(props: {
+  api: DevApi;
+  player: string;
+  description: string;
+  hasAvatar: boolean;
+  onSaved: () => Promise<void>;
+}): React.JSX.Element {
+  const { api, player, description, hasAvatar, onSaved } = props;
+  const [text, setText] = useState(description);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+  const [error, setError] = useState("");
+  const picker = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setText(description);
+  }, [description]);
+
+  const run = async (action: () => Promise<unknown>, said: string) => {
+    setBusy(true);
+    setDone("");
+    setError("");
+    try {
+      await action();
+      await onSaved();
+      setDone(said);
+    } catch (failure) {
+      setError(messageOf(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="dev-subhead">Profile moderation</div>
+      <label className="dev-stack-sm">
+        <span className="small">Description</span>
+        <textarea
+          className="input"
+          rows={3}
+          maxLength={DESCRIPTION_CAP}
+          value={text}
+          disabled={busy}
+          onChange={(event) => setText(event.target.value)}
+          data-testid="moderation-description"
+        />
+      </label>
+      <div className="dev-row dev-wrap">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy || text === description}
+          onClick={() =>
+            void run(
+              () => api.setDescription(player, text),
+              "The description is saved.",
+            )
+          }
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={busy || description === ""}
+          onClick={() =>
+            void run(
+              () => api.setDescription(player, ""),
+              "The description is cleared.",
+            )
+          }
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={busy}
+          onClick={() => picker.current?.click()}
+        >
+          Replace picture
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={busy || !hasAvatar}
+          onClick={() =>
+            void run(() => api.removeAvatar(player), "The picture is removed.")
+          }
+        >
+          Remove picture
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          accept={AVATAR_KINDS}
+          hidden
+          data-testid="moderation-avatar-file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file !== undefined) {
+              void run(
+                () => api.setAvatar(player, file),
+                "The picture is replaced.",
+              );
+            }
+          }}
+        />
+      </div>
+      <p className="subtle small">
+        The edits keep {player}'s devices and status. The boards show them on
+        the next read.
+      </p>
+      {done === "" ? null : (
+        <div className="notice notice-good" role="status">
+          {done}
+        </div>
+      )}
+      <ErrorNote text={error} />
+    </>
+  );
+}
+
+/**
+ * The operator's deletion, in two steps (spec MD1 §4.4): the preview,
+ * then the username typed again, which enables the red button.
+ */
+function DeletionControls(props: {
+  api: DevApi;
+  player: string;
+  onDeleted: (deleted: DevDeleted) => void;
+}): React.JSX.Element {
+  const { api, player, onDeleted } = props;
+  const [preview, setPreview] = useState<DevDeletionPreview | null>(null);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const openPreview = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setPreview(await api.getDeletionPreview(player));
+      setTyped("");
+    } catch (failure) {
+      setError(messageOf(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      onDeleted(await api.deletePlayer(player, typed));
+    } catch (failure) {
+      setError(messageOf(failure));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="dev-subhead">Delete the account</div>
+      {preview === null ? (
+        <div className="dev-row">
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={busy}
+            onClick={() => void openPreview()}
+          >
+            Delete account
+          </button>
+        </div>
+      ) : (
+        <div className="dev-confirm" data-testid="deletion-preview">
+          <p>
+            Deleting {preview.player} removes: {preview.removes.join("; ")}.
+          </p>
+          <p>It keeps: {preview.keeps.join("; ")}.</p>
+          <p className="small">
+            {preview.days_played === 1
+              ? "1 day played"
+              : `${preview.days_played} days played`}
+            {preview.first_day === null
+              ? ""
+              : ` (${preview.first_day} to ${preview.last_day})`}{" "}
+            ·{" "}
+            {preview.sessions === 1
+              ? "1 device signed in"
+              : `${preview.sessions} devices signed in`}
+            . The earlier results show as{" "}
+            {preview.identifier ?? "a new anonymous identifier"}.
+          </p>
+          <p className="small">
+            <strong>This cannot be undone.</strong> Restore does not work on a
+            deleted account, and no one can register the username again.
+          </p>
+          <label className="dev-stack-sm">
+            <span className="small">
+              Type <code>{preview.player}</code> to confirm
+            </span>
+            <input
+              className="input"
+              value={typed}
+              disabled={busy}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setTyped(event.target.value)}
+              data-testid="deletion-confirm"
+            />
+          </label>
+          <div className="dev-row dev-wrap">
+            <button
+              type="button"
+              className="btn btn-danger-solid"
+              disabled={busy || typed !== preview.player}
+              onClick={() => void remove()}
+            >
+              Delete permanently
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => setPreview(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <ErrorNote text={error} />
+    </>
   );
 }
 

@@ -8,6 +8,8 @@ import type { AboutView } from "../api/types";
 import type {
   DevDayDetail,
   DevDays,
+  DevDeleted,
+  DevDeletionPreview,
   DevHistory,
   DevIndexCheck,
   DevIndexStatus,
@@ -137,6 +139,26 @@ export interface DevApi {
     sessionId: string,
   ): Promise<{ player: string; ended: number }>;
   prune(): Promise<{ sessions: number; device_codes: number }>;
+
+  // ── spec MD1 ──
+  /** Change the description; an empty string clears it. No revoke. */
+  setDescription(
+    player: string,
+    description: string,
+  ): Promise<{ player: string; description: string }>;
+  /** Replace the avatar with the bytes of one image file. */
+  setAvatar(
+    player: string,
+    image: Blob,
+  ): Promise<{ player: string; avatar_hash: string | null }>;
+  removeAvatar(
+    player: string,
+  ): Promise<{ player: string; avatar_hash: string | null }>;
+  /** Step one of a deletion: what goes and what stays. Changes nothing. */
+  getDeletionPreview(player: string): Promise<DevDeletionPreview>;
+  /** Step two: `confirm` must equal the username, or the server refuses. */
+  deletePlayer(player: string, confirm: string): Promise<DevDeleted>;
+
   getIndex(): Promise<DevIndexStatus>;
   buildIndex(): Promise<DevIndexStatus>;
   verifyIndex(): Promise<DevIndexCheck>;
@@ -269,6 +291,34 @@ export function makeDevApi(token: TokenSource = () => ""): DevApi {
       ),
     prune: () =>
       request("/api/dev/prune", authorized(token(), { method: "POST" })),
+    setDescription: (player, description) =>
+      request(
+        `${playerPath(player)}/description`,
+        authorized(token(), {
+          ...jsonBody({ description }),
+          method: "PUT",
+        }),
+      ),
+    setAvatar: (player, image) =>
+      request(
+        `${playerPath(player)}/avatar`,
+        authorized(token(), { method: "PUT", body: image }),
+      ),
+    removeAvatar: (player) =>
+      request(
+        `${playerPath(player)}/avatar`,
+        authorized(token(), { method: "DELETE" }),
+      ),
+    getDeletionPreview: (player) =>
+      request<DevDeletionPreview>(
+        `${playerPath(player)}/deletion`,
+        authorized(token()),
+      ),
+    deletePlayer: (player, confirm) =>
+      request<DevDeleted>(
+        `${playerPath(player)}/delete`,
+        authorized(token(), jsonBody({ confirm })),
+      ),
     getIndex: () =>
       request<DevIndexStatus>("/api/dev/index", authorized(token())),
     buildIndex: () =>

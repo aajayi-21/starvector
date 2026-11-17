@@ -630,7 +630,13 @@ def write_player_record(store: Path, record: PlayerRecord) -> None:
 
     The write rides the one-write primitive, thus a second record for
     the name raises. Sign-up and the dev door make records (spec A2).
+    A deleted account closes its name (spec MD1 section 4.1): its
+    deletion record refuses a new record, on each path that makes one.
     """
+    if deletion_path(store, record.player).is_file():
+        raise StoreError(
+            f"the name {record.player!r} belongs to a deleted account and is "
+            "closed")
     if record.status != "active":
         raise StoreError(
             f"a new player record must have status 'active', got "
@@ -1891,3 +1897,90 @@ def list_quarantined(store: Path, day: str) -> tuple[str, ...]:
     return tuple(sorted(
         entry.name[:-5] for entry in root.iterdir()
         if entry.is_file() and entry.name.endswith(".json")))
+
+
+# ---- spec MD1: the deletion of an account ----
+
+_DELETION_FIELDS = ("player", "identifier", "deleted_at", "deleted_by")
+DELETERS = ("player", "operator")
+
+
+@dataclass(frozen=True, slots=True)
+class DeletionRecord:
+    """One deleted account (spec MD1 section 4.1). Permanent.
+
+    It closes the name for each new record, and it tells each player
+    surface to show the anonymous identifier and not the name. It
+    holds no text that says why.
+    """
+
+    player: str
+    identifier: str
+    deleted_at: str
+    deleted_by: str
+
+
+def deletion_path(store: Path, player: str) -> Path:
+    return store / "deleted" / f"{player}.json"
+
+
+def read_deletion_or_none(store: Path, player: str) -> DeletionRecord | None:
+    """The deletion record of one name, or None. A bad file raises."""
+    if not isinstance(player, str) or not _PLAYER_RULE.fullmatch(player):
+        return None
+    path = deletion_path(store, player)
+    if not path.is_file():
+        return None
+    raw = _read_record(path, _DELETION_FIELDS)
+    if raw["player"] != player \
+            or not _IDENTIFIER_RULE.fullmatch(raw["identifier"]) \
+            or raw["deleted_by"] not in DELETERS:
+        raise StoreError(f"{path}: not the deletion record of {player!r}")
+    return DeletionRecord(**raw)
+
+
+def delete_account(store: Path, player: str, *, folded: str,
+                   deleted_by: str, deleted_at: str) -> DeletionRecord:
+    """Delete the account side of one player (spec MD1 section 4.1).
+
+    The identifier and the deletion record go first, then the name
+    claim, then the removals: each session, each device code of
+    the player, the credentials, the avatar, the account, and the player
+    record last. A stop before the end leaves the deletion record, and
+    a second run finishes the removals. Each raw record of play stays
+    (Rule 4): the sends, the trial rows, and the start, withhold,
+    quarantine, and consent records.
+
+    folded is the folded shape of the name, which the caller gives,
+    because the fold rule is in the names module. A name with no
+    player record and no deletion record raises.
+    """
+    check_player_name(player, "player")
+    if deleted_by not in DELETERS:
+        raise StoreError(f"deleted_by: expected one of {list(DELETERS)}")
+    found = read_deletion_or_none(store, player)
+    if found is None:
+        if read_player_or_none(store, player) is None:
+            raise StoreError(f"no stored player {player!r}")
+        identifier = ensure_identifier(store, player, deleted_at)
+        found = DeletionRecord(player=player, identifier=identifier,
+                               deleted_at=deleted_at, deleted_by=deleted_by)
+        write_once_json(deletion_path(store, player), {
+            name: getattr(found, name) for name in _DELETION_FIELDS})
+    claim = read_claim_or_none(store, folded)
+    if claim is None:
+        claim_name(store, NameClaim(folded=folded, player=player,
+                                    claimed_at=deleted_at))
+    delete_player_sessions(store, player)
+    root = sessions_dir(store, player)
+    if root.is_dir() and not any(root.iterdir()):
+        root.rmdir()
+    for digest, code in list_device_codes(store):
+        if code.player == player:
+            remove_device_code(store, digest)
+    credential_record_path(store, player).unlink(missing_ok=True)
+    avatar_path(store, player).unlink(missing_ok=True)
+    account_record_path(store, player).unlink(missing_ok=True)
+    player_record_path(store, player).unlink(missing_ok=True)
+    return found
+

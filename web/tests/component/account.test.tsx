@@ -527,3 +527,107 @@ describe("the password and the recovery code (spec A2 §3.4)", () => {
     expect(screen.queryByText(/invite/i)).toBeNull();
   });
 });
+
+describe("Delete my account (spec MD1 §4.3)", () => {
+  function deleteButton(): HTMLButtonElement {
+    return screen.getByRole("button", {
+      name: "Delete my account",
+    }) as HTMLButtonElement;
+  }
+
+  it("says what goes and what stays, and that a snapshot keeps the name", async () => {
+    renderAt("/account");
+    const heading = await screen.findByRole("heading", {
+      name: "Delete my account",
+    });
+    const card = heading.closest("section") as HTMLElement;
+    expect(within(card).getByText(/under an\s+anonymous name/)).toBeDefined();
+    expect(
+      within(card).getByText(/No one can register your username again/),
+    ).toBeDefined();
+    expect(
+      within(card).getByText(/already published keeps your username/),
+    ).toBeDefined();
+    expect(within(card).getByText("This can't be undone.")).toBeDefined();
+  });
+
+  it("stays off until the typed username agrees, then deletes", async () => {
+    const sent: Array<[string, string]> = [];
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...mock,
+      deleteAccount: (username, password) => {
+        sent.push([username, password]);
+        return mock.deleteAccount(username, password);
+      },
+    };
+    renderAt("/account", api);
+    await screen.findByRole("heading", { name: "Delete my account" });
+    expect(deleteButton().disabled).toBe(true);
+    typeInto("Your password", MOCK_PASSWORD);
+    typeInto("Type your username (ade) to confirm", "Ade");
+    expect(deleteButton().disabled).toBe(true);
+    typeInto("Type your username (ade) to confirm", "ade");
+    expect(deleteButton().disabled).toBe(false);
+    fireEvent.click(deleteButton());
+    expect(
+      await screen.findByText(
+        /Your account is deleted\. Your earlier results show as anon-/,
+      ),
+    ).toBeDefined();
+    expect(sent).toEqual([["ade", MOCK_PASSWORD]]);
+    // The name stays closed after the deletion.
+    await expect(
+      mock.signUp("ade", "a different long password", true),
+    ).rejects.toMatchObject({ refusalCause: "name-taken" });
+  });
+
+  it("says a wrong password is wrong and deletes nothing", async () => {
+    let calls = 0;
+    const mock = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...mock,
+      deleteAccount: (username, password) => {
+        calls += 1;
+        return mock.deleteAccount(username, password);
+      },
+    };
+    renderAt("/account", api);
+    await screen.findByRole("heading", { name: "Delete my account" });
+    typeInto("Type your username (ade) to confirm", "ade");
+    typeInto("Your password", "not the password");
+    fireEvent.click(deleteButton());
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "That isn't your current password.",
+    );
+    expect(calls).toBe(1);
+    expect(screen.queryByText(/Your account is deleted/)).toBeNull();
+  });
+
+  it("asks an account with no password to set one first", async () => {
+    renderAt(
+      "/account",
+      makeMockApi({ today: HARNESS_TODAY, hasPassword: false }),
+    );
+    const heading = await screen.findByRole("heading", {
+      name: "Delete my account",
+    });
+    const card = heading.closest("section") as HTMLElement;
+    expect(within(card).getByText(/Set a password first/)).toBeDefined();
+    expect(
+      within(card).queryByRole("button", { name: "Delete my account" }),
+    ).toBeNull();
+  });
+
+  it("offers no deletion on a server with no accounts", async () => {
+    const api: Api = {
+      ...makeMockApi({ today: HARNESS_TODAY }),
+      getSessions: () => Promise.resolve({ sessions: [] }),
+    };
+    renderAt("/account", api);
+    await screen.findByText(/runs without sign-in/);
+    expect(
+      screen.queryByRole("heading", { name: "Delete my account" }),
+    ).toBeNull();
+  });
+});

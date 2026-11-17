@@ -328,6 +328,41 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
       calls.push("prune");
       return Promise.resolve({ sessions: 2, device_codes: 1 });
     },
+    setDescription: (player, description) => {
+      calls.push(`description ${player} ${description}`);
+      return Promise.resolve({ player, description });
+    },
+    setAvatar: (player) => {
+      calls.push(`avatar ${player}`);
+      return Promise.resolve({ player, avatar_hash: "c".repeat(64) });
+    },
+    removeAvatar: (player) => {
+      calls.push(`remove-avatar ${player}`);
+      return Promise.resolve({ player, avatar_hash: null });
+    },
+    getDeletionPreview: (player) => {
+      calls.push(`preview ${player}`);
+      return Promise.resolve({
+        player,
+        status: "active" as const,
+        days_played: 3,
+        first_day: "2026-08-10",
+        last_day: "2026-08-12",
+        sessions: 1,
+        has_password: true,
+        identifier: null,
+        removes: ["the player record", "the account and the avatar"],
+        keeps: ["each send and trial result, with an anonymous name"],
+      });
+    },
+    deletePlayer: (player, confirm) => {
+      calls.push(`delete ${player} ${confirm}`);
+      return Promise.resolve({
+        player,
+        deleted: true as const,
+        identifier: "anon-0123456789abcdef",
+      });
+    },
     getIndex: () =>
       Promise.resolve({
         path: "data/index/results-v1.sqlite",
@@ -920,7 +955,9 @@ describe("the Players tab", () => {
   it("shows the account, the devices, and the counts", async () => {
     const api = makeStubApi([dayRow({})]);
     await openAde(api);
-    expect(screen.getByText("Sketches in pencil.")).toBeDefined();
+    expect(
+      screen.getByText("Sketches in pencil.", { selector: "p" }),
+    ).toBeDefined();
     expect(screen.getByText("Devices signed in · 1")).toBeDefined();
     expect(api.calls).toContain("player ade");
   });
@@ -1051,6 +1088,86 @@ describe("the Players tab", () => {
     expect(
       screen.getByText("It works only from 2026-08-13 12:00 UTC."),
     ).toBeDefined();
+  });
+
+  it("edits and clears the description with no revoke", async () => {
+    const api = makeStubApi([dayRow({})]);
+    await openAde(api);
+    const field = screen.getByTestId(
+      "moderation-description",
+    ) as HTMLTextAreaElement;
+    expect(field.value).toBe("Sketches in pencil.");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(field, { target: { value: "Kinder words." } });
+    fireEvent.click(save);
+    expect(await screen.findByText("The description is saved.")).toBeDefined();
+    expect(api.calls).toContain("description ade Kinder words.");
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(
+      await screen.findByText("The description is cleared."),
+    ).toBeDefined();
+    expect(api.calls).toContain("description ade ");
+    expect(api.calls.some((call) => call.startsWith("revoke"))).toBe(false);
+  });
+
+  it("replaces and removes the picture", async () => {
+    const base = makeStubApi([dayRow({})]);
+    const api: DevApi & { calls: string[] } = {
+      ...base,
+      getPlayer: (player) =>
+        Promise.resolve(playerFixture({ player, has_avatar: true })),
+    };
+    await openAde(api);
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "a.png", {
+      type: "image/png",
+    });
+    fireEvent.change(screen.getByTestId("moderation-avatar-file"), {
+      target: { files: [file] },
+    });
+    expect(await screen.findByText("The picture is replaced.")).toBeDefined();
+    expect(api.calls).toContain("avatar ade");
+    fireEvent.click(screen.getByRole("button", { name: "Remove picture" }));
+    expect(await screen.findByText("The picture is removed.")).toBeDefined();
+    expect(api.calls).toContain("remove-avatar ade");
+  });
+
+  it("deletes an account in two steps: the preview, then the typed name", async () => {
+    const api = makeStubApi([dayRow({})]);
+    await openAde(api);
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const preview = await screen.findByTestId("deletion-preview");
+    expect(api.calls).toContain("preview ade");
+    expect(preview.textContent).toContain("3 days played");
+    expect(preview.textContent).toContain("a new anonymous identifier");
+    expect(preview.textContent).toContain("This cannot be undone.");
+    const go = screen.getByRole("button", {
+      name: "Delete permanently",
+    }) as HTMLButtonElement;
+    expect(go.disabled).toBe(true);
+    const confirm = screen.getByTestId("deletion-confirm");
+    fireEvent.change(confirm, { target: { value: "Ade" } });
+    expect(go.disabled).toBe(true);
+    fireEvent.change(confirm, { target: { value: "ade" } });
+    expect(go.disabled).toBe(false);
+    fireEvent.click(go);
+    expect(
+      await screen.findByText(
+        "ade is deleted. The earlier results show as anon-0123456789abcdef.",
+      ),
+    ).toBeDefined();
+    expect(api.calls).toContain("delete ade ade");
+    expect(screen.queryByTestId("deletion-preview")).toBeNull();
+  });
+
+  it("cancels a deletion at the preview and deletes nothing", async () => {
+    const api = makeStubApi([dayRow({})]);
+    await openAde(api);
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await screen.findByTestId("deletion-preview");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("deletion-preview")).toBeNull();
+    expect(api.calls.some((call) => call.startsWith("delete "))).toBe(false);
   });
 
   it("removes expired sign-ins and says how many", async () => {
