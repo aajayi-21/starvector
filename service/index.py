@@ -45,7 +45,7 @@ from pathlib import Path
 from service import store
 from service.config import ServiceConfigError, load_service_config
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE meta (
@@ -119,6 +119,16 @@ CREATE TABLE trial_atoms (
   similarity REAL,
   rarity REAL,
   PRIMARY KEY (day, player, scoring_config_hash, position)
+);
+CREATE TABLE quarantined (
+  day TEXT NOT NULL,
+  player TEXT NOT NULL,
+  cause TEXT NOT NULL,
+  decided_by TEXT NOT NULL,
+  tries INTEGER NOT NULL,
+  error TEXT NOT NULL,
+  quarantined_at TEXT NOT NULL,
+  PRIMARY KEY (day, player)
 );
 CREATE TABLE trial_channels (
   day TEXT NOT NULL,
@@ -263,6 +273,14 @@ def _fill(connection: sqlite3.Connection, root: Path) -> None:
              record.scoring_config_path, record.scoring_config_hash,
              record.preparation_version_id, record.opened_at,
              record.closed_at, record.revealed_at))
+        # Spec CR1 section 8: each quarantine record, for the operator.
+        for player in store.list_quarantined(root, day):
+            held = store.read_quarantine_or_none(root, day, player)
+            assert held is not None
+            connection.execute(
+                "INSERT INTO quarantined VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (day, player, held.cause, held.decided_by, held.tries,
+                 held.error, held.quarantined_at))
         for player in store.list_submissions(root, day):
             stored = store.read_json_or_none(
                 store.submission_path(root, day, player))

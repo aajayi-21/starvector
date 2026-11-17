@@ -230,7 +230,7 @@ def test_the_rows_agree_with_the_store(world) -> None:
         assert json.loads(config[1])["fusion"]["weights"] \
             == json.loads(config[2])
         meta = dict(db.execute("SELECT key, value FROM meta"))
-        assert meta["schema_version"] == "3"
+        assert meta["schema_version"] == "4"
         assert meta["license"] == "CC BY 4.0"
         assert meta["day_count"] == "2" and meta["withheld_count"] == "1"
         assert meta["first_day"] == DAY_ONE and meta["last_day"] == DAY_TWO
@@ -390,7 +390,7 @@ def test_the_check_finds_each_planted_fault(world, tmp_path) -> None:
                      "$argon2id$v=19$m=19456")
     assert any("$argon2" in fault for fault in faults)
     faults = planted("INSERT INTO submissions VALUES ('2026-12-03', 'ade', "
-                     "'t', NULL, NULL, 0, 0, 0, 0, 0, 0, NULL, '{}')")
+                     "'t', NULL, NULL, 0, 0, 0, 0, 0, 0, 0, NULL, '{}')")
     assert any("not in days" in fault for fault in faults)
     faults = planted("UPDATE players SET named = 1 WHERE named = 0")
     assert any("named" in fault for fault in faults)
@@ -493,3 +493,22 @@ def test_a_store_with_no_public_day_builds_an_empty_snapshot(
         assert db.execute("SELECT COUNT(*) FROM submissions"
                           ).fetchone()[0] == 0
     assert public.check(out) == []
+
+
+def test_a_quarantined_response_is_marked(world, tmp_path) -> None:
+    """Spec CR1 section 8: the response is in the file, marked."""
+    root = tmp_path / "store"
+    shutil.copytree(world["root"], root)
+    store.write_quarantine(root, store.QuarantineRecord(
+        day=DAY_ONE, player="bru", trial_id="f" * 32,
+        submission_digest=store.submission_digest(root, DAY_ONE, "bru"),
+        cause="input-refused", error="refused", tries=4,
+        decided_by="close", note=None, quarantined_at=NOW.isoformat()))
+    out = tmp_path / "out"
+    public.build(root, world["data"], out, snapshot_date="2026-12-04",
+                 built_at=NOW.isoformat(), version="test")
+    with _open(out) as db:
+        marks = dict(db.execute(
+            "SELECT player, quarantined FROM submissions WHERE day = ?",
+            (DAY_ONE,)))
+    assert marks["bru"] == 1 and marks["ade"] == 0

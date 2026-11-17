@@ -301,7 +301,7 @@ def test_a_send_that_races_the_close_refuses(tmp_path,
     monkeypatch.setattr(day_module.harness, "prewarm_records",
                         sending_during_the_encode)
     closed = client.post("/api/day/close")
-    assert closed.status_code == 200 and closed.json() == {"trial_rows": 1}
+    assert closed.status_code == 200 and closed.json() == {"trial_rows": 1, "quarantined": 0}
     assert [answer.status_code for answer in answers] == [409]
     assert answers[0].json() == {"cause": "day-closed"}
     # Each stored submission has its row: nothing slipped between.

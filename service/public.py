@@ -49,7 +49,7 @@ from service.pick_rule import vp1_faults
 from service.pulse import chain_named, pulse_time
 from service.index import _counts, _trial_files
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 LICENSE_NAME = "CC BY 4.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
 
@@ -114,6 +114,7 @@ CREATE TABLE submissions (
   relation_count INTEGER NOT NULL,
   has_pasted_text INTEGER NOT NULL,
   withheld INTEGER NOT NULL,
+  quarantined INTEGER NOT NULL,
   pasted_text TEXT,
   record_json TEXT,
   PRIMARY KEY (day, player)
@@ -214,7 +215,7 @@ _TABLES: dict[str, tuple[str, ...]] = {
     "submissions": ("day", "player", "received_at", "started_at",
                     "seconds_from_start", "impression_count", "stroke_count",
                     "group_count", "relation_count", "has_pasted_text",
-                    "withheld", "pasted_text", "record_json"),
+                    "withheld", "quarantined", "pasted_text", "record_json"),
     "impressions": ("day", "player", "position", "text"),
     "strokes": ("day", "player", "position", "group_id", "color",
                 "point_count", "points_json"),
@@ -488,12 +489,14 @@ def _fill(connection: sqlite3.Connection, root: Path, data_root: Path,
             received_at = str(stored["received_at"])
             counts = _counts(wire)
             pasted = wire.get("pasted_text")
+            quarantined = store.read_quarantine_or_none(
+                root, name, player) is not None
             connection.execute(
                 "INSERT INTO submissions VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (name, shown, received_at, started_at,
                  _seconds_between(started_at, received_at), *counts,
-                 1 if withheld else 0,
+                 1 if withheld else 0, 1 if quarantined else 0,
                  None if withheld or not counts[4] else pasted,
                  None if withheld else _json(wire)))
             if withheld:
@@ -807,6 +810,10 @@ real target's mean among those means, from 0 to 1, with half a position
 for each equal mean. With no skill it is flat on 0 to 1, because the
 target is an equally likely image of the pool. A day with no response
 has NULL.
+
+**A quarantined response.** A response that the model server refused
+on each retry at the close has `quarantined` 1 and no row in `trials`:
+the close did not give it a score. The response itself is in the file.
 
 **A withheld response.** The operator can withhold the text and the
 sketch of a response that must not be public. Its row has `withheld` 1

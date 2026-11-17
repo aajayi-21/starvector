@@ -209,3 +209,46 @@ def test_the_status_names_the_quarantine_count(tmp_path) -> None:
     fixture = _day_of(tmp_path, good=20, refused=1)
     _close(fixture)
     assert "quarantined 1" in day_status_lines(fixture["service_config"])
+
+
+# ---- what the player and the operator read (spec CR1 sections 7, 8) ----
+
+
+def _revealed_day_with_a_skip(tmp_path):
+    from service.day import reveal_day
+
+    fixture = _day_of(tmp_path, good=20, refused=0)
+    # The configured player of the fixture world is "ade": the refused
+    # send is theirs, thus the player surfaces read it.
+    _send(fixture["store"], "ade", _record(0, True))
+    _close(fixture)
+    reveal_day(fixture["service_config"], clock=lambda: FIXED_CLOCK)
+    return fixture, TestClient(create_app(fixture["service_config"]))
+
+
+def test_the_player_reads_a_skip_as_not_scored(tmp_path) -> None:
+    fixture, client = _revealed_day_with_a_skip(tmp_path)
+    reveal = client.get("/api/reveal").json()
+    assert reveal["quarantined"] is True
+    assert reveal["trial"] is None
+    assert "note" not in json.dumps(reveal)
+    history = client.get("/api/history").json()
+    assert history["days"] == []
+    assert [row["day"] for row in history["not_scored"]] == [DAY]
+    assert history["skill"] is None
+    # The send is stored, thus the streak holds (ruling D2).
+    assert client.get("/api/me").json()["streak"] == 1
+
+
+def test_the_index_and_the_public_file_hold_the_skip(tmp_path) -> None:
+    import sqlite3
+
+    from service import index
+
+    fixture, _ = _revealed_day_with_a_skip(tmp_path)
+    target = tmp_path / "index.sqlite"
+    index.build(fixture["store"], target)
+    with sqlite3.connect(target) as db:
+        rows = db.execute(
+            "SELECT day, player, decided_by FROM quarantined").fetchall()
+    assert rows == [(DAY, "ade", "close")]
