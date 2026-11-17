@@ -228,7 +228,7 @@ def test_the_skill_board_keeps_the_configuration_off_the_wire(
 # body that drops one makes a screen that trusts the type read a
 # missing value, and the gated board is where that happens.
 _REQUIRED = ("active", "player_count", "eligible_count",
-             "degenerate_count", "eligibility_floor", "recomputed_floor",
+             "eligibility_floor", "recomputed_floor",
              "fit_floor", "provisional", "rows", "baseline_band",
              "population", "variation", "discovery")
 
@@ -268,9 +268,9 @@ def test_each_gated_body_is_a_complete_view(tmp_path) -> None:
 def test_the_standing_monitors_stay_operator_only(tmp_path) -> None:
     """Ruling 5 of 2026-08-15 publishes the discovery claim alone.
 
-    The baseline check and the stopping monitor hold no
-    player-facing copy, thus they stay in the artifact where the
-    operator reads them.
+    The day check (spec AG1 section 5, which replaces the baseline
+    check) and the stopping monitor hold no player-facing copy, thus
+    they stay in the artifact where the operator reads them.
     """
     fixture, client, tokens = _world(tmp_path)
     root = Path(fixture["service_config"].store_root)
@@ -279,10 +279,10 @@ def test_the_standing_monitors_stay_operator_only(tmp_path) -> None:
     stored = json.loads(rollup.skill_board_path(
         data_root, record.scoring_config_hash).read_text())
     # The guard against a test that passes on a missing field.
-    assert "baseline" in stored and "stopping_monitor" in stored
+    assert "day_check" in stored and "stopping_monitor" in stored
     view = _as(client, tokens["ade"]).get("/api/leaderboard/skill").json()
-    assert "baseline" not in view
-    assert "stopping_monitor" not in view
+    assert "day_check" not in view and "baseline" not in view
+    assert "stopping_monitor" not in view and "format" not in view
     assert "discovery" in view
 
 

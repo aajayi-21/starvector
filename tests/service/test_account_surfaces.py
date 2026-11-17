@@ -279,8 +279,8 @@ def test_the_boards_hold_the_avatar_digest(tmp_path) -> None:
                                          record.scoring_config_hash)
     board_path.parent.mkdir(parents=True, exist_ok=True)
     board_path.write_text(json.dumps(
-        {"active": True, "rows": [{"player": "ade"},
-                                  {"player": "bru"}]}),
+        {"active": True, "format": rollup.ROLLUP_FORMAT,
+         "rows": [{"player": "ade"}, {"player": "bru"}]}),
         encoding="utf-8")
     skill_rows = ade.get("/api/leaderboard/skill").json()["rows"]
     skill_hashes = {row["player"]: row["avatar_hash"]

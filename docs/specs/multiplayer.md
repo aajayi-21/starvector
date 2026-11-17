@@ -351,7 +351,10 @@ stays in the record for the site-wide work.
 
 ### Standing monitors
 
-- **The baseline check.** Fit the no-skill law of the evidence
+- **The baseline check.** (Note of 2026-11-16: spec AG1 replaces this
+  check with the day check of the day ranks, because all players of
+  a day have the same target and their trial scores move together.)
+  Fit the no-skill law of the evidence
   statistics and compare it against the law the uniformity
   guarantee predicts. Disagreement says the pipeline
   broke V2's uniformity — the invariant that matters most — thus

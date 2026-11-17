@@ -737,7 +737,7 @@ Layers 4–6 produce a full ranking cheaply. They are good at pulling the right 
 
 ### Procedure
 
-1. Take the top 25 from the fast ranking. **Force the target into the candidate set if it is not already there.** Otherwise you would only ever rerank trials where the fast path already succeeded, which biases scores upward.
+1. Get the top 25 from the fast ranking, selected with no knowledge of the target. **Do not put the target into the candidate set.** A candidate set that depends on the target treats the target and the decoys differently (Rule 3), and it puts the target upstream of Layer 8 (Rule 1). The stitched ranking is a full sequence of the pool made with no target, thus the trial score keeps its flat baseline. (Changed by spec AG1 on 2026-11-16.)
 2. Send the submission plus the 25 candidate images to a VLM through OpenRouter, with a fixed instruction describing how to assess correspondence.
 3. **Randomize the presentation order and repeat three times, then average.** VLM judges have a strong tendency to favour whichever item appears first. This is a large effect, not a small correction.
 4. Reorder the candidates by the averaged result.
@@ -745,10 +745,8 @@ Layers 4–6 produce a full ranking cheaply. They are good at pulling the right 
 ### Stitching the two rankings together
 
 ```python
-if target in candidates:
-    rank = position_among_reranked_candidates(target)      # 0 to 24
-else:
-    rank = fast_path_rank(target)                          # 25 or worse
+order = reranked(candidates) + fast_path_order_after(candidates)   # the full pool, no target
+rank = order.position(target)                                      # Layer 8 reads it
 ```
 
 **The assumption this rests on** is that everything outside the top 25 really does belong below everything inside it. That holds when the fast path has good recall. **Measure it:** on synthetic submissions with known targets, what fraction of true targets land in the top 25? Below about 90%, enlarge the candidate set or fix the fast path rather than papering over it.
@@ -794,6 +792,8 @@ With no information, the trial score is equally likely to be anywhere between 0 
 
 The small effect of `D` being finite rather than infinite makes downstream tests very slightly conservative. At `D ≥ 200` this is negligible and the half-credit-for-ties rule above handles it.
 
+Layer 9 reads a corrected score made from the same counts, and the trial score stays the number a player reads (§17, spec AG1).
+
 ---
 
 ## 17. Layer 9 — Aggregation
@@ -808,6 +808,8 @@ skill number θ = −n / Σ log(pᵢ)          over a player's n trials
 
 `θ = 1` is chance. `θ > 1` means the trial scores are clustered high.
 
+**Change, 2026-11-16 (spec AG1) — the corrected score.** The `pᵢ` that Layer 9 reads is the corrected score `p̃ = (beaten + 0.5 × tied + 0.5) / (D + 1)`, made from the counts that each trial row stores. It sits in (0, 1) at each decoy count. The trial score of §16 can be 0.0, and the logarithm of a 0.0 clamped to the smallest float put a term of 744 into `S`, which held the skill number of the player. With no skill, 200 players, and 100 days at `D` = 1,392, that clamp fired the variation report in each of 200 simulated seasons. With the corrected score it fires in 7% of them, near the level of 5%. The trial score that a player reads does not change.
+
 **Convention, pinned 2026-08-15 (spec M1 §10).** `pᵢ` is the **trial score** — the fraction of decoys beaten, so high is good — and not a p-value. The three directions follow from that and must never be inverted silently: the skill number **rises** with ability, the evidence statistic's **small** tail is the evidence direction, and a leaderboard sorts **descending** by the ranking quantity. `core/aggregate.py` implements exactly this today; the sentence exists so a future edit cannot flip a sign unnoticed.
 
 ### Evidence
@@ -820,7 +822,14 @@ The same quantity gives a significance test. Under the no-ability assumption:
 
 Small values are the evidence direction. **One computation serves as the ability estimate, the likelihood, and the hypothesis test** — this is Fisher's method for combining independent results, read backwards.
 
-It is also more sensitive than simply averaging the trial scores to the pattern you would actually expect if the effect were real: occasional strong hits rather than uniformly slight elevation.
+**Change, 2026-11-16 (spec AG1) — the two directions.** This statistic is the most sensitive test of a small constant edge, the move that a `Beta(θ, 1)` law models. It is weak against occasional strong hits: a perfect trial adds a term near zero, and the term of a trial at chance is about one. An earlier text of this section said the opposite, and it was incorrect. The hit statistic `T = −Σ log(1 − p̃)` reads the top of the scale, and with no skill it has the same law as `S`. The hit number `T / n` is 1.0 at chance and rises when more trials land near the top. The evidence value of a player is two times the smaller of the bottom tail of `2S` and the top tail of `2T`, each at `2n` degrees of freedom: the two directions, each at half the level. The evidence at each look is the mean of the two mixture values, which keeps a mean of one with no skill. At 100 trials, the simulations of spec AG1 give:
+
+| Pattern | `S` alone | `T` alone | the two directions |
+|---|---|---|---|
+| 5% of trials in the first position | 0.133 | 0.843 | 0.782 |
+| a constant edge, `Beta(1.25, 1)` | 0.722 | 0.428 | 0.642 |
+
+The skill number and the leaderboard stay on `S`. The hit number shows adjacent to the skill number, and it does not sort a board.
 
 ### Uncertainty
 
@@ -877,6 +886,8 @@ computed by sampling the fitted posterior. The difference shows on a player with
 **Players choose when to stop.** Someone who quits after a hot streak has an inflated skill number. Daily cadence with everyone starting from zero limits this, but the honest defense is to **display the trial count prominently** and require a minimum (around 30) for leaderboard eligibility.
 
 **Many players means many accidents.** With 10,000 players, dozens will clear a 1-in-100 threshold every week by chance alone, and every one of them will believe they have discovered something about themselves. Report values adjusted for the number of players tested (a false discovery rate adjustment). This is an integrity obligation, and also a practical one — the statistically literate players will notice, and they will say so publicly.
+
+**The shared target of a day.** Each player of a day has the same target, thus the trial scores of a day move together when the target is an easy image or a hard one. A check that reads each player as one sample with no connection to the others fires too frequently: 17% at a correlation of 0.02 and 48% at 0.10, against a level of 5%. The day check fires 4% and 3%. The check of the population is the day check (spec AG1). For each image of the pool, calculate the mean corrected score that the day's players get with that image as the target. The day rank is the position of the target's mean in that set. With no skill the target is an equally likely image and has no connection with the submissions, thus the day rank is flat on the unit interval whatever the correlation of the players, and the day ranks of the revealed days are checked against the flat law. The pick after the close (§22) makes that independence literal. Each player's own numbers are not affected, because the days of one player have different targets.
 
 **What is actually interesting.** If the no-ability assumption is correct, the population spread of `log θ` should be exactly what sampling noise predicts and no more. If you observe genuine extra spread between players, *that* is the finding — far more than any individual score. It is also the number a skeptic will ask for, so compute it from the beginning.
 

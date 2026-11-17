@@ -60,6 +60,20 @@ describe("the leaderboard screen", () => {
     ).toBeDefined();
   });
 
+  it("shows the hit number beside the steadied skill (spec AG1 §7)", async () => {
+    const board = await api().getSkillLeaderboard();
+    renderAt("/leaderboard");
+    const table = await screen.findByTestId("ranked-table");
+    expect(
+      within(table).getByRole("columnheader", { name: "Hit number" }),
+    ).toBeDefined();
+    const first = board.rows.find((row) => row.eligible);
+    expect(first).toBeDefined();
+    expect(
+      within(table).getAllByText((first?.hit_number ?? 0).toFixed(2)).length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
   it("draws one dot for every player, ranked or not", async () => {
     const board = await api().getSkillLeaderboard();
     const view = renderAt("/leaderboard");

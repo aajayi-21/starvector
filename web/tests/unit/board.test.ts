@@ -18,6 +18,7 @@ function row(over: Partial<SkillBoardRow> & { n: number }): SkillBoardRow {
     avatar_hash: null,
     eligible: over.n >= 30,
     theta: 1,
+    hit_number: 1,
     shrunk: null,
     y: 0,
     v: 1 / over.n,

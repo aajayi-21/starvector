@@ -79,7 +79,13 @@ describe("the Your results screen", () => {
       getHistory: () =>
         Promise.resolve({
           days,
-          skill: { theta: 1.167, shrunk: 1.013, evidence_p: 0.258, n: 4 },
+          skill: {
+            theta: 1.167,
+            shrunk: 1.013,
+            hit_number: 1.31,
+            evidence_p: 0.258,
+            n: 4,
+          },
         }),
     };
     renderAt("/history", api);
@@ -92,6 +98,8 @@ describe("the Your results screen", () => {
       .closest("section") as HTMLElement;
     // (0.8079 + 0.9688) / 2 = 0.88835, shown as 88% — not 96%.
     expect(within(typical).getByText("88%")).toBeDefined();
+    // The hit number sits below the skill number (spec AG1 §7).
+    expect(screen.getByTestId("hit-number").textContent).toBe("1.31");
     // Each row keeps its own pool size.
     expect(screen.getByText("3rd of 225")).toBeDefined();
     expect(screen.getByText("40th of 204")).toBeDefined();

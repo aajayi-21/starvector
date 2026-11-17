@@ -17,11 +17,19 @@ of spec M1 and the section 17 change of 2026-08-15 authorize it.
 
 Each function here uses math alone. The one function that wants an
 array is posterior_ranks, and it says so in its own docstring.
+
+Spec AG1 (docs/specs/aggregation-repairs.md) changes the input: Layer 9
+reads the corrected score of each trial, made from the stored counts,
+and not the trial score. It adds the hit statistic T, the evidence of
+the two directions, and the day check that replaces the baseline check
+of the players.
 """
 
 import math
 from collections.abc import Sequence
 from typing import NamedTuple
+
+from core.types import TrialCounts
 
 # The recurrence pushes an argument to the threshold, then the
 # Bernoulli series runs. The term count is fixed and the walk
@@ -81,25 +89,47 @@ EVIDENCE_MIXTURE_SHAPE = 1.0
 EVIDENCE_MIXTURE_RATE = 1.0
 EVIDENCE_MIXTURE_FLOOR = 1.0
 
+# The mixture of the hit side (spec AG1 section 4). The hit parameter
+# beta is the exponent of the law of 1 - p: beta below one puts trials
+# near the top. The mixture is flat on (0, 1), the hit side alone, in
+# the manner of the cut of the skill side, and its value has a closed
+# shape.
+HIT_MIXTURE_LOW = 0.0
+HIT_MIXTURE_HIGH = 1.0
+
+# The series of the hit side at a small T: a fixed term count that is a
+# closed function of n, as the rule above asks. At T = n + 1 the term j
+# is about exp(-j * j / (2 (n + 1))), thus 8 times the root of n + 1
+# puts the first term nobody adds below 1e-13 of the first one.
+_HIT_SERIES_ROOT_TERMS = 8.0
+_HIT_SERIES_EXTRA_TERMS = 40
+
 
 class SkillSummary(NamedTuple):
     """One player's aggregate across n trials (architecture 17).
 
     theta is the skill number: 1.0 is the no-information baseline,
-    above 1.0 says the trial scores cluster high. evidence_statistic is 2S at
-    dof = 2n degrees of freedom, and evidence_p is the lower
-    chi-squared tail - small values are the evidence direction
-    (spec S1 section 14a). clamp_count says how many trial scores
-    of 0.0 were clamped before the logarithm.
+    above 1.0 says the trial scores cluster high. hit_number is T / n:
+    1.0 is the baseline, above 1.0 says more trials land near the top
+    (spec AG1 section 4).
+
+    skill_tail is the bottom chi-squared tail of 2S at 2n degrees of
+    freedom, and hit_tail is the top tail of 2T. evidence_p is two
+    times the smaller of the two, at most one: the evidence of the two
+    directions, each at half the level. Small values are the evidence
+    direction (spec S1 section 14a).
     """
 
     n: int
-    clamp_count: int
     s_statistic: float
+    t_statistic: float
     theta: float
     log_theta: float
+    hit_number: float
     evidence_statistic: float
     dof: int
+    skill_tail: float
+    hit_tail: float
     evidence_p: float
 
 
@@ -210,77 +240,99 @@ def chi_squared_tail(statistic: float, dof: int) -> float:
     return min(1.0, math.erfc(math.sqrt(half)) + math.fsum(terms))
 
 
-def log_term(p: float) -> tuple[float, bool]:
-    """One trial score's term, and a flag for the clamp.
+def log_gamma_top_tail(shape: int, x: float) -> float:
+    """The logarithm of Q(shape, x), the top gamma tail at an integer shape.
 
-    The term is the negative logarithm of the trial score, and this
-    holds the one clamp rule for the full system: a trial score of
-    0.0 reads as the smallest positive float and the caller counts
-    it, because the logarithm of zero has no value and to drop the
-    trial rewards the worst one there is.
+    The branch of chi_squared_tail at a dof of 2n, on the logarithmic
+    scale:
+    -x plus the logarithm of the sum of x^k / k! for k below the shape,
+    with the peak removed. The tail itself goes to 0.0 when x is far
+    above the shape, and a logarithm of 0.0 has no value. The skill side
+    of the evidence reads this, thus a player with trials far below the
+    baseline gets a defined value and the skill board does not stop.
 
-    A trial score of 1.0 gives a term of 0.0, which is a number and
-    not a fault. skill_summary refuses a full sequence of 1.0
-    scores, because that player has no skill number, but the term
-    of one such trial has a value and the caller that folds it
-    across days needs it. The two questions are different and this
-    answers the narrow one.
-
-    A trial score out of [0, 1] raises.
+    A shape below one or an x at or below zero raises.
     """
-    value = float(p)
-    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
-        raise ValueError(f"a trial score must sit in [0, 1], got {p!r}")
-    if value == 0.0:
-        return -math.log(math.ulp(0.0)), True
-    return -math.log(value), False
+    if shape < 1:
+        raise ValueError(f"the shape must be a positive integer, got {shape}")
+    if not math.isfinite(x) or x <= 0.0:
+        raise ValueError(f"x must be finite and positive, got {x!r}")
+    log_x = math.log(x)
+    log_terms = [k * log_x - math.lgamma(k + 1) for k in range(shape)]
+    peak = max(log_terms)
+    total = math.fsum(math.exp(term - peak) for term in log_terms)
+    return min(0.0, peak - x + math.log(total))
 
 
-def skill_summary(ps: Sequence[float], unbiased: bool = True) -> SkillSummary:
-    """The section 17 aggregate of one player's trial scores.
+def corrected_score(beaten: int, tied: int, decoy_count: int) -> float:
+    """The corrected score of one trial: (beaten + tied/2 + 1/2) / (D + 1).
 
-    S is the negative sum of the logarithms of the trial scores.
-    theta = n / S, or (n - 1) / S with unbiased (which requires
-    n >= 2 - the section 14a ruling: (n - 1) / S at n = 1 is 0, not
-    an estimate). A trial score of 0.0 is clamped to the smallest
-    positive float and counted - a silent infinity is worse than a
-    named clamp. A trial score out of [0, 1] raises,
-    and a sequence of all-1.0 scores raises: S = 0 puts the skill
-    number out of range, and a silent cap can misstate it.
+    Spec AG1 section 3. It sits in (0, 1) at each decoy count, thus no
+    logarithm in this module meets zero or one. With no skill and no
+    equal scores it takes the D + 1 centers of the unit interval with
+    equal chance. The trial score of Layer 8 can be 0.0, and one such
+    trial put a term of 744 into S, which held the skill number.
+
+    Counts that are not integers, a decoy count below one, a negative
+    count, or more beaten and tied decoys than decoys raises.
     """
-    scores = [float(p) for p in ps]
-    n = len(scores)
+    for name, value in (("beaten", beaten), ("tied", tied),
+                        ("decoy_count", decoy_count)):
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{name} must be an integer, got {value!r}")
+    if decoy_count < 1:
+        raise ValueError(f"the decoy count must be at least 1, got "
+                         f"{decoy_count}")
+    if beaten < 0 or tied < 0 or beaten + tied > decoy_count:
+        raise ValueError(
+            f"beaten {beaten} and tied {tied} do not fit in {decoy_count} "
+            "decoys")
+    return (beaten + 0.5 * tied + 0.5) / (decoy_count + 1)
+
+
+def trial_terms(counts: TrialCounts) -> tuple[float, float]:
+    """The two terms of one trial, the S term and the T term.
+
+    The S term is the negative logarithm of p, and the T term is the
+    negative logarithm of 1 - p.
+
+    p is the corrected score. log1p keeps the second term accurate
+    when p is near one, which is the trial the hit side reads.
+    """
+    p = corrected_score(counts.beaten, counts.tied, counts.decoy_count)
+    return -math.log(p), -math.log1p(-p)
+
+
+def skill_summary(trials: Sequence[TrialCounts],
+                  unbiased: bool = True) -> SkillSummary:
+    """The section 17 aggregate of one player's trials (spec AG1).
+
+    S and T are the sums of the two terms of trial_terms. theta = n /
+    S, or (n - 1) / S with unbiased (which requires n >= 2 - the
+    section 14a ruling: (n - 1) / S at n = 1 is 0, not an estimate).
+    An empty sequence raises.
+    """
+    rows = list(trials)
+    n = len(rows)
     if n == 0:
-        raise ValueError("skill_summary needs one or more trial scores")
-    if unbiased and n < 2:
-        raise ValueError(
-            "the unbiased variant needs n >= 2 - (n - 1) / S at n = 1 "
-            "is 0, not an estimate (spec S1 section 14a)")
-    clamp_count = 0
-    terms: list[float] = []
-    for p in scores:
-        term, clamped = log_term(p)
-        clamp_count += 1 if clamped else 0
-        terms.append(term)
-    s_statistic = math.fsum(terms)
-    if s_statistic == 0.0:
-        raise ValueError(
-            "each trial score is 1.0 - S is 0 and the skill number is "
-            "out of range")
-    return summary_of_pair(n, s_statistic, clamp_count=clamp_count,
+        raise ValueError("skill_summary needs one or more trials")
+    terms = [trial_terms(row) for row in rows]
+    return summary_of_pair(n, math.fsum(term[0] for term in terms),
+                           math.fsum(term[1] for term in terms),
                            unbiased=unbiased)
 
 
-def summary_of_pair(n: int, s_statistic: float, *, clamp_count: int = 0,
+def summary_of_pair(n: int, s_statistic: float, t_statistic: float, *,
                     unbiased: bool = True) -> SkillSummary:
     """The section 17 aggregate from a folded pair.
 
-    skill_summary walks the trial scores and this reads the two
-    numbers a rollup keeps, thus a stored pair and a new walk give
-    the same record and the formula lives one time.
+    skill_summary walks the trials and this reads the numbers that a
+    rollup keeps, thus a stored pair and a new walk give the same
+    record and the formula lives one time.
 
-    A trial count below one, an S statistic at or below zero, or
-    the unbiased variant at a trial count of one raises.
+    A trial count below one, a statistic at or below zero, or the
+    unbiased variant at a trial count of one raises. A corrected score
+    is in (0, 1), thus each statistic of a stored pair is positive.
     """
     if n < 1:
         raise ValueError(f"the trial count must be at least 1, got {n}")
@@ -288,16 +340,20 @@ def summary_of_pair(n: int, s_statistic: float, *, clamp_count: int = 0,
         raise ValueError(
             "the unbiased variant needs n >= 2 - (n - 1) / S at n = 1 "
             "is 0, not an estimate (spec S1 section 14a)")
-    if not math.isfinite(s_statistic) or s_statistic <= 0.0:
-        raise ValueError(
-            "each trial score is 1.0 - S is 0 and the skill number is "
-            "out of range")
+    for name, value in (("S", s_statistic), ("T", t_statistic)):
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError(f"the {name} statistic must be finite and "
+                             f"positive, got {value!r}")
     theta = ((n - 1) if unbiased else n) / s_statistic
+    skill_tail = 1.0 - chi_squared_tail(2.0 * s_statistic, 2 * n)
+    hit_tail = chi_squared_tail(2.0 * t_statistic, 2 * n)
     return SkillSummary(
-        n=n, clamp_count=clamp_count, s_statistic=s_statistic,
+        n=n, s_statistic=s_statistic, t_statistic=t_statistic,
         theta=theta, log_theta=math.log(theta),
+        hit_number=t_statistic / n,
         evidence_statistic=2.0 * s_statistic, dof=2 * n,
-        evidence_p=1.0 - chi_squared_tail(2.0 * s_statistic, 2 * n))
+        skill_tail=skill_tail, hit_tail=hit_tail,
+        evidence_p=min(1.0, 2.0 * min(skill_tail, hit_tail)))
 
 
 def shrunk_log_theta(log_theta: float, n: int, population_mean: float,
@@ -347,8 +403,9 @@ def population_point(n: int, s_statistic: float) -> PopulationPoint:
     is what breaks the between-player test (spec M1 section 6).
 
     A trial count below one raises. An S statistic at or below zero
-    raises: a player with 1.0 at each trial score has no estimate
-    on this scale, and a silent value is worse than the stop.
+    raises: the corrected score of spec AG1 keeps S positive, thus such
+    a value is a defect upstream, and a silent value is worse than the
+    stop.
     """
     if n < 1:
         raise ValueError(f"the trial count must be at least 1, got {n}")
@@ -598,10 +655,10 @@ def variation_report(points: Sequence[PopulationPoint],
     )
 
 
-class BaselineCheck(NamedTuple):
-    """The goodness-of-fit against the no-skill law (section 6)."""
+class DayCheck(NamedTuple):
+    """The goodness-of-fit of the day ranks against the flat law."""
 
-    player_count: int
+    day_count: int
     statistic: float
     significance: float
 
@@ -629,33 +686,36 @@ def kolmogorov_tail(statistic: float, count: int) -> float:
     return min(1.0, max(0.0, 2.0 * total))
 
 
-def baseline_check(points: Sequence[PopulationPoint]) -> BaselineCheck:
-    """Compare the stored pairs against the law with no skill.
+def day_check(day_ranks: Sequence[float]) -> DayCheck:
+    """Compare the day ranks of the revealed days against the flat law.
 
-    With the no-skill law S is a Gamma value at shape n and rate
-    one for each player, thus the top tail of 2S at 2n degrees of
-    freedom is constant on the unit interval at each trial count.
-    That transform is the one shape which handles trial counts that
-    are different, and the check is then the two-sided Kolmogorov
-    statistic against the flat law.
+    Spec AG1 section 5. A day rank is the position of the target's day
+    number in the set of the day numbers of each pool image, from Layer 8
+    (core/ranking.py, day_rank). With no skill the target is an equally
+    likely member of the pool and has no connection with the
+    submissions, thus each day rank is flat on the unit interval
+    whatever the correlation of the players on that day. The check on
+    the tails of the players read the players as samples with no
+    connection, and the shared target of a day breaks that.
 
-    A disagreement says the pipeline broke the uniformity the
-    ranking guarantees. That is an audit of the guarantee and not a
-    tuning task (spec M1 section 6).
+    The statistic is the two-sided Kolmogorov statistic. A disagreement
+    says the pipeline broke the uniformity the ranking guarantees, or
+    that the players beat chance together.
 
-    An empty input raises.
+    An empty input or a rank out of (0, 1) raises.
     """
-    rows = list(points)
-    count = len(rows)
+    values = sorted(float(value) for value in day_ranks)
+    count = len(values)
     if count < 1:
-        raise ValueError("the baseline check wants one or more players")
-    values = sorted(chi_squared_tail(2.0 * point.s_statistic, 2 * point.n)
-                    for point in rows)
+        raise ValueError("the day check wants one or more day ranks")
+    for value in values:
+        if not math.isfinite(value) or not 0.0 < value < 1.0:
+            raise ValueError(f"a day rank must sit in (0, 1), got {value!r}")
     statistic = max(
         max((index + 1) / count - value, value - index / count)
         for index, value in enumerate(values))
-    return BaselineCheck(player_count=count, statistic=statistic,
-                         significance=kolmogorov_tail(statistic, count))
+    return DayCheck(day_count=count, statistic=statistic,
+                    significance=kolmogorov_tail(statistic, count))
 
 
 class PosteriorRow(NamedTuple):
@@ -816,25 +876,94 @@ def recomputed_trial_floor(tau: float) -> int:
 
 
 class EvidenceSummary(NamedTuple):
-    """The evidence that holds at each look (section 6).
+    """The evidence that holds at each look (section 6, spec AG1 §4).
 
-    significance is one divided by the value and reads as a
-    significance level. The mixture constants travel with it,
-    because the number means nothing without them.
+    log_e_value is the logarithm of the mean of the two values, the
+    skill side and the hit side. significance is one divided by that
+    mean and reads as a significance level. The mixture constants
+    travel with it, because the number means nothing without them.
 
-    mixture_floor is the smallest skill number the mixture spans.
-    At one, the value asks if the player is above the baseline. Read it before you read the value.
+    mixture_floor is the smallest skill number the skill mixture spans.
+    hit_mixture_low and hit_mixture_high bound the flat mixture of the
+    hit side. Read them before you read the value.
     """
 
     log_e_value: float
     significance: float
+    log_e_skill: float
+    log_e_hit: float
     mixture_shape: float
     mixture_rate: float
     mixture_floor: float = EVIDENCE_MIXTURE_FLOOR
+    hit_mixture_low: float = HIT_MIXTURE_LOW
+    hit_mixture_high: float = HIT_MIXTURE_HIGH
 
 
-def anytime_evidence(n: int, s_statistic: float) -> EvidenceSummary:
-    """The evidence value that holds at each look (section 6).
+def _log_e_skill(n: int, s_statistic: float) -> float:
+    """The skill side: the mixture across the skills above one.
+
+    Section 6 pinned the wider mixture, and the 2026-08-16 ruling
+    narrowed it, because the wider one answers a different question
+    than the game asks. With a Gamma mixture across each positive skill
+    the value falls to its minimum at S equal to n and climbs on the
+    two sides, thus a player far below the baseline gets the same large
+    value as a player far above it.
+
+    Cut at one, the mixture at a and b of one is a moved exponential
+    and the closed shape survives:
+
+        S + 1 + lgamma(n + 1) - (n + 1) log_of(S + 1)
+              + log_of Q(n + 1, S + 1)
+
+    Q is the top tail of the gamma law at shape n + 1, on the
+    logarithmic scale (log_gamma_top_tail), because it goes to 0.0 at a
+    large S. The value falls as S rises: a small S is a high skill
+    number.
+    """
+    shifted = s_statistic + EVIDENCE_MIXTURE_RATE
+    return (s_statistic
+            + EVIDENCE_MIXTURE_RATE
+            + math.lgamma(n + 1)
+            - (n + 1) * math.log(shifted)
+            + log_gamma_top_tail(n + 1, shifted))
+
+
+def _log_e_hit(n: int, t_statistic: float) -> float:
+    """The hit side: the flat mixture across the hit parameter in (0, 1).
+
+    With 1 - p of law beta (1 - p) ^ (beta - 1), the ratio against no
+    skill across n trials is beta ^ n exp((1 - beta) T). Flat on (0,
+    1), the mixture is
+
+        exp(T) n! / T ^ (n + 1) * P(n + 1, T)
+
+    with P the bottom tail of the gamma law at shape n + 1. Above T = n
+    + 1 that tail is above one half, thus one minus the top tail of
+    chi_squared_tail is accurate there. At a smaller T the same value
+    is the series
+
+        (1 / (n + 1)) * sum for j of T ^ j / ((n + 2) ... (n + 1 + j))
+
+    with a term count that is a closed function of n. The value rises
+    as T rises: a large T is many trials near the top.
+    """
+    count = n + 1
+    if t_statistic > count:
+        return (t_statistic + math.lgamma(count)
+                - count * math.log(t_statistic)
+                + math.log(1.0 - chi_squared_tail(2.0 * t_statistic,
+                                                  2 * count)))
+    terms = [1.0]
+    steps = math.ceil(_HIT_SERIES_ROOT_TERMS * math.sqrt(count)) \
+        + _HIT_SERIES_EXTRA_TERMS
+    for j in range(1, steps):
+        terms.append(terms[-1] * t_statistic / (count + j))
+    return math.log(math.fsum(terms)) - math.log(count)
+
+
+def anytime_evidence(n: int, s_statistic: float,
+                     t_statistic: float) -> EvidenceSummary:
+    """The evidence value that holds at each look (section 6, AG1 §4).
 
     A player selects when to stop, thus a fixed-count significance
     value is not theirs to read: they can look after each trial and
@@ -842,60 +971,35 @@ def anytime_evidence(n: int, s_statistic: float) -> EvidenceSummary:
     stop of their own selection, which is the property that earns
     it a position on a player's screen.
 
-    The mixture runs across the skills ABOVE one and not across each
-    skill above zero. Section 6 pinned the wider mixture, and the
-    2026-08-16 ruling narrowed it, because the wider one answers a
-    different question than the game asks. With a Gamma mixture across
-    each positive skill the value falls to its minimum at S
-    equal to n and climbs on the two sides, thus a player far below
-    the baseline gets the same large value as a player far above
-    it. That value tests "the skill number is not one". The game
-    claims "the skill number is above one".
-
-    Cut at one, the mixture at a and b of one is a moved
-    exponential and the closed shape survives:
-
-        S + 1 + lgamma(n + 1) - (n + 1) log_of(S + 1)
-              + log_of Q(n + 1, S + 1)
-
-    Q is the top tail of the gamma law at shape n + 1. At an
-    integer shape it is the finite sum chi_squared_tail holds
-    today, thus this wants no new arithmetic. The value falls as S
-    rises, which is the direction a reader expects: a small S is a
-    high skill number.
-
-    The mean with no skill stays accurately one, because each
-    mixture across the alternative gives a value with that mean.
-    One divided by the value thus reads as a level, and the bound
-    that holds at each look survives the cut. Measured on 200000
-    no-skill players at n of 25, the share at or above 20 is
-    0.0033, below the 0.05 the bound promises.
+    The value is the mean of the skill side and the hit side. Each side
+    is a mixture of likelihood ratios across its alternative, thus each
+    has a mean of accurately one with no skill, and so has their mean.
+    One divided by the value thus reads as a level, and the bound that
+    holds at each look survives. The skill side alone measured 0.0033
+    at or above 20, on 200000 no-skill players at n of 25.
 
     The constants stay recorded, because the number means nothing
-    without them. They are not arguments: the cut mixture has a
-    closed shape at a and b of one, and a general pair wants a
-    general gamma tail this module does not hold.
+    without them. They are not arguments: each mixture has a closed
+    shape at its constants.
 
-    The fixed-count value stays in the record for the site-wide
-    work.
-
-    A trial count below one or an S statistic at or below zero
-    raises.
+    A trial count below one or a statistic at or below zero raises.
     """
     if n < 1:
         raise ValueError(f"the trial count must be at least 1, got {n}")
-    if not math.isfinite(s_statistic) or s_statistic <= 0.0:
-        raise ValueError(f"the S statistic must be finite and positive, "
-                         f"got {s_statistic!r}")
-    shifted = s_statistic + EVIDENCE_MIXTURE_RATE
-    log_e = (s_statistic
-             + EVIDENCE_MIXTURE_RATE
-             + math.lgamma(n + 1)
-             - (n + 1) * math.log(shifted)
-             + math.log(chi_squared_tail(2.0 * shifted, 2 * (n + 1))))
+    for name, value in (("S", s_statistic), ("T", t_statistic)):
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError(f"the {name} statistic must be finite and "
+                             f"positive, got {value!r}")
+    log_skill = _log_e_skill(n, s_statistic)
+    log_hit = _log_e_hit(n, t_statistic)
+    peak = max(log_skill, log_hit)
+    log_e = peak + math.log(0.5 * (math.exp(log_skill - peak)
+                                   + math.exp(log_hit - peak)))
     return EvidenceSummary(
         log_e_value=log_e,
         significance=min(1.0, math.exp(-log_e)),
+        log_e_skill=log_skill,
+        log_e_hit=log_hit,
         mixture_shape=EVIDENCE_MIXTURE_SHAPE,
         mixture_rate=EVIDENCE_MIXTURE_RATE)
 
@@ -982,7 +1086,8 @@ def discovery_report(p_values: Sequence[float], *,
     the flagged count and not the level times the tested count.
 
     The input is the fixed-count evidence value of each player, the
-    one the record keeps for this work.
+    one the record keeps for this work: the evidence of the two
+    directions of spec AG1 section 4.
 
     A level that is not in the unit interval raises.
     """

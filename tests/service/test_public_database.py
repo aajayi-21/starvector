@@ -230,7 +230,7 @@ def test_the_rows_agree_with_the_store(world) -> None:
         assert json.loads(config[1])["fusion"]["weights"] \
             == json.loads(config[2])
         meta = dict(db.execute("SELECT key, value FROM meta"))
-        assert meta["schema_version"] == "2"
+        assert meta["schema_version"] == "3"
         assert meta["license"] == "CC BY 4.0"
         assert meta["day_count"] == "2" and meta["withheld_count"] == "1"
         assert meta["first_day"] == DAY_ONE and meta["last_day"] == DAY_TWO
@@ -333,7 +333,31 @@ def test_a_target_with_no_source_page_stops_the_build(world,
                                                       tmp_path) -> None:
     data = tmp_path / "data"
     data.mkdir()
+    # The day ranks are there, thus the missing manifest is what stops.
+    shutil.copytree(world["data"] / "day-scores", data / "day-scores")
     with pytest.raises(public.PublicBuildError, match="source page"):
+        public.build(world["root"], data, tmp_path / "out",
+                     snapshot_date="2026-12-04", built_at=NOW.isoformat())
+
+
+def test_the_days_hold_their_day_rank(world) -> None:
+    from service import day_scores
+
+    out = _build(world, "day-ranks")
+    with _open(out) as db:
+        rows = db.execute("SELECT day, day_rank FROM days").fetchall()
+    for day, rank in rows:
+        record = store.read_day_record(world["root"], day)
+        assert rank == day_scores.read_day_rank(
+            world["data"], day, record.scoring_config_hash)
+
+
+def test_a_missing_day_score_file_stops_the_build(world, tmp_path) -> None:
+    data = tmp_path / "data"
+    shutil.copytree(world["data"], data)
+    shutil.rmtree(data / "day-scores")
+    with pytest.raises(public.PublicBuildError,
+                       match="service.day day-scores"):
         public.build(world["root"], data, tmp_path / "out",
                      snapshot_date="2026-12-04", built_at=NOW.isoformat())
 

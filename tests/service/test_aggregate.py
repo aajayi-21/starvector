@@ -1,7 +1,10 @@
-"""Unit: Layer 9 aggregation (spec S1 section 8).
+"""Unit: Layer 9 aggregation (spec S1 section 8, spec AG1).
 
-Property tests on seeded Uniform(0, 1) trial scores, the hard-coded
-chi-squared reference table, and the section 17 formula shapes.
+Property tests on seeded no-skill trials, the hard-coded chi-squared
+reference table, and the section 17 formula shapes. Layer 9 reads the
+counts of a trial (spec AG1 section 3), thus the helpers here make a
+beaten count with equal chance at each position in 1,392 decoys,
+the decoy count of the production pool.
 """
 
 import math
@@ -13,10 +16,13 @@ from core.aggregate import (DISCOVERY_LEVEL, ELIGIBLE_TRIAL_FLOOR,
                             PROVISIONAL_MEAN, PROVISIONAL_SPREAD,
                             PopulationFit, PosteriorRow,
                             SkillSummary, _generalized_q,
-                            _reml_score, baseline_check,
-                            chi_squared_tail, digamma, fdr_adjusted,
-                            fit_population, kolmogorov_tail, log_term,
+                            _log_e_hit, _log_e_skill,
+                            _reml_score, chi_squared_tail,
+                            corrected_score, day_check, digamma,
+                            fdr_adjusted, fit_population,
+                            kolmogorov_tail, log_gamma_top_tail,
                             population_point, shrunk_log_theta,
+                            summary_of_pair, trial_terms,
                             anytime_evidence,
                             discovery_report,
                             eligible_trial_floor,
@@ -24,6 +30,19 @@ from core.aggregate import (DISCOVERY_LEVEL, ELIGIBLE_TRIAL_FLOOR,
                             recomputed_trial_floor,
                             skill_summary, stopping_monitor,
                             trigamma, variation_report)
+from core.types import TrialCounts
+
+DECOYS = 1392
+
+
+def _null_trials(rng: np.random.Generator, n: int) -> list[TrialCounts]:
+    """n no-skill trials: the target at each position with equal chance."""
+    return [TrialCounts(beaten=int(b), tied=0, decoy_count=DECOYS)
+            for b in rng.integers(0, DECOYS + 1, size=n)]
+
+
+def _at(beaten: int) -> TrialCounts:
+    return TrialCounts(beaten=beaten, tied=0, decoy_count=DECOYS)
 
 # Reference values from an offline high-precision computation
 # (scipy.stats.chi2.sf, 2026-08-12), 12 digits. The
@@ -74,83 +93,104 @@ def test_bad_tail_inputs_raise() -> None:
         chi_squared_tail(float("nan"), 2)
 
 
-def test_uniform_trial_scores_give_a_skill_number_near_one() -> None:
-    rng = np.random.default_rng(11)
-    ps = rng.uniform(0.0, 1.0, 2000).tolist()
-    summary = skill_summary(ps)
+def test_no_skill_trials_give_a_skill_number_and_a_hit_number_near_one(
+) -> None:
+    summary = skill_summary(_null_trials(np.random.default_rng(11), 2000))
     assert isinstance(summary, SkillSummary)
     assert abs(summary.theta - 1.0) < 0.06
+    assert abs(summary.hit_number - 1.0) < 0.06
     assert summary.n == 2000
     assert summary.dof == 4000
-    assert summary.clamp_count == 0
 
 
-def test_evidence_values_are_uniform_with_no_ability() -> None:
-    # 400 seeded no-information players of 20 trials each: the evidence
-    # values must themselves agree with Uniform(0, 1). The check is
-    # the KS statistic against the 1% asymptotic line.
+def test_each_tail_is_flat_and_the_pair_holds_its_level() -> None:
+    # 1,000 no-skill players of 20 trials each. Each one-direction tail
+    # agrees with Uniform(0, 1) at the 1% asymptotic KS line. The
+    # evidence of the two directions is a Bonferroni value: it is not
+    # flat, and the share at or below 0.05 stays at or below 0.05 with
+    # three standard errors of room.
     rng = np.random.default_rng(7)
-    values = sorted(
-        skill_summary(rng.uniform(0.0, 1.0, 20).tolist()).evidence_p
-        for _ in range(400))
-    count = len(values)
+    summaries = [skill_summary(_null_trials(rng, 20)) for _ in range(1000)]
+    count = len(summaries)
     positions = np.arange(1, count + 1, dtype=np.float64)
-    ordered = np.asarray(values)
-    ks = float(np.maximum(positions / count - ordered,
-                          ordered - (positions - 1.0) / count).max())
-    assert ks < 1.628 / math.sqrt(count)
+    for name in ("skill_tail", "hit_tail"):
+        ordered = np.sort([getattr(row, name) for row in summaries])
+        ks = float(np.maximum(positions / count - ordered,
+                              ordered - (positions - 1.0) / count).max())
+        assert ks < 1.628 / math.sqrt(count), name
+    share = float(np.mean([row.evidence_p <= 0.05 for row in summaries]))
+    assert share <= 0.05 + 3.0 * math.sqrt(0.05 * 0.95 / count)
 
 
-def test_a_zero_trial_score_is_clamped_and_counted() -> None:
-    summary = skill_summary([0.0, 0.5, 0.9])
-    assert summary.clamp_count == 1
-    assert math.isfinite(summary.s_statistic)
-    assert summary.theta > 0.0
+def test_the_corrected_score_keeps_away_from_zero_and_one() -> None:
+    assert corrected_score(0, 0, DECOYS) == pytest.approx(0.5 / 1393)
+    assert corrected_score(DECOYS, 0, DECOYS) == pytest.approx(
+        1392.5 / 1393)
+    assert corrected_score(10, 4, 100) == pytest.approx(12.5 / 101)
+    last, first = trial_terms(_at(0)), trial_terms(_at(DECOYS))
+    # The term of a last position is 7.93, the logarithm of 2 (D + 1),
+    # and not 744.
+    assert last[0] == pytest.approx(math.log(2 * 1393))
+    assert first[1] == pytest.approx(math.log(2 * 1393))
+    assert first[0] > 0.0 and last[1] > 0.0
 
 
-def test_one_perfect_trial_holds_a_term_and_a_whole_run_does_not() -> None:
-    """The two questions are different and log_term answers one.
+def test_a_last_place_does_not_take_control_of_the_skill_number() -> None:
+    rng = np.random.default_rng(3)
+    trials = _null_trials(rng, 99)
+    with_last = skill_summary([*trials, _at(0)])
+    with_middle = skill_summary([*trials, _at(DECOYS // 2)])
+    assert with_last.theta > 0.9 * with_middle.theta
 
-    A trial score of 1.0 gives a term of 0.0, which is a number.
-    A player with 1.0 at each trial score has S of zero and no
-    skill number, thus skill_summary refuses that sequence. A
-    reader that answers the narrow question with the wide one stops
-    a reveal for a player who beat each decoy on one day.
-    """
-    assert log_term(1.0) == (0.0, False)
-    assert log_term(0.5) == (-math.log(0.5), False)
-    clamped, ran = log_term(0.0)
-    assert ran is True
-    assert math.isfinite(clamped)
-    assert clamped > 700.0
-    with pytest.raises(ValueError, match=r"\[0, 1\]"):
-        log_term(1.5)
-    # The wide question keeps its refusal.
-    with pytest.raises(ValueError, match="each trial score is 1.0"):
-        skill_summary([1.0, 1.0], unbiased=False)
-    # One perfect day in a run of others is not a refusal.
-    assert skill_summary([1.0, 0.5], unbiased=False).s_statistic \
-        == pytest.approx(-math.log(0.5))
+
+def test_a_run_of_perfect_trials_has_a_skill_number() -> None:
+    summary = skill_summary([_at(DECOYS)] * 5)
+    assert math.isfinite(summary.theta) and summary.theta > 100.0
+    assert summary.hit_tail < 1e-10 and summary.skill_tail < 1e-10
+    assert summary.evidence_p == 2.0 * min(summary.skill_tail,
+                                           summary.hit_tail)
+
+
+def test_bad_counts_raise() -> None:
+    with pytest.raises(ValueError, match="integer"):
+        corrected_score(1.0, 0, 10)
+    with pytest.raises(ValueError, match="integer"):
+        corrected_score(True, 0, 10)
+    with pytest.raises(ValueError, match="at least 1"):
+        corrected_score(0, 0, 0)
+    with pytest.raises(ValueError, match="do not fit"):
+        corrected_score(8, 3, 10)
+    with pytest.raises(ValueError, match="do not fit"):
+        corrected_score(-1, 0, 10)
+    with pytest.raises(ValueError, match="one or more"):
+        skill_summary([])
 
 
 def test_the_unbiased_variant_and_its_minimum_count() -> None:
-    ps = [0.4, 0.6, 0.8]
-    biased = skill_summary(ps, unbiased=False)
-    unbiased = skill_summary(ps, unbiased=True)
+    trials = [_at(500), _at(800), _at(1100)]
+    biased = skill_summary(trials, unbiased=False)
+    unbiased = skill_summary(trials, unbiased=True)
     assert biased.theta == pytest.approx(3.0 / biased.s_statistic)
     assert unbiased.theta == pytest.approx(2.0 / biased.s_statistic)
     with pytest.raises(ValueError, match="n >= 2"):
-        skill_summary([0.5], unbiased=True)
-    assert skill_summary([0.5], unbiased=False).n == 1
+        skill_summary([_at(700)], unbiased=True)
+    assert skill_summary([_at(700)], unbiased=False).n == 1
 
 
-def test_out_of_range_and_degenerate_scores_raise() -> None:
-    with pytest.raises(ValueError, match=r"\[0, 1\]"):
-        skill_summary([0.5, 1.5])
-    with pytest.raises(ValueError, match="one or more"):
-        skill_summary([])
-    with pytest.raises(ValueError, match="1.0"):
-        skill_summary([1.0, 1.0])
+def test_the_pair_gives_the_walk_and_the_two_tails() -> None:
+    trials = _null_trials(np.random.default_rng(9), 40)
+    walked = skill_summary(trials)
+    paired = summary_of_pair(40, walked.s_statistic, walked.t_statistic)
+    assert paired == walked
+    assert walked.hit_number == pytest.approx(walked.t_statistic / 40)
+    assert walked.skill_tail == pytest.approx(
+        1.0 - chi_squared_tail(2.0 * walked.s_statistic, 80))
+    assert walked.hit_tail == pytest.approx(
+        chi_squared_tail(2.0 * walked.t_statistic, 80))
+    assert walked.evidence_p == pytest.approx(
+        min(1.0, 2.0 * min(walked.skill_tail, walked.hit_tail)))
+    with pytest.raises(ValueError, match="T statistic"):
+        summary_of_pair(5, 4.0, 0.0)
 
 
 def test_shrinkage_moves_to_the_mean_with_weight_rising_in_n() -> None:
@@ -180,8 +220,9 @@ def test_fdr_adjusted_matches_a_benjamini_hochberg_reference() -> None:
 
 
 def test_the_functions_are_deterministic() -> None:
+    trials = [_at(431), _at(1072), _at(1380), _at(626)]
+    assert skill_summary(trials) == skill_summary(trials)
     ps = [0.31, 0.77, 0.99, 0.45]
-    assert skill_summary(ps) == skill_summary(ps)
     assert fdr_adjusted(ps) == fdr_adjusted(ps)
 
 
@@ -359,13 +400,18 @@ def test_the_profile_ends_satisfy_their_defining_equation() -> None:
         assert tail == pytest.approx(level, abs=1e-6)
 
 
-def test_the_baseline_check_passes_the_null_and_fails_skewed_play(
-) -> None:
-    assert baseline_check(_null_points(300, 30, 200, 9)).significance > 0.01
+def test_the_day_check_passes_flat_ranks_and_fails_skewed_ones() -> None:
     rng = np.random.default_rng(4)
-    skewed = [population_point(int(n), float(rng.gamma(int(n), 0.6)))
-              for n in rng.integers(30, 200, size=300)]
-    assert baseline_check(skewed).significance < 1e-6
+    assert day_check(rng.uniform(0.0, 1.0, 300).tolist()).significance \
+        > 0.01
+    skewed = (rng.uniform(0.0, 1.0, 300) ** 0.6).tolist()
+    check = day_check(skewed)
+    assert check.day_count == 300
+    assert check.significance < 1e-6
+    with pytest.raises(ValueError, match="one or more"):
+        day_check([])
+    with pytest.raises(ValueError, match=r"\(0, 1\)"):
+        day_check([0.5, 1.0])
 
 
 def test_the_core_and_harness_kolmogorov_values_agree() -> None:
@@ -479,70 +525,122 @@ def test_an_empty_board_ranks_nothing() -> None:
     assert posterior_ranks([], seed=1) == ()
 
 
-def test_the_evidence_collapses_to_its_closed_shape() -> None:
-    # The cut mixture adds the moved constant and the top tail at
-    # an integer shape, which chi_squared_tail holds today.
+def test_the_skill_side_collapses_to_its_closed_shape() -> None:
+    # The cut mixture adds the moved constant and the top tail at an
+    # integer shape. The tail is on the logarithmic scale at this time,
+    # and it agrees with the earlier shape where that shape has a value.
     for n, s in ((1, 0.5), (12, 9.0), (200, 150.0)):
         shifted = s + 1.0
         expected = (s + 1.0 + math.lgamma(n + 1)
                     - (n + 1) * math.log(shifted)
                     + math.log(chi_squared_tail(2.0 * shifted, 2 * (n + 1))))
-        assert anytime_evidence(n, s).log_e_value == pytest.approx(
-            expected, rel=1e-12)
+        assert _log_e_skill(n, s) == pytest.approx(expected, rel=1e-12)
 
 
-def test_the_evidence_agrees_with_its_own_integral() -> None:
+def test_the_log_tail_agrees_with_the_tail_and_does_not_reach_zero(
+) -> None:
+    for shape, x in ((3, 2.0), (26, 31.0), (201, 151.0)):
+        assert log_gamma_top_tail(shape, x) == pytest.approx(
+            math.log(chi_squared_tail(2.0 * x, 2 * shape)), rel=1e-12)
+    # Far above the shape the tail itself is 0.0 and its logarithm
+    # stays a number: a player far below the baseline has a value.
+    assert chi_squared_tail(2.0 * 3201.0, 802) == 0.0
+    assert math.isfinite(log_gamma_top_tail(401, 3201.0))
+    assert anytime_evidence(400, 3172.0, 2.0).significance == 1.0
+
+
+def test_the_skill_side_agrees_with_its_own_integral() -> None:
     """The closed shape against a numeric area below the curve.
 
     The cut mixture (the 2026-08-16 ruling) is a moved exponential
     on the skills above one, thus the value is the area below the
-    likelihood ratio against it. Summing that area by hand is the
-    one check that wants no other library and no reference table.
+    likelihood ratio against it.
     """
     for n, s in ((3, 1.0), (20, 5.0), (20, 20.0), (50, 30.0)):
         grid = np.linspace(1.0, 1.0 + 400.0 / (s + 1.0), 400001)
         ratio = np.exp(n * np.log(grid) + s * (1.0 - grid) - (grid - 1.0))
-        # The tolerance is the trapezoid rule's own error and not
-        # the closed shape's: the grid is finite.
-        assert anytime_evidence(n, s).log_e_value == pytest.approx(
+        assert _log_e_skill(n, s) == pytest.approx(
             math.log(float(np.trapezoid(ratio, grid))), rel=1e-7)
 
 
-def test_the_evidence_falls_as_the_player_does_worse() -> None:
-    """The direction a reader expects: a small S is a high skill.
+def test_the_hit_side_agrees_with_its_own_integral() -> None:
+    """The hit side against the area below its likelihood ratio.
 
-    The mixture is cut at a skill number of one, thus the value
-    answers "is this player above the baseline" and falls from the
-    top down. The mixture across each positive skill, which section
-    6 pinned before the 2026-08-16 ruling, climbed again below the
-    baseline and named a weak run strong evidence.
+    The mixture is flat on the hit parameter beta in (0, 1), and the
+    ratio is beta ^ n exp((1 - beta) T). The two branches of the closed
+    shape touch at T = n + 1, thus the points sit on the two sides.
     """
-    values = [anytime_evidence(20, s).log_e_value
-              for s in (2.0, 5.0, 10.0, 20.0, 40.0, 100.0)]
-    assert values == sorted(values, reverse=True)
+    grid = np.linspace(1e-9, 1.0, 400001)
+    for n, t in ((3, 1.0), (3, 9.0), (20, 12.0), (20, 21.0), (20, 60.0),
+                 (200, 150.0), (200, 260.0)):
+        ratio = np.exp(n * np.log(grid) + (1.0 - grid) * t)
+        assert _log_e_hit(n, t) == pytest.approx(
+            math.log(float(np.trapezoid(ratio, grid))), rel=1e-6)
 
 
-def test_the_evidence_records_the_mixture_it_used() -> None:
-    summary = anytime_evidence(12, 9.0)
+def test_the_two_branches_of_the_hit_side_meet() -> None:
+    for n in (1, 5, 30, 200, 2000):
+        assert _log_e_hit(n, n + 1.0) == pytest.approx(
+            _log_e_hit(n, (n + 1.0) * (1.0 + 1e-12)), abs=1e-9)
+
+
+def test_each_side_moves_in_the_direction_a_reader_expects() -> None:
+    """A small S is a high skill, and a large T is many hits.
+
+    The skill mixture is cut at a skill number of one, thus it falls
+    from the top down. The hit mixture spans the hit side alone, thus
+    it rises with T and does not climb again for a run of low trials.
+    """
+    skill = [_log_e_skill(20, s) for s in (2.0, 5.0, 10.0, 20.0, 40.0)]
+    assert skill == sorted(skill, reverse=True)
+    hit = [_log_e_hit(20, t) for t in (2.0, 5.0, 10.0, 20.0, 40.0, 90.0)]
+    assert hit == sorted(hit)
+
+
+def test_the_evidence_is_the_mean_of_the_two_sides() -> None:
+    summary = anytime_evidence(12, 9.0, 15.0)
     assert (summary.mixture_shape, summary.mixture_rate) == (1.0, 1.0)
     assert summary.mixture_floor == 1.0
-    assert summary.significance == pytest.approx(
-        min(1.0, math.exp(-summary.log_e_value)), rel=1e-12)
+    assert (summary.hit_mixture_low, summary.hit_mixture_high) == (0.0, 1.0)
+    mean = 0.5 * (math.exp(summary.log_e_skill)
+                  + math.exp(summary.log_e_hit))
+    assert summary.log_e_value == pytest.approx(math.log(mean), rel=1e-12)
+    assert summary.significance == pytest.approx(min(1.0, 1.0 / mean))
+    with pytest.raises(ValueError, match="T statistic"):
+        anytime_evidence(5, 4.0, -1.0)
+
+
+def test_each_side_has_a_mean_of_one_with_no_skill() -> None:
+    # Do NOT check this by the sample mean. The variance is unbounded,
+    # thus the sample mean is not a stable statistic. The area below
+    # each side against the no-skill law of its statistic (a Gamma
+    # value at shape n) is the check. The hit side falls as n / T ^ 2
+    # far out, thus the grid ends far out and the remaining part is
+    # added.
+    for n in (1, 5, 25):
+        top = 400.0 * n + 400.0
+        grid = np.exp(np.linspace(math.log(1e-6), math.log(top), 200001))
+        log_density = (n - 1) * np.log(grid) - grid - math.lgamma(n)
+        skill = np.exp(np.array([_log_e_skill(n, float(x)) for x in grid])
+                       + log_density)
+        hit = np.exp(np.array([_log_e_hit(n, float(x)) for x in grid])
+                     + log_density)
+        assert float(np.trapezoid(skill, grid)) == pytest.approx(
+            1.0, abs=2e-3)
+        assert float(np.trapezoid(hit, grid)) + n / top \
+            == pytest.approx(1.0, abs=2e-3)
 
 
 def test_the_evidence_holds_its_bound_with_no_skill() -> None:
-    # Ville's inequality: with no skill the chance the value ever
-    # gets to 20 is at or below 1/20.
-    #
-    # Do NOT check this by the sample mean. The mean with no skill
-    # is accurately one and the variance is unbounded, thus the sample
-    # mean is not a stable statistic - 20000 values here average
-    # 0.615. The bound is the statement that holds.
+    # Ville's inequality: with no skill the chance the value ever gets
+    # to 20 is at or below 1/20. S and T come from the same trials.
     rng = np.random.default_rng(5)
-    statistics = rng.gamma(25, 1.0, size=20000)
-    values = np.array([math.exp(anytime_evidence(25, float(s)).log_e_value)
-                       for s in statistics])
-    assert float((values >= 20.0).mean()) <= 0.05
+    values = []
+    for _ in range(4000):
+        summary = skill_summary(_null_trials(rng, 25))
+        values.append(math.exp(anytime_evidence(
+            25, summary.s_statistic, summary.t_statistic).log_e_value))
+    assert float((np.array(values) >= 20.0).mean()) <= 0.05
 
 
 def test_the_recomputed_floor_tracks_the_approximate_reading() -> None:

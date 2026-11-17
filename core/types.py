@@ -272,6 +272,20 @@ class MatchRow:
 
 
 @dataclass(frozen=True, slots=True)
+class TrialCounts:
+    """The three counts of one trial that Layer 9 reads (spec AG1 §3).
+
+    A trial row stores them with the trial score, thus Layer 9 makes
+    the corrected score from the stored row, and the trial score that
+    a player reads does not change.
+    """
+
+    beaten: int
+    tied: int
+    decoy_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class TrialScore:
     """The Layer 8 output (architecture section 16).
 

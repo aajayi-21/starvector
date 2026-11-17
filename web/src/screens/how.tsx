@@ -123,6 +123,14 @@ export function HowItWorksScreen(): React.JSX.Element {
           shows a steadied version, which stays near the middle until enough
           results back it, so the two numbers can differ.
         </p>
+        <p>
+          Beside it sits a hit number. It is also 1.00 at chance, and it rises
+          when more of your results land near the very top. The two reward
+          different patterns: the skill number a small edge on most days, the
+          hit number occasional strong hits. The “how often luck alone would do
+          as well” figure checks the two patterns at once, with an allowance for
+          checking twice.
+        </p>
       </section>
 
       <section className="card">

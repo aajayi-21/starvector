@@ -256,6 +256,11 @@ open-time error, R5).
 
 ## 8. Layer 9 — `core/aggregate.py`
 
+(Note of 2026-11-16: spec AG1 changes the input. Layer 9 reads the
+corrected score of each trial from the stored counts, adds the hit
+statistic `T`, and drops the clamp of a zero trial score. The text
+below is the first version.)
+
 Pure functions on a sequence of trial scores, §17 as written:
 
 ```python

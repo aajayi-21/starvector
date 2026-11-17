@@ -180,6 +180,20 @@ def standardized_channels(encoded: EncodedSubmission,
     return standardized
 
 
+def fused_pool_scores(record: JsonValue, context: ScoringContext,
+                      encoders: Encoders) -> PoolScores:
+    """One submission record to its fused score for each pool image.
+
+    Layers 0 through 6, with no target: the input of Layer 8. The close
+    keeps these rows for the day rank of spec AG1 section 5, and
+    score_trial ranks the same row, thus the two read one number.
+    """
+    submission = validate_submission(record, context.gates,
+                                     context.render.canvas_px)
+    encoded = encode_submission(submission, context.render, encoders)
+    return fuse(standardized_channels(encoded, context), context.weights)
+
+
 def score_trial(record: JsonValue, target: TargetId,
                 context: ScoringContext,
                 encoders: Encoders) -> TrialScore:
@@ -190,9 +204,6 @@ def score_trial(record: JsonValue, target: TargetId,
     Layer 2 slots. Raises IntakeError on a gate violation and
     NoActiveChannels when no weighted channel reads the submission.
     """
-    submission = validate_submission(record, context.gates,
-                                     context.render.canvas_px)
-    encoded = encode_submission(submission, context.render, encoders)
-    fused = fuse(standardized_channels(encoded, context), context.weights)
+    fused = fused_pool_scores(record, context, encoders)
     decoys = decoy_set(context.index, target)
     return rank(fused, target, decoys, context.index)

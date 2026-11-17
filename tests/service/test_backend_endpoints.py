@@ -149,9 +149,14 @@ def test_history_serves_the_page_numbers_newest_first(
         assert row["trial_code"] == record.trial_code
         assert set(row) == {"day", "trial_code", "p", "target_rank",
                             "decoy_count"}
-    ps = [row["p"] for row in body["days"]]
-    summary = skill_summary(ps, unbiased=True)
+    # Layer 9 reads the counts of each stored row (spec AG1 section 3).
+    from service.rollup import counts_of
+
+    trials = [counts_of(store.read_json_or_none(store.trial_row_path(
+        fixture["store"], row["day"], "ade"))) for row in body["days"]]
+    summary = skill_summary(trials, unbiased=True)
     assert body["skill"]["theta"] == summary.theta
+    assert body["skill"]["hit_number"] == summary.hit_number
     assert body["skill"]["evidence_p"] == summary.evidence_p
     assert body["skill"]["n"] == 3
     assert body["skill"]["shrunk"] == math.exp(shrunk_log_theta(
@@ -162,13 +167,15 @@ def test_history_serves_the_page_numbers_newest_first(
 
 
 def test_the_skill_value_guards_are_defined_wire_values() -> None:
+    from core.types import TrialCounts
     from service.server import _skill_value
 
     assert _skill_value([]) is None
-    assert _skill_value([1.0, 1.0]) is None
-    single = _skill_value([0.75])
+    single = _skill_value([TrialCounts(beaten=30, tied=0, decoy_count=40)])
     assert single is not None
     assert single["n"] == 1
+    assert set(single) == {"theta", "shrunk", "hit_number", "evidence_p",
+                           "n"}
 
 
 def test_history_skips_a_revealed_day_with_no_row(
@@ -298,23 +305,23 @@ def test_the_new_surfaces_are_byte_stable_across_open_targets(
     assert answers["one"] == answers["two"]
 
 
-def test_the_history_surface_holds_at_a_degenerate_skill(
+def test_the_history_surface_has_a_skill_number_for_a_perfect_run(
         tmp_path: Path) -> None:
-    # Each score at 1.0 refuses the aggregation, thus /api/history
-    # serves the defined null rather than raising. The daily
-    # board's own handling of that player is a rollup property and
-    # test_rollup.py holds it.
+    # Spec AG1 section 3. Each score at 1.0 refused the aggregation
+    # before, and /api/history served a null skill. The corrected score
+    # of a first position is below one, thus a perfect run has a skill
+    # number and a high hit number.
     from service import store
-    from service.server import _skill_value
 
     days = ("2026-08-11", "2026-08-12")
     fixture, client = _run_of_days(tmp_path, days)
     for day in days:
         path = store.trial_row_path(fixture["store"], day, "ade")
         row = store.read_json_or_none(path)
-        row["p"] = 1.0
+        row.update(p=1.0, beaten=row["decoy_count"], tied=0, target_rank=1)
         path.write_text(json.dumps(row), encoding="utf-8")
-    assert _skill_value([1.0, 1.0]) is None
     body = client.get("/api/history").json()
-    assert body["skill"] is None
+    assert body["skill"]["n"] == 2
+    assert body["skill"]["theta"] > 10.0
+    assert body["skill"]["hit_number"] > 1.0
     assert len(body["days"]) == 2

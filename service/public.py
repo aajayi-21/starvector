@@ -42,14 +42,14 @@ from core.intake import IntakeError, validate_submission
 from pipeline.config import intake_gates, load_scoring_config
 from pipeline.context import PreparationRecord, load_preparation_record
 from pool.preparation.config import load_preparation_config
-from service import credits, notice, store
+from service import credits, day_scores, notice, store
 from service.config import ServiceConfigError, load_service_config
 from service.day import day_commitment
 from service.pick_rule import vp1_faults
 from service.pulse import chain_named, pulse_time
 from service.index import _counts, _trial_files
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 LICENSE_NAME = "CC BY 4.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
 
@@ -87,7 +87,8 @@ CREATE TABLE days (
   preparation_version_id TEXT NOT NULL,
   pool_label TEXT NOT NULL,
   pool_image_count INTEGER NOT NULL,
-  player_count INTEGER NOT NULL
+  player_count INTEGER NOT NULL,
+  day_rank REAL
 );
 CREATE TABLE targets (
   target_id TEXT PRIMARY KEY,
@@ -206,7 +207,7 @@ _TABLES: dict[str, tuple[str, ...]] = {
              "round_time", "beacon_signature", "randomness", "target_index",
              "target_salt", "target_proof", "opened_at", "closed_at",
              "revealed_at", "scoring_config_hash", "preparation_version_id",
-             "pool_label", "pool_image_count", "player_count"),
+             "pool_label", "pool_image_count", "player_count", "day_rank"),
     "targets": ("target_id", "source", "title", "page"),
     "configs": ("scoring_config_hash", "path", "config_json",
                 "weights_json"),
@@ -313,6 +314,23 @@ def _round_time(record: store.DayRecord) -> str | None:
         moment, datetime.UTC).isoformat().replace("+00:00", "Z")
 
 
+def _day_rank(data_root: Path, record: store.DayRecord,
+              submissions: tuple[str, ...]) -> float | None:
+    """The day rank of spec AG1 section 5, or None for a day with no send.
+
+    A day with sends and no day-score file stops the build with the
+    command that makes the file: a public file with a missing day rank
+    is a check on a sample that nobody chose.
+    """
+    if not submissions:
+        return None
+    try:
+        return day_scores.read_day_rank(data_root, record.day,
+                                        record.scoring_config_hash)
+    except day_scores.DayScoresError as error:
+        raise PublicBuildError(str(error)) from error
+
+
 def public_days(root: Path) -> list[PublicDay]:
     """The days that a snapshot holds (spec R1 section 5), ascending.
 
@@ -406,7 +424,7 @@ def _fill(connection: sqlite3.Connection, root: Path, data_root: Path,
         submissions = store.list_submissions(root, name)
         vp1 = record.protocol == "vp1"
         connection.execute(
-            "INSERT INTO days VALUES (" + ", ".join("?" * 23) + ")",
+            "INSERT INTO days VALUES (" + ", ".join("?" * 24) + ")",
             (name, record.trial_code, record.target_id, record.protocol,
              record.commitment, record.secret, record.pool_root,
              record.beacon_chain, record.beacon_round, _round_time(record),
@@ -417,7 +435,8 @@ def _fill(connection: sqlite3.Connection, root: Path, data_root: Path,
              record.opened_at, record.closed_at,
              record.revealed_at, record.scoring_config_hash,
              record.preparation_version_id, day.preparation.pool_label,
-             day.preparation.image_count, len(submissions)))
+             day.preparation.image_count, len(submissions),
+             _day_rank(data_root, record, submissions)))
 
         release_path = day.preparation.pool_release_record_path
         if release_path not in credit_cache:
@@ -739,7 +758,7 @@ and so is a player below the floors of the game's boards.
 | `strokes` | one sketch stroke | `points_json` is the point sequence, each point an x and a y from 0 to 1. A stroke has no time |
 | `groups` | one labeled group of strokes | `group_id`, `label` |
 | `relations` | one stated relation of two groups | `relation`, `first_group`, `second_group` |
-| `trials` | a trial score | `p`, `target_rank`, `decoy_count`, `beaten`, `tied` |
+| `trials` | a trial score | `p`, `target_rank`, `decoy_count`, `beaten`, `tied`. The skill numbers read a corrected score: see below |
 | `trial_atoms` | one atom of a trial report | the typed text, the element of the target that it agreed with most, and three numbers |
 | `trial_channels` | one channel of a trial | the standardized score at the target, and the trial score of that channel alone |
 
@@ -768,6 +787,26 @@ a number, modulo `pool_image_count`, and `target_salt` with
 `target_proof` takes `target_id` up to `pool_root`.
 `uv run python tools/check_day.py --database <file>` does these checks,
 and `--fetch` also reads the pulse from two drand relays.
+
+**The corrected score and the skill numbers.** `p` is the share of the
+decoys beaten, with half a decoy for each equal score. The skill numbers
+read a corrected score that never reaches 0 or 1:
+`(beaten + 0.5 × tied + 0.5) / (decoy_count + 1)`. For one player's n
+trials, `S` is the sum of `-log(corrected)` and `T` the sum of
+`-log(1 - corrected)`. The skill number is `(n - 1) / S` and the hit
+number is `T / n`. Each is 1.0 at chance. With no skill, `2S` and `2T`
+follow a chi-squared law at `2n` degrees of freedom. The evidence value
+is two times the smaller of the bottom tail of `2S` and the top tail of
+`2T`, at most 1.
+
+**The day rank.** `day_rank` asks if the players of a day beat chance
+together, and it holds when their scores move together. For each image
+of the pool, it takes the mean corrected score that the day's players
+get with that image as the target. `day_rank` is the position of the
+real target's mean among those means, from 0 to 1, with half a position
+for each equal mean. With no skill it is flat on 0 to 1, because the
+target is an equally likely image of the pool. A day with no response
+has NULL.
 
 **A withheld response.** The operator can withhold the text and the
 sketch of a response that must not be public. Its row has `withheld` 1

@@ -12,7 +12,8 @@ import pytest
 
 from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
 
-from service import rollup, store
+from core.types import TrialCounts
+from service import day_scores, rollup, store
 from service.day import close_day, open_day, reveal_day
 
 DAYS = ("2026-08-10", "2026-08-11", "2026-08-12")
@@ -137,9 +138,18 @@ def test_a_rescore_forks_the_cache_and_leaves_the_first_unmoved(
         for player in ("ade", "bru"):
             canonical = json.loads(store.trial_row_path(
                 root, day, player).read_text())
-            moved = {**canonical, "p": min(0.99, canonical["p"] * 0.5)}
+            moved = {**canonical, "p": min(0.99, canonical["p"] * 0.5),
+                     "beaten": canonical["beaten"] // 2}
             store.write_once_json(
                 store.trial_row_path(root, day, player, other[:8]), moved)
+        # A rescore writes the day ranks of its configuration (spec AG1
+        # section 5). This one is hand-written, in the same manner.
+        index = json.loads(day_scores.index_path(
+            data_root, day, first_hash).read_text())
+        target = day_scores.index_path(data_root, day, other)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({**index,
+                                      "scoring_config_hash": other}))
     first = _snapshot(data_root)
     rollup.assemble(config, scoring_hash=other)
     after = _snapshot(data_root)
@@ -260,9 +270,10 @@ def _synthetic_pairs(count: int, trials: int, scoring_hash: str,
             "player": f"player-{first + index:03d}",
             "scoring_config_hash": scoring_hash,
             "preparation_version_id": preparation_version_id,
-            "n": n, "clamp_count": 0,
+            "format": rollup.ROLLUP_FORMAT, "n": n,
             "s_statistic": float(rng.gamma(n, 1.0)),
-            "days": [], "degenerate": False, "updated_at": FIXED_CLOCK})
+            "t_statistic": float(rng.gamma(n, 1.0)),
+            "days": [], "updated_at": FIXED_CLOCK})
     return pairs
 
 
@@ -284,13 +295,19 @@ def test_a_full_population_reports_each_number() -> None:
     pairs = _synthetic_pairs(60, 40, "h" * 64, "p" * 64)
     board = rollup.skill_board_value(
         pairs, scoring_hash="h" * 64, preparation_version_id="p" * 64,
-        day=DAYS[0], seed=7, created_at=FIXED_CLOCK)
+        day=DAYS[0], seed=7, created_at=FIXED_CLOCK,
+        day_ranks=[(index + 0.5) / 50 for index in range(50)])
     assert board["active"] is True
     assert board["provisional"] is False
+    assert board["format"] == rollup.ROLLUP_FORMAT
     assert board["eligible_count"] == 60
     assert len(board["rows"]) == 60
     assert board["variation"]["dof"] == 59
-    assert board["baseline"]["player_count"] == 60
+    assert board["day_check"]["day_count"] == 50
+    assert board["day_check"]["significance"] > 0.5
+    assert "baseline" not in board
+    for row in board["rows"]:
+        assert row["hit_number"] > 0
     assert board["discovery"]["tested"] == 60
     assert board["baseline_band"], "the funnel wants its band"
     # Ranked by the posterior expected rank, ascending.
@@ -383,94 +400,111 @@ def test_the_recomputed_floor_stays_a_report(tmp_path) -> None:
     assert board["eligible_count"] == 60
 
 
-def test_a_player_with_a_perfect_record_stays_off_the_skill_board(
-) -> None:
-    """The 2026-08-16 ruling: counted, not hidden, not clamped."""
-    pairs = _synthetic_pairs(40, 40, "h" * 64, "p" * 64)
-    pairs.append({"player": "perfect", "scoring_config_hash": "h" * 64,
-                  "preparation_version_id": "p" * 64, "n": 40,
-                  "clamp_count": 0, "s_statistic": 0.0, "days": [],
-                  "degenerate": True, "updated_at": FIXED_CLOCK})
-    board = rollup.skill_board_value(
-        pairs, scoring_hash="h" * 64, preparation_version_id="p" * 64,
-        day=DAYS[0], seed=7, created_at=FIXED_CLOCK)
-    assert board["degenerate_count"] == 1
-    assert board["player_count"] == 40
-    assert "perfect" not in {row["player"] for row in board["rows"]}
+def test_a_player_with_a_perfect_record_is_counted(tmp_path) -> None:
+    """Spec AG1 section 3: the corrected score gives each history a value.
 
-
-def test_the_fold_is_repeatable_for_one_day() -> None:
-    base = dict(player="ade", day=DAYS[0], term=1.5, clamped=False,
-                scoring_hash="h" * 64, preparation_version_id="p" * 64,
-                updated_at=FIXED_CLOCK)
-    once = rollup.fold_day(None, **base)
-    twice = rollup.fold_day(once, **base)
-    assert once == twice
-    assert once["n"] == 1
-    later = rollup.fold_day(once, **{**base, "day": DAYS[1], "term": 2.0})
-    assert later["n"] == 2
-    assert later["s_statistic"] == pytest.approx(3.5)
-    assert later["days"] == [DAYS[0], DAYS[1]]
-
-
-def test_a_perfect_day_folds_and_does_not_stop_the_reveal(tmp_path) -> None:
-    """The 2026-08-16 ruling, which no path could run before.
-
-    term_of read skill_summary, which refuses a sequence where each
-    trial score is 1.0. That refusal is right for a full history
-    and incorrect for one trial, thus a player who beat each decoy
-    on one day answered the reveal with a 400 and the day could not
-    be revealed at all. The degenerate pair the ruling describes
-    did not get written at all, because the fold raised before it
-    marked one.
+    A perfect run had S of zero, no skill number, and a "degenerate"
+    mark that kept the player off this board. The corrected score of a
+    first position is below one, thus S is positive and the player counts
+    like each other player. One trial is below the floor, thus the
+    board stays not active and lists no row, as for each player.
     """
-    term, clamped = rollup.term_of(1.0)
-    assert term == 0.0
-    assert clamped is False
-
     fixture = _played_world(tmp_path, players=("ade",), days=DAYS[:1])
     config = fixture["service_config"]
     root = Path(config.store_root)
     scoring_hash = store.read_day_record(root, DAYS[0]).scoring_config_hash
-    # A perfect trial, put in the stored row the rollup reads.
     row_path = store.trial_row_path(root, DAYS[0], "ade")
     row = json.loads(row_path.read_text())
-    row["p"] = 1.0
+    row.update(p=1.0, beaten=row["decoy_count"], tied=0, target_rank=1)
     row_path.write_text(json.dumps(row))
 
     counts = rollup.assemble(config, scoring_hash=scoring_hash)
     assert counts["players"] == 1
     pair = json.loads(rollup.skill_pair_path(
         Path(config.data_root), "ade", scoring_hash).read_text())
-    assert pair["s_statistic"] == 0.0
-    assert pair["degenerate"] is True
+    assert pair["s_statistic"] > 0.0
+    assert pair["t_statistic"] > pair["s_statistic"]
     board = json.loads(rollup.skill_board_path(
         Path(config.data_root), scoring_hash).read_text())
-    assert board["degenerate_count"] == 1
-    assert board["player_count"] == 0
-    # The day's board keeps their position: it reads the trial
-    # score and takes no logarithm.
-    daily = json.loads(rollup.leaderboard_path(
-        Path(config.data_root), DAYS[0], scoring_hash).read_text())
-    assert [row["player"] for row in daily["rows"]] == ["ade"]
+    assert board["player_count"] == 1
+    assert board["active"] is False
+    assert "degenerate_count" not in board
 
 
-def test_a_perfect_day_does_not_end_a_players_skill_number() -> None:
-    """One perfect day in a run of others leaves a skill number."""
-    perfect, _clamped = rollup.term_of(1.0)
-    ordinary, _also = rollup.term_of(0.5)
-    first = rollup.fold_day(
-        None, player="ade", day=DAYS[0], term=perfect, clamped=False,
-        scoring_hash="h" * 64, preparation_version_id="p" * 64,
-        updated_at=FIXED_CLOCK)
-    assert first["degenerate"] is True
-    second = rollup.fold_day(
-        first, player="ade", day=DAYS[1], term=ordinary, clamped=False,
-        scoring_hash="h" * 64, preparation_version_id="p" * 64,
-        updated_at=FIXED_CLOCK)
-    assert second["n"] == 2
-    assert second["degenerate"] is False
-    assert second["s_statistic"] == pytest.approx(ordinary)
+def test_the_fold_is_repeatable_for_one_day() -> None:
+    counts = TrialCounts(beaten=900, tied=2, decoy_count=1392)
+    base = dict(player="ade", day=DAYS[0], counts=counts,
+                scoring_hash="h" * 64, preparation_version_id="p" * 64,
+                updated_at=FIXED_CLOCK)
+    once = rollup.fold_day(None, **base)
+    twice = rollup.fold_day(once, **base)
+    assert once == twice
+    assert once["n"] == 1
+    assert once["format"] == rollup.ROLLUP_FORMAT
+    other = TrialCounts(beaten=100, tied=0, decoy_count=1392)
+    later = rollup.fold_day(once, **{**base, "day": DAYS[1],
+                                     "counts": other})
+    first_s, first_t = rollup.aggregate.trial_terms(counts)
+    second_s, second_t = rollup.aggregate.trial_terms(other)
+    assert later["n"] == 2
+    assert later["s_statistic"] == pytest.approx(first_s + second_s)
+    assert later["t_statistic"] == pytest.approx(first_t + second_t)
+    assert later["days"] == [DAYS[0], DAYS[1]]
+
+
+def test_a_row_with_bad_counts_stops_the_fold() -> None:
+    with pytest.raises(rollup.RollupError, match="beaten"):
+        rollup.counts_of({"beaten": 3.0, "tied": 0, "decoy_count": 10})
+    with pytest.raises(rollup.RollupError, match="decoy_count"):
+        rollup.counts_of({"beaten": 3, "tied": 0})
+
+
+def test_a_pair_of_an_earlier_format_is_made_again(tmp_path) -> None:
+    """Spec AG1 section 6: a stale pair is not folded into.
+
+    The reveal finds a pair of the first format (S of the trial score
+    with the clamp) and assembles each pair from the trial rows, thus
+    the result equals a full assembly.
+    """
+    fixture = _played_world(tmp_path)
+    config = fixture["service_config"]
+    data_root = Path(config.data_root)
+    scoring_hash = _hash_of(fixture)
+    rollup.assemble(config, scoring_hash=scoring_hash)
+    expected = _snapshot(data_root / "skill")
+    path = rollup.skill_pair_path(data_root, "ade", scoring_hash)
+    stale = json.loads(path.read_text())
+    for name in ("format", "t_statistic"):
+        stale.pop(name)
+    stale.update(clamp_count=0, degenerate=False, s_statistic=99.0)
+    path.write_text(json.dumps(stale))
+    root = Path(config.store_root)
+    rollup.roll_up_day(config, store.read_day_record(root, DAYS[-1]))
+    assert _snapshot(data_root / "skill") == expected
+
+
+def test_a_missing_day_score_file_stops_the_board(tmp_path) -> None:
+    fixture = _played_world(tmp_path)
+    config = fixture["service_config"]
+    data_root = Path(config.data_root)
+    scoring_hash = _hash_of(fixture)
+    day_scores.index_path(data_root, DAYS[1], scoring_hash).unlink()
+    with pytest.raises(rollup.RollupError,
+                       match=f"service.day day-scores --date {DAYS[1]}"):
+        rollup.assemble(config, scoring_hash=scoring_hash)
+
+
+def test_the_board_holds_the_day_check_of_the_played_days(tmp_path) -> None:
+    fixture = _played_world(tmp_path)
+    config = fixture["service_config"]
+    data_root = Path(config.data_root)
+    scoring_hash = _hash_of(fixture)
+    board = json.loads(rollup.skill_board_path(
+        data_root, scoring_hash).read_text())
+    assert board["day_check"]["day_count"] == len(DAYS)
+    for day in DAYS:
+        rank = day_scores.read_day_rank(data_root, day, scoring_hash)
+        assert 0.0 < rank < 1.0
 
 
 def test_the_board_seed_is_a_function_of_recorded_inputs() -> None:
