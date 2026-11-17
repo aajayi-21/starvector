@@ -24,7 +24,7 @@ from pathlib import Path
 
 from core.canonical import canonical_json_pretty, sha256_hex
 from pipeline.config import ConfigError, load_scoring_config
-from service import pool_keys, schedule, scoring, store
+from service import day_scores, pool_keys, schedule, scoring, store
 from service.beacon import BeaconSource, fetch_pulse, make_source
 from service.pick_rule import pick_index
 from service.pool_root import leaf_salt, proof_agrees, proof_of
@@ -274,6 +274,33 @@ def _record_vp1_pick(service_config: ServiceConfig, record: store.DayRecord,
             target_index=index, target_salt=salt, target_proof=steps)
 
 
+def _write_day_scores(service_config: ServiceConfig, day: str,
+                      target_id: str, stored_by_player: Mapping[str, dict],
+                      wired: scoring.WiredScoring) -> None:
+    """The pool scores of the day's sends and the day rank (spec AG1 §5).
+
+    One row of fused pool scores for each send, in the sequence of the
+    sorted names, then the day rank from Layer 8. A day with no send has
+    no day number, thus nothing is written for it.
+    """
+    import numpy as np
+
+    from core.ranking import day_rank
+    from pipeline.score import fused_pool_scores
+
+    players = sorted(stored_by_player)
+    if not players:
+        return
+    scores = np.stack([
+        fused_pool_scores(stored_by_player[player]["record"],
+                          wired.context, wired.encoders)
+        for player in players]).astype(np.float32)        # (players, N)
+    rank = day_rank(scores, target_id, wired.context.index)
+    day_scores.write_day_scores(Path(service_config.data_root), day,
+                                wired.scoring_hash, players=players,
+                                scores=scores, rank=rank)
+
+
 def close_day(service_config: ServiceConfig, *, date: str | None = None,
               providers: Mapping[str, object] | None = None,
               clock: Callable[[], str] | None = None,
@@ -375,6 +402,10 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
         else:
             store.write_once_json(row_path, value)
         count += 1
+    # The day-score file goes before the move to "closed": a closed day
+    # has its day rank, and a close that stops here writes it again.
+    _write_day_scores(service_config, day, str(record.target_id),
+                      stored_by_player, wired)
     store.update_day_status(root, day, expect_status="closing",
                             new_status="closed",
                             timestamp_field="closed_at", timestamp=clock())
@@ -475,12 +506,14 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
                 "across preparations needs its own ruling")
         counts["days"] += 1
         pinned = wired.scoring_hash == record.scoring_config_hash
+        rescored: dict[str, dict] = {}
         for player in store.list_submissions(root, day):
             stored = store.read_json_or_none(
                 store.submission_path(root, day, player))
             if stored is None:
                 raise store.StoreError(
                     f"day {day}: the submission of {player} does not parse")
+            rescored[player] = stored
             trial, report = scoring.score_stored_submission(
                 stored["record"], record.target_id, wired)
             value = scoring.trial_row_value(
@@ -514,6 +547,64 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
                     continue
                 store.write_once_json(adjacent, value)
                 counts["written"] += 1
+        # A rescore at a new configuration gets the day ranks of that
+        # configuration, for its parallel board (spec AG1 section 5).
+        if not pinned:
+            _write_day_scores(service_config, day, str(record.target_id),
+                              rescored, wired)
+    return counts
+
+
+def build_day_scores(service_config: ServiceConfig, *,
+                     date: str | None = None,
+                     providers: Mapping[str, object] | None = None,
+                     ) -> dict[str, int]:
+    """Make the day-score files of closed and revealed days again.
+
+    With a date, that day. With none, each closed or revealed day that
+    has sends and no file at its pinned configuration. The sends score
+    again through the day's pinned config, and the providers answer
+    from their caches. A day of a vp1 protocol with no pick, or an open
+    day, does not get a score.
+    """
+    root = Path(service_config.store_root)
+    data_root = Path(service_config.data_root)
+    days = [date] if date is not None else store.list_days(root)
+    counts = {"days": 0, "written": 0, "present": 0}
+    for day in days:
+        record = store.read_day_record(root, day)
+        if record.status not in ("closed", "revealed"):
+            if date is not None:
+                raise store.StoreError(
+                    f"day {day} has status {record.status!r} - a day-score "
+                    "file needs a closed or revealed day")
+            continue
+        players = store.list_submissions(root, day)
+        if not players:
+            continue
+        counts["days"] += 1
+        if date is None and day_scores.has_day_scores(
+                data_root, day, record.scoring_config_hash):
+            counts["present"] += 1
+            continue
+        config = load_scoring_config(Path(record.scoring_config_path))
+        wired = scoring.wire_for_close(config, record.scoring_config_path,
+                                       data_root, providers)
+        if wired.scoring_hash != record.scoring_config_hash:
+            raise store.StoreError(
+                f"day {day}: the pinned config file now hashes to "
+                f"{wired.scoring_hash[:8]}, not {record.scoring_config_hash[:8]}")
+        stored = {}
+        for player in players:
+            value = store.read_json_or_none(
+                store.submission_path(root, day, player))
+            if value is None or "record" not in value:
+                raise store.StoreError(
+                    f"day {day}: the submission of {player} does not parse")
+            stored[player] = value
+        _write_day_scores(service_config, day, str(record.target_id),
+                          stored, wired)
+        counts["written"] += 1
     return counts
 
 
@@ -581,6 +672,11 @@ def main(argv: list[str] | None = None) -> int:
                                 help="the scoring config to rescore with")
     rescore_parser.add_argument("--from", dest="from_date", default=None)
     rescore_parser.add_argument("--to", dest="to_date", default=None)
+    scores_parser = commands.add_parser(
+        "day-scores", help="make the day-score files of spec AG1 again")
+    scores_parser.add_argument("--date", default=None,
+                               help="one day; with none, each day that "
+                                    "has no file")
     arguments = parser.parse_args(argv)
 
     try:
@@ -615,6 +711,11 @@ def main(argv: list[str] | None = None) -> int:
                                   from_date=arguments.from_date,
                                   to_date=arguments.to_date)
             print("rescore "
+                  + "  ".join(f"{name}={value}"
+                              for name, value in sorted(counts.items())))
+        elif arguments.command == "day-scores":
+            counts = build_day_scores(service_config, date=arguments.date)
+            print("day-scores "
                   + "  ".join(f"{name}={value}"
                               for name, value in sorted(counts.items())))
     except (ServiceConfigError, ConfigError, store.StoreError,

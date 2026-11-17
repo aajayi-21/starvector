@@ -34,6 +34,7 @@ from fastapi.responses import JSONResponse, Response
 
 from core import aggregate
 from core.aggregate import shrunk_log_theta, skill_summary
+from core.types import TrialCounts
 from core.intake import IntakeError, validate_submission
 from core.types import ROUTING_TABLE, IntakeGates, Submission, Weights
 from pipeline.config import (fusion_weights, intake_gates,
@@ -139,7 +140,6 @@ _SKILL_INACTIVE = json.dumps({
     "active": False,
     "player_count": 0,
     "eligible_count": 0,
-    "degenerate_count": 0,
     "eligibility_floor": aggregate.ELIGIBLE_TRIAL_FLOOR,
     "recomputed_floor": None,
     "fit_floor": aggregate.FIT_PLAYER_FLOOR,
@@ -160,8 +160,8 @@ _SKILL_INACTIVE = json.dumps({
 # that carries it makes the R4 two-world compare read a difference
 # that has nothing to do with the target.
 #
-# The two standing monitors: the baseline check and the stopping
-# monitor. Ruling 5 of 2026-08-15 publishes the discovery claim
+# The two standing monitors: the day check (spec AG1 section 5, which
+# replaces the baseline check) and the stopping monitor. Ruling 5 of 2026-08-15 publishes the discovery claim
 # and holds these two for the operator, because they hold no
 # player-facing copy, and a reader gives a number that arrives
 # with no sentence one of their own. Section 6 asks for the
@@ -170,28 +170,29 @@ _SKILL_INACTIVE = json.dumps({
 # artifact - a divergence this comment records rather than
 # resolves.
 _OPERATOR_ONLY = ("scoring_config_hash", "preparation_version_id",
-                  "rank_seed", "baseline", "stopping_monitor")
+                  "rank_seed", "day_check", "stopping_monitor", "format")
 
 # Error lines of the password paths. A line names the record that
 # stopped a move and holds no password, no code, and no digest.
 credential_log = logging.getLogger("starvector.credentials")
 
 
-def _skill_value(ps: list[float]) -> dict | None:
-    """The history skill values, or None (spec S2 section 3).
+def _skill_value(trials: list[TrialCounts]) -> dict | None:
+    """The history skill values, or None (spec S2 section 3, AG1 §4).
 
-    None is a defined wire value for two conditions: no revealed
-    trial with a stored row, and each stored p equal to 1.0 - the
-    aggregation refuses an S statistic of zero there.
+    None is the defined wire value for a player with no revealed trial
+    that has a stored row. The corrected score of spec AG1 gives each
+    other history a skill number, also a perfect run.
     """
-    if not ps or all(p == 1.0 for p in ps):
+    if not trials:
         return None
-    summary = skill_summary(ps, unbiased=(len(ps) >= 2))
+    summary = skill_summary(trials, unbiased=(len(trials) >= 2))
     shrunk = shrunk_log_theta(summary.log_theta, summary.n,
                               POPULATION_MEAN, POPULATION_SPREAD)
     return {
         "theta": summary.theta,
         "shrunk": math.exp(shrunk),
+        "hit_number": summary.hit_number,
         "evidence_p": summary.evidence_p,
         "n": summary.n,
     }
@@ -1897,7 +1898,7 @@ def create_app(service_config: ServiceConfig,
         # Revealed days that hold the player's trial row, newest
         # first (spec S2 B3). Read-only against the store.
         days = []
-        ps: list[float] = []
+        trials: list[TrialCounts] = []
         for day in reversed(store.list_days(root)):
             record = store.read_day_record(root, day)
             if record.status != "revealed":
@@ -1906,7 +1907,7 @@ def create_app(service_config: ServiceConfig,
                 store.trial_row_path(root, day, caller))
             if row is None:
                 continue
-            ps.append(float(row["p"]))
+            trials.append(rollup.counts_of(row))
             days.append({
                 "day": day,
                 "trial_code": record.trial_code,
@@ -1914,7 +1915,7 @@ def create_app(service_config: ServiceConfig,
                 "target_rank": row["target_rank"],
                 "decoy_count": row["decoy_count"],
             })
-        return JSONResponse({"days": days, "skill": _skill_value(ps)})
+        return JSONResponse({"days": days, "skill": _skill_value(trials)})
 
     @app.get("/api/submission")
     def submission_view(request: Request,
@@ -2060,6 +2061,12 @@ def create_app(service_config: ServiceConfig,
             record = store.read_day_record(root, newest)
             prepared = store.read_json_or_none(rollup.skill_board_path(
                 data_root, record.scoring_config_hash))
+            if prepared is not None \
+                    and prepared.get("format") != rollup.ROLLUP_FORMAT:
+                # A board of an earlier format holds no hit number and
+                # the scores of the clamp (spec AG1 section 6). It reads
+                # as not built until the next reveal or an assembly.
+                prepared = None
         if prepared is None:
             return Response(content=_SKILL_INACTIVE, status_code=200,
                             media_type="application/json")

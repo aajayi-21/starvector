@@ -23,15 +23,22 @@ from pathlib import Path
 
 from core import aggregate
 from core.canonical import JsonValue, sha256_hex
+from core.types import TrialCounts
 from pool.artifacts import write_json_pretty
-from service import store
+from service import day_scores, store
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from validation.harness import quantized
 
 _PAIR_FIELDS = ("player", "scoring_config_hash", "preparation_version_id",
-                "n", "clamp_count", "s_statistic", "days", "degenerate",
+                "format", "n", "s_statistic", "t_statistic", "days",
                 "updated_at")
+
+# The format of a pair and of the skill board (spec AG1 section 6). The
+# second format folds the corrected score into S and T. A pair or a
+# board of an earlier format is made again from the trial rows, which
+# are permanent, and not read.
+ROLLUP_FORMAT = 2
 
 # The band the funnel chart draws, at a ladder of trial counts.
 # The server owns it: the limit is a Layer 9 shape in the
@@ -42,6 +49,10 @@ _BAND_STEPS = 12
 
 class RollupError(ValueError):
     """A rollup rule was broken or a stored artifact did not parse."""
+
+
+class StalePair(RollupError):
+    """A stored pair of an earlier format: the pairs are made again."""
 
 
 def skill_pair_path(data_root: Path, player: str,
@@ -108,6 +119,8 @@ def read_pair(path: Path, *, scoring_hash: str,
     value = store.read_json_or_none(path)
     if value is None:
         return None
+    if value.get("format") != ROLLUP_FORMAT:
+        raise StalePair(f"{path}: a pair of an earlier format")
     if set(value) != set(_PAIR_FIELDS):
         raise RollupError(
             f"{path}: the pair must have the fields {sorted(_PAIR_FIELDS)}")
@@ -122,10 +135,14 @@ def read_pair(path: Path, *, scoring_hash: str,
     return value
 
 
-def fold_day(pair: dict | None, *, player: str, day: str, term: float,
-             clamped: bool, scoring_hash: str,
+def fold_day(pair: dict | None, *, player: str, day: str,
+             counts: TrialCounts, scoring_hash: str,
              preparation_version_id: str, updated_at: str) -> dict:
-    """Add one day's term to a player's pair. Pure.
+    """Add one day's two terms to a player's pair. Pure.
+
+    The terms come from the corrected score of the trial's counts (spec
+    AG1 section 3), thus each is a positive number and no trial needs a
+    clamp or a mark.
 
     The days sequence is what makes the fold repeatable. A day that
     is listed is skipped, thus a second reveal, a stop and a retry,
@@ -133,8 +150,8 @@ def fold_day(pair: dict | None, *, player: str, day: str, term: float,
     the newest day in its position can double-count a backfill and
     say nothing.
 
-    The S statistic keeps its full precision. The next fold reads
-    that sum again, and a rounded sum can collect 5e-7 at each
+    The statistics keep their full precision. The next fold reads
+    the sums again, and a rounded sum can collect 5e-7 at each
     day. The boards quantize, because a board reports.
     """
     if pair is not None and day in pair["days"]:
@@ -142,34 +159,28 @@ def fold_day(pair: dict | None, *, player: str, day: str, term: float,
     if pair is None:
         pair = {"player": player, "scoring_config_hash": scoring_hash,
                 "preparation_version_id": preparation_version_id,
-                "n": 0, "clamp_count": 0, "s_statistic": 0.0,
-                "days": [], "degenerate": True, "updated_at": updated_at}
-    total = pair["s_statistic"] + term
+                "format": ROLLUP_FORMAT, "n": 0, "s_statistic": 0.0,
+                "t_statistic": 0.0, "days": [], "updated_at": updated_at}
+    s_term, t_term = aggregate.trial_terms(counts)
     return {**pair,
             "n": pair["n"] + 1,
-            "clamp_count": pair["clamp_count"] + (1 if clamped else 0),
-            "s_statistic": total,
+            "s_statistic": pair["s_statistic"] + s_term,
+            "t_statistic": pair["t_statistic"] + t_term,
             "days": sorted([*pair["days"], day]),
-            "degenerate": total <= 0.0,
             "updated_at": max(pair["updated_at"], updated_at)}
 
 
-def term_of(p: float) -> tuple[float, bool]:
-    """The negative logarithm of one trial score, and its clamp.
-
-    One clamp rule for the full system: aggregate.log_term holds
-    it, thus no second rule can drift away from it.
-
-    This read skill_summary before, which refuses a sequence where
-    each trial score is 1.0. That refusal is correct for a player's
-    full history, where S of zero means the skill number is out of
-    range, and incorrect for one trial's term, which is 0.0. A
-    player who beat each decoy on one day thus stopped the reveal
-    with a 400, and the degenerate pair that the 2026-08-16 ruling
-    asks for did not get written at all, because the fold raised
-    before it could mark one.
-    """
-    return aggregate.log_term(p)
+def counts_of(row: Mapping[str, object]) -> TrialCounts:
+    """The three counts of a stored trial row, checked at the boundary."""
+    values = []
+    for name in ("beaten", "tied", "decoy_count"):
+        value = row.get(name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise RollupError(f"a trial row's {name} must be an integer, "
+                              f"got {value!r}")
+        values.append(value)
+    return TrialCounts(beaten=values[0], tied=values[1],
+                       decoy_count=values[2])
 
 
 def daily_board_value(record: store.DayRecord,
@@ -183,11 +194,6 @@ def daily_board_value(record: store.DayRecord,
     The store key travels and the board label does not: the
     endpoint joins to the player record at read time, which is one
     file read, and an edited label then wants no new assembly.
-
-    A player with 1.0 at each trial score ranks here in the usual
-    manner (the 2026-08-16 ruling). This board reads the trial
-    score and takes no logarithm, thus that player holds a position
-    while they have no skill number.
 
     Two ranks travel and they count different things. rank is the
     position on this board, in the set of players. target_rank is
@@ -263,7 +269,8 @@ def _row_order(row: dict) -> tuple:
 
 def skill_board_value(pairs: list[dict], *, scoring_hash: str,
                       preparation_version_id: str, day: str, seed: int,
-                      created_at: str | None) -> dict[str, JsonValue]:
+                      created_at: str | None,
+                      day_ranks: Sequence[float] = ()) -> dict[str, JsonValue]:
     """The skill board. Pure, and each reported number quantized.
 
     Membership is the architecture's own floor of 30 trials and
@@ -290,11 +297,14 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
     that is what lets a player read the low-trial scatter as noise
     (section 9) while membership stays at the floor.
 
-    A player with 1.0 at each trial score has no skill number, thus
-    they stay off this board and degenerate_count says how many.
-    They keep their position on each day's board.
+    Each row holds the hit number and the evidence of the two
+    directions (spec AG1 section 4), and the board ranks by the skill
+    number alone (ruling D2b). day_check is the check of the day ranks
+    of the revealed days (section 5), which replaces the check on the
+    tails of the players. The operator reads it, as the baseline check
+    before it.
     """
-    usable = [pair for pair in pairs if not pair["degenerate"]]
+    usable = list(pairs)
     points = {pair["player"]: aggregate.population_point(
         pair["n"], pair["s_statistic"]) for pair in usable}
     eligible = [pair for pair in usable
@@ -304,12 +314,12 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
     body: dict[str, JsonValue] = {
         "scoring_config_hash": scoring_hash,
         "preparation_version_id": preparation_version_id,
+        "format": ROLLUP_FORMAT,
         "day": day,
         "created_at": created_at,
         "active": len(eligible) >= 1,
         "player_count": len(usable),
         "eligible_count": len(eligible),
-        "degenerate_count": len(pairs) - len(usable),
         "eligibility_floor": aggregate.ELIGIBLE_TRIAL_FLOOR,
         "recomputed_floor": None,
         "fit_floor": aggregate.FIT_PLAYER_FLOOR,
@@ -319,11 +329,17 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
         "rows": [],
         "population": None,
         "variation": None,
-        "baseline": None,
+        "day_check": None,
         "stopping_monitor": None,
         "discovery": None,
         "baseline_band": [],
     }
+    if day_ranks:
+        check = aggregate.day_check(day_ranks)
+        body["day_check"] = {
+            "statistic": quantized(check.statistic),
+            "significance": quantized(check.significance),
+            "day_count": check.day_count}
     if not eligible:
         return body
     if (fit.fitted and fit.tau > 0.0
@@ -352,11 +368,6 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
             "tau_multiplicative": quantized(report.tau_multiplicative),
             "prediction_low": quantized(report.prediction_low),
             "prediction_high": quantized(report.prediction_high)}
-        check = aggregate.baseline_check(eligible_points)
-        body["baseline"] = {
-            "statistic": quantized(check.statistic),
-            "significance": quantized(check.significance),
-            "player_count": check.player_count}
         monitor = aggregate.stopping_monitor(eligible_points, fit)
         body["stopping_monitor"] = {
             "player_count": monitor.player_count,
@@ -371,10 +382,10 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
     for pair in usable:
         point = points[pair["player"]]
         summary = aggregate.summary_of_pair(
-            pair["n"], pair["s_statistic"],
-            clamp_count=pair["clamp_count"], unbiased=pair["n"] >= 2)
-        evidence = aggregate.anytime_evidence(pair["n"],
-                                              pair["s_statistic"])
+            pair["n"], pair["s_statistic"], pair["t_statistic"],
+            unbiased=pair["n"] >= 2)
+        evidence = aggregate.anytime_evidence(
+            pair["n"], pair["s_statistic"], pair["t_statistic"])
         posterior, rank = ranked.get(pair["player"], (None, None))
         if rank is not None:
             fixed_values.append(summary.evidence_p)
@@ -382,6 +393,7 @@ def skill_board_value(pairs: list[dict], *, scoring_hash: str,
             "player": pair["player"], "n": pair["n"],
             "eligible": rank is not None,
             "theta": quantized(summary.theta),
+            "hit_number": quantized(summary.hit_number),
             "shrunk": (None if posterior is None
                        else quantized(posterior.mean)),
             "y": quantized(point.y), "v": quantized(point.v),
@@ -431,10 +443,9 @@ def _fold_into(pairs: dict[str, dict], record: store.DayRecord,
                        record.scoring_config_hash)
         if row is None:
             continue
-        term, clamped = term_of(float(row["p"]))
         pairs[player] = fold_day(
-            pairs.get(player), player=player, day=record.day, term=term,
-            clamped=clamped, scoring_hash=scoring_hash,
+            pairs.get(player), player=player, day=record.day,
+            counts=counts_of(row), scoring_hash=scoring_hash,
             preparation_version_id=record.preparation_version_id,
             updated_at=record.revealed_at or record.opened_at)
         count += 1
@@ -464,7 +475,25 @@ def _write_boards(service_config: ServiceConfig, record: store.DayRecord,
             scoring_hash=scoring_hash,
             preparation_version_id=record.preparation_version_id,
             day=record.day, seed=board_seed(scoring_hash, record.day),
-            created_at=record.revealed_at))
+            created_at=record.revealed_at,
+            day_ranks=day_ranks_of(data_root, pairs, scoring_hash)))
+
+
+def day_ranks_of(data_root: Path, pairs: Mapping[str, dict],
+                 scoring_hash: str) -> list[float]:
+    """The day rank of each day that a pair counted, in day sequence.
+
+    The days of the pairs are the revealed days with a trial row at
+    this configuration, thus no row is read again. A day with no
+    day-score file raises with the command that makes it (spec AG1
+    section 5): the check does not skip a day.
+    """
+    days = sorted({day for pair in pairs.values() for day in pair["days"]})
+    try:
+        return [day_scores.read_day_rank(data_root, day, scoring_hash)
+                for day in days]
+    except day_scores.DayScoresError as error:
+        raise RollupError(str(error)) from error
 
 
 def roll_up_day(service_config: ServiceConfig,
@@ -484,13 +513,18 @@ def roll_up_day(service_config: ServiceConfig,
     data_root = Path(service_config.data_root)
     scoring_hash = record.scoring_config_hash
     pairs: dict[str, dict] = {}
-    for player in _players_with_pairs(data_root, scoring_hash):
-        stored = read_pair(
-            skill_pair_path(data_root, player, scoring_hash),
-            scoring_hash=scoring_hash,
-            preparation_version_id=record.preparation_version_id)
-        if stored is not None:
-            pairs[player] = stored
+    try:
+        for player in _players_with_pairs(data_root, scoring_hash):
+            stored = read_pair(
+                skill_pair_path(data_root, player, scoring_hash),
+                scoring_hash=scoring_hash,
+                preparation_version_id=record.preparation_version_id)
+            if stored is not None:
+                pairs[player] = stored
+    except StalePair:
+        # A pair of an earlier format: the fold cannot add to it, thus
+        # each pair and each board is made again from the trial rows.
+        return assemble(service_config, scoring_hash=scoring_hash)
     folded = _fold_into(pairs, record, Path(service_config.store_root),
                         scoring_hash)
     _write_boards(service_config, record, pairs, scoring_hash)
