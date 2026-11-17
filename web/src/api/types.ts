@@ -173,6 +173,13 @@ export interface HistoryDayRow {
 export interface SkillValue {
   theta: number;
   shrunk: number;
+  /**
+   * T / n (spec AG1 §4): 1.00 is chance, and higher means more results
+   * near the very top. The skill number rewards a steady edge, this one
+   * occasional strong hits.
+   */
+  hit_number: number;
+  /** The evidence of the two directions: two times the smaller tail. */
   evidence_p: number;
   n: number;
 }
@@ -389,6 +396,8 @@ export interface SkillBoardRow {
   eligible: boolean;
   /** The skill number. Rises with skill (spec M1 §10). */
   theta: number;
+  /** T / n (spec AG1 §4). Shown, not sorted: the board ranks by skill. */
+  hit_number: number;
   /** The shrunk estimate, on the log theta scale. Null below the floor. */
   shrunk: number | null;
   /** The accurate estimate of log theta. What the chart plots. */
@@ -401,10 +410,10 @@ export interface SkillBoardRow {
   evidence_p: number;
   log_e_value: number;
   /**
-   * 1/E, and SMALL is the evidence direction. The mixture is cut
-   * at a skill number of one (the 2026-08-16 amendment), thus this
-   * asks "is this player above the baseline" and a weak run does
-   * not read as strong evidence.
+   * 1/E, and SMALL is the evidence direction. E is the mean of the
+   * skill side, cut at a skill number of one (the 2026-08-16
+   * amendment), and the hit side (spec AG1 §4), thus a weak run does
+   * not read as strong evidence on the two sides.
    */
   anytime_significance: number;
 }
@@ -454,7 +463,6 @@ export interface SkillBoardView {
   active: boolean;
   player_count: number;
   eligible_count: number;
-  degenerate_count: number;
   /** Trials, per player. Membership stays here (2026-08-16). */
   eligibility_floor: number;
   /** The recomputed value, published as a report alone, or null. */

@@ -338,6 +338,7 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
       n,
       eligible: n >= MOCK_ELIGIBILITY_FLOOR,
       theta: round4(Math.exp(logTheta)),
+      hit_number: round4(0.8 + 0.4 * draw(`pop:h:${index}`)),
       shrunk: null,
       y: round4(logTheta),
       v: round4(1 / n),
@@ -355,6 +356,7 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
     n: 61,
     eligible: true,
     theta: round4(Math.exp(MOCK_MU + 0.31)),
+    hit_number: 1.12,
     shrunk: null,
     y: round4(MOCK_MU + 0.31),
     v: round4(1 / 61),
@@ -420,7 +422,6 @@ function skillBoard(player: string, ownScore: number): SkillBoardView {
     active: eligible.length >= 1,
     player_count: ordered.length,
     eligible_count: eligible.length,
-    degenerate_count: 0,
     eligibility_floor: MOCK_ELIGIBILITY_FLOOR,
     recomputed_floor: null,
     fit_floor: MOCK_FIT_FLOOR,
@@ -729,11 +730,18 @@ export function makeMockApi(options: MockOptions = {}): Api {
         1,
         0.5 * Math.exp((surprise - days.length) / Math.sqrt(days.length)),
       );
+      // The hit side reads -log(1 - p): large when results sit near the
+      // top (spec AG1 §4). Illustrative, as the evidence above.
+      const hits =
+        days
+          .map((row) => -Math.log(Math.max(1e-3, 1 - row.p)))
+          .reduce((a, b) => a + b, 0) / days.length;
       return Promise.resolve({
         days,
         skill: {
           theta: round4(theta),
           shrunk: round4(shrunk),
+          hit_number: round4(hits),
           evidence_p: round4(evidence),
           n: days.length,
         },

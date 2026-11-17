@@ -120,8 +120,7 @@ function HistoryBody(props: {
           </h2>
           {view.skill === null ? (
             <p className="muted">
-              Every result so far beat every other photo, so the skill number
-              can't be worked out yet.
+              Your skill number appears after your first result.
             </p>
           ) : (
             <>
@@ -137,6 +136,21 @@ function HistoryBody(props: {
                 The leaderboard shows a steadied version of this number, which
                 stays near the middle until enough results back it. The two can
                 differ.
+              </p>
+              <div className="row" style={{ alignItems: "baseline" }}>
+                <span className="label">Hit number</span>
+                <span
+                  className="tabular"
+                  style={{ fontSize: 22, fontWeight: 650 }}
+                  data-testid="hit-number"
+                >
+                  {view.skill.hit_number.toFixed(2)}
+                </span>
+              </div>
+              <p className="muted small">
+                Chance is 1.00 here as well. Higher means more of your results
+                land near the very top. The skill number rewards a steady edge,
+                and the hit number rewards occasional strong hits.
               </p>
               {view.skill.n < EARLY_RESULTS ? (
                 <p

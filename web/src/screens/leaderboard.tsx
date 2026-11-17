@@ -547,6 +547,7 @@ function RankedTable(props: {
               <th className="num">Place</th>
               <th>Player</th>
               <th className="num">Steadied skill</th>
+              <th className="num">Hit number</th>
               <th className="num">Likely range</th>
               <th className="num">Results</th>
             </tr>
@@ -558,7 +559,7 @@ function RankedTable(props: {
             {slice.pinned === null ? null : (
               <>
                 <tr>
-                  <td colSpan={5} style={{ padding: 0 }}>
+                  <td colSpan={6} style={{ padding: 0 }}>
                     <hr className="divider" />
                   </td>
                 </tr>
@@ -572,7 +573,9 @@ function RankedTable(props: {
         Place is an estimate, so it can be a fraction, and the likely range is
         where a player's true place probably falls. Steadied skill stays near
         the middle until enough results back it, so it can differ from the plain
-        number on your results page.
+        number on your results page. The hit number is shown and not ranked: it
+        rewards occasional strong hits, where the skill number rewards a steady
+        edge.
       </p>
       {slice.total > slice.shown.length ? (
         <p className="hint">
@@ -606,6 +609,7 @@ function RankedRow(props: {
       <td className="num">
         {row.shrunk === null ? "—" : Math.exp(row.shrunk).toFixed(2)}
       </td>
+      <td className="num">{row.hit_number.toFixed(2)}</td>
       <td className="num">
         {row.rank_low ?? "—"} to {row.rank_high ?? "—"}
       </td>
