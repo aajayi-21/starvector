@@ -526,4 +526,4 @@ def test_a_named_move_wants_a_stored_day(tmp_path, monkeypatch) -> None:
     closed = client.post("/api/dev/day/close", headers=HEADERS,
                          json={"day": OPEN_DAY})
     assert closed.status_code == 200
-    assert closed.json() == {"trial_rows": 1}
+    assert closed.json() == {"trial_rows": 1, "quarantined": 0}

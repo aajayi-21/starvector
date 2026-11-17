@@ -279,7 +279,7 @@ def test_a_full_day_runs_through_the_page_endpoints(tmp_path) -> None:
     closed = client.post("/api/day/close")
     assert closed.status_code == 200
     # The close answer names the row count and no score (R3).
-    assert closed.json() == {"trial_rows": 1}
+    assert closed.json() == {"trial_rows": 1, "quarantined": 0}
 
     revealed = client.post("/api/day/reveal")
     assert revealed.status_code == 200

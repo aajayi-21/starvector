@@ -20,11 +20,15 @@ import secrets
 import string
 import sys
 from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
 from pathlib import Path
 
 from core.canonical import canonical_json_pretty, sha256_hex
 from pipeline.config import ConfigError, load_scoring_config
 from service import day_scores, pool_keys, schedule, scoring, store
+
+if TYPE_CHECKING:
+    import numpy as np
 from service.beacon import BeaconSource, fetch_pulse, make_source
 from service.pick_rule import pick_index
 from service.pool_root import leaf_salt, proof_agrees, proof_of
@@ -274,9 +278,104 @@ def _record_vp1_pick(service_config: ServiceConfig, record: store.DayRecord,
             target_index=index, target_salt=salt, target_proof=steps)
 
 
+# The pauses before the fast retries of a refused send (spec CR1 ruling
+# D5): three more tries, about three and a half minutes in all.
+FAST_RETRY_PAUSES = (30.0, 60.0, 120.0)
+
+# The guard of spec CR1 ruling D6: the close skips refused sends by
+# itself while they are at most this share of the day's sends.
+QUARANTINE_SHARE = 0.10
+
+
+class CloseHeld(store.StoreError):
+    """The close found more refused sends than the guard allows.
+
+    Spec CR1 section 4 step 6: that many refusals are read as an outage,
+    thus the close writes no record, the day stays in "closing", and the
+    message names each refused player.
+    """
+
+
+def _blind_run(stored_by_player: Mapping[str, dict],
+               wired: scoring.WiredScoring,
+               sleep: Callable[[float], None],
+               ) -> tuple[dict[str, "np.ndarray"], dict[str, tuple[str, int]]]:
+    """Layers 0 to 6 for each send, with no target (spec CR1 section 4).
+
+    The output is the fused pool scores of each send that got a score,
+    and for each send that did not, the error text and the try count. A
+    refusal of the provider (InputRefused) gets the fast retries. An
+    IntakeError or NoActiveChannels of a stored send cannot change with
+    a wait, thus it counts as a refusal at the first try. Each other
+    error raises: a skip of that send is a skip that an outage or a
+    defect decided.
+    """
+    from core.fusion import NoActiveChannels
+    from core.intake import IntakeError
+    from pipeline.score import fused_pool_scores
+    from providers.protocols import InputRefused
+
+    # The batch fills the caches. A refusal of one input refuses the full
+    # batch, thus the run below encodes each send alone and finds it.
+    try:
+        harness.prewarm_records(
+            [stored["record"] for stored in stored_by_player.values()],
+            wired.context.gates, wired.context.render, wired.encoders)
+    except (InputRefused, IntakeError):
+        pass
+    rows: dict[str, np.ndarray] = {}
+    refused: dict[str, tuple[str, int]] = {}
+    for player in sorted(stored_by_player):
+        record = stored_by_player[player]["record"]
+        tries = 0
+        while True:
+            tries += 1
+            try:
+                rows[player] = fused_pool_scores(record, wired.context,
+                                                 wired.encoders)
+                break
+            except (IntakeError, NoActiveChannels) as error:
+                refused[player] = (str(error), tries)
+                break
+            except InputRefused as error:
+                if tries > len(FAST_RETRY_PAUSES):
+                    refused[player] = (str(error), tries)
+                    break
+                sleep(FAST_RETRY_PAUSES[tries - 1])
+    return rows, refused
+
+
+def _quarantine_refused(root: Path, day: str, refused: Mapping[str, tuple],
+                        stored_by_player: Mapping[str, dict],
+                        send_count: int, clock: Callable[[], str]) -> None:
+    """The guard, then a record for each refused send (spec CR1 §4, §6).
+
+    At most QUARANTINE_SHARE of the day's sends: a record for each, with
+    decided_by "close". Above it, no record, and CloseHeld names each.
+    """
+    if not refused:
+        return
+    if len(refused) > QUARANTINE_SHARE * send_count:
+        names = "; ".join(f"{player}: {error[:160]}"
+                          for player, (error, _) in sorted(refused.items()))
+        raise CloseHeld(
+            f"day {day}: {len(refused)} of {send_count} sends were refused, "
+            f"above the guard of {QUARANTINE_SHARE:.0%} - read as an outage, "
+            f"no send is skipped ({names}). A send the guard holds can be "
+            "skipped with `service.day quarantine`.")
+    for player, (error, tries) in sorted(refused.items()):
+        store.write_quarantine(root, store.QuarantineRecord(
+            day=day, player=player,
+            trial_id=str(stored_by_player[player]["trial_id"]),
+            submission_digest=store.submission_digest(root, day, player),
+            cause="input-refused", error=error[:500], tries=tries,
+            decided_by="close", note=None, quarantined_at=clock()))
+
+
 def _write_day_scores(service_config: ServiceConfig, day: str,
                       target_id: str, stored_by_player: Mapping[str, dict],
-                      wired: scoring.WiredScoring) -> None:
+                      wired: scoring.WiredScoring,
+                      rows: Mapping[str, "np.ndarray"] | None = None) -> None:
     """The pool scores of the day's sends and the day rank (spec AG1 §5).
 
     One row of fused pool scores for each send, in the sequence of the
@@ -292,6 +391,7 @@ def _write_day_scores(service_config: ServiceConfig, day: str,
     if not players:
         return
     scores = np.stack([
+        rows[player] if rows is not None else
         fused_pool_scores(stored_by_player[player]["record"],
                           wired.context, wired.encoders)
         for player in players]).astype(np.float32)        # (players, N)
@@ -327,8 +427,13 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
     pinned config refuses loudly. With no wired context the wiring
     comes from the day record's pinned config path, as before.
 
-    A vp1 day (spec VP1) gets its pulse after the move to "closing" and
-    records the pick before it scores. The beacon, clock, and sleep
+    Spec CR1: each send runs Layers 0 to 6 with no target first, with
+    fast retries for a refusal of the provider. A refused send gets a
+    quarantine record while the guard allows, and the close skips it.
+    Above the guard, CloseHeld raises and the day stays in "closing".
+
+    A vp1 day (spec VP1) gets its pulse after that run and records the
+    pick before it scores. The beacon, clock, and sleep
     arguments are the seams of the tests. A pulse that does not come raises, and the
     day stays in "closing" for a subsequent close.
     """
@@ -365,15 +470,15 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
             store.update_day_status(root, day, expect_status="open",
                                     new_status="closing",
                                     timestamp_field=None, timestamp=None)
-    if source is not None:
-        record = _record_vp1_pick(service_config, record, wired, source,
-                                  now, sleep)
-    # Read and check each submission first, then one batched encode
-    # across the day (P5 R7): each cold atom rides a shared batch.
-    # A submission that does not parse stops the close before a row
-    # write.
+    # Read and check each submission first. A submission that does not
+    # parse stops the close before a row write. A send with a
+    # quarantine record is not read again (spec CR1 section 4).
+    sends = store.list_submissions(root, day)
+    held = set(store.list_quarantined(root, day))
     stored_by_player: dict[str, dict] = {}
-    for player in store.list_submissions(root, day):
+    for player in sends:
+        if player in held:
+            continue
         stored = store.read_json_or_none(
             store.submission_path(root, day, player))
         if stored is None or "record" not in stored \
@@ -381,9 +486,16 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
             raise store.StoreError(
                 f"day {day}: the submission of {player} does not parse")
         stored_by_player[player] = stored
-    harness.prewarm_records(
-        [stored["record"] for stored in stored_by_player.values()],
-        wired.context.gates, wired.context.render, wired.encoders)
+    # The blind run, the guard, and the records, before the pick: a skip
+    # is decided while no target is read (spec CR1 ruling D3).
+    rows, refused = _blind_run(stored_by_player, wired, sleep)
+    _quarantine_refused(root, day, refused, stored_by_player, len(sends),
+                        clock)
+    for player in refused:
+        stored_by_player.pop(player)
+    if source is not None:
+        record = _record_vp1_pick(service_config, record, wired, source,
+                                  now, sleep)
     count = 0
     for player, stored in stored_by_player.items():
         trial, report = scoring.score_stored_submission(
@@ -405,7 +517,7 @@ def close_day(service_config: ServiceConfig, *, date: str | None = None,
     # The day-score file goes before the move to "closed": a closed day
     # has its day rank, and a close that stops here writes it again.
     _write_day_scores(service_config, day, str(record.target_id),
-                      stored_by_player, wired)
+                      stored_by_player, wired, rows=rows)
     store.update_day_status(root, day, expect_status="closing",
                             new_status="closed",
                             timestamp_field="closed_at", timestamp=clock())
@@ -555,6 +667,62 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
     return counts
 
 
+def quarantine_send(service_config: ServiceConfig, *, date: str,
+                    player: str, note: str,
+                    providers: Mapping[str, object] | None = None,
+                    clock: Callable[[], str] | None = None,
+                    ) -> store.QuarantineRecord:
+    """The operator's skip of one send that the guard held (spec CR1 §6).
+
+    For a day in "closing" alone, and a send with no trial row. The
+    command runs the blind run on that send first, one try, and refuses
+    unless the provider refuses it, thus no operator can skip a send
+    that scores. The run reads no target, and on a vp1 day held before
+    its pick no target exists. Each other error raises: an outage does
+    not make the decision of a skip.
+    """
+    from core.fusion import NoActiveChannels
+    from core.intake import IntakeError
+    from pipeline.score import fused_pool_scores
+    from providers.protocols import InputRefused
+
+    clock = clock or harness.default_clock
+    root = Path(service_config.store_root)
+    record = store.read_day_record(root, date)
+    if record.status != "closing":
+        raise store.StoreError(
+            f"day {date} has status {record.status!r} - a quarantine needs a "
+            "day in 'closing'")
+    if not note.strip():
+        raise store.StoreError("a quarantine needs a note")
+    stored = store.read_json_or_none(store.submission_path(root, date, player))
+    if stored is None:
+        raise store.StoreError(f"day {date}: {player} has no stored send")
+    if store.trial_row_path(root, date, player).is_file():
+        raise store.StoreError(
+            f"day {date}: the send of {player} has a trial row - it scored")
+    config = load_scoring_config(Path(record.scoring_config_path))
+    wired = scoring.wire_for_close(config, record.scoring_config_path,
+                                   Path(service_config.data_root), providers)
+    if wired.scoring_hash != record.scoring_config_hash:
+        raise store.StoreError(
+            f"day {date}: the pinned config file now hashes to "
+            f"{wired.scoring_hash[:8]}, not {record.scoring_config_hash[:8]}")
+    try:
+        fused_pool_scores(stored["record"], wired.context, wired.encoders)
+    except (InputRefused, IntakeError, NoActiveChannels) as error:
+        quarantine = store.QuarantineRecord(
+            day=date, player=player, trial_id=str(stored["trial_id"]),
+            submission_digest=store.submission_digest(root, date, player),
+            cause="input-refused", error=str(error)[:500], tries=1,
+            decided_by="operator", note=note, quarantined_at=clock())
+        store.write_quarantine(root, quarantine)
+        return quarantine
+    raise store.StoreError(
+        f"day {date}: the send of {player} scores in the blind run - a send "
+        "that scores is not skipped")
+
+
 def build_day_scores(service_config: ServiceConfig, *,
                      date: str | None = None,
                      providers: Mapping[str, object] | None = None,
@@ -643,13 +811,14 @@ def day_status_lines(service_config: ServiceConfig) -> list[str]:
         return ["no day open"]
     record = store.read_day_record(root, day)
     submitted = service_config.player in store.list_submissions(root, day)
+    held = store.list_quarantined(root, day)
     return [
         f"day {day}",
         f"trial code {record.trial_code}",
         f"status {record.status}",
         f"commitment {record.commitment}",
         f"submission stored: {'yes' if submitted else 'no'}",
-    ]
+    ] + ([f"quarantined {len(held)}"] if held else [])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -672,6 +841,11 @@ def main(argv: list[str] | None = None) -> int:
                                 help="the scoring config to rescore with")
     rescore_parser.add_argument("--from", dest="from_date", default=None)
     rescore_parser.add_argument("--to", dest="to_date", default=None)
+    quarantine_parser = commands.add_parser(
+        "quarantine", help="skip one refused send of a held day (spec CR1)")
+    quarantine_parser.add_argument("--date", required=True)
+    quarantine_parser.add_argument("--player", required=True)
+    quarantine_parser.add_argument("--note", required=True)
     scores_parser = commands.add_parser(
         "day-scores", help="make the day-score files of spec AG1 again")
     scores_parser.add_argument("--date", default=None,
@@ -713,6 +887,12 @@ def main(argv: list[str] | None = None) -> int:
             print("rescore "
                   + "  ".join(f"{name}={value}"
                               for name, value in sorted(counts.items())))
+        elif arguments.command == "quarantine":
+            quarantine = quarantine_send(service_config, date=arguments.date,
+                                         player=arguments.player,
+                                         note=arguments.note)
+            print(f"day {quarantine.day}: the send of {quarantine.player} is "
+                  "quarantined - close the day again")
         elif arguments.command == "day-scores":
             counts = build_day_scores(service_config, date=arguments.date)
             print("day-scores "

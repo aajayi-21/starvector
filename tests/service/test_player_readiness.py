@@ -747,7 +747,7 @@ def test_a_config_with_the_flag_on_stores_channel_scores(tmp_path) -> None:
 def test_the_reveal_builds_the_index(tmp_path) -> None:
     fixture, _config = _played_world(tmp_path)
     target = index.index_path(fixture["data"])
-    assert target.name == "results-v3.sqlite"
+    assert target.name == "results-v4.sqlite"
     assert index.read_fingerprint(target) \
         == index.store_fingerprint(fixture["store"])
 
@@ -821,7 +821,7 @@ def test_the_guide_states_the_fence() -> None:
     assert "sqlite3 -readonly" in guide
     assert "json_each" in guide
     assert "duckdb" in guide.lower()
-    assert "results-v3.sqlite" in guide
+    assert "results-v4.sqlite" in guide
 
 
 def _guide_sql(heading: str) -> list[str]:
@@ -874,7 +874,7 @@ def test_each_duckdb_example_of_the_guide_runs(tmp_path) -> None:
         pytest.skip(f"the sqlite extension is not available: {error}")
     first, second = _guide_sql("With DuckDB")
     statements = [text.strip() for text in first.split(";") if text.strip()]
-    attach = statements[2].replace("data/index/results-v3.sqlite", str(target))
+    attach = statements[2].replace("data/index/results-v4.sqlite", str(target))
     connection.execute(attach)
     assert connection.execute(statements[3]).fetchall()[0][0] == "ade"
     assert connection.execute(second).fetchall()[0][2] == 2

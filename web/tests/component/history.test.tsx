@@ -79,6 +79,7 @@ describe("the Your results screen", () => {
       getHistory: () =>
         Promise.resolve({
           days,
+          not_scored: [],
           skill: {
             theta: 1.167,
             shrunk: 1.013,
@@ -119,7 +120,8 @@ describe("the Your results screen", () => {
   it("sends a player with no result to today", async () => {
     const api: Api = {
       ...makeMockApi({ today: HARNESS_TODAY }),
-      getHistory: () => Promise.resolve({ days: [], skill: null }),
+      getHistory: () =>
+        Promise.resolve({ days: [], not_scored: [], skill: null }),
     };
     renderAt("/history", api);
     expect(await screen.findByText("No results yet")).toBeDefined();

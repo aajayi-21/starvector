@@ -543,6 +543,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
   function revealFor(day: string): RevealView {
     return {
       day,
+      quarantined: false,
       protocol: "commit-v1",
       credit: creditFor(targetId(day)),
       target_id: targetId(day),
@@ -714,7 +715,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
     getHistory(): Promise<HistoryView> {
       const days = historyDays();
       if (days.length === 0) {
-        return Promise.resolve({ days, skill: null });
+        return Promise.resolve({ days, not_scored: [], skill: null });
       }
       const logOdds = days.map((row) => Math.log(row.p / (1 - row.p)));
       const mean = logOdds.reduce((a, b) => a + b, 0) / logOdds.length;
@@ -738,6 +739,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
           .reduce((a, b) => a + b, 0) / days.length;
       return Promise.resolve({
         days,
+        not_scored: [],
         skill: {
           theta: round4(theta),
           shrunk: round4(shrunk),

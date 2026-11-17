@@ -192,6 +192,40 @@ def record_caps_refusal(record: object, *, stroke_cap: int = STROKE_CAP,
     return None
 
 
+# The whitespace set that core/atoms.py pins for pasted text (rule R6 of
+# that module): ASCII alone, because the Unicode tables of the
+# interpreter can move between versions. A test holds the two equal.
+ASCII_WHITESPACE = " \t\n\r\v\f"
+
+
+def blank_text_refusal(record: object) -> str | None:
+    """The refusal text for whitespace-only impressions or a label, or None.
+
+    Spec CR1 section 3. Layer 0 refuses an empty row of impressions
+    alone, thus a row of spaces becomes a text atom, and the encoder of
+    the close receives it. An empty label stays as it is: it makes an
+    unlabeled group. Like record_caps_refusal, this reads the shape and
+    does not validate it, thus a record with a bad shape gets None here
+    and the refusal of Layer 0.
+    """
+    if not isinstance(record, dict):
+        return None
+    impressions = record.get("impressions")
+    if isinstance(impressions, list):
+        for position, text in enumerate(impressions):
+            if isinstance(text, str) and text \
+                    and not text.strip(ASCII_WHITESPACE):
+                return f"impressions[{position}] holds whitespace alone"
+    groups = record.get("groups")
+    if isinstance(groups, list):
+        for position, group in enumerate(groups):
+            label = group.get("label") if isinstance(group, dict) else None
+            if isinstance(label, str) and label \
+                    and not label.strip(ASCII_WHITESPACE):
+                return f"groups[{position}].label holds whitespace alone"
+    return None
+
+
 class RedactInvitePaths(logging.Filter):
     """Replace the token in each invite path of an access line.
 

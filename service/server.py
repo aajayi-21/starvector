@@ -997,6 +997,7 @@ def create_app(service_config: ServiceConfig,
                 "commitment": record.commitment,
                 "submitted": player in store.list_submissions(root, day),
                 "sends": len(store.list_submissions(root, day)),
+                "quarantined": len(store.list_quarantined(root, day)),
             })
         return JSONResponse({"days": rows})
 
@@ -1517,11 +1518,18 @@ def create_app(service_config: ServiceConfig,
         return await asyncio.to_thread(json.loads, await request.body())
 
     def _checked_or_refusal(wire_record: object) -> Submission | Response:
-        """The caps, Layer 0, and the channel pre-check, in sequence."""
+        """The caps, the whitespace check, Layer 0, and the channel
+        pre-check, in sequence."""
         too_large = limits.record_caps_refusal(wire_record)
         if too_large is not None:
             return JSONResponse({"cause": "too-much-drawing",
                                  "detail": too_large}, status_code=400)
+        # Spec CR1 section 3: a whitespace-only text atom reaches the
+        # encoder of the close, and a refusal there holds the day.
+        blank = limits.blank_text_refusal(wire_record)
+        if blank is not None:
+            return JSONResponse({"cause": "blank-text", "detail": blank},
+                                status_code=400)
         try:
             submission = validate_submission(wire_record, gates, canvas_px)
         except IntakeError as error:
@@ -1803,8 +1811,13 @@ def create_app(service_config: ServiceConfig,
                                     and record.scoring_config_path \
                                     == service_config.scoring_config:
                                 wired = _resident()
-                        return 200, {"trial_rows": close_day(
-                            service_config, date=day, wired=wired)}
+                        rows = close_day(service_config, date=day,
+                                         wired=wired)
+                        closed = day or store.latest_day(root)
+                        return 200, {
+                            "trial_rows": rows,
+                            "quarantined": 0 if closed is None else len(
+                                store.list_quarantined(root, closed))}
                     case "reveal":
                         record = reveal_day(service_config, date=day)
                         return 200, {"day": record.day}
@@ -1888,7 +1901,12 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         row = store.read_json_or_none(
             store.trial_row_path(root, day, caller))
-        return JSONResponse(_reveal_value(record, row))
+        value = _reveal_value(record, row)
+        # Spec CR1 section 7: a quarantined send reads as having no score.
+        # The operator note stays in the record and is not on the wire.
+        value["quarantined"] = store.read_quarantine_or_none(
+            root, day, caller) is not None
+        return JSONResponse(value)
 
     @app.get("/api/history")
     def history_view(request: Request) -> Response:
@@ -1898,6 +1916,7 @@ def create_app(service_config: ServiceConfig,
         # Revealed days that hold the player's trial row, newest
         # first (spec S2 B3). Read-only against the store.
         days = []
+        not_scored = []
         trials: list[TrialCounts] = []
         for day in reversed(store.list_days(root)):
             record = store.read_day_record(root, day)
@@ -1906,6 +1925,12 @@ def create_app(service_config: ServiceConfig,
             row = store.read_json_or_none(
                 store.trial_row_path(root, day, caller))
             if row is None:
+                # A quarantined send shows with no score (spec CR1 §7), and
+                # it is not in the skill number.
+                if store.read_quarantine_or_none(root, day, caller) \
+                        is not None:
+                    not_scored.append({"day": day,
+                                       "trial_code": record.trial_code})
                 continue
             trials.append(rollup.counts_of(row))
             days.append({
@@ -1915,7 +1940,8 @@ def create_app(service_config: ServiceConfig,
                 "target_rank": row["target_rank"],
                 "decoy_count": row["decoy_count"],
             })
-        return JSONResponse({"days": days, "skill": _skill_value(trials)})
+        return JSONResponse({"days": days, "not_scored": not_scored,
+                             "skill": _skill_value(trials)})
 
     @app.get("/api/submission")
     def submission_view(request: Request,

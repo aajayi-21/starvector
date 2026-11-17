@@ -7,9 +7,21 @@ OpenRouterResponseError. No silent fallbacks - a bad response raises
 and does not become a default value.
 """
 
+from providers.protocols import InputRefused
+
 
 class OpenRouterRequestError(RuntimeError):
     """An HTTP POST to OpenRouter could not get a good response."""
+
+
+class OpenRouterInputRefused(OpenRouterRequestError, InputRefused):
+    """OpenRouter refused the content of one POST (spec CR1 section 5).
+
+    A status of 400, 413, or 422, in the answer or in an error body. A
+    401, 402, 403, or 404 is a key, a balance, or a model that is
+    missing, which is the configuration and not the input, thus those
+    stay OpenRouterRequestError.
+    """
 
 
 class OpenRouterTimeoutError(OpenRouterRequestError):

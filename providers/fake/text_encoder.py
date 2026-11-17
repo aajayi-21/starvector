@@ -13,6 +13,12 @@ import numpy as np
 from core.canonical import canonical_json, sha256_hex
 from core.types import Vectors
 from providers.fake.vectors import _seed_from, _unit_gaussian
+from providers.protocols import InputRefused
+
+# A text that starts with this is refused, in the manner of a model server
+# that refuses one input (spec CR1 section 5). One such text refuses its
+# full batch, as a batch POST does.
+REFUSAL_MARKER = "refuse-input:"
 
 
 class FakeTextEncoder:
@@ -37,6 +43,11 @@ class FakeTextEncoder:
         """
         if not texts:
             return np.zeros((0, self._dimension), dtype=np.float32)
+        refused = [text for text in texts if text.startswith(REFUSAL_MARKER)]
+        if refused:
+            raise InputRefused(
+                f"fake text encoder: refused {len(refused)} input(s) of "
+                f"{len(texts)}")
         stacked = np.stack([
             _unit_gaussian(_seed_from("text:" + text), self._dimension)
             for text in texts
