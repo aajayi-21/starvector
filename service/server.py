@@ -176,6 +176,10 @@ _OPERATOR_ONLY = ("scoring_config_hash", "preparation_version_id",
 # stopped a move and holds no password, no code, and no digest.
 credential_log = logging.getLogger("starvector.credentials")
 
+# The operator's moderation and deletions (spec MD1). A line names the
+# player and the field, and holds no text and no image.
+moderation_log = logging.getLogger("starvector.moderation")
+
 
 def _skill_value(trials: list[TrialCounts]) -> dict | None:
     """The history skill values, or None (spec S2 section 3, AG1 §4).
@@ -691,6 +695,53 @@ def create_app(service_config: ServiceConfig,
             _count_failure(address, name)
             return _constant(_BAD_SIGN_IN, 401)
         return _signed_in(found, request)
+
+    @app.post("/api/account/delete")
+    async def account_delete(request: Request) -> Response:
+        """The player's deletion of their own account (spec MD1 §4.3).
+
+        The typed username must equal the caller's, and the password
+        must agree, with the limit on incorrect passwords of the other
+        account moves. An incorrect password answers 403 as the
+        password change does: a 401 reads as a session that ended. An
+        account with no password asks for one first. The answer
+        removes the cookie.
+        """
+        from service import players
+
+        moved = await _account_move(request)
+        if isinstance(moved, Response):
+            return moved
+        caller, body = moved
+        if body.get("username") != caller:
+            return JSONResponse(
+                {"cause": "name-mismatch",
+                 "detail": "the typed username is not this account's"},
+                status_code=400)
+        if not signin.has_password(root, caller):
+            return JSONResponse(
+                {"cause": "no-password",
+                 "detail": "set a password before the account can delete "
+                           "itself"}, status_code=409)
+        address = _address_key(request)
+        if not _failures_allowed(address, caller):
+            return _constant(_TOO_MANY, 429)
+        found = await asyncio.to_thread(
+            signin.sign_in, root, username=caller,
+            password=body.get("password"), digester=digester,
+            instant=utc_now())
+        if found != caller:
+            _count_failure(address, caller)
+            return _constant(_WRONG_PASSWORD, 403)
+        deleted = await asyncio.to_thread(
+            players.delete_player, service_config, player=caller,
+            confirm=caller, deleted_by="player")
+        moderation_log.info("player deletion: player=%s", caller)
+        return JSONResponse(
+            {"deleted": True, "identifier": deleted.identifier},
+            headers={"set-cookie": auth.clear_cookie_header(
+                secure=cookie_secure),
+                "cache-control": "no-store"})
 
     @app.post("/api/recover")
     async def recover_account(request: Request) -> Response:
@@ -1381,6 +1432,116 @@ def create_app(service_config: ServiceConfig,
             return refused
         return _player_command(name, "revoke")
 
+    # ---- spec MD1: moderation and the operator's deletion ----
+
+    @app.put("/api/dev/players/{name}/description")
+    async def dev_player_description(request: Request,
+                                     name: str) -> Response:
+        """Change or clear a player's description, with no revoke."""
+        from service import players
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        body = await _json_object_body(request)
+        if isinstance(body, Response):
+            return body
+        text = body.get("description")
+        if not isinstance(text, str):
+            return JSONResponse({"cause": "bad-shape",
+                                 "detail": "description: expected a string"},
+                                status_code=400)
+        try:
+            account = players.set_description(service_config, player=name,
+                                              text=text)
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-description",
+                                 "detail": str(error)}, status_code=400)
+        moderation_log.info("operator edit: player=%s field=description",
+                            name)
+        return JSONResponse({"player": name,
+                             "description": account.description})
+
+    @app.put("/api/dev/players/{name}/avatar")
+    async def dev_player_avatar(request: Request, name: str) -> Response:
+        """Replace a player's avatar: the caps and kinds of spec A1."""
+        from service import players
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        try:
+            account = players.set_avatar(service_config, player=name,
+                                         data=await request.body())
+        except store.StoreError as error:
+            return JSONResponse({"cause": "bad-avatar",
+                                 "detail": str(error)}, status_code=400)
+        moderation_log.info("operator edit: player=%s field=avatar", name)
+        return JSONResponse({"player": name,
+                             "avatar_hash": account.avatar_hash})
+
+    @app.delete("/api/dev/players/{name}/avatar")
+    def dev_player_avatar_remove(request: Request, name: str) -> Response:
+        """Remove a player's avatar. Legal with no picture too."""
+        from service import players
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        players.clear_avatar(service_config, player=name)
+        moderation_log.info("operator edit: player=%s field=avatar", name)
+        return JSONResponse({"player": name, "avatar_hash": None})
+
+    @app.get("/api/dev/players/{name}/deletion")
+    def dev_player_deletion_preview(request: Request,
+                                    name: str) -> Response:
+        """Step one of the operator's deletion: what goes and what stays."""
+        from service import players
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        return JSONResponse(players.deletion_preview(service_config,
+                                                     player=name))
+
+    @app.post("/api/dev/players/{name}/delete")
+    async def dev_player_delete(request: Request, name: str) -> Response:
+        """Step two: the name typed again, then the deletion (spec MD1)."""
+        from service import players
+
+        refused = _dev_refused(request)
+        if refused is not None:
+            return refused
+        record = _stored_player(name)
+        if isinstance(record, Response):
+            return record
+        body = await _json_object_body(request)
+        if isinstance(body, Response):
+            return body
+        confirm = body.get("confirm")
+        try:
+            deleted = players.delete_player(
+                service_config, player=name,
+                confirm=confirm if isinstance(confirm, str) else None)
+        except store.StoreError as error:
+            return JSONResponse({"cause": "refused", "detail": str(error)},
+                                status_code=409)
+        moderation_log.info("operator deletion: player=%s", name)
+        return JSONResponse({"player": name, "deleted": True,
+                             "identifier": deleted.identifier})
+
     @app.post("/api/dev/players/{name}/restore")
     def dev_player_restore(request: Request, name: str) -> Response:
         refused = _dev_refused(request)
@@ -1974,8 +2135,13 @@ def create_app(service_config: ServiceConfig,
         record from before that spec stays in its record and shows on
         no board. The wire keeps its display_name field, with the
         username in it, thus each screen reads one name.
+
+        A deleted account shows by its anonymous identifier (spec MD1
+        section 4.2): the raw records keep the name, and no player
+        surface gives it.
         """
-        return name
+        deleted = store.read_deletion_or_none(root, name)
+        return name if deleted is None else deleted.identifier
 
     def _avatar_of(name: str) -> str | None:
         """The avatar digest for one store key, or None.
@@ -2055,7 +2221,7 @@ def create_app(service_config: ServiceConfig,
             prepared["rows"], earlier, caller,
             floor=rollup.DAILY_BOARD_FLOOR_DAYS)
         rows = [{
-            "player": entry["player"],
+            "player": _label_of(entry["player"]),
             "display_name": _label_of(entry["player"]),
             "avatar_hash": _avatar_of(entry["player"]),
             "p": entry["p"],
@@ -2096,7 +2262,8 @@ def create_app(service_config: ServiceConfig,
         if prepared is None:
             return Response(content=_SKILL_INACTIVE, status_code=200,
                             media_type="application/json")
-        rows = [{**row, "display_name": _label_of(row["player"]),
+        rows = [{**row, "player": _label_of(row["player"]),
+                 "display_name": _label_of(row["player"]),
                  "avatar_hash": _avatar_of(row["player"])}
                 for row in prepared["rows"]]
         served = {name: value for name, value in prepared.items()
