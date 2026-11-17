@@ -115,6 +115,8 @@ export interface ImageCredit {
 
 export interface RevealView extends Partial<Omit<PulseFacts, "protocol">> {
   day: string;
+  /** The caller's send could not be scored (spec CR1 §7). */
+  quarantined: boolean;
   protocol: PickProtocol;
   /** Null when the server holds no release manifest. */
   credit: ImageCredit | null;
@@ -184,8 +186,16 @@ export interface SkillValue {
   n: number;
 }
 
+/** A day with a stored send and no score (spec CR1 §7). */
+export interface NotScoredRow {
+  day: string;
+  trial_code: string;
+}
+
 export interface HistoryView {
   days: HistoryDayRow[];
+  /** Quarantined sends: no result, not in the skill number. */
+  not_scored: NotScoredRow[];
   skill: SkillValue | null;
 }
 

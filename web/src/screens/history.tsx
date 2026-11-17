@@ -14,7 +14,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { useApi } from "../api/client";
-import type { HistoryDayRow, HistoryView, MeView } from "../api/types";
+import type {
+  HistoryDayRow,
+  HistoryView,
+  MeView,
+  NotScoredRow,
+} from "../api/types";
 import { friendlyMessage } from "../api/types";
 import {
   formatShortDay,
@@ -63,6 +68,15 @@ export function HistoryScreen(): React.JSX.Element {
           <p className="muted">
             Your first result appears after your first day closes.
           </p>
+          {history.data.not_scored.length > 0 ? (
+            <p className="muted small" data-testid="not-scored-note">
+              We couldn't score your send of{" "}
+              {history.data.not_scored
+                .map((row) => formatShortDay(row.day))
+                .join(", ")}
+              . It doesn't count toward your results.
+            </p>
+          ) : null}
           <div>
             <Link to="/today" className="btn btn-primary">
               Go to today's session
@@ -208,31 +222,13 @@ function HistoryBody(props: {
               </tr>
             </thead>
             <tbody>
-              {view.days.map((row) => (
-                <tr key={row.day}>
-                  <td>{formatShortDay(row.day)}</td>
-                  <td style={{ fontFamily: "var(--mono)" }}>
-                    {row.trial_code}
-                  </td>
-                  <td className="num">{percentBeaten(row.p)}%</td>
-                  <td className="num">
-                    {ordinal(row.target_rank)} of {row.decoy_count + 1}
-                  </td>
-                  <td>
-                    <span className="row-actions">
-                      <Link to="/reveal" search={{ day: row.day }}>
-                        Details
-                      </Link>
-                      <ShareResultButton
-                        variant="icon"
-                        day={row.day}
-                        trialCode={row.trial_code}
-                        trial={row}
-                      />
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {dayEntries(view).map((entry) =>
+                entry.kind === "not-scored" ? (
+                  <NotScoredLine key={entry.row.day} row={entry.row} />
+                ) : (
+                  <ScoredLine key={entry.row.day} row={entry.row} />
+                ),
+              )}
             </tbody>
           </table>
         </div>
@@ -286,5 +282,63 @@ function ResultBars(props: {
         />
       ))}
     </div>
+  );
+}
+
+type DayEntry =
+  | { kind: "scored"; row: HistoryDayRow }
+  | { kind: "not-scored"; row: NotScoredRow };
+
+/** The scored days and the days with no score (spec CR1 §7), newest first. */
+function dayEntries(view: HistoryView): DayEntry[] {
+  const entries: DayEntry[] = [
+    ...view.days.map((row) => ({ kind: "scored" as const, row })),
+    ...view.not_scored.map((row) => ({ kind: "not-scored" as const, row })),
+  ];
+  return entries.sort((a, b) => (a.row.day < b.row.day ? 1 : -1));
+}
+
+function ScoredLine(props: { row: HistoryDayRow }): React.JSX.Element {
+  const { row } = props;
+  return (
+    <tr>
+      <td>{formatShortDay(row.day)}</td>
+      <td style={{ fontFamily: "var(--mono)" }}>{row.trial_code}</td>
+      <td className="num">{percentBeaten(row.p)}%</td>
+      <td className="num">
+        {ordinal(row.target_rank)} of {row.decoy_count + 1}
+      </td>
+      <td>
+        <span className="row-actions">
+          <Link to="/reveal" search={{ day: row.day }}>
+            Details
+          </Link>
+          <ShareResultButton
+            variant="icon"
+            day={row.day}
+            trialCode={row.trial_code}
+            trial={row}
+          />
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+function NotScoredLine(props: { row: NotScoredRow }): React.JSX.Element {
+  const { row } = props;
+  return (
+    <tr data-testid="not-scored-row">
+      <td>{formatShortDay(row.day)}</td>
+      <td style={{ fontFamily: "var(--mono)" }}>{row.trial_code}</td>
+      <td className="num" colSpan={2}>
+        Not scored
+      </td>
+      <td>
+        <Link to="/reveal" search={{ day: row.day }}>
+          Details
+        </Link>
+      </td>
+    </tr>
   );
 }

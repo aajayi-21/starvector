@@ -111,7 +111,8 @@ describe("the home screen (spec BR1 §6)", () => {
   it("explains the game to a player with no result yet", async () => {
     const api: Api = {
       ...makeMockApi({ today: HARNESS_TODAY }),
-      getHistory: () => Promise.resolve({ days: [], skill: null }),
+      getHistory: () =>
+        Promise.resolve({ days: [], not_scored: [], skill: null }),
     };
     renderAt("/", api);
     expect(

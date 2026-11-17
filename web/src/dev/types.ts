@@ -18,6 +18,8 @@ export interface DevDayRow {
   submitted: boolean;
   /** Each player's sends this day (spec BR1 §7). */
   sends: number;
+  /** Sends the close skipped (spec CR1 §6). Older servers send none. */
+  quarantined?: number;
 }
 
 export interface DevDays {

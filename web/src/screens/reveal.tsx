@@ -115,7 +115,12 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
 
       <div className="result-hero">
         <section className="card card-hero" aria-label="Your result">
-          {trial === null ? (
+          {trial === null && view.quarantined ? (
+            <p className="muted" data-testid="not-scored">
+              We couldn't score your send this day. It doesn't count toward your
+              results, and your streak still stands.
+            </p>
+          ) : trial === null ? (
             <p className="muted">
               You didn't send a sketch this day, so there's no result — but
               here's{" "}

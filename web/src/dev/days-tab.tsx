@@ -57,7 +57,12 @@ function doneText(move: Move, day: string | null, ack: LifecycleAck): string {
       return `Opened ${String(ack.day ?? "the next day")} — code ${String(ack.trial_code ?? "")}.`;
     case "close": {
       const rows = Number(ack.trial_rows ?? 0);
-      return `Closed ${day ?? "the day"}: ${rows} ${rows === 1 ? "send" : "sends"} scored.`;
+      const skipped = Number(ack.quarantined ?? 0);
+      const tail =
+        skipped === 0
+          ? ""
+          : ` ${skipped} refused ${skipped === 1 ? "send was" : "sends were"} skipped (quarantined).`;
+      return `Closed ${day ?? "the day"}: ${rows} ${rows === 1 ? "send" : "sends"} scored.${tail}`;
     }
     case "reveal":
       return `Revealed ${String(ack.day ?? day ?? "the day")}. Players can see the photo and their results.`;
@@ -378,6 +383,9 @@ export function DaysTab(props: {
               <option key={row.day} value={row.day}>
                 {row.day} · {row.trial_code} · {row.status} ·{" "}
                 {row.sends === 1 ? "1 send" : `${row.sends} sends`}
+                {(row.quarantined ?? 0) > 0
+                  ? ` · ${row.quarantined} quarantined`
+                  : ""}
               </option>
             ))}
           </select>
