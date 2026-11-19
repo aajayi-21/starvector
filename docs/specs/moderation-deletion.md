@@ -49,6 +49,12 @@ the ruling. Do not implement an open decision without agreement.
 
 ## 3. Moderation
 
+*Note, 2026-11-19 (spec OC1 §7):* the operator command `sv` writes the
+journal line of this section as two records in `store/operator-log/`,
+with the player and the field and with no text. The module command
+`service.players` writes no line. The console paths get the same
+journal in a build item after spec OC1 (§11, D4).
+
 - **Commands.** `service.players set-description --player P --text T`,
   `clear-description --player P`, `set-avatar --player P --file F`, and
   `clear-avatar --player P`.

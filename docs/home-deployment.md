@@ -395,24 +395,31 @@ Open `http://localhost:5173/dev.html` and paste the operator token
 into its field. Move the day with the control row. Stop the dev
 unit at the end: `sudo systemctl stop starvector-dev`.
 
-**The command line** — fast, on the box. The public process holds
-the key and the token from its environment file, thus a localhost
-`curl` with the bearer is sufficient:
+**The command line** — fast, on the box. `sv` is the operator's
+command (spec OC1, and `deploy/README.md` section 7). Install it one
+time with
+`sudo install -o root -g root -m 0755 deploy/sv /usr/local/sbin/sv`.
+It reads the token from the environment file and sends each day move
+to the public process:
 
 ```
-sudo bash -c '. /etc/starvector/env; curl -s -X POST \
-  -H "Authorization: Bearer $STARVECTOR_OPERATOR_TOKEN" \
-  http://127.0.0.1:8000/api/day/open'
+sudo sv day open
+sudo sv day close
+sudo sv day reveal
 ```
 
-The same `curl` with `/api/day/close` and `/api/day/reveal`. The close
-encodes the stored submissions and can run for a minute. Its answer
-names the row count and no score. To read the day with no console:
+`close` and `reveal` each give a question first, and `--yes` answers it for a
+script. The close encodes the stored submissions and can run for a
+minute. Its answer names the row count and no score. To read the day
+with no console:
 
 ```
-sudo -u starvector .venv/bin/python -m service.day \
-    --service-config /etc/starvector/service.json status
+sudo sv status
+sudo sv day show
 ```
+
+Each move writes a record of who did it, and `sudo sv log` reads the
+records.
 
 A close at the development pool costs cents: some embedding posts
 for each submission, cached for repeats. Do the close, the reveal,

@@ -128,6 +128,23 @@ def main() -> None:
          "received_at": FIXED_CLOCK,
          "record": {**mixed_wire_record(),
                     "impressions": ["a wide flat plain", "warm light"]}})
+    if not vp1:
+        # The operator command (spec OC1) reads a config file, and the
+        # throwaway world has none. This one names the port of this
+        # server, thus the command finds it. A vp1 world holds a beacon
+        # part, which this short file does not write.
+        import json
+
+        operator_config = root / "service.json"
+        operator_config.write_text(json.dumps({
+            "config_version": 1, "player": config.player,
+            "scoring_config": config.scoring_config,
+            "data_root": config.data_root,
+            "store_root": config.store_root, "port": port,
+            "closes_at_utc": config.closes_at_utc,
+            "signup": config.signup}), encoding="utf-8")
+        print(f"operator config: {operator_config}", file=sys.stderr,
+              flush=True)
     print("fixture ready", file=sys.stderr, flush=True)
     # dev_mode: the throwaway world is what the owner's offline
     # runbook (spec S2 section 9 step 2) drives from the operator

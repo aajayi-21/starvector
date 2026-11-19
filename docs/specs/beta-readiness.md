@@ -344,6 +344,11 @@ the browser can share a file, and each other browser saves it.
 
 ## 7. The operator console
 
+*Note, 2026-11-19 (spec OC1):* the operator command `sv` does each
+function of this console on the server computer, with no dev unit. It
+keeps the console's questions, it hides the target of a day that is not
+revealed, and it writes a journal of each change. The console stays.
+
 The owner asked on 2026-09-24 for the console to show each surface of
 §3 to §5 and to move each of them: the automatic days, the results
 database, and the players with their devices and invites. This
@@ -446,6 +451,11 @@ trial row of a day before its reveal, and no credential.
 | `POST /api/dev/day/close` and `/reveal` | Moves the day that `{"day": "..."}` names (§7.6). The status rules of `close_day` and `reveal_day` apply |
 
 ### 7.6 The review of 2026-09-27
+
+*Note, 2026-11-19 (spec OC1 §11, D1):* `POST /api/day/close` and
+`POST /api/day/reveal` accept a body `{"day": D}` too, thus a day behind
+the latest one moves with no dev unit. The dev paths of this section
+stay.
 
 The owner reported that the console's close and reveal did not work,
 and that a player's view had no "New invite address". The server

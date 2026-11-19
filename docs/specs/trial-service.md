@@ -225,6 +225,9 @@ not from the local date of the owner's machine.
 - **status** — prints the current day, its status, and if a
   submission is stored. No score information while open (R3 applies
   to each surface, the terminal included).
+  *Note, 2026-11-19 (spec OC1 §11, D2):* the operator command `sv`
+  keeps this rule. It refuses the target and the rank of a day that is
+  `open` or `closing`, with no flag that changes it.
 - **rescore** — R8. Reads each stored submission across the named
   date range, scores with the named config, and compares or writes
   new rows. Byte-equality failures name the day and the field.
