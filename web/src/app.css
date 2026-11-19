@@ -97,6 +97,75 @@
   display: none;
 }
 
+/* — the site footer (spec F1) — */
+/*
+ * A quiet band at the end of the page: one rule on top, the page
+ * ground behind it, and the page's own width. On a short page it sits
+ * at the end of the window: the root is a column as tall as the window
+ * where a footer is in it, and nowhere else, thus the drawing screens
+ * and the operator console keep their layout.
+ */
+#root:has(> .site-footer) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+#root:has(> .site-footer) > .page {
+  flex: 1 0 auto;
+}
+.page-has-footer {
+  padding-bottom: 40px;
+}
+.site-footer {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px 28px;
+}
+.site-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.site-footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 14px;
+}
+.site-footer-name {
+  color: var(--text);
+  font-weight: 650;
+}
+.site-footer-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.site-footer-links a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 /* — generic layout helpers — */
 .stack {
   display: flex;
@@ -899,6 +968,31 @@ details.row-disclosure.skill-more > summary {
   .page {
     padding: 20px 16px
       calc(var(--tabbar-height) + 32px + env(safe-area-inset-bottom));
+  }
+  /* With a footer after it, the page ends at once and the footer
+     clears the tab bar in its place. The gate, the notice, and a
+     public page have no tab bar to clear. */
+  .page.page-has-footer {
+    padding-bottom: 28px;
+  }
+  .site-footer {
+    padding: 0 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .site-footer-tabbar {
+    padding-bottom: calc(
+      var(--tabbar-height) +
+      20px +
+      env(safe-area-inset-bottom)
+    );
+  }
+  /* The links first, where the thumb is, and the brand line after. */
+  .site-footer-inner {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .site-footer-links a {
+    min-height: 44px;
   }
   .tabbar {
     position: fixed;

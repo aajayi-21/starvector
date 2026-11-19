@@ -6,7 +6,9 @@
  * "/" is the home screen and "/today" the drawing screen (spec BR1
  * §6). A signed-out browser gets the gate screen on each path (spec
  * A2 §3), and a player who must agree to the notice gets the notice
- * screen on each path (spec R1 §3).
+ * screen on each path (spec R1 §3). The two public paths are the one
+ * exception (spec F1 §3): the About page and the Releases page hold
+ * fixed text alone, and each browser can open them.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -14,12 +16,15 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  Link,
   Outlet,
   type RouterHistory,
+  useRouterState,
 } from "@tanstack/react-router";
 
 import { useApi } from "./api/client";
 import { isUnauthorized } from "./api/types";
+import { AboutScreen } from "./screens/about";
 import { AccountScreen } from "./screens/account";
 import { HistoryScreen } from "./screens/history";
 import { HomeScreen } from "./screens/home";
@@ -27,28 +32,73 @@ import { HowItWorksScreen } from "./screens/how";
 import { LeaderboardScreen } from "./screens/leaderboard";
 import { NoticeScreen, needsAgreement } from "./screens/notice";
 import { PracticeScreen } from "./screens/practice";
+import { ReleasesScreen } from "./screens/releases";
 import { RevealScreen } from "./screens/reveal";
 import { TodayScreen } from "./screens/today";
 import { WelcomeScreen } from "./screens/welcome";
+import { SiteFooter } from "./ui/footer";
 import { InstallHint } from "./ui/install-hint";
+import { LogoMark } from "./ui/logo";
 import { TabBar, TopBar } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
 import { OperatorCodeNotice } from "./ui/operator-code-notice";
+import { NO_FOOTER_PATHS, PUBLIC_PATHS } from "./ui/site-links";
+
+/**
+ * The chrome of a public path for a browser that is not in the app: a
+ * signed-out one, one that must agree to the notice, and one that
+ * waits for its first answer (spec F1 §3). The brand goes home, where
+ * the gate or the notice stands.
+ */
+function PublicShell(props: { signedOut: boolean }): React.JSX.Element {
+  return (
+    <>
+      <header className="topbar">
+        <Link to="/" className="brand" aria-label="Starvector home">
+          <LogoMark />
+          Starvector
+        </Link>
+        {props.signedOut ? (
+          <div className="topbar-end">
+            <Link to="/" className="btn btn-secondary">
+              Sign in
+            </Link>
+          </div>
+        ) : null}
+      </header>
+      <main className="page page-has-footer">
+        <Outlet />
+      </main>
+      <SiteFooter />
+    </>
+  );
+}
 
 function Shell(): React.JSX.Element {
   const api = useApi();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   // The key the top bar reads, thus react-query serves one request
   // for the two of them and the check costs no round trip.
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
   // 401 exactly (spec M1 §9). isUnauthorized carries that rule.
-  if (isUnauthorized(me.error)) {
+  const signedOut = isUnauthorized(me.error);
+  const mustAgree = me.data !== undefined && needsAgreement(me.data.notice);
+  // A public path does not wait for me and does not read it: the page
+  // is the same for each browser (spec F1 §3).
+  if (PUBLIC_PATHS.has(pathname) && (signedOut || mustAgree || me.isPending)) {
+    return <PublicShell signedOut={signedOut} />;
+  }
+  if (signedOut) {
     return <WelcomeScreen />;
   }
   // No send before the agreement (spec R1 §3.3): the notice screen
   // takes the place of the app, the drawing screen with it.
-  if (me.data !== undefined && needsAgreement(me.data.notice)) {
+  if (mustAgree && me.data !== undefined) {
     return <NoticeScreen notice={me.data.notice} />;
   }
+  const footer = !NO_FOOTER_PATHS.has(pathname);
   return (
     <>
       <TopBar />
@@ -57,7 +107,7 @@ function Shell(): React.JSX.Element {
       <OperatorCodeNotice />
       <OfflineBanner />
       <InstallHint />
-      <main className="page">
+      <main className={footer ? "page page-has-footer" : "page"}>
         {/* No screen before me answers: a player who must agree to
             the notice does not get the drawing screen for a moment,
             and no start is sent for that player (spec R1 §4). */}
@@ -69,6 +119,7 @@ function Shell(): React.JSX.Element {
           <Outlet />
         )}
       </main>
+      {footer ? <SiteFooter tabBar /> : null}
       <TabBar />
     </>
   );
@@ -118,6 +169,18 @@ const howRoute = createRoute({
   component: HowItWorksScreen,
 });
 
+const aboutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/about",
+  component: AboutScreen,
+});
+
+const releasesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/releases",
+  component: ReleasesScreen,
+});
+
 export interface RevealSearch {
   day?: string;
 }
@@ -140,6 +203,8 @@ const routeTree = rootRoute.addChildren([
   accountRoute,
   howRoute,
   revealRoute,
+  aboutRoute,
+  releasesRoute,
 ]);
 
 export function createAppRouter(history?: RouterHistory) {

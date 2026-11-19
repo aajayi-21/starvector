@@ -27,6 +27,7 @@ import { isRefusal } from "../api/types";
 import { GateCard } from "../signin/gate-card";
 import { RecoveryCodeStep } from "../signin/recovery-code-step";
 import { SignupProgress } from "../signin/signup-progress";
+import { SiteFooter } from "../ui/footer";
 import { LogoMark } from "../ui/logo";
 import { isPostClose } from "../ui/pick-copy";
 import { HowItWorksSteps, Premise } from "./how";
@@ -81,7 +82,7 @@ export function WelcomeScreen(): React.JSX.Element {
           Starvector
         </span>
       </header>
-      <main className="page">
+      <main className="page page-has-footer">
         {/* Three parts in the page flow: the headline, sign-in, and how
             it works. On a phone they stack in that sequence, thus the
             form is the first card and a home-screen app that opens
@@ -148,6 +149,7 @@ export function WelcomeScreen(): React.JSX.Element {
           </section>
         </div>
       </main>
+      <SiteFooter />
     </>
   );
 }
