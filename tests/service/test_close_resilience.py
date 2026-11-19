@@ -252,3 +252,55 @@ def test_the_index_and_the_public_file_hold_the_skip(tmp_path) -> None:
         rows = db.execute(
             "SELECT day, player, decided_by FROM quarantined").fetchall()
     assert rows == [(DAY, "ade", "close")]
+
+
+# ---- a day with a skip scores again (spec CR1 section 4) ----
+
+
+def test_a_day_with_a_skip_rescores_byte_equal(tmp_path) -> None:
+    from service.day import rescore_days
+
+    fixture = _day_of(tmp_path, good=20, refused=1)
+    _close(fixture)
+    counts = rescore_days(fixture["service_config"],
+                          config_path=fixture["scoring_config_path"],
+                          providers=fixture["providers"])
+    assert counts["compared"] == 20
+    assert counts["equal"] == 20
+    assert counts["written"] == 0
+
+
+def test_a_new_config_writes_no_row_for_a_skip(tmp_path) -> None:
+    from service.day import rescore_days
+
+    fixture = _day_of(tmp_path, good=20, refused=1)
+    _close(fixture)
+    document = json.loads(Path(fixture["scoring_config_path"]).read_text(
+        encoding="utf-8"))
+    # A weights-only change: the tables of the world stay warm.
+    document["fusion"]["weights"] = {"outline": 2.0, "element": 1.0}
+    other = tmp_path / "other-config.json"
+    other.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    counts = rescore_days(fixture["service_config"], config_path=str(other),
+                          providers=fixture["providers"])
+    assert counts["written"] == 20
+    rows = sorted(path.name for path in
+                  (fixture["store"] / "days" / DAY / "trials").iterdir())
+    assert not [name for name in rows if name.startswith("bad-00")]
+
+
+def test_the_day_score_file_of_a_day_with_a_skip_is_made_again(
+        tmp_path) -> None:
+    from service import day_scores
+    from service.day import build_day_scores
+
+    fixture = _day_of(tmp_path, good=20, refused=1)
+    _close(fixture)
+    record = store.read_day_record(fixture["store"], DAY)
+    scores = day_scores.scores_path(fixture["data"], DAY,
+                                    record.scoring_config_hash)
+    before = scores.read_bytes()
+    counts = build_day_scores(fixture["service_config"], date=DAY,
+                              providers=fixture["providers"])
+    assert counts["written"] == 1
+    assert scores.read_bytes() == before
