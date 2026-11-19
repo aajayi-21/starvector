@@ -264,3 +264,26 @@ Each item is one commit, green and Vale-clean on the touched prose.
   `not_scored` field, and the reveal answer holds `quarantined` for each
   caller. The results index and the public database move to schema 4.
 
+
+## 15. Change of 2026-11-19: a rescore and a day-score file skip the send
+
+§4 says that a send with a quarantine record is not read again. The close
+obeyed that rule. `rescore_days` and `build_day_scores` did not: they read
+each stored send of the day, and the provider refused the quarantined send
+a second time. A closed day with one quarantine record thus stopped each
+rescore of the store, and its day-score file was not made again.
+
+The two functions read the quarantine records of the day and skip
+those sends, as the close does. A rescore with the pinned config compares
+each stored trial row and no other send. A rescore with a new config
+writes no adjacent row for a quarantined send. The day-score file holds
+the same sends that the close wrote. The quarantine record stays the
+decision: a send that scores today, because the provider changed, is
+skipped all the same.
+
+Tests: `test_a_day_with_a_skip_rescores_byte_equal`,
+`test_a_new_config_writes_no_row_for_a_skip`, and
+`test_the_day_score_file_of_a_day_with_a_skip_is_made_again` in
+`tests/service/test_close_resilience.py`. Spec SC1
+(`docs/specs/store-compatibility.md`) found the defect: its frozen store
+holds a day with a quarantine record.

@@ -618,8 +618,13 @@ def rescore_days(service_config: ServiceConfig, *, config_path: str,
                 "across preparations needs its own ruling")
         counts["days"] += 1
         pinned = wired.scoring_hash == record.scoring_config_hash
+        # A send with a quarantine record has no trial row and is not
+        # read again, as at the close (spec CR1 section 4).
+        held = set(store.list_quarantined(root, day))
         rescored: dict[str, dict] = {}
         for player in store.list_submissions(root, day):
+            if player in held:
+                continue
             stored = store.read_json_or_none(
                 store.submission_path(root, day, player))
             if stored is None:
@@ -747,7 +752,11 @@ def build_day_scores(service_config: ServiceConfig, *,
                     f"day {day} has status {record.status!r} - a day-score "
                     "file needs a closed or revealed day")
             continue
-        players = store.list_submissions(root, day)
+        # A send with a quarantine record is not in the day-score file
+        # that the close wrote (spec CR1 section 4).
+        held = set(store.list_quarantined(root, day))
+        players = [player for player in store.list_submissions(root, day)
+                   if player not in held]
         if not players:
             continue
         counts["days"] += 1

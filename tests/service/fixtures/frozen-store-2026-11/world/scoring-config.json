@@ -1,0 +1,97 @@
+{
+  "config_version": 1,
+  "input": {
+    "preparation_record": "pool/dev-direct-c88daa97.json"
+  },
+  "intake": {
+    "min_ink_pixels": 100,
+    "min_strokes_whole_drawing": 2,
+    "max_text_length": 200,
+    "max_atoms": 64
+  },
+  "channels": {
+    "outline": {
+      "comparison_rule": "center-cosine-v1"
+    },
+    "element": {
+      "comparison_rule": "element-center-cosine-v1",
+      "matching_rule": "sinkhorn-slack-v1",
+      "epsilon": 0.1,
+      "sinkhorn_iterations": 20,
+      "tier2_count": 500,
+      "alpha": 1.0
+    },
+    "placement": {
+      "check_rule": "axis-ramp-v1",
+      "relation_vocabulary": [
+        "left-of",
+        "right-of",
+        "above",
+        "below"
+      ],
+      "area_cap": 0.9,
+      "margin": 0.15
+    }
+  },
+  "fusion": {
+    "weights": {
+      "outline": 1.0,
+      "element": 1.0
+    },
+    "fit_record": null
+  },
+  "commonness": {
+    "dataset": {
+      "provider": "fake",
+      "url": null,
+      "archive_sha256": null,
+      "coordinate_extent": null,
+      "budget_bytes": null,
+      "fake_pair_count": 24,
+      "fake_neardup_families": null
+    },
+    "split_salt": "test-salt",
+    "background_count": 6,
+    "split_fractions": {
+      "background": 0.5,
+      "v1": 0.25,
+      "v2": 0.25
+    },
+    "synthetic": null
+  },
+  "validation": {
+    "v1_pair_count": 4,
+    "v2_trial_count": 4,
+    "v2_target_seed": 7,
+    "submission_mode": "mixed",
+    "tag": "prod-service-test"
+  },
+  "providers": {
+    "openrouter": {
+      "default_model": "test/fake-model",
+      "max_concurrency": 1,
+      "requests_per_second": 100.0,
+      "timeout_seconds": 5.0,
+      "retry_limit": 0,
+      "response_format_mode": "json_schema"
+    },
+    "sketch_encoder": {
+      "provider": "fake",
+      "model": null,
+      "instruction_template": null,
+      "dimension": 32
+    },
+    "text_encoder": {
+      "provider": "fake",
+      "model": null,
+      "instruction_template": null,
+      "dimension": 32
+    }
+  },
+  "runtime": {
+    "device": "cpu"
+  },
+  "report": {
+    "dev_only": false
+  }
+}

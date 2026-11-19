@@ -1,0 +1,2 @@
+# A frozen store keeps its bytes at each checkout (spec SC1).
+tests/service/fixtures/frozen-store-*/** -text

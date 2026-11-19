@@ -1,0 +1,31 @@
+{
+  "beacon_chain": "fake",
+  "beacon_round": 33706632,
+  "beacon_signature": "0c5818bca1d89c56b22cc60c5f2aa17d1f38358bc2100b7f9de2667ff4a8a2e2",
+  "closed_at": "2026-11-05T23:00:00+00:00",
+  "commitment": null,
+  "day": "2026-11-05",
+  "opened_at": "2026-11-05T00:00:00+00:00",
+  "pick_seed": "001ed4e23305eb33be1193359f5c53e6dae1e922dc4762b6683e8a83f57d095f",
+  "pool_count": 40,
+  "pool_root": "3c7d094e730380ab48bee7ba01a35abd264e6e925a21c136dbdc93dfde60c3e9",
+  "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "protocol": "vp1",
+  "revealed_at": "2026-11-05T23:00:00+00:00",
+  "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+  "scoring_config_path": "scoring-config-channels.json",
+  "secret": null,
+  "status": "revealed",
+  "target_id": "2e8a183e6df9cafc5117d4c274a6ebf9f8541cfb14b21222fc9db148b4227a56",
+  "target_index": 6,
+  "target_proof": [
+    "R:dd44b758ab6827eaa9fe88b8496da909a0fb176482aedc01c9574d07a104a81e",
+    "L:9c93cfe0ce8a20b880e2131adc7a071c25f38cd18dabf3c068f51c6a6b7d754f",
+    "L:6f1b485f44ab52924a60be6a4b168171b309dec08d9910152a7c3585ec957f48",
+    "R:81fa5a305a2c58eccdfb85ce0de466102b855ad81e5ff64972e61e57a7d90bac",
+    "R:1a3767e969082f9f407c85b338c953a2c6687e3486a19e48335f0abfa10bfdb4",
+    "R:d6cb95f784d82b6d6c804e482887aa87aefb5c65e9e2c86ed189a2bd8e60f6af"
+  ],
+  "target_salt": "6f232d8757f14024e2bbb1d10a3e6ddfe5891e2d2afd42cc1ea5e577deb49f8b",
+  "trial_code": "J69HBS"
+}

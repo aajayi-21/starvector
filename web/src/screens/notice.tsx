@@ -23,6 +23,7 @@ import { ApiError, friendlyMessage } from "../api/types";
 import { hasUnsentDraft } from "../intake/drafts";
 import { NOTICE_VERSION } from "../signin/notice";
 import { NoticeText, OutOfDate } from "../signin/notice-text";
+import { SiteFooter } from "../ui/footer";
 import { LogoMark } from "../ui/logo";
 import { OfflineBanner } from "../ui/offline-banner";
 import { OperatorCodeNotice } from "../ui/operator-code-notice";
@@ -83,7 +84,7 @@ export function NoticeScreen(props: { notice: NoticeView }): React.JSX.Element {
       {/* On each screen of a signed-in device (spec A2 §6.1). */}
       <OperatorCodeNotice />
       <OfflineBanner />
-      <main className="page">
+      <main className="page page-has-footer">
         <div className="page-narrow" style={{ margin: "0 auto" }}>
           <section className="card card-hero" aria-labelledby="notice-heading">
             <h1 id="notice-heading" ref={heading} tabIndex={-1}>
@@ -140,6 +141,7 @@ export function NoticeScreen(props: { notice: NoticeView }): React.JSX.Element {
           </section>
         </div>
       </main>
+      <SiteFooter />
     </>
   );
 }

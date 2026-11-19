@@ -1,0 +1,26 @@
+{
+  "array_shapes": {
+    "element": [
+      40
+    ],
+    "outline": [
+      40
+    ]
+  },
+  "background_count": 6,
+  "channels": [
+    "element",
+    "outline"
+  ],
+  "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+  "contributors": {
+    "element": 6,
+    "outline": 6
+  },
+  "created_at": "2026-08-12T00:00:00+00:00",
+  "index_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "pool_image_count": 40,
+  "provider_cache_hits": 0,
+  "provider_posts": 0,
+  "submission_mode": "mixed"
+}

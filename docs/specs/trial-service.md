@@ -187,6 +187,10 @@ value with no derivation from the day, the target, or the pool (§22).
 The map from trial identifier to (day, player) lives in the
 submission record.
 
+*Note, 2026-11-19 (spec SC1):* `docs/specs/store-compatibility.md` gives
+the rule for each change of the store. The frozen stores in
+`tests/service/fixtures/` prove it in the test suite.
+
 ## 6. The day lifecycle
 
 One command surface, the P1b resume rules in spirit: each status move
