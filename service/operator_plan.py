@@ -172,6 +172,20 @@ COMMANDS: tuple[Command, ...] = (
     _module("pool-keys make"),
 )
 
+# The commands of spec OC1 section 3.4. Each one names the module with
+# the entry function that does its work, and the words that this module
+# command gets before the arguments of the operator.
+MODULE_COMMANDS: Mapping[tuple[str, ...], tuple[str, tuple[str, ...]]] = \
+    MappingProxyType({
+        ("day", "rescore"): ("service.day", ("rescore",)),
+        ("day", "migrate"): ("service.day", ("migrate",)),
+        ("day", "day-scores"): ("service.day", ("day-scores",)),
+        ("db", "export"): ("service.index", ("export",)),
+        ("public",): ("service.public", ()),
+        ("rollup", "assemble"): ("service.rollup", ("assemble",)),
+        ("pool-keys", "make"): ("service.pool_keys", ("make",)),
+    })
+
 # The paths of the server with an operator prefix and no command, each
 # with its cause. The parity test of spec OC1 section 9 reads this table.
 NOT_IN_CLI: Mapping[tuple[str, str], str] = MappingProxyType({
@@ -209,6 +223,23 @@ def journal_name(command: Command) -> str:
     """The name of the command in a journal entry: its words, one space
     apart."""
     return " ".join(command.path)
+
+
+def module_argv(command: Command, service_config: str,
+                rest: Sequence[str]) -> tuple[str, list[str]]:
+    """The module of a command of spec OC1 section 3.4, and the
+    arguments that its entry function gets.
+
+    The arguments are the config flag with the config of the operator
+    command, the words of the module command, and then the arguments of
+    the operator with no change. Raises Refusal for a command with no
+    module.
+    """
+    found = MODULE_COMMANDS.get(command.path)
+    if found is None:
+        raise Refusal(f"sv {journal_name(command)} has no module command")
+    module, words = found
+    return module, ["--service-config", service_config, *words, *rest]
 
 
 def covered_routes() -> frozenset[tuple[str, str]]:

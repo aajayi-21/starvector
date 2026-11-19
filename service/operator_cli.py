@@ -22,7 +22,7 @@ import sqlite3
 import sys
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from service import (access, auth, console, index, players, rollover,
@@ -37,6 +37,12 @@ TOKEN_VARIABLE = "STARVECTOR_OPERATOR_TOKEN"
 # server. The spec gives no number: a server on the loopback address
 # answers this path from memory, thus a short limit is sufficient.
 _STATUS_TIMEOUT_SECONDS = 3.0
+
+# Ruling D2 of spec OC1, in the words of spec S1 R3.
+_OPEN_DAY_REFUSAL = (
+    "the terminal shows no target and no rank of a day that is open or "
+    "closing. Spec S1 R3: nothing shows score information while a day is "
+    "open, and that rule names the terminal. No flag changes this.")
 
 # The errors that a handler gives for a refusal that the operator can
 # read: a rule of the plan module, a store rule, a config rule, a value
@@ -175,6 +181,47 @@ def _add_day_moves(commands, shared: argparse.ArgumentParser) -> None:
                           help="a stored day; the default is the latest day")
 
 
+def _add_day_target(commands, shared: argparse.ArgumentParser) -> None:
+    flag = "show the target of a closed day that is not revealed"
+    target = _leaf(commands, "target", shared,
+                   "the image and the credit of the target of a day")
+    target.add_argument("day", nargs="?", default=None,
+                        help="a stored day; the default is the latest day")
+    target.add_argument("--show-target", action="store_true", help=flag)
+    target.add_argument("--save", default=None, metavar="PATH",
+                        help="write the image to a new file")
+    rank = _leaf(commands, "rank", shared,
+                 "score one stored send and print the fused sequence")
+    rank.add_argument("day")
+    rank.add_argument("player")
+    rank.add_argument("--show-target", action="store_true", help=flag)
+    rank.add_argument("--limit", type=int, default=None,
+                      help="the first rows of the sequence, this many")
+    quarantine = _leaf(commands, "quarantine", shared,
+                       "skip one send that the provider refuses")
+    quarantine.add_argument("day")
+    quarantine.add_argument("player")
+    quarantine.add_argument("--note", required=True)
+
+
+def _add_modules(groups, commands_of: Mapping[str, object],
+                 shared: argparse.ArgumentParser) -> None:
+    """The commands of spec OC1 section 3.4. A parser of one has no
+    argument and no help flag of its own: each word after the command
+    goes to the module with no change."""
+    for path, (module, words) in plan.MODULE_COMMANDS.items():
+        text = f"as python -m {' '.join((module, *words))}"
+        if len(path) == 1:
+            groups.add_parser(path[0], add_help=False, allow_abbrev=False,
+                              help=text)
+            continue
+        if path[0] not in commands_of:
+            _group_parser, commands_of[path[0]] = _group(
+                groups, path[0], shared, f"commands of {module}")
+        commands_of[path[0]].add_parser(
+            path[1], add_help=False, allow_abbrev=False, help=text)
+
+
 def _add_schedule_changes(commands, shared: argparse.ArgumentParser) -> None:
     pause = _leaf(commands, "pause", shared, "stop the automatic days")
     pause.add_argument("--note", default="",
@@ -285,6 +332,7 @@ def _parser() -> argparse.ArgumentParser:
     _day, day_commands = _group(groups, "day", shared, "one day")
     _add_day_reads(day_commands, shared)
     _add_day_moves(day_commands, shared)
+    _add_day_target(day_commands, shared)
     _schedule_group, schedule_commands = _group(
         groups, "schedule", shared, "the automatic days", required=False)
     _add_schedule_changes(schedule_commands, shared)
@@ -295,6 +343,7 @@ def _parser() -> argparse.ArgumentParser:
     _db, db_commands = _group(groups, "db", shared, "the results index")
     _add_db_reads(db_commands, shared)
     _add_log(groups, shared)
+    _add_modules(groups, {"day": day_commands, "db": db_commands}, shared)
     return parser
 
 
@@ -343,6 +392,12 @@ def _ask_on_stderr(prompt: str) -> str:
     return input()
 
 
+def _is_terminal(stream: object) -> bool:
+    """Is the stream a terminal. A process with a closed stream has
+    None there, which is not a terminal."""
+    return stream is not None and stream.isatty()
+
+
 def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
@@ -375,8 +430,8 @@ def _context(args: argparse.Namespace, command: plan.Command, *,
         call=_or(call, rollover.http_call(base_url,
                                           environ.get(TOKEN_VARIABLE))),
         ask=_or(ask, _ask_on_stderr), now=_or(now, _utc_now),
-        stdin_is_tty=_or(stdin_is_tty, sys.stdin.isatty()),
-        stdout_is_tty=_or(stdout_is_tty, sys.stdout.isatty()),
+        stdin_is_tty=_or(stdin_is_tty, _is_terminal(sys.stdin)),
+        stdout_is_tty=_or(stdout_is_tty, _is_terminal(sys.stdout)),
         new_id=_or(new_id, lambda: secrets.token_hex(8)))
 
 
@@ -1287,11 +1342,199 @@ def _schedule_run(ctx: Context, _args: argparse.Namespace) -> int:
                                        "retries": 0})
 
 
+# ---- the target, the rank, and the quarantine (spec OC1 section 3.3) ----
+
+
+def _refuse_path_in_use(path: str | None) -> None:
+    """Refuse the path of a new file before the work, when a file is
+    there. `_write_new_file` has the same rule at the write."""
+    if path is not None and os.path.lexists(path):
+        raise plan.Refusal(
+            f"{path} is there. The command writes a new file alone: give a "
+            "path that is not in use.")
+
+
+def _end_of_blind_view(ctx: Context, work: Callable[[], Done], *, day: str,
+                       player: str | None = None) -> int:
+    """Show the target of a closed day that is not revealed: the
+    question, and a journal entry for this read (spec OC1 section 7)."""
+    # The command table gives a read no question. This one condition
+    # has one, thus the terminal guard gets the command as a command
+    # with a question.
+    _confirm(ctx, replace(ctx.command, confirm="yes"),
+             plan.shows_target_question(day))
+    return _journaled(ctx, work, player=player, day=day,
+                      start_facts={"shows_target": True})
+
+
+def _has_target_to_show(record: store.DayRecord, show_target: bool) -> bool:
+    """Does the day have a target that this output shows.
+
+    The answer is no for a `vp1` day before its pick, which has no
+    target. A day that is open or closing refuses with no flag that
+    changes it (ruling D2), and a closed day refuses with no
+    `--show-target`.
+    """
+    visibility = plan.target_visibility(
+        record.status, record.protocol, record.target_id is not None,
+        show_target)
+    if visibility in ("shown", "none-yet"):
+        return visibility == "shown"
+    if not plan.rank_allowed(record.status):
+        raise plan.Refusal(_OPEN_DAY_REFUSAL)
+    raise plan.Refusal(
+        f"{record.day} is closed and not revealed. Give --show-target to "
+        "see its target: that ends a blind view of the day, and the "
+        "journal records it.")
+
+
+def _target_done(ctx: Context, args: argparse.Namespace,
+                 record: store.DayRecord) -> Done:
+    """The target of a day that shows it, and the image file of
+    `--save`."""
+    from pool.artifacts import load_image_bytes
+
+    credit = _credits(ctx).get(record.target_id)
+    value = {"day": record.day, "status": record.status,
+             "target_id": record.target_id, "credit": credit}
+    lines = view.target_lines(str(record.target_id), credit)
+    if args.save is not None:
+        data = load_image_bytes(Path(ctx.config.data_root),
+                                str(record.target_id))
+        _write_new_file(Path(args.save), data)
+        value["saved"] = args.save
+        lines.append(f"wrote the image to {view.safe_text(args.save)} "
+                     f"({len(data)} bytes)")
+    return Done(value=value, lines=lines, facts={"shows_target": True})
+
+
+def _day_target(ctx: Context, args: argparse.Namespace) -> int:
+    day = _stored_day(ctx, args.day)
+    record = store.read_day_record(ctx.root, day)
+    _refuse_path_in_use(args.save)
+    if not _has_target_to_show(record, args.show_target):
+        # Spec VP1 section 8: no photo is picked, thus the command does
+        # not say that one is hidden.
+        if args.save is not None:
+            raise plan.Refusal("no target until the close: there is no "
+                               "image to save")
+        _emit(ctx, {"day": day, "status": record.status,
+                    plan.VISIBILITY_KEY: "none-yet"},
+              lambda _shown: ["no target until the close"])
+        return plan.EXIT_DONE
+    if plan.shows_target_needs_question(record.status, args.show_target):
+        return _end_of_blind_view(
+            ctx, lambda: _target_done(ctx, args, record), day=day)
+    _print_done(ctx, _target_done(ctx, args, record))
+    return plan.EXIT_DONE
+
+
+def _rankings(ctx: Context, wire: object, target_id: str) -> dict:
+    """Score one stored send in this process, as the rankings path of
+    the console does (ruling D7). Nothing is stored."""
+    from pipeline.config import load_scoring_config
+    from service import scoring
+
+    scoring_config = load_scoring_config(Path(ctx.config.scoring_config))
+    wired = scoring.wire_for_close(scoring_config, ctx.config.scoring_config,
+                                   Path(ctx.config.data_root))
+    return scoring.dev_rankings(wire, target_id, wired)
+
+
+def _day_rank(ctx: Context, args: argparse.Namespace) -> int:
+    day = _stored_day(ctx, args.day)
+    store.check_player_name(args.player, "player")
+    if args.limit is not None and args.limit < 1:
+        raise plan.Refusal("--limit takes a count of 1 or more")
+    record = store.read_day_record(ctx.root, day)
+    if not _has_target_to_show(record, args.show_target):
+        raise plan.Refusal("no target until the close: nothing ranks "
+                           "before the pick")
+    stored = store.read_json_or_none(
+        store.submission_path(ctx.root, day, args.player))
+    if stored is None:
+        raise plan.Refusal(f"{args.player} has no stored send on {day}")
+
+    def work() -> Done:
+        value = _rankings(ctx, stored["record"], str(record.target_id))
+        return Done(value=value, lines=view.rankings_lines(value, args.limit),
+                    facts={"shows_target": True})
+
+    if plan.shows_target_needs_question(record.status, args.show_target):
+        return _end_of_blind_view(ctx, work, day=day, player=args.player)
+    _print_done(ctx, work())
+    return plan.EXIT_DONE
+
+
+def _day_quarantine(ctx: Context, args: argparse.Namespace) -> int:
+    """The operator skip of spec CR1 section 6, with the function of
+    the day module. The note is in the quarantine record and not in the
+    journal."""
+    from service import day as day_module
+
+    day = _stored_day(ctx, args.day)
+    store.check_player_name(args.player, "player")
+
+    def work() -> Done:
+        record = day_module.quarantine_send(
+            ctx.config, date=day, player=args.player, note=args.note)
+        return Done(
+            value={"day": record.day, "player": record.player,
+                   "quarantined": True},
+            lines=[f"day {record.day}: the send of {record.player} is "
+                   "quarantined - close the day again"],
+            facts={"quarantined": 1})
+
+    return _change(ctx, work, player=args.player, day=day)
+
+
+# ---- the commands that go to a module command (spec OC1 section 3.4) ----
+
+
+def _module_entry(name: str) -> Callable[[list[str]], int]:
+    """The entry function of one module of the plan table."""
+    match name:
+        case "service.day":
+            from service import day as day_module
+
+            return day_module.main
+        case "service.index":
+            return index.main
+        case "service.public":
+            from service import public
+
+            return public.main
+        case "service.rollup":
+            from service import rollup
+
+            return rollup.main
+        case "service.pool_keys":
+            from service import pool_keys
+
+            return pool_keys.main
+        case _:
+            raise plan.Refusal(f"no module command {name!r}")
+
+
+def _module(ctx: Context, args: argparse.Namespace) -> int:
+    """Give the arguments to the module command with no change, and
+    give its exit code. The module prints text and writes no journal
+    record (ruling D8)."""
+    if ctx.as_json or "--json" in args.rest:
+        raise plan.Refusal(
+            f"sv {plan.journal_name(ctx.command)} goes to a module command "
+            "that prints text. --json does not work with it.")
+    name, argv = plan.module_argv(ctx.command, ctx.config_path, args.rest)
+    return _module_entry(name)(argv)
+
+
 # ---- the dispatch ----
 
 
 def _handler_for(command: plan.Command) -> Handler:
     """The handler of one command of the table."""
+    if command.kind == "module":
+        return _module
     match command.path:
         case ("status",):
             return _status
@@ -1355,6 +1598,12 @@ def _handler_for(command: plan.Command) -> Handler:
             return _schedule_resume
         case ("schedule", "run"):
             return _schedule_run
+        case ("day", "target"):
+            return _day_target
+        case ("day", "rank"):
+            return _day_rank
+        case ("day", "quarantine"):
+            return _day_quarantine
         case _:
             raise plan.Refusal(
                 f"sv {plan.journal_name(command)} is not built")
@@ -1383,9 +1632,14 @@ def main(argv: list[str] | None = None, *,
     a random journal identifier.
     """
     parser = _parser()
-    args = parser.parse_args(argv)
+    # The tree does not read the words of a module command. A module
+    # command gets those words, and each other command refuses them.
+    args, unread = parser.parse_known_args(argv)
+    args.rest = unread
     try:
         command = plan.command_for(_path_of(args))
+        if args.rest and command.kind != "module":
+            parser.error(f"unrecognized arguments: {' '.join(args.rest)}")
         ctx = _context(args, command, call=call, ask=ask, now=now,
                        environ=environ, stdin_is_tty=stdin_is_tty,
                        stdout_is_tty=stdout_is_tty, new_id=new_id)

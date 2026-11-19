@@ -131,6 +131,34 @@ def test_each_journal_name_is_legal_for_the_store() -> None:
         assert len(name) <= COMMAND_NAME_LIMIT
 
 
+def test_each_module_command_names_a_module_with_a_main() -> None:
+    import importlib
+
+    paths = {command.path for command in plan.COMMANDS
+             if command.kind == "module"}
+    assert set(plan.MODULE_COMMANDS) == paths
+    for path, (module, words) in plan.MODULE_COMMANDS.items():
+        assert callable(importlib.import_module(module).main), path
+        assert all(isinstance(word, str) for word in words)
+
+
+def test_the_module_arguments_keep_the_words_of_the_operator() -> None:
+    rest = ["--config", "x.json", "--from", "2026-11-01", "--json"]
+    assert plan.module_argv(plan.command_for(("day", "rescore")),
+                            "/etc/sv.json", rest) == (
+        "service.day",
+        ["--service-config", "/etc/sv.json", "rescore", *rest])
+    assert plan.module_argv(plan.command_for(("public",)), "c.json",
+                            ["build", "--out", "o"]) == (
+        "service.public", ["--service-config", "c.json", "build", "--out",
+                           "o"])
+    assert plan.module_argv(plan.command_for(("pool-keys", "make")),
+                            "c.json", []) == (
+        "service.pool_keys", ["--service-config", "c.json", "make"])
+    with pytest.raises(plan.Refusal):
+        plan.module_argv(plan.command_for(("days",)), "c.json", [])
+
+
 # ---- the questions ----
 
 
