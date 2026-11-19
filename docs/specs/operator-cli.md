@@ -1,6 +1,7 @@
 # Spec OC1 — the operator command line
 
-**Status:** proposed 2026-11-19. The decisions of §11 are open.
+**Status:** ruled 2026-11-19 (§11). The build is on branch
+`feat/operator-cli`.
 **Phase:** before the first public day. The operator's tools are a browser
 console that needs a second server and an SSH tunnel, and a set of module
 commands that do not cover the console.
@@ -326,33 +327,30 @@ each mode (spec A2 §10.1). The command has nothing for it.
 
 Each item is one commit, green and Vale-clean on the touched prose.
 
-## 11. Decisions for the owner
+## 11. Decisions, ruled 2026-11-19
 
-Each one gives a proposal. The build does not start before a ruling.
+The owner accepted each proposal as it was written.
 
-- **D1 — a named day on the public server.** Proposal:
+- **D1 — a named day on the public server.** Ruling:
   `POST /api/day/close` and `POST /api/day/reveal` accept a body
   `{"day": D}`, and an empty body moves the latest day as today. The
   paths do not change, thus the edge refuses them as before. This changes
-  spec M1 §4, spec S2 §5, and spec BR1 §7.6. With a refusal of D1, the
-  command has no named-day move.
-- **D2 — the rank and the target of an open day.** Proposal: the terminal
+  spec M1 §4, spec S2 §5, and spec BR1 §7.6.
+- **D2 — the rank and the target of an open day.** Ruling: the terminal
   refuses the two, with no flag that changes it, because spec S1 R3 names
-  the terminal. The console keeps its procedure. The other ruling gives
-  the terminal the console's question and a journal entry.
-- **D3 — the shape of the journal.** Proposal: one JSON record for each entry,
+  the terminal. The console keeps its procedure.
+- **D3 — the shape of the journal.** Ruling: one JSON record for each entry,
   written with `write_once_json`, as the rollover moves have. A record of that type cannot be
   cut by a power failure, and it adds no new lock. `sv log` prints one
-  line for each command. The other ruling is one file of JSON lines with
-  a file lock.
-- **D4 — the console and the journal.** Proposal: the console paths write the
+  line for each command.
+- **D4 — the console and the journal.** Ruling: the console paths write the
   same journal, as a build item after this spec. Then each operator change
   has a record, from each tool.
-- **D5 — the name and the callers.** Proposal: the name `sv`, in
+- **D5 — the name and the callers.** Ruling: the name `sv`, in
   `/usr/local/sbin`, and each user with `sudo` can use it. The package
   runit has a command with the same name, which is not on the server
-  computer. The other name is `starvector`.
-- **D6 — `sv schedule run` and the pause.** Proposal: it does not read
+  computer.
+- **D6 — `sv schedule run` and the pause.** Ruling: it does not read
   the pause and it does not try again, as the console button of spec
   BR1 §7.2. Its question says so when the automatic days are paused.
   `service.rollover` stays the command of the timer, with the pause and
@@ -360,11 +358,11 @@ Each one gives a proposal. The build does not start before a ruling.
 - **D7 — scoring in the command.** `sv day rank` and `sv day quarantine`
   make a scoring context in the process of the command, with the
   provider key. The server holds a second copy at the same time.
-  Proposal: accept this for the two commands.
-- **D8 — the module commands.** Proposal: they stay as they are, because
+  Ruling: accept this for the two commands.
+- **D8 — the module commands.** Ruling: they stay as they are, because
   the timer unit starts `service.rollover`. The documents send the
   operator to `sv`. A module command writes no journal entry.
-- **D9 — a recovery code to a pipe.** Proposal: the command refuses,
+- **D9 — a recovery code to a pipe.** Ruling: the command refuses,
   unless the flag `--code-to-pipe` is there.
 
 ## 12. Changes at build time
