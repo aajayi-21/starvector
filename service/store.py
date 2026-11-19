@@ -1984,3 +1984,285 @@ def delete_account(store: Path, player: str, *, folded: str,
     player_record_path(store, player).unlink(missing_ok=True)
     return found
 
+
+# ---- spec OC1: the operator journal ----
+
+# The journal of the operator's commands (spec OC1 section 7). A command
+# that changes the store writes two records: a `start` record before the
+# change and an `end` record after it. The journal is a permanent record
+# (Rule 4) and not a cache.
+#
+# The rules below are narrow deliberately. An entry holds names, counts,
+# and flags. The fact keys are a closed set with no key for a note, and
+# each key has its own shape: a count, a flag, a step name, a field
+# name, or the hexadecimal digits of a session identifier. No fact is
+# free text. Thus text that a person wrote does not go in the journal
+# by accident: not a description, not a note, not a query, not the
+# message of an error, and not a recovery code, which has hyphens and
+# letters that no shape accepts.
+
+# This section alone uses Mapping.
+from collections.abc import Mapping
+
+OPERATOR_JOURNAL_VERSION = 1
+OPERATOR_PHASES: tuple[str, ...] = ("start", "end")
+OPERATOR_OUTCOMES: tuple[str, ...] = ("done", "refused", "failed")
+OPERATOR_LOGIN_SOURCES: tuple[str, ...] = ("login-uid", "sudo-user",
+                                           "effective-user")
+# The closed set of machine facts an entry can hold (spec OC1 section 7).
+# No key holds text that a person wrote.
+OPERATOR_FACT_KEYS: tuple[str, ...] = (
+    "steps", "trial_rows", "quarantined", "ended", "field", "paused",
+    "exit_code", "session", "sessions", "device_codes", "agrees",
+    "shows_target", "retries",
+)
+_OPERATOR_FIELDS = ("journal_version", "entry_id", "phase", "at", "login",
+                    "login_source", "command", "player", "day", "outcome",
+                    "facts", "error_kind")
+_OPERATOR_ID_RULE = re.compile(r"[0-9a-f]{8,32}")
+_OPERATOR_LOGIN_RULE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_OPERATOR_COMMAND_RULE = re.compile(r"[a-z0-9-]+(?: [a-z0-9-]+)*")
+_OPERATOR_COMMAND_LIMIT = 64
+_OPERATOR_ERROR_RULE = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+# The shape of each fact. A count is an integer of zero or more. `field` names the part of an account that a moderation edit
+# changed. `session` is the start of a session identifier.
+_OPERATOR_COUNT_FACTS = ("trial_rows", "quarantined", "ended", "exit_code",
+                         "sessions", "device_codes", "retries")
+_OPERATOR_FLAG_FACTS = ("paused", "agrees", "shows_target")
+OPERATOR_FIELD_NAMES: tuple[str, ...] = ("description", "avatar")
+_OPERATOR_SESSION_RULE = re.compile(r"[0-9a-f]{6,64}")
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorEntry:
+    """One record of the operator journal (spec OC1 section 7).
+
+    entry_id is the same in the `start` record and the `end` record of
+    one command. at is an ISO 8601 instant with a zone. login is the
+    login name of the operator, and login_source says where the name
+    came from. player and day are None for a command that names none.
+    outcome is None in a `start` record and one of OPERATOR_OUTCOMES in
+    an `end` record. facts holds machine values with keys from
+    OPERATOR_FACT_KEYS: a `bool`, an `int`, a short text, or a tuple of
+    short texts. error_kind is the type of an error and not its message.
+    """
+
+    entry_id: str
+    phase: str
+    at: str
+    login: str
+    login_source: str
+    command: str
+    player: str | None
+    day: str | None
+    outcome: str | None
+    facts: Mapping[str, object]
+    error_kind: str | None
+
+
+def operator_journal_dir(store: Path) -> Path:
+    """The folder of the operator journal in the permanent store."""
+    return store / "operator-log"
+
+
+def _check_operator_text(value: object, rule: re.Pattern[str], where: str,
+                         shape: str) -> None:
+    """Refuse a value that is not a string of the given rule.
+
+    The refusal says the legal shape and does not show the value,
+    because a refused value can be the text that the rule keeps out of
+    the journal.
+    """
+    if not isinstance(value, str) or not rule.fullmatch(value):
+        raise StoreError(f"{where}: expected {shape}")
+
+
+def _operator_stamp(at: object, where: str) -> str:
+    """The instant as UTC text of a fixed width, which sorts by time.
+
+    Refuses a value that is not an ISO 8601 instant with a zone, the
+    rule that the rollover record has for its start instant.
+    """
+    import datetime
+
+    refusal = f"{where}: expected a timestamp with a zone"
+    if not isinstance(at, str):
+        raise StoreError(refusal)
+    try:
+        moment = datetime.datetime.fromisoformat(at)
+        zoned = (None if moment.tzinfo is None
+                 else moment.astimezone(datetime.UTC))
+    except (ValueError, OverflowError) as error:
+        raise StoreError(refusal) from error
+    if zoned is None:
+        raise StoreError(refusal)
+    return f"{zoned.year:04d}{zoned:%m%dT%H%M%S%f}Z"
+
+
+def _check_operator_names(entry: OperatorEntry, where: str) -> None:
+    """Refuse an entry with an illegal identifier, name, or error type."""
+    _check_operator_text(entry.entry_id, _OPERATOR_ID_RULE,
+                         f"{where}.entry_id",
+                         "8 to 32 lowercase hex characters")
+    _check_operator_text(entry.login, _OPERATOR_LOGIN_RULE, f"{where}.login",
+                         "1 to 64 characters, letters, digits, and . _ -")
+    _check_operator_text(entry.command, _OPERATOR_COMMAND_RULE,
+                         f"{where}.command",
+                         "words of a-z, 0-9, and the hyphen, one space apart")
+    if len(entry.command) > _OPERATOR_COMMAND_LIMIT:
+        raise StoreError(f"{where}.command: expected at most "
+                         f"{_OPERATOR_COMMAND_LIMIT} characters")
+    if entry.login_source not in OPERATOR_LOGIN_SOURCES:
+        raise StoreError(f"{where}.login_source: expected one of "
+                         f"{list(OPERATOR_LOGIN_SOURCES)}")
+    if entry.player is not None:
+        check_player_name(entry.player, f"{where}.player")
+    if entry.day is not None:
+        _check_day(entry.day, f"{where}.day")
+    if entry.error_kind is not None:
+        _check_operator_text(entry.error_kind, _OPERATOR_ERROR_RULE,
+                             f"{where}.error_kind",
+                             "1 to 80 characters, letters, digits, and _ . : -")
+
+
+def _check_operator_outcome(entry: OperatorEntry, where: str) -> None:
+    """Refuse a phase or an outcome that is not legal for the phase."""
+    if entry.phase not in OPERATOR_PHASES:
+        raise StoreError(f"{where}.phase: expected one of "
+                         f"{list(OPERATOR_PHASES)}")
+    if entry.phase == "start" and entry.outcome is not None:
+        raise StoreError(f"{where}.outcome: a start record has no outcome")
+    if entry.phase == "end" and entry.outcome not in OPERATOR_OUTCOMES:
+        raise StoreError(f"{where}.outcome: an end record has one of "
+                         f"{list(OPERATOR_OUTCOMES)}")
+
+
+def _fact_is_legal(key: str, value: object) -> bool:
+    """Tell if the value has the one shape of its fact key."""
+    if key in _OPERATOR_FLAG_FACTS:
+        return isinstance(value, bool)
+    if key in _OPERATOR_COUNT_FACTS:
+        return isinstance(value, int) and not isinstance(value, bool) \
+            and value >= 0
+    if key == "steps":
+        return isinstance(value, (list, tuple)) \
+            and all(isinstance(step, str) and step in ROLLOVER_STEPS
+                    for step in value)
+    if key == "field":
+        return isinstance(value, str) and value in OPERATOR_FIELD_NAMES
+    if key == "session":
+        return isinstance(value, str) \
+            and _OPERATOR_SESSION_RULE.fullmatch(value) is not None
+    return False
+
+
+def _check_operator_facts(facts: object, where: str) -> None:
+    """Refuse a fact with a key or a value that is not a machine fact.
+
+    A refusal names the legal keys or the key with the bad value. It
+    shows no value, for the cause that `_check_operator_text` gives.
+    """
+    if not isinstance(facts, Mapping):
+        raise StoreError(f"{where}: expected a mapping")
+    for key, value in facts.items():
+        if not isinstance(key, str) or key not in OPERATOR_FACT_KEYS:
+            raise StoreError(f"{where}: expected keys from "
+                             f"{list(OPERATOR_FACT_KEYS)}")
+        if not _fact_is_legal(key, value):
+            raise StoreError(
+                f"{where}.{key}: the value does not have the shape of "
+                f"this fact")
+
+
+def _check_operator_entry(entry: OperatorEntry, where: str) -> None:
+    _check_operator_outcome(entry, where)
+    _check_operator_names(entry, where)
+    _check_operator_facts(entry.facts, f"{where}.facts")
+    _operator_stamp(entry.at, f"{where}.at")
+
+
+def _operator_entry_name(entry: OperatorEntry) -> str:
+    """The file name of one entry: the instant, the identifier, the phase.
+
+    The names sort by time, and then by the identifier. The number
+    before the phase is the index of the phase in OPERATOR_PHASES. With
+    it the `start` record of a command sorts before its `end` record
+    when the two have the same instant, which the letters do not give.
+    """
+    stamp = _operator_stamp(entry.at, "operator entry.at")
+    index = OPERATOR_PHASES.index(entry.phase)
+    return f"{stamp}-{entry.entry_id}-{index}-{entry.phase}.json"
+
+
+def _operator_entry_to_value(entry: OperatorEntry) -> dict[str, JsonValue]:
+    facts = {key: list(value) if isinstance(value, tuple) else value
+             for key, value in entry.facts.items()}
+    return {"journal_version": OPERATOR_JOURNAL_VERSION,
+            "entry_id": entry.entry_id, "phase": entry.phase, "at": entry.at,
+            "login": entry.login, "login_source": entry.login_source,
+            "command": entry.command, "player": entry.player,
+            "day": entry.day, "outcome": entry.outcome, "facts": facts,
+            "error_kind": entry.error_kind}
+
+
+def write_operator_entry(store: Path, entry: OperatorEntry) -> None:
+    """Store one journal record with `write_once_json`.
+
+    A record that breaks a rule raises StoreError and writes no file. A
+    second write of the same instant, identifier, and phase raises. The
+    write has no lock, because the file of a record does not change
+    after its one write (spec OC1 section 11, D3).
+    """
+    _check_operator_entry(entry, "operator entry")
+    ensure_store(store)
+    write_once_json(operator_journal_dir(store) / _operator_entry_name(entry),
+                    _operator_entry_to_value(entry))
+
+
+def _read_operator_entry(path: Path) -> OperatorEntry:
+    """One stored journal record. A bad file raises and names the file.
+
+    A JSON array of a fact comes back as a tuple. The file name must
+    agree with the record, because the name gives the sequence of the
+    journal.
+    """
+    from types import MappingProxyType
+
+    raw = read_json_or_none(path)
+    if raw is None:
+        raise StoreError(f"{path}: expected a journal record")
+    version = raw.get("journal_version")
+    if type(version) is not int or version != OPERATOR_JOURNAL_VERSION:
+        raise StoreError(f"{path}: unknown journal version {version!r}")
+    if set(raw) != set(_OPERATOR_FIELDS) or not isinstance(raw["facts"], dict):
+        raise StoreError(
+            f"{path}: expected the fields {sorted(_OPERATOR_FIELDS)}")
+    facts = MappingProxyType({
+        key: tuple(value) if isinstance(value, list) else value
+        for key, value in raw["facts"].items()})
+    entry = OperatorEntry(
+        entry_id=raw["entry_id"], phase=raw["phase"], at=raw["at"],
+        login=raw["login"], login_source=raw["login_source"],
+        command=raw["command"], player=raw["player"], day=raw["day"],
+        outcome=raw["outcome"], facts=facts, error_kind=raw["error_kind"])
+    _check_operator_entry(entry, str(path))
+    if path.name != _operator_entry_name(entry):
+        raise StoreError(f"{path}: the file name does not agree with the "
+                         f"record")
+    return entry
+
+
+def list_operator_entries(store: Path) -> tuple[OperatorEntry, ...]:
+    """Each journal record, oldest first. No folder is an empty journal.
+
+    A `.tmp` name is a write that has not ended, and the reader skips
+    it. Each other name must be a record: a file that does not parse or
+    breaks a rule raises StoreError, and no file is skipped silently.
+    """
+    base = operator_journal_dir(store)
+    if not base.is_dir():
+        return ()
+    names = sorted(entry.name for entry in base.iterdir()
+                   if not entry.name.endswith(".tmp"))
+    return tuple(_read_operator_entry(base / name) for name in names)
+
