@@ -98,10 +98,12 @@ class _Stopped(Exception):
     type for the journal. The text is for the operator, and it does not
     go in the journal."""
 
-    def __init__(self, message: str, outcome: str, error_kind: str) -> None:
+    def __init__(self, message: str, outcome: str, error_kind: str,
+                 facts: Mapping[str, object] | None = None) -> None:
         super().__init__(message)
         self.outcome = outcome
         self.error_kind = error_kind
+        self.facts = dict(facts or {})
 
 
 # ---- the argument tree ----
@@ -162,6 +164,23 @@ def _add_day_reads(commands, shared: argparse.ArgumentParser) -> None:
     send = _leaf(commands, "send", shared, "one stored send")
     send.add_argument("day")
     send.add_argument("player")
+
+
+def _add_day_moves(commands, shared: argparse.ArgumentParser) -> None:
+    _leaf(commands, "open", shared, "open the day that is due")
+    for name, text in (("close", "close a day and score each send"),
+                       ("reveal", "reveal a closed day")):
+        move = _leaf(commands, name, shared, text)
+        move.add_argument("day", nargs="?", default=None,
+                          help="a stored day; the default is the latest day")
+
+
+def _add_schedule_changes(commands, shared: argparse.ArgumentParser) -> None:
+    pause = _leaf(commands, "pause", shared, "stop the automatic days")
+    pause.add_argument("--note", default="",
+                       help="a short text that the schedule shows")
+    _leaf(commands, "resume", shared, "start the automatic days again")
+    _leaf(commands, "run", shared, "do the steps that are due at this time")
 
 
 def _add_player_reads(commands, shared: argparse.ArgumentParser) -> None:
@@ -265,7 +284,10 @@ def _parser() -> argparse.ArgumentParser:
                           help=text, description=text)
     _day, day_commands = _group(groups, "day", shared, "one day")
     _add_day_reads(day_commands, shared)
-    _group(groups, "schedule", shared, "the automatic days", required=False)
+    _add_day_moves(day_commands, shared)
+    _schedule_group, schedule_commands = _group(
+        groups, "schedule", shared, "the automatic days", required=False)
+    _add_schedule_changes(schedule_commands, shared)
     _players, player_commands = _group(groups, "players", shared,
                                        "the players")
     _add_player_reads(player_commands, shared)
@@ -735,11 +757,13 @@ def _end_written(ctx: Context, entry_id: str, **fields: object) -> bool:
 
 def _report_stop(ctx: Context, entry_id: str, *, player: str | None,
                  day: str | None, outcome: str, error_kind: str | None,
-                 message: str) -> int:
+                 message: str,
+                 facts: Mapping[str, object] | None = None) -> int:
     """The end of a change that did not complete: the `end` record, and
     one line for the operator. The message stays out of the journal."""
     written = _end_written(ctx, entry_id, player=player, day=day,
-                           outcome=outcome, error_kind=error_kind)
+                           outcome=outcome, error_kind=error_kind,
+                           facts=facts)
     print(f"{outcome}: {view.safe_text(message)}", file=sys.stderr)
     if not written:
         print("the end record of the journal could not be written",
@@ -779,7 +803,8 @@ def _journaled(ctx: Context, work: Callable[[], Done], *,
         done = work()
     except _Stopped as error:
         return _report_stop(ctx, entry_id, **stop, outcome=error.outcome,
-                            error_kind=error.error_kind, message=str(error))
+                            error_kind=error.error_kind, message=str(error),
+                            facts=error.facts)
     except (store.StoreError, plan.Refusal) as error:
         return _report_stop(ctx, entry_id, **stop, outcome="refused",
                             error_kind=plan.error_kind_of(error),
@@ -1035,6 +1060,233 @@ def _db_build(ctx: Context, _args: argparse.Namespace) -> int:
     return _change(ctx, work)
 
 
+# ---- the day moves and the schedule (spec OC1 section 4) ----
+
+
+def _lock_path(ctx: Context) -> Path:
+    return store.rollover_lock_path(ctx.root)
+
+
+def _locked() -> int:
+    """The exit of a day move while a rollover holds the lock. Nothing
+    started, thus the journal gets no record."""
+    print("a rollover is at work and holds the lock. Nothing changed: try "
+          "again when it ends.", file=sys.stderr)
+    return plan.EXIT_LOCKED
+
+
+def _locked_change(ctx: Context, work: Callable[[], Done], *,
+                   day: str | None = None,
+                   question_facts: Mapping[str, object] | None = None,
+                   start_facts: Mapping[str, object] | None = None) -> int:
+    """One day move: the question, then the rollover lock with no wait,
+    then the change with its journal records.
+
+    The lock comes after the answer. Thus the time that a person reads
+    the question does not stop the rollover of the timer.
+    """
+    named = {} if day is None else {"day": day}
+    question = plan.confirmation_for(ctx.command,
+                                     {**named, **(question_facts or {})})
+    _confirm(ctx, ctx.command, question)
+    handle = rollover.hold_lock(_lock_path(ctx))
+    if handle is None:
+        return _locked()
+    try:
+        return _journaled(ctx, work, day=day, start_facts=start_facts)
+    finally:
+        os.close(handle)
+
+
+def _server_refusal(ctx: Context, answer: rollover.Answer) -> _Stopped:
+    """The stop of a day move that the server did not do. The words of
+    the server go to the operator, and the journal gets the HTTP status
+    and the machine cause alone."""
+    cause = answer.body.get("cause")
+    kind = plan.error_kind_of(None, answer.status,
+                              cause if isinstance(cause, str) else None)
+    if answer.status == 401:
+        return _Stopped(
+            "the server refused the operator token. Start the command as "
+            f"'sudo sv': it reads {TOKEN_VARIABLE} from the env file of the "
+            "server.", "refused", kind)
+    detail = answer.body.get("detail") or cause or "no detail"
+    outcome = "refused" if 400 <= answer.status < 500 else "failed"
+    return _Stopped(f"the server answered HTTP {answer.status}: {detail}",
+                    outcome, kind)
+
+
+def _server_move(ctx: Context, step: str, body: dict | None) -> dict:
+    """Send one day move to the public server, and give the body of
+    its answer. The server is the one process that moves a day."""
+    # The rollover module has the two time limits, and a close is the
+    # long one: it encodes each new send through the provider.
+    timeout = rollover._CLOSE_TIMEOUT_SECONDS if step == "close" \
+        else rollover._STEP_TIMEOUT_SECONDS
+    try:
+        answer = ctx.call("POST", f"/api/day/{step}", body, timeout)
+    except rollover.TransportError as error:
+        raise _Stopped(
+            f"the server did not answer at {ctx.base_url} ({error}). The "
+            "outcome of the move is not known: read 'sv days'.", "failed",
+            plan.error_kind_of(error)) from error
+    if answer.status != 200:
+        raise _server_refusal(ctx, answer)
+    return answer.body
+
+
+def _counts(body: Mapping[str, object],
+            keys: Sequence[str]) -> dict[str, int]:
+    """The counts of a server answer that are legal journal facts."""
+    return {key: body[key] for key in keys
+            if isinstance(body.get(key), int)
+            and not isinstance(body.get(key), bool) and body[key] >= 0}
+
+
+def _shown(value: object) -> str:
+    """One value of a server answer as safe text."""
+    return "-" if value is None else view.safe_text(str(value))
+
+
+def _day_open(ctx: Context, _args: argparse.Namespace) -> int:
+    if rollover.lock_is_held(_lock_path(ctx)):
+        return _locked()
+
+    def work() -> Done:
+        body = _server_move(ctx, "open", None)
+        opened = body.get("day")
+        lines = [f"day {_shown(opened)} open",
+                 f"trial code {_shown(body.get('trial_code'))}"]
+        if body.get("commitment") is not None:
+            lines.append(f"commitment {_shown(body['commitment'])}")
+        return Done(value=body, lines=lines,
+                    day=opened if isinstance(opened, str) else None)
+
+    return _locked_change(ctx, work)
+
+
+def _day_facts(ctx: Context, day: str) -> dict[str, object]:
+    """The facts that the question of a close or a reveal names."""
+    return {"status": store.read_day_record(ctx.root, day).status,
+            "latest": day == store.latest_day(ctx.root)}
+
+
+def _named_body(args: argparse.Namespace) -> dict | None:
+    """The body of a close or a reveal: the named day, or no body for
+    the latest day (ruling D1)."""
+    return None if args.day is None else {"day": args.day}
+
+
+def _day_close(ctx: Context, args: argparse.Namespace) -> int:
+    if rollover.lock_is_held(_lock_path(ctx)):
+        return _locked()
+    day = _stored_day(ctx, args.day)
+
+    def work() -> Done:
+        body = _server_move(ctx, "close", _named_body(args))
+        facts = _counts(body, ("trial_rows", "quarantined"))
+        counts = "  ".join(f"{key}={value}" for key, value in facts.items())
+        return Done(value={"day": day, **body},
+                    lines=[f"day {day} closed  {counts}".rstrip()],
+                    facts=facts)
+
+    return _locked_change(ctx, work, day=day,
+                          question_facts=_day_facts(ctx, day))
+
+
+def _day_reveal(ctx: Context, args: argparse.Namespace) -> int:
+    if rollover.lock_is_held(_lock_path(ctx)):
+        return _locked()
+    day = _stored_day(ctx, args.day)
+
+    def work() -> Done:
+        body = _server_move(ctx, "reveal", _named_body(args))
+        return Done(value=body, lines=[f"day {day} revealed"])
+
+    return _locked_change(ctx, work, day=day,
+                          question_facts=_day_facts(ctx, day))
+
+
+def _set_pause(ctx: Context, paused: bool, note: str) -> int:
+    """Write the pause as the pause path of the console does. The note
+    is in the control record and not in the journal."""
+    # An illegal note stops here, before the journal: it is not a change.
+    store.check_rollover_note(note, "note")
+    facts = {"paused": paused}
+
+    def work() -> Done:
+        store.write_rollover_control(ctx.root, store.RolloverControl(
+            paused=paused, changed_at=ctx.now().isoformat(), note=note))
+        value = _schedule_value(ctx)
+        return Done(value=value, lines=view.schedule_lines(value),
+                    facts=facts)
+
+    return _change(ctx, work, start_facts=facts)
+
+
+def _schedule_pause(ctx: Context, args: argparse.Namespace) -> int:
+    return _set_pause(ctx, True, args.note)
+
+
+def _schedule_resume(ctx: Context, _args: argparse.Namespace) -> int:
+    return _set_pause(ctx, False, "")
+
+
+def _say_on_stderr(line: str) -> None:
+    """One line of a rollover. The lines go to the error stream, thus
+    the standard output holds the answer of the command alone."""
+    print(view.safe_text(line), file=sys.stderr)
+
+
+def _run_facts(ctx: Context, closes_at_utc: str) -> dict[str, object]:
+    """The facts that the question of `sv schedule run` names: the
+    steps that are due, the days, and the pause."""
+    instant = ctx.now()
+    latest = rollover.read_latest(ctx.root)
+    steps = rollover.planned_steps(latest, instant, closes_at_utc)
+    opens = schedule.next_open_label(latest.label, instant, closes_at_utc) \
+        if "open" in steps else None
+    return {"steps": steps, "day": latest.label, "opens": opens,
+            "paused": store.read_rollover_control(ctx.root).paused}
+
+
+def _schedule_run(ctx: Context, _args: argparse.Namespace) -> int:
+    """Do the steps that are due, with no retry. The command does not
+    read the pause (ruling D6), and its question says so."""
+    closes_at_utc = ctx.config.closes_at_utc
+    if closes_at_utc is None:
+        raise plan.Refusal(
+            "the automatic days are off: closes_at_utc is not in the server "
+            "config, and it is the rollover hour")
+    if rollover.lock_is_held(_lock_path(ctx)):
+        return _locked()
+    facts = _run_facts(ctx, closes_at_utc)
+
+    def work() -> Done:
+        run = rollover.run_and_record(
+            root=ctx.root, closes_at_utc=closes_at_utc,
+            post=lambda path, timeout: ctx.call("POST", path, None, timeout),
+            now=ctx.now, source="command-line", retries=0,
+            say=_say_on_stderr)
+        done = {"steps": run.steps, "retries": 0}
+        if run.outcome == "failed":
+            raise _Stopped(
+                "the rollover did not complete. The run record in "
+                "store/rollover/runs holds each line.", "failed",
+                "rollover-failed", done)
+        value = {"run": console.run_value(run),
+                 "schedule": _schedule_value(ctx)}
+        return Done(
+            value=value, facts=done,
+            lines=[f"rollover {run.outcome}: "
+                   f"{', '.join(run.steps) or 'no step'}",
+                   *view.schedule_lines(value["schedule"])])
+
+    return _locked_change(ctx, work, question_facts=facts,
+                          start_facts={"steps": facts["steps"],
+                                       "retries": 0})
+
+
 # ---- the dispatch ----
 
 
@@ -1091,6 +1343,18 @@ def _handler_for(command: plan.Command) -> Handler:
             return _players_claim_names
         case ("db", "build"):
             return _db_build
+        case ("day", "open"):
+            return _day_open
+        case ("day", "close"):
+            return _day_close
+        case ("day", "reveal"):
+            return _day_reveal
+        case ("schedule", "pause"):
+            return _schedule_pause
+        case ("schedule", "resume"):
+            return _schedule_resume
+        case ("schedule", "run"):
+            return _schedule_run
         case _:
             raise plan.Refusal(
                 f"sv {plan.journal_name(command)} is not built")

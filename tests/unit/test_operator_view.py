@@ -666,6 +666,16 @@ def test_journal_lines_show_an_end_with_no_start() -> None:
         "player=mira  start not recorded  refused"]
 
 
+def test_journal_lines_show_a_day_that_the_end_record_alone_names() -> None:
+    # The start of `sv day open` has no day: the server gives the label.
+    assert view.journal_lines([
+        _entry("eeeeeeee", "start", command="day open", player=None),
+        _entry("eeeeeeee", "end", command="day open", player=None,
+               day="2026-11-19", outcome="done")]) == [
+        "2026-11-19T10:00:00+00:00  ade (login-uid)  day open  "
+        "day=2026-11-19  done"]
+
+
 def test_journal_lines_of_an_empty_journal_and_a_bad_phase() -> None:
     assert view.journal_lines([]) == ["no journal entry"]
     with pytest.raises(ValueError):

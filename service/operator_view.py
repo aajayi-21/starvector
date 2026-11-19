@@ -539,8 +539,12 @@ def _journal_line(start: Mapping[str, object] | None,
              f"{_text(first['login'])} ({_text(first['login_source'])})",
              _text(first["command"])]
     for key in ("player", "day"):
-        if first.get(key) is not None:
-            parts.append(f"{key}={_text(first[key])}")
+        # The `start` record of `sv day open` has no day: the server
+        # gives the label, and only the `end` record holds it.
+        named = [record[key] for record in (start, end)
+                 if record is not None and record.get(key) is not None]
+        if named:
+            parts.append(f"{key}={_text(named[0])}")
     if start is None:
         parts.append("start not recorded")
     if end is None:

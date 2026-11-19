@@ -152,12 +152,11 @@ def sv(world: World, *argv: str, **changes) -> int:
                              **values)
 
 
-def strand_the_open_day(world: World) -> tuple[str, str]:
-    """Close the open day and put a newer revealed day in front of it."""
-    close_day(world.config, clock=lambda: FIXED_CLOCK)
-    stranded = OPEN_DAY
+def put_a_newer_day_in_front(world: World) -> str:
+    """Store a newer revealed day in front of the open day, and give
+    its label. The open day stays as it is, behind the newer one."""
     newer = "2026-08-14"
-    record = store.read_day_record(world.root, stranded)
+    record = store.read_day_record(world.root, OPEN_DAY)
     store.write_day_record(world.root, dataclasses.replace(
         record, day=newer, status="open", closed_at=None, revealed_at=None))
     for before, after, field in (("open", "closed", "closed_at"),
@@ -165,4 +164,27 @@ def strand_the_open_day(world: World) -> tuple[str, str]:
         store.update_day_status(world.root, newer, expect_status=before,
                                 new_status=after, timestamp_field=field,
                                 timestamp=FIXED_CLOCK)
-    return stranded, newer
+    return newer
+
+
+def build_vp1_world(tmp_path, monkeypatch, *, instant: str) -> World:
+    """A spec VP1 world with one open day and no player record. The
+    day has no target: the pulse after the close picks it."""
+    from svc_fixture import make_vp1
+
+    from service import day as day_module
+    from service import server as server_module
+
+    fixture = make_vp1(build_service_fixture(tmp_path), tmp_path)
+    config = fixture["service_config"]
+    clock = Clock(instant)
+    monkeypatch.setattr(day_module, "utc_now", clock)
+    monkeypatch.setattr(server_module, "utc_now", clock)
+    open_day(config, date=OPEN_DAY, clock=lambda: FIXED_CLOCK, now=clock)
+    send(fixture, OPEN_DAY, "ade")
+    path = config_file(
+        tmp_path, config, pick_protocol="vp1", beacon={"kind": "fake"},
+        pool_roots_dir=str(fixture["pool_roots_dir"]))
+    return World(fixture=fixture, config=config, path=path,
+                 client=TestClient(create_app(config, dev_mode=False)),
+                 clock=clock)
