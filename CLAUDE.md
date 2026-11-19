@@ -372,6 +372,9 @@ the interchangeability property is gone.
   - Trial scores from no-information submissions are uniform on [0, 1] (V2).
   - Rescoring stored raw submissions under a pinned config reproduces stored trial
     scores byte-for-byte.
+  - Each frozen store in `tests/service/fixtures/frozen-store-*` reads, rescores
+    byte-for-byte, and comes out of each reader and each build unchanged
+    (spec SC1, `docs/specs/store-compatibility.md`).
 - **Validation harnesses** (V1–V6) are the real quality gates and live in `validation/`.
   They are run deliberately, reported with numbers, and their results recorded — not run
   in CI.
@@ -396,6 +399,10 @@ If you find yourself doing any of these, raise it instead of proceeding:
 - Returning a default value when a model call or cache lookup fails.
 - Making a channel aware of another channel's output.
 - Hardcoding a number that the spec does not contain.
+- Adding a required field to a stored record type, or renaming or removing one. New
+  data goes in a new directory or an optional field (spec SC1).
+- Editing or regenerating a frozen store to make a guard test green. Add a new frozen
+  store adjacent to the earlier ones.
 - Editing `.vale.ini` or `styles/` without agreement, or ignoring a file to silence it.
 
 ---
