@@ -1176,8 +1176,8 @@ def _server_move(ctx: Context, step: str, body: dict | None) -> dict:
     its answer. The server is the one process that moves a day."""
     # The rollover module has the two time limits, and a close is the
     # long one: it encodes each new send through the provider.
-    timeout = rollover._CLOSE_TIMEOUT_SECONDS if step == "close" \
-        else rollover._STEP_TIMEOUT_SECONDS
+    timeout = rollover.CLOSE_TIMEOUT_SECONDS if step == "close" \
+        else rollover.STEP_TIMEOUT_SECONDS
     try:
         answer = ctx.call("POST", f"/api/day/{step}", body, timeout)
     except rollover.TransportError as error:
@@ -1226,10 +1226,15 @@ def _day_facts(ctx: Context, day: str) -> dict[str, object]:
             "latest": day == store.latest_day(ctx.root)}
 
 
-def _named_body(args: argparse.Namespace) -> dict | None:
-    """The body of a close or a reveal: the named day, or no body for
-    the latest day (ruling D1)."""
-    return None if args.day is None else {"day": args.day}
+def _named_body(day: str) -> dict:
+    """The body of a close or a reveal (ruling D1).
+
+    The body names the day each time, also for the latest day. The
+    question showed that day, thus the server moves the day that the
+    operator accepted and not a newer one that a rollover opened in
+    the time between.
+    """
+    return {"day": day}
 
 
 def _day_close(ctx: Context, args: argparse.Namespace) -> int:
@@ -1238,7 +1243,7 @@ def _day_close(ctx: Context, args: argparse.Namespace) -> int:
     day = _stored_day(ctx, args.day)
 
     def work() -> Done:
-        body = _server_move(ctx, "close", _named_body(args))
+        body = _server_move(ctx, "close", _named_body(day))
         facts = _counts(body, ("trial_rows", "quarantined"))
         counts = "  ".join(f"{key}={value}" for key, value in facts.items())
         return Done(value={"day": day, **body},
@@ -1255,7 +1260,7 @@ def _day_reveal(ctx: Context, args: argparse.Namespace) -> int:
     day = _stored_day(ctx, args.day)
 
     def work() -> Done:
-        body = _server_move(ctx, "reveal", _named_body(args))
+        body = _server_move(ctx, "reveal", _named_body(day))
         return Done(value=body, lines=[f"day {day} revealed"])
 
     return _locked_change(ctx, work, day=day,

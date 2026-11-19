@@ -43,8 +43,8 @@ STEPS = ("open", "close", "reveal", "wait")
 # A close encodes each new submission through the provider. The
 # provider client retries each POST for some minutes at most, thus
 # the loopback timeout is much longer than that.
-_CLOSE_TIMEOUT_SECONDS = 900.0
-_STEP_TIMEOUT_SECONDS = 120.0
+CLOSE_TIMEOUT_SECONDS = 900.0
+STEP_TIMEOUT_SECONDS = 120.0
 _MAX_MOVES = 6
 
 
@@ -134,8 +134,8 @@ def _post_with_retries(post: Post, step: str, *, retries: int,
     the caller reads the status again to learn why. A 401 comes back
     immediately too: no retry repairs a missing operator token.
     """
-    timeout = _CLOSE_TIMEOUT_SECONDS if step == "close" \
-        else _STEP_TIMEOUT_SECONDS
+    timeout = CLOSE_TIMEOUT_SECONDS if step == "close" \
+        else STEP_TIMEOUT_SECONDS
     wait = backoff_seconds
     attempt = 0
     while True:

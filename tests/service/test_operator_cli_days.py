@@ -51,8 +51,10 @@ def test_close_reveal_and_open_move_the_day_through_the_server(
     assert captured.out == f"day {OPEN_DAY} closed  trial_rows=1  " \
                            "quarantined=0\n"
     assert _status(world, OPEN_DAY) == "closed"
-    # No named day: an empty body, and the long time limit of a close.
-    assert world.sent == [("POST", "/api/day/close", None, 900.0)]
+    # The body names the day of the question, also for the latest day,
+    # and a close has the long time limit.
+    assert world.sent == [("POST", "/api/day/close", {"day": OPEN_DAY},
+                           900.0)]
     start, end = _pair(world, "day close")
     assert start.day == end.day == OPEN_DAY and start.facts == {}
     assert end.outcome == "done"
@@ -63,7 +65,8 @@ def test_close_reveal_and_open_move_the_day_through_the_server(
     assert f"Reveal {OPEN_DAY}? Players see the photo" in captured.err
     assert json.loads(captured.out) == {"day": OPEN_DAY}
     assert _status(world, OPEN_DAY) == "revealed"
-    assert world.sent[-1] == ("POST", "/api/day/reveal", None, 120.0)
+    assert world.sent[-1] == ("POST", "/api/day/reveal",
+                              {"day": OPEN_DAY}, 120.0)
     start, end = _pair(world, "day reveal")
     assert start.day == OPEN_DAY and end.outcome == "done"
 
