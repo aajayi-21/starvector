@@ -123,6 +123,11 @@ The refusal reads the consent file of the caller and nothing of the
 day's target, thus its bytes and its time are not a function of the target
 (I7).
 
+*Note, 2026-11-19 (spec F1):* the app shows the notice screen on each path
+to a player with no agreement. Two paths are different: `/about` and
+`/releases` open for each browser, because they hold fixed text alone and
+read no result (`docs/specs/site-footer.md` §3).
+
 ---
 
 ## 4. The time a trial starts

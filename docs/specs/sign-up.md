@@ -55,6 +55,11 @@ not build it, and §11 says how this contract keeps that door open.
 
 ## 3. What a player does
 
+*Note, 2026-11-19 (spec F1):* the app shows the gate screen on each path
+to a browser with no session. Two paths are different: `/about` and
+`/releases` open for each browser, because they hold fixed text alone
+(`docs/specs/site-footer.md` §3). The gate screen also has the site footer.
+
 ### 3.1 Make an account
 
 1. The gate screen shows two controls: `Sign in` and `Make an account`.
