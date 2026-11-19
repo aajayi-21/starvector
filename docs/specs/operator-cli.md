@@ -409,5 +409,79 @@ The owner accepted each proposal as it was written.
 - **A player path below the day paths.** `POST /api/day/start` is the
   start report of a player (spec R1 §4). The parity test of §9 names it
   with the paths that have no command.
-- **D4 is not built.** The console paths write no journal record. That
-  is a build item after this spec.
+- **D4** is the build item of §13.
+
+## 13. The server and the journal (D4), ruled 2026-11-19
+
+The build item that §11 D4 names. The server writes the journal of §7
+for each change that it does, thus a change from the console has the
+same record as a change from the command.
+
+### 13.1 Decisions
+
+- **D10 — the name.** The console knows the operator token and no
+  person. Ruling: the login name of a console change is the fixed name
+  `console`, with the source `operator-token`. The console gets no
+  name field.
+- **D11 — the end of a blind view.** Ruling: the rank of a day that is
+  not revealed writes an entry, with the day, the player, and the fact
+  `shows_target`. The console shows that rank after its question. A
+  read of a different type writes no entry.
+
+### 13.2 What the server writes
+
+- **Each path that changes the store** writes a `start` record before
+  the change and an `end` record after it: the day moves, the pause,
+  `Do what is due now`, the player commands, the moderation edits, the
+  deletion, the sign-out of one device, the removal of expired sign-ins,
+  and the build of the results index.
+- **The command names** are those of §3.2, thus `sv log --command`
+  finds the entries of the two tools by one name.
+- **The outcome** comes from the HTTP status: `done` for a 200,
+  `refused` for a 4xx, and `failed` for a 5xx. The error type is the
+  status and the machine cause of the answer. The words of the answer
+  stay out, and so do a recovery code, the text of a description, and
+  the note of a pause.
+- **The name with no dev mode.** The public process has no console. A
+  caller with the token that moves a day there gets the login name
+  `token-holder`, with the same source.
+
+### 13.3 One record for one move
+
+- The command of §3 writes its own two records. With a day move it
+  sends the identifier of its `start` record, as `journal_entry` in
+  the body. The server reads that record from the journal. When the
+  record is there, has no `end` record, and is for this move or for
+  `sv schedule run`, the server writes no record of its own.
+- An identifier that names no such record changes nothing: the server
+  writes its two records. A caller thus cannot stop the journal with an
+  identifier that it made.
+- `Do what is due now` in the console is one entry, `schedule run`,
+  with its steps as a fact. The steps get no entry of their own.
+- **The timer.** `service.rollover` sends no identifier. Each move of
+  the timer thus gets an entry with the name `token-holder`, and the
+  rollover record of spec BR1 §7.2 says that the timer did it.
+
+### 13.4 When a record does not go in
+
+- **No `start` record:** the server answers 500 with the cause
+  `journal`, and nothing changes.
+- **No `end` record:** the change is done and the answer does not
+  change. `sv log` shows the command with no outcome, and one line goes
+  to the server journal with the name `starvector.operator`.
+
+### 13.5 What gets no record
+
+- A caller that the gate refuses. Thus a person with no token cannot
+  fill the journal.
+- A read, but for D11.
+- A `POST` that stops before the change: a player or a day that is not
+  stored, and a body with a bad shape.
+
+### 13.6 Testing
+
+Each console path of §13.2 has its two records with the fixed name. A
+refused change holds its cause and no words. No journal file holds a
+recovery code, a description, or a note. A caller with no token and a
+read write nothing. A day move from the command has one pair of
+records, and a made identifier does not stop the server's pair.

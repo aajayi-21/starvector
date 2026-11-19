@@ -241,6 +241,8 @@ sudo sv log                          # who did what, and when
   record in `store/operator-log/`: the time, your login name, the
   command, the player or the day, and the outcome. It holds no code,
   no token, and no text that a player wrote. `sudo sv log` reads it.
+  The console writes the same journal, with the fixed name `console`
+  (spec OC1 section 13). A move of the timer shows as `token-holder`.
 - `--json` gives each answer as JSON.
 
 The module commands (`service.players`, `service.day`,
