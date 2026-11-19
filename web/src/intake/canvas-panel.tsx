@@ -2,6 +2,10 @@
  * The drawing panel shared by today and practice: the color row,
  * undo, redo, clear, the canvas sized to the window, and one hint
  * line. The screens own the document; this panel draws the controls.
+ *
+ * The panel has no box of its own. Its three parts sit in the
+ * workspace grid, so the toolbar and the canvas share their left and
+ * right edges and the side panel lines up with the canvas.
  */
 
 import {
@@ -31,60 +35,55 @@ export function CanvasPanel(props: {
   hint: string;
 }): React.JSX.Element {
   return (
-    <section className="card canvas-panel" aria-label="Sketch">
-      <div className="canvas-column">
-        <div className="toolbar">
-          <PaletteRow
-            colorIndex={props.colorIndex}
-            onPick={props.onPickColor}
-          />
-          <span className="spacer" />
-          <button
-            type="button"
-            className="btn btn-secondary btn-icon"
-            disabled={!props.canUndo}
-            onClick={props.onUndo}
-            aria-label="Undo"
-            title="Undo"
-          >
-            <ArrowCounterClockwise size={20} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-icon"
-            disabled={!props.canRedo}
-            onClick={props.onRedo}
-            aria-label="Redo"
-            title="Redo"
-          >
-            <ArrowClockwise size={20} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-icon"
-            disabled={props.doc.strokes.length === 0}
-            onClick={props.onClear}
-            aria-label="Clear the sketch"
-            title="Clear the sketch"
-          >
-            <Trash size={20} aria-hidden="true" />
-          </button>
-        </div>
-        <div>
-          <SketchCanvas
-            doc={props.doc}
-            selection={props.selection}
-            mode={props.mode}
-            colorIndex={props.colorIndex}
-            onCommitStroke={props.onCommitStroke}
-            onPickStroke={props.onPickStroke}
-            disabled={props.disabled}
-          />
-        </div>
-        <p className="hint" aria-live="polite">
-          {props.hint}
-        </p>
+    <section className="canvas-panel" aria-label="Sketch">
+      <div className="toolbar">
+        <PaletteRow colorIndex={props.colorIndex} onPick={props.onPickColor} />
+        <span className="spacer" />
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon tool"
+          disabled={!props.canUndo}
+          onClick={props.onUndo}
+          aria-label="Undo"
+          title="Undo"
+        >
+          <ArrowCounterClockwise size={20} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon tool"
+          disabled={!props.canRedo}
+          onClick={props.onRedo}
+          aria-label="Redo"
+          title="Redo"
+        >
+          <ArrowClockwise size={20} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon tool"
+          disabled={props.doc.strokes.length === 0}
+          onClick={props.onClear}
+          aria-label="Clear the sketch"
+          title="Clear the sketch"
+        >
+          <Trash size={20} aria-hidden="true" />
+        </button>
       </div>
+      <div className="canvas-holder">
+        <SketchCanvas
+          doc={props.doc}
+          selection={props.selection}
+          mode={props.mode}
+          colorIndex={props.colorIndex}
+          onCommitStroke={props.onCommitStroke}
+          onPickStroke={props.onPickStroke}
+          disabled={props.disabled}
+        />
+      </div>
+      <p className="hint canvas-hint" aria-live="polite">
+        {props.hint}
+      </p>
     </section>
   );
 }

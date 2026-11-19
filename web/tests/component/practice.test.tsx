@@ -151,7 +151,7 @@ describe("the Practice screen", () => {
       toJSON: () => ({}),
     } as DOMRect);
     drawOnCanvas(container);
-    fireEvent.click(screen.getByText("Pick strokes"));
+    fireEvent.click(screen.getByText("Pick lines"));
     // The committed stroke passes below the drag's midpoint.
     const pick = new MouseEvent("pointerdown", {
       bubbles: true,
@@ -164,7 +164,7 @@ describe("the Practice screen", () => {
       pointerType: { value: "mouse" },
     });
     fireEvent(live, pick);
-    const label = screen.getByLabelText("Name the picked strokes");
+    const label = screen.getByLabelText("Name the picked lines");
     fireEvent.change(label, { target: { value: "tower" } });
     fireEvent.click(screen.getByText("Label"));
     expect(await screen.findByText("tower")).toBeDefined();

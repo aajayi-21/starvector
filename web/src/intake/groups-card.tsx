@@ -35,8 +35,8 @@ export function GroupControls(props: {
   return (
     <>
       <p className="hint">
-        Pick the strokes of one thing and name it — “tower”, “water”. Named
-        parts are matched to details of the photo, like your words are.
+        Pick the lines of one thing and name it — “tower”, “water”. Named parts
+        are matched to details of the photo, like your words are.
       </p>
       <div>
         <button
@@ -46,16 +46,16 @@ export function GroupControls(props: {
           onClick={onToggleSelect}
           aria-pressed={picking}
         >
-          {picking ? "Done picking" : "Pick strokes"}
+          {picking ? "Done picking" : "Pick lines"}
         </button>
       </div>
       {picking ? (
         <div className="row" style={{ flexWrap: "nowrap" }}>
           <input
             className="input"
-            aria-label="Name the picked strokes"
+            aria-label="Name the picked lines"
             placeholder={
-              selectionSize === 0 ? "Pick strokes first" : "What is it?"
+              selectionSize === 0 ? "Pick lines first" : "What is it?"
             }
             value={label}
             onChange={(event) => setLabel(event.target.value)}
@@ -99,7 +99,7 @@ export function GroupControls(props: {
                 />
                 <span style={{ fontWeight: 600 }}>{group.label}</span>
                 <span className="subtle small">
-                  {count} {count === 1 ? "stroke" : "strokes"}
+                  {count} {count === 1 ? "line" : "lines"}
                 </span>
               </li>
             );

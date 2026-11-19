@@ -58,11 +58,11 @@ test("labeled strokes ride the practice record", async ({ page }) => {
   await drawStroke(page, [0.3, 0.6], [0.7, 0.4]);
   await drawStroke(page, [0.4, 0.3], [0.6, 0.7]);
   await page.getByText("Label parts of your sketch").click();
-  await page.getByRole("button", { name: "Pick strokes" }).click();
+  await page.getByRole("button", { name: "Pick lines" }).click();
   // The first stroke passes through the canvas centre.
   const [x, y] = await canvasPoint(page, [0.5, 0.5]);
   await page.mouse.click(x, y);
-  await page.getByLabel("Name the picked strokes").fill("tower");
+  await page.getByLabel("Name the picked lines").fill("tower");
   await page.getByRole("button", { name: "Label", exact: true }).click();
   await expect(page.getByText("tower", { exact: true })).toBeVisible();
   const sent = page.waitForRequest((request) =>

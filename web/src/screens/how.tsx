@@ -38,7 +38,7 @@ export function HowItWorksSteps(props: {
           <h3>Start from the code</h3>
           <p className="muted">
             {isPostClose(props.protocol)
-              ? "After the session closes, a public random number picks the photo. You describe it before anyone, us included, can know it."
+              ? "After the day closes, a public random number picks the photo. You describe it before anyone, us included, can know it."
               : "Each day a photo is picked at random and hidden behind a short code. You don't see the photo until the day closes."}
           </p>
         </div>
@@ -139,7 +139,7 @@ export function HowItWorksScreen(): React.JSX.Element {
           You can send once each day, and you can't change it after.
           {hour === null
             ? ""
-            : ` A new day starts at ${hour} UTC (${localTimeOfUtc(hour)} your time), when the last one closes and its photo is revealed.`}
+            : ` A new day starts at ${localTimeOfUtc(hour)} your time, when the last one closes and its photo is revealed.`}
         </p>
         <p>
           In <Link to="/practice">Practice</Link> you can replay past photos, up

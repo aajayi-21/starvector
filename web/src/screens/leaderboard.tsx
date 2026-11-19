@@ -169,7 +169,7 @@ function DailyBoard(props: {
               <tr>
                 <th>Player</th>
                 <th className="num">Result</th>
-                <th className="num">Hidden photo's place</th>
+                <th className="num">Place</th>
                 <th className="num">Streak</th>
               </tr>
             </thead>
@@ -237,7 +237,13 @@ function PlayerCell(props: {
         size={24}
         streak={streak}
       />
-      <span>
+      {/* The full name stays for a pointer and for assistive technology:
+          on a phone the cell shortens a long name so the numbers of the
+          row stay on the screen. */}
+      <span
+        className="player-name"
+        title={player === self ? undefined : player}
+      >
         <StreakName streak={streak}>
           {player === self ? "You" : player}
         </StreakName>

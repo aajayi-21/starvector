@@ -32,7 +32,7 @@ export function RankingsView(props: {
     <div className="card">
       <div className="eyebrow">Rankings</div>
       <div className="small">
-        trial score {trial.p.toFixed(4)} — target at position{" "}
+        Trial score {trial.p.toFixed(4)} — target at position{" "}
         {rankings.target_position} of {rankings.rankings.length} (rank{" "}
         {trial.target_rank} of {trial.decoy_count + 1} after the near-duplicate
         group exits)
@@ -42,11 +42,11 @@ export function RankingsView(props: {
           <table className="table dev-table">
             <thead>
               <tr>
-                <th>atom</th>
-                <th>matched element</th>
-                <th>weight</th>
-                <th>similarity</th>
-                <th>rarity</th>
+                <th>Atom</th>
+                <th>Matched element</th>
+                <th>Weight</th>
+                <th>Similarity</th>
+                <th>Rarity</th>
               </tr>
             </thead>
             <tbody>
@@ -69,11 +69,11 @@ export function RankingsView(props: {
             <tr>
               <th>#</th>
               <th aria-label="thumbnail" />
-              <th>image</th>
+              <th>Image</th>
               {rankings.channel_names.map((name) => (
                 <th key={name}>{name}</th>
               ))}
-              <th>fused</th>
+              <th>Fused</th>
             </tr>
           </thead>
           <tbody>

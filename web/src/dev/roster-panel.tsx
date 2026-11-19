@@ -22,6 +22,7 @@ import {
   refusedRead,
   SHOWS_TARGET,
   StatusBadge,
+  sentenceCase,
 } from "./controls";
 import { utcShort } from "./format";
 import { PlayerAccount } from "./player-account";
@@ -103,6 +104,18 @@ export function RosterPanel(props: {
     }
   };
 
+  // Closes the account panel and each view below it. It moves nothing.
+  const closePlayer = () => {
+    switchToken.current += 1;
+    setSelected(null);
+    setHistory(null);
+    setOpenedDay(null);
+    setStored(null);
+    setRankings(null);
+    setDayNote("");
+    setRankNote("");
+  };
+
   const showDay = async (row: DevHistoryDay) => {
     if (selected === null) {
       return;
@@ -172,7 +185,7 @@ export function RosterPanel(props: {
       <div className="eyebrow">Players</div>
       {players === null ? (
         <p className="subtle small" role="status">
-          loading…
+          Loading…
         </p>
       ) : noAccounts ? (
         <div className="notice" role="note">
@@ -186,14 +199,14 @@ export function RosterPanel(props: {
           <table className="table dev-table">
             <thead>
               <tr>
-                <th>player</th>
-                <th>status</th>
-                <th className="num">devices</th>
-                <th>last sign-in (UTC)</th>
-                <th className="num">sends</th>
-                <th>created (UTC)</th>
+                <th>Player</th>
+                <th>Status</th>
+                <th className="num">Devices</th>
+                <th>Last sign-in (UTC)</th>
+                <th className="num">Sends</th>
+                <th>Created (UTC)</th>
                 <th>
-                  <span className="visually-hidden">action</span>
+                  <span className="visually-hidden">Action</span>
                 </th>
               </tr>
             </thead>
@@ -262,6 +275,7 @@ export function RosterPanel(props: {
             api={api}
             player={selected}
             onChanged={() => void loadPlayers()}
+            onClose={closePlayer}
             onDeleted={(deleted) => {
               switchToken.current += 1;
               setSelected(null);
@@ -275,20 +289,20 @@ export function RosterPanel(props: {
           <div className="dev-subhead">{selected} — history</div>
           {history === null ? (
             <p className="subtle small" role="status">
-              loading…
+              Loading…
             </p>
           ) : history.days.length === 0 ? (
-            <p className="subtle small">no stored day yet</p>
+            <p className="subtle small">No stored day yet.</p>
           ) : (
             <table className="table dev-table">
               <thead>
                 <tr>
-                  <th>day</th>
-                  <th>code</th>
-                  <th>status</th>
-                  <th>sent</th>
-                  <th>score</th>
-                  <th>rank</th>
+                  <th>Day</th>
+                  <th>Code</th>
+                  <th>Status</th>
+                  <th>Sent</th>
+                  <th className="num">Score</th>
+                  <th className="num">Rank</th>
                 </tr>
               </thead>
               <tbody>
@@ -308,8 +322,8 @@ export function RosterPanel(props: {
                       </button>
                     </td>
                     <td className="dev-mono">{row.trial_code}</td>
-                    <td>{row.status}</td>
-                    <td>{row.submitted ? "sent" : "—"}</td>
+                    <td>{sentenceCase(row.status)}</td>
+                    <td>{row.submitted ? "Sent" : "—"}</td>
                     <td className="num">
                       {row.trial === null ? "—" : row.trial.p.toFixed(4)}
                     </td>
@@ -330,7 +344,7 @@ export function RosterPanel(props: {
 
       {openedDay === null ? null : stored === null ? (
         <p className="subtle small" role="status">
-          {dayNote === "" ? "loading…" : dayNote}
+          {dayNote === "" ? "Loading…" : dayNote}
         </p>
       ) : (
         <>

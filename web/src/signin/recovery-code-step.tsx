@@ -1,7 +1,7 @@
 /**
  * The recovery-code step (spec A2 §3.1 step 4, §6): the one time a
  * recovery code is on screen. The player copies it and then clicks
- * `I have my code`. Nothing else continues the flow, thus a player
+ * `I've saved my code`. Nothing else continues the flow, thus a player
  * cannot pass the code without a deliberate click.
  *
  * The code is held in component state alone. It does not go to
@@ -49,8 +49,8 @@ export function RecoveryCodeStep(props: {
         Save your recovery code
       </h2>
       <p>
-        This code is the only way back into your account if you lose your
-        password. <strong>It will not be shown again.</strong>
+        It's the only way back in if you lose your password.{" "}
+        <strong>You won't see it again.</strong>
       </p>
       <div className="recovery-code" data-testid="recovery-code">
         {code.split("-").map((group, index) => (
@@ -59,12 +59,16 @@ export function RecoveryCodeStep(props: {
           <span key={index}>{group}</span>
         ))}
       </div>
-      <div className="row">
-        <button type="button" className="btn btn-secondary" onClick={copy}>
+      <div className="stack-sm">
+        <button
+          type="button"
+          className="btn btn-secondary btn-block"
+          onClick={copy}
+        >
           <Copy size={18} aria-hidden="true" />
           Copy the code
         </button>
-        <span className="subtle small" aria-live="polite">
+        <span className="recovery-copied subtle small" aria-live="polite">
           {copied === "yes"
             ? "Copied."
             : copied === "failed"
@@ -72,18 +76,20 @@ export function RecoveryCodeStep(props: {
               : ""}
         </span>
       </div>
-      <p className="muted small">
+      <p className="hint">
         Keep it somewhere only you can read, like a password manager. It works
-        one time: when you use it, you get a new one.
+        one time, then you get a new one.
         {props.replaces === true
           ? " Any recovery code you had before has stopped working."
           : ""}
       </p>
-      <div>
-        <button type="button" className="btn btn-primary" onClick={onDone}>
-          I have my code
-        </button>
-      </div>
+      <button
+        type="button"
+        className="btn btn-primary btn-block"
+        onClick={onDone}
+      >
+        I've saved my code
+      </button>
     </section>
   );
 }

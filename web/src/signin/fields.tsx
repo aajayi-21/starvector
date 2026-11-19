@@ -1,7 +1,7 @@
 /**
  * The form pieces that the gate screen and the account screen share
  * (spec A2 §5.1): a password field with a control that shows the typed
- * password, and a rule list that follows the typed value.
+ * password, and the one helper line that follows a field's rules.
  *
  * A password field never stops a paste and sets no maximum length: the
  * server does not cut a password short, thus the screen does not
@@ -9,7 +9,13 @@
  * token.
  */
 
-import { Check, Circle, Eye, EyeSlash } from "@phosphor-icons/react";
+import {
+  Check,
+  Eye,
+  EyeSlash,
+  Info,
+  WarningCircle,
+} from "@phosphor-icons/react";
 import { useState } from "react";
 
 import type { RuleCheck } from "./rules";
@@ -24,11 +30,18 @@ export function PasswordField(props: {
   /** The id of the element that describes the field, if one does. */
   describedBy?: string;
   disabled?: boolean;
+  /**
+   * A small control at the right of the label row. It comes after the
+   * field in the document, thus Tab goes from the field to it and not
+   * through it.
+   */
+  labelAction?: React.ReactNode;
 }): React.JSX.Element {
   const [shown, setShown] = useState(false);
   const Icon = shown ? EyeSlash : Eye;
+  const hasAction = props.labelAction !== undefined;
   return (
-    <div className="field">
+    <div className={hasAction ? "field field-with-action" : "field"}>
       <label className="label" htmlFor={props.id}>
         {props.label}
       </label>
@@ -56,47 +69,83 @@ export function PasswordField(props: {
           <Icon size={20} aria-hidden="true" />
         </button>
       </div>
+      {hasAction ? (
+        <div className="field-action">{props.labelAction}</div>
+      ) : null}
     </div>
   );
 }
 
+/** A list of short rules as sentences: "Rule one. Rule two." */
+function sentences(parts: ReadonlyArray<string>): string {
+  return parts.map((part) => `${part}.`).join(" ");
+}
+
 /**
- * The rules of one field, each with its state. The state is in the
- * text too ("met" or "not met yet"), thus it does not depend on the
- * icon or its color.
+ * The rules of one field as one helper line with three states:
+ *
+ * - before the player types, the summary of the rules;
+ * - with each rule met, the summary with a check mark;
+ * - with text in the field and a rule broken, each broken rule by name.
+ *
+ * The state is in the words too (the broken rules, or "(met)"), thus
+ * it does not depend on the icon or its color. The line is a polite
+ * live region: a screen reader says it when its words change.
  */
 export function RuleList(props: {
   id: string;
   checks: ReadonlyArray<RuleCheck>;
   /** Rules the screen cannot check; the server answers for them. */
   notes?: ReadonlyArray<string>;
+  /** The line before the player types. The default lists each rule. */
+  summary?: string;
+  /**
+   * True when the field has text. The default reads the checks: a
+   * field with a met rule has text.
+   */
+  typed?: boolean;
+  /** A rule of `notes` that the server refused for the typed value. */
+  refused?: string;
 }): React.JSX.Element {
+  const summary =
+    props.summary ??
+    sentences([
+      ...props.checks.map((check) => check.label),
+      ...(props.notes ?? []),
+    ]);
+  const typed = props.typed ?? props.checks.some((check) => check.ok);
+  const broken = [
+    ...props.checks.filter((check) => !check.ok).map((check) => check.label),
+    ...(props.refused === undefined ? [] : [props.refused]),
+  ];
+  const state =
+    props.refused !== undefined || (typed && broken.length > 0)
+      ? "broken"
+      : typed
+        ? "met"
+        : "neutral";
+  const Icon =
+    state === "broken" ? WarningCircle : state === "met" ? Check : Info;
   return (
-    <ul id={props.id} className="rule-list">
-      {props.checks.map((check) => {
-        const Icon = check.ok ? Check : Circle;
-        return (
-          <li key={check.id} className={check.ok ? "rule-ok" : undefined}>
-            <Icon
-              size={16}
-              weight={check.ok ? "bold" : "regular"}
-              aria-hidden="true"
-            />
-            <span>
-              {check.label}
-              <span className="visually-hidden">
-                {check.ok ? " (met)" : " (not met yet)"}
-              </span>
-            </span>
-          </li>
-        );
-      })}
-      {(props.notes ?? []).map((note) => (
-        <li key={note}>
-          <Circle size={16} aria-hidden="true" />
-          <span>{note}</span>
-        </li>
-      ))}
-    </ul>
+    <p
+      id={props.id}
+      className={
+        state === "neutral" ? "rule-hint" : `rule-hint rule-hint-${state}`
+      }
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <Icon
+        size={16}
+        weight={state === "met" ? "bold" : "regular"}
+        aria-hidden="true"
+      />
+      <span>
+        {state === "broken" ? sentences(broken) : summary}
+        {state === "met" ? (
+          <span className="visually-hidden"> (met)</span>
+        ) : null}
+      </span>
+    </p>
   );
 }

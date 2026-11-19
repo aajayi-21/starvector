@@ -28,16 +28,32 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   const username = `e2e-${Date.now().toString(36)}`;
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Make an account" }).click();
+  await page.getByRole("button", { name: "Create an account" }).click();
   await expect(
-    page.getByRole("heading", { name: "Make an account" }),
+    page.getByRole("heading", { name: "Create an account" }),
   ).toBeVisible();
-  // The rules and the three facts of a username show before the
-  // account is made (spec A2 §4.3).
-  await expect(page.getByText("3 to 20 characters")).toBeVisible();
-  await expect(page.getByText("12 to 128 characters")).toBeVisible();
+  // The parts of a sign-up show above the card, at the first one.
+  const parts = page.getByRole("list", { name: "Creating your account" });
+  await expect(parts.locator('[aria-current="step"]')).toHaveText(
+    /Name and password/,
+  );
+  // The summary of the rules and the three facts of a username show
+  // before the account is made (spec A2 §4.3).
+  const nameHelper = page.locator("#signup-username-rules");
+  const wordHelper = page.locator("#signup-password-rules");
+  await expect(nameHelper).toHaveText(
+    "3 to 20 letters, numbers, or hyphens, starting with a letter",
+  );
+  await expect(wordHelper).toHaveText(
+    "At least 12 characters. A few unrelated words work well.",
+  );
+  await expect(page.getByText(/Everyone sees this name/)).toBeVisible();
   await expect(page.getByText(/can never be changed/)).toBeVisible();
-  const make = page.getByRole("button", { name: "Make an account" });
+  await expect(page.getByText(/Don't use your real name/)).toBeVisible();
+  const make = page.getByRole("button", {
+    name: "Create account",
+    exact: true,
+  });
   await expect(make).toBeDisabled();
   // The notice that results are public shows before the account is
   // made, and the control that makes it is described by it (spec R1
@@ -49,14 +65,27 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
     ),
   ).toBeVisible();
   await expect(
-    page.getByText("When you make an account, you agree to this."),
+    page.getByText("By creating an account, you agree to this."),
   ).toBeVisible();
   await expect(make).toHaveAccessibleDescription(/Your results are public\./);
+  await expect(make).toHaveAccessibleDescription(
+    /By creating an account, you agree to this\./,
+  );
 
+  // A broken rule shows by name in the helper line of its field.
+  await page.getByLabel("Username").fill("9");
+  await expect(nameHelper).toHaveText(
+    "Use 3 to 20 characters. Start with a letter.",
+  );
   // Typed capitals become small letters.
   await page.getByLabel("Username").fill(username.toUpperCase());
   await expect(page.getByLabel("Username")).toHaveValue(username);
+  await expect(nameHelper).toHaveText(/starting with a letter \(met\)$/);
+  await page.getByLabel("Password", { exact: true }).fill("too short");
+  await expect(wordHelper).toHaveText("Use at least 12 characters.");
+  await expect(make).toBeDisabled();
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await expect(wordHelper).toHaveText(/work well\. \(met\)$/);
   const signUpPost = page.waitForRequest(
     (request) =>
       request.method() === "POST" && request.url().endsWith("/api/signup"),
@@ -74,7 +103,10 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
     .join("-");
   expect(firstCode).toMatch(/^([A-HJKMNP-Z2-9]{4}-){5}[A-HJKMNP-Z2-9]{4}$/);
   await expect(page.getByRole("link", { name: "Today" })).toBeHidden();
-  await page.getByRole("button", { name: "I have my code" }).click();
+  await expect(parts.locator('[aria-current="step"]')).toHaveText(
+    /Recovery code/,
+  );
+  await page.getByRole("button", { name: "I've saved my code" }).click();
   await expect(
     page.getByRole("heading", { level: 1, name: new RegExp(`, ${username}$`) }),
   ).toBeVisible();
@@ -109,7 +141,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   // letters and spaces: capitals and hyphens do not count.
   await page.goto("/account");
   await page.getByRole("button", { name: "Sign out of this device" }).click();
-  await page.getByRole("button", { name: "I do not have my password" }).click();
+  await page.getByRole("button", { name: "Forgot it?" }).click();
   await page.getByLabel("Username").fill(username);
   await page
     .getByRole("textbox", { name: "Recovery code" })
@@ -123,7 +155,9 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
     .split(/\s+/)
     .join("-");
   expect(secondCode).not.toBe(firstCode);
-  await page.getByRole("button", { name: "I have my code" }).click();
+  // A recovery is not a sign-up: no parts to show.
+  await expect(parts).toHaveCount(0);
+  await page.getByRole("button", { name: "I've saved my code" }).click();
   await expect(page.getByRole("heading", { name: username })).toBeVisible();
 
   // The earlier password is dead and the new one signs in.

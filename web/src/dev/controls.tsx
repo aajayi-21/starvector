@@ -6,8 +6,13 @@
  * with no sign — the button then looks broken. Refusals show in a red
  * box with the server's own words, and long moves show that they are
  * working.
+ *
+ * The file also holds the parts that each tab builds from: the status
+ * badge, the row that opens, and the reading of a refused operator
+ * check.
  */
 
+import { CaretRight } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { DevApiError, OLDER_SERVER } from "./api";
@@ -15,6 +20,11 @@ import { DevApiError, OLDER_SERVER } from "./api";
 export function messageOf(error: unknown): string {
   return error instanceof DevApiError ? error.message : "refused";
 }
+
+/** The two causes of the constant 404, in plain words. */
+export const REFUSED_HELP =
+  "The server answered “not found”. Check the operator token, or start " +
+  "the server with --dev.";
 
 /**
  * The wording for a refused dev read. The server answers a refused
@@ -27,9 +37,43 @@ export function refusedRead(error: unknown): string {
     return OLDER_SERVER;
   }
   return error instanceof DevApiError && error.status === 404
-    ? "not found: start the server with --dev, or the operator " +
-        "token is missing or wrong"
+    ? REFUSED_HELP
     : messageOf(error);
+}
+
+/**
+ * What the last day listing says about the operator token.
+ *
+ * The day listing is the first operator read of the console, thus its
+ * answer decides if the console shows its tabs or the locked card.
+ * "locked" is the constant 404: no token, a token that does not
+ * agree, or a server with no --dev flag. "failed" is each other
+ * failure, where a new token repairs nothing.
+ */
+export type Access =
+  | { state: "connected" }
+  | { state: "locked" }
+  | { state: "failed"; message: string };
+
+/** The access that a failed day listing means. */
+export function accessOfFailure(error: unknown): Access {
+  const refused =
+    error instanceof DevApiError &&
+    error.status === 404 &&
+    error.message !== OLDER_SERVER;
+  return refused
+    ? { state: "locked" }
+    : { state: "failed", message: refusedRead(error) };
+}
+
+/** Ticks each 30 s so the "in 3 h" distances stay true. */
+export function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
 }
 
 /** The question before a ranking on an open day (spec PL1 §8). */
@@ -114,11 +158,58 @@ const STATUS_BADGE: Record<string, string> = {
   revoked: "badge-bad",
 };
 
+/** "open" → "Open": a wire value in sentence case, for a label. */
+export function sentenceCase(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function StatusBadge(props: { status: string }): React.JSX.Element {
   return (
     <span className={`badge ${STATUS_BADGE[props.status] ?? ""}`}>
-      {props.status}
+      {sentenceCase(props.status)}
     </span>
+  );
+}
+
+/**
+ * A row that opens in place: the title on the left, a short meta text
+ * and a chevron on the right, and the body below when it is open.
+ *
+ * With `open` and `onToggle` the caller holds the open flag, thus it
+ * can close the row from outside. Without them the row keeps its own.
+ */
+export function Disclosure(props: {
+  title: string;
+  meta?: string;
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  const { open, onToggle } = props;
+  const held = open !== undefined && onToggle !== undefined;
+  return (
+    <details className="row-disclosure" open={held ? open : undefined}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a summary is the native control of its details, with the keyboard built in */}
+      <summary
+        onClick={
+          held
+            ? (event) => {
+                // The caller's flag is the truth: stop the browser's
+                // own toggle and move the flag.
+                event.preventDefault();
+                onToggle(!open);
+              }
+            : undefined
+        }
+      >
+        <span>{props.title}</span>
+        <span className="row-meta">
+          {props.meta ?? ""}
+          <CaretRight className="row-chevron" size={16} aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="row-body">{props.children}</div>
+    </details>
   );
 }
 

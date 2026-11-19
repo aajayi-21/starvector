@@ -31,7 +31,7 @@ import { RevealScreen } from "./screens/reveal";
 import { TodayScreen } from "./screens/today";
 import { WelcomeScreen } from "./screens/welcome";
 import { InstallHint } from "./ui/install-hint";
-import { SeasonNote, TabBar, TopBar } from "./ui/nav";
+import { TabBar, TopBar } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
 import { OperatorCodeNotice } from "./ui/operator-code-notice";
 
@@ -55,7 +55,6 @@ function Shell(): React.JSX.Element {
       {/* On each screen, thus no signed-in device misses it (spec A2
           §6.1). */}
       <OperatorCodeNotice />
-      <SeasonNote />
       <OfflineBanner />
       <InstallHint />
       <main className="page">

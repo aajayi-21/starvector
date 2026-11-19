@@ -54,6 +54,18 @@ describe("the username rules on screen (spec A2 §4.1)", () => {
     }
   });
 
+  it("gives each rule its own words", () => {
+    expect(usernameChecks("").map((check) => check.label)).toEqual([
+      "Use 3 to 20 characters",
+      "Letters a to z, numbers, and hyphens only",
+      "Start with a letter",
+      "No hyphen at the end, and no two hyphens in a row",
+    ]);
+    expect(
+      passwordChecks("a long quiet phrase", "nova").map((check) => check.label),
+    ).toEqual(["Use at least 12 characters", "Don't include your username"]);
+  });
+
   it("folds look-alike names to one shape (§4.2)", () => {
     expect(foldedName("no-one")).toBe("noone");
     expect(foldedName("n0one")).toBe("noone");
@@ -87,6 +99,16 @@ describe("the password rules on screen (spec A2 §5.1)", () => {
       "username",
     ]);
     expect(failing(passwordChecks("a long quiet phrase", "nova"))).toEqual([]);
+  });
+
+  it("names the end of the length rule that a password can break", () => {
+    // One rule with two ends: the screen shows the label when the rule
+    // is broken, thus the label names the broken end.
+    const label = (password: string) =>
+      passwordChecks(password, "nova")[0]?.label;
+    expect(label("")).toBe("Use at least 12 characters");
+    expect(label("elevenchars")).toBe("Use at least 12 characters");
+    expect(label("x".repeat(129))).toBe("Use no more than 128 characters");
   });
 
   it("lists no username rule before a username is typed", () => {

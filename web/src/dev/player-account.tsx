@@ -1,9 +1,11 @@
 /**
  * One player's account in the console (spec BR1 §7.4, changed by spec
  * A2 §6.1 and §10.1, and by spec MD1): the picture, the description,
- * the signed-in devices, the device codes that wait, the access
- * controls — a recovery code, sign-out, revoke, and restore — the
- * moderation of the description and the picture, and the deletion.
+ * and then three groups of controls. "Help them sign in" holds the
+ * recovery code, or the restore of a revoked player. "Moderate the
+ * profile" holds the edits of the description and the picture.
+ * "Remove access" holds the sign-out, the revoke, and the deletion.
+ * The signed-in devices and the device codes that wait come below.
  *
  * The operator's recovery code is the one procedure into an account
  * that the console has. It prints one time: the store keeps its
@@ -12,6 +14,7 @@
  * with a control that stops it.
  */
 
+import { X } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DevApi } from "./api";
@@ -46,8 +49,10 @@ export function PlayerAccount(props: {
   onChanged: () => void;
   /** The account is gone: the roster drops it and says so. */
   onDeleted: (deleted: DevDeleted) => void;
+  /** Closes the panel. It changes nothing. */
+  onClose: () => void;
 }): React.JSX.Element {
-  const { api, player, onChanged, onDeleted } = props;
+  const { api, player, onChanged, onDeleted, onClose } = props;
   const [detail, setDetail] = useState<DevPlayerDetail | null>(null);
   const [note, setNote] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -122,7 +127,7 @@ export function PlayerAccount(props: {
   if (detail === null) {
     return note === "" ? (
       <p className="subtle small" role="status">
-        loading…
+        Loading…
       </p>
     ) : (
       <ErrorNote text={note} />
@@ -141,7 +146,7 @@ export function PlayerAccount(props: {
         ) : (
           <img className="dev-avatar" src={avatarUrl} alt={detail.player} />
         )}
-        <div className="dev-stack-sm">
+        <div className="dev-stack-sm dev-grow">
           <div className="dev-row dev-wrap">
             {/* The username is the one name on a board (spec A2
                 ruling 3). A label from before that spec stays in its
@@ -169,16 +174,27 @@ export function PlayerAccount(props: {
             )}
           </p>
         </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon"
+          aria-label={`Close ${player}`}
+          onClick={onClose}
+        >
+          <X size={18} aria-hidden="true" />
+        </button>
       </div>
 
-      <div className="dev-subhead">Access</div>
-      <div className="dev-row dev-wrap dev-top">
-        {active ? (
-          <>
+      <div className="dev-groups">
+        <section className="dev-group" aria-labelledby="dev-group-signin">
+          <h4 id="dev-group-signin" className="dev-group-title">
+            Help them sign in
+          </h4>
+          {active ? (
             <ConfirmAction
               label="Recovery code"
               question={`Make a recovery code for ${player}? It works only after 24 hours, and until then each signed-in device of ${player} shows a notice with a control that stops it. Their password, their own recovery code, and their devices stay as they are. Give a code only to the person the account belongs to.`}
               confirmLabel="Yes, make a recovery code"
+              variant="secondary"
               disabled={busy}
               onConfirm={() =>
                 void act(async () => ({
@@ -188,71 +204,111 @@ export function PlayerAccount(props: {
                 }))
               }
             />
+          ) : (
             <ConfirmAction
-              label="Sign out every device"
-              question={`Sign ${player} out on every device?`}
-              confirmLabel="Yes, sign out"
+              label="Restore access"
+              question={`Restore ${player}? The account is active again and you get a recovery code for them, which works only after 24 hours. No old device comes back.`}
+              confirmLabel="Yes, restore"
               variant="secondary"
-              disabled={busy || detail.sessions.length === 0}
-              onConfirm={() =>
-                void act(async () => {
-                  const answer = await api.signOutPlayer(player);
-                  return {
-                    kind: "note",
-                    text:
-                      answer.ended === 1
-                        ? "1 device is signed out."
-                        : `${answer.ended} devices are signed out.`,
-                  };
-                })
-              }
-            />
-            <ConfirmAction
-              label="Revoke access"
-              question={`Revoke ${player}? Every signed-in device stops working, and the password and each recovery code sign nobody in. Their play stays stored.`}
-              confirmLabel="Yes, revoke"
-              variant="danger"
               disabled={busy}
               onConfirm={() =>
-                void act(async () => {
-                  await api.revokePlayer(player);
-                  return {
-                    kind: "note",
-                    text: `${player} is revoked: each device, the password, and each recovery code stop working.`,
-                  };
-                })
+                void act(async () => ({
+                  kind: "code",
+                  code: await api.restorePlayer(player),
+                  restored: true,
+                }))
               }
             />
-          </>
-        ) : (
-          <ConfirmAction
-            label="Restore access"
-            question={`Restore ${player}? The account is active again and you get a recovery code for them, which works only after 24 hours. No old device comes back.`}
-            confirmLabel="Yes, restore"
-            disabled={busy}
-            onConfirm={() =>
-              void act(async () => ({
-                kind: "code",
-                code: await api.restorePlayer(player),
-                restored: true,
-              }))
-            }
+          )}
+          <p className="subtle small">
+            {active
+              ? "A player signs in with their username and password. A recovery code is for a player with no password and no signed-in device: they use it under “Forgot it?” on the sign-in page."
+              : "A revoked player cannot sign in. Restoring makes the account active and gives you a recovery code for them."}
+          </p>
+          {detail.operator_code === null ? null : (
+            <div
+              className="notice"
+              role="note"
+              data-testid="account-operator-code"
+            >
+              An operator's recovery code is live for {player}: made{" "}
+              {utcStamp(detail.operator_code.issued_at)}, works from{" "}
+              {utcStamp(detail.operator_code.usable_at)}. Their signed-in
+              devices show a notice, and the player can stop it.
+            </div>
+          )}
+        </section>
+
+        <section className="dev-group" aria-labelledby="dev-group-moderate">
+          <h4 id="dev-group-moderate" className="dev-group-title">
+            Moderate the profile
+          </h4>
+          <ModerationControls
+            api={api}
+            player={player}
+            description={detail.description}
+            hasAvatar={detail.has_avatar}
+            onSaved={async () => {
+              await load();
+            }}
           />
-        )}
+        </section>
+
+        <section className="dev-group" aria-labelledby="dev-group-remove">
+          <h4 id="dev-group-remove" className="dev-group-title">
+            Remove access
+          </h4>
+          {active ? (
+            <>
+              <ConfirmAction
+                label="Sign out every device"
+                question={`Sign ${player} out on every device?`}
+                confirmLabel="Yes, sign out"
+                variant="secondary"
+                disabled={busy || detail.sessions.length === 0}
+                onConfirm={() =>
+                  void act(async () => {
+                    const answer = await api.signOutPlayer(player);
+                    return {
+                      kind: "note",
+                      text:
+                        answer.ended === 1
+                          ? "1 device is signed out."
+                          : `${answer.ended} devices are signed out.`,
+                    };
+                  })
+                }
+              />
+              <ConfirmAction
+                label="Revoke access"
+                question={`Revoke ${player}? Every signed-in device stops working, and the password and each recovery code sign nobody in. Their play stays stored.`}
+                confirmLabel="Yes, revoke"
+                variant="danger"
+                disabled={busy}
+                onConfirm={() =>
+                  void act(async () => {
+                    await api.revokePlayer(player);
+                    return {
+                      kind: "note",
+                      text: `${player} is revoked: each device, the password, and each recovery code stop working.`,
+                    };
+                  })
+                }
+              />
+            </>
+          ) : (
+            <p className="subtle small">
+              Access is revoked: no device, password, or recovery code signs{" "}
+              {player} in.
+            </p>
+          )}
+          <DeletionControls api={api} player={player} onDeleted={onDeleted} />
+          <p className="subtle small">
+            Sign-out ends the devices and keeps the account. A revoke can be put
+            back with a restore. A deletion cannot.
+          </p>
+        </section>
       </div>
-      <p className="subtle small">
-        {active
-          ? "A player signs in with their username and password. A recovery code is for a player with no password and no signed-in device: they use it under “I do not have my password” on the sign-in page."
-          : "A revoked player cannot sign in. Restoring makes the account active and gives you a recovery code for them."}
-      </p>
-      {detail.operator_code === null ? null : (
-        <div className="notice" role="note" data-testid="account-operator-code">
-          An operator's recovery code is live for {player}: made{" "}
-          {utcStamp(detail.operator_code.issued_at)}, works from{" "}
-          {utcStamp(detail.operator_code.usable_at)}. Their signed-in devices
-          show a notice, and the player can stop it.
-        </div>
-      )}
 
       {busy ? <WorkingNote text="Working…" /> : null}
       <ErrorNote text={error} />
@@ -300,11 +356,11 @@ export function PlayerAccount(props: {
           <table className="table dev-table">
             <thead>
               <tr>
-                <th>device</th>
-                <th>signed in (UTC)</th>
-                <th>ends (UTC)</th>
+                <th>Device</th>
+                <th>Signed in (UTC)</th>
+                <th>Ends (UTC)</th>
                 <th>
-                  <span className="visually-hidden">action</span>
+                  <span className="visually-hidden">Action</span>
                 </th>
               </tr>
             </thead>
@@ -350,18 +406,6 @@ export function PlayerAccount(props: {
           .
         </p>
       )}
-
-      <ModerationControls
-        api={api}
-        player={player}
-        description={detail.description}
-        hasAvatar={detail.has_avatar}
-        onSaved={async () => {
-          await load();
-        }}
-      />
-
-      <DeletionControls api={api} player={player} onDeleted={onDeleted} />
     </section>
   );
 }
@@ -405,9 +449,8 @@ function ModerationControls(props: {
 
   return (
     <>
-      <div className="dev-subhead">Profile moderation</div>
       <label className="dev-stack-sm">
-        <span className="small">Description</span>
+        <span className="label">Description</span>
         <textarea
           className="input"
           rows={3}
@@ -445,6 +488,9 @@ function ModerationControls(props: {
         >
           Clear
         </button>
+      </div>
+      <span className="label">Picture</span>
+      <div className="dev-row dev-wrap">
         <button
           type="button"
           className="btn btn-secondary"
@@ -536,7 +582,6 @@ function DeletionControls(props: {
 
   return (
     <>
-      <div className="dev-subhead">Delete the account</div>
       {preview === null ? (
         <div className="dev-row">
           <button

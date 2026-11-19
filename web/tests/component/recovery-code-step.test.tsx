@@ -26,14 +26,20 @@ describe("the recovery-code step (spec A2 §3.1 step 4, §6)", () => {
       (group) => group.textContent,
     );
     expect(groups).toEqual(["ABCD", "EFGH", "JKMN", "PQRS", "TUVW", "XYZ2"]);
+    // The groups alone, thus a selection of the box is the code.
+    expect(shown.textContent).toBe("ABCDEFGHJKMNPQRSTUVWXYZ2");
   });
 
   it("says the code does not show again and what it is for", () => {
     render(<RecoveryCodeStep code={CODE} onDone={() => undefined} />);
-    expect(screen.getByText("It will not be shown again.")).toBeDefined();
+    // The one-time fact has the emphasis.
+    expect(screen.getByText("You won't see it again.").tagName).toBe("STRONG");
     expect(
-      screen.getByText(/the only way back into your account if you lose your/),
+      screen.getByText(/the only way back in if you lose your password/),
     ).toBeDefined();
+    expect(screen.getByText(/somewhere only you can read/).textContent).toMatch(
+      /like a password manager\. It works\s+one time, then you get a new one\.$/,
+    );
     // No earlier code to speak of at a sign-up.
     expect(screen.queryByText(/has stopped working/)).toBeNull();
   });
@@ -43,7 +49,7 @@ describe("the recovery-code step (spec A2 §3.1 step 4, §6)", () => {
     expect(screen.getByText(/had before has stopped working/)).toBeDefined();
   });
 
-  it("continues on the `I have my code` click and on nothing else", () => {
+  it("continues on the `I've saved my code` click and on nothing else", () => {
     const done = vi.fn();
     plantClipboard(() => Promise.resolve());
     render(<RecoveryCodeStep code={CODE} onDone={done} />);
@@ -51,7 +57,7 @@ describe("the recovery-code step (spec A2 §3.1 step 4, §6)", () => {
     fireEvent.keyDown(document.body, { key: "Enter" });
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(done).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "I have my code" }));
+    fireEvent.click(screen.getByRole("button", { name: "I've saved my code" }));
     expect(done).toHaveBeenCalledTimes(1);
   });
 

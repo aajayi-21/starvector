@@ -25,6 +25,18 @@ export function utcShort(iso: string | null | undefined): string {
   return stamp.endsWith(" UTC") ? stamp.slice(0, -4) : stamp;
 }
 
+/** "22:00 UTC" — the time alone, for a tile that names the day apart. */
+export function utcTime(iso: string | null | undefined): string {
+  const stamp = utcStamp(iso);
+  return stamp.endsWith(" UTC") ? stamp.slice(11) : stamp;
+}
+
+/** "2026-09-24" — the UTC date of an instant, or "—". */
+export function utcDate(iso: string | null | undefined): string {
+  const stamp = utcStamp(iso);
+  return stamp.endsWith(" UTC") ? stamp.slice(0, 10) : stamp;
+}
+
 /** "in 3 h 12 min" or "12 min ago", measured from `now` (ms). */
 export function relative(iso: string, now: number): string {
   const moment = new Date(iso).getTime();

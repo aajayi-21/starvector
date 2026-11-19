@@ -27,6 +27,38 @@ describe("the Your results screen", () => {
     expect(screen.queryByText(/not wired/)).toBeNull();
   });
 
+  it("folds the longer explanations behind one row, words unchanged", async () => {
+    renderAt("/history");
+    const summary = await screen.findByText("What these numbers mean");
+    const more = summary.closest("details") as HTMLDetailsElement;
+    expect(more.open).toBe(false);
+    expect(within(more).getByText(/steadied version/)).toBeDefined();
+    expect(
+      within(more).getByText(/rewards occasional strong hits/),
+    ).toBeDefined();
+  });
+
+  it("states numbers and no verdict in the summary", async () => {
+    renderAt("/history");
+    await screen.findByText("Skill number");
+    expect(
+      screen.getByRole("img", {
+        name: /^Skill number \d\.\d\d\. 1\.00 is chance\.$/,
+      }),
+    ).toBeDefined();
+    for (const label of [
+      "Hit number",
+      "Best result",
+      "Typical result",
+      "Streak",
+    ]) {
+      expect(screen.getByText(label)).toBeDefined();
+    }
+    expect(
+      screen.queryByText(/good|bad|well done|about the same as/i),
+    ).toBeNull();
+  });
+
   it("lists each day with a link to its results", async () => {
     const view = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
     renderAt("/history");

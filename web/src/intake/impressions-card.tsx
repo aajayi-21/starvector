@@ -27,7 +27,7 @@ export function ImpressionsCard(props: {
   };
 
   return (
-    <section className="card" aria-labelledby="words-heading">
+    <section className="words-block" aria-labelledby="words-heading">
       <div className="stack-sm">
         <h3 id="words-heading">Words</h3>
         <p className="hint" id="words-hint">
@@ -39,7 +39,7 @@ export function ImpressionsCard(props: {
           className="input"
           aria-label="Add a word"
           aria-describedby="words-hint"
-          placeholder="e.g. tall, cold, metal"
+          placeholder="tall, cold, metal"
           maxLength={200}
           value={input}
           onChange={(event) => onInputChange(event.target.value)}

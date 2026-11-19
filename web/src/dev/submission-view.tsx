@@ -28,7 +28,7 @@ export function SubmissionView(props: {
     <div className="card">
       <div className="eyebrow">Stored submission</div>
       <div className="subtle small">
-        received {stored.received_at} · trial{" "}
+        Received {stored.received_at} · trial{" "}
         <span className="dev-mono">{stored.trial_id}</span>
       </div>
       <svg
@@ -60,21 +60,21 @@ export function SubmissionView(props: {
       </svg>
       <ul className="dev-record-list">
         {record.impressions.map((text) => (
-          <li key={text}>impression: {text}</li>
+          <li key={text}>Impression: {text}</li>
         ))}
         {record.groups.map((group) => (
-          <li key={group.id}>group: {labelOf(record, group.id)}</li>
+          <li key={group.id}>Group: {labelOf(record, group.id)}</li>
         ))}
         {record.relations.map((relation, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: positional
           <li key={index}>
-            relation: {labelOf(record, relation.of[0])} {relation.relation}{" "}
+            Relation: {labelOf(record, relation.of[0])} {relation.relation}{" "}
             {labelOf(record, relation.of[1])}
           </li>
         ))}
       </ul>
       {record.pasted_text === null ? null : (
-        <div className="small">pasted: {record.pasted_text}</div>
+        <div className="small">Pasted: {record.pasted_text}</div>
       )}
     </div>
   );

@@ -420,27 +420,27 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
 describe("the operator console", () => {
   it("shows the right control for each latest-day status", async () => {
     for (const [status, label] of [
-      ["open", "Close the day (scores now)"],
-      ["closing", "Finish closing (a close stopped part way)"],
+      ["open", "Close the day"],
+      ["closing", "Finish closing"],
       ["closed", "Reveal"],
       ["revealed", "Open the next day"],
     ] as const) {
       const api = makeStubApi([dayRow({ status, submitted: false })]);
       const view = render(<DevApp api={api} />);
-      expect(await screen.findByText(label)).toBeDefined();
+      expect(await screen.findByRole("button", { name: label })).toBeDefined();
       view.unmount();
     }
   });
 
   it("offers no open while the latest day is not revealed (spec BR1 §3)", async () => {
     for (const [status, control] of [
-      ["open", "Close the day (scores now)"],
-      ["closing", "Finish closing (a close stopped part way)"],
+      ["open", "Close the day"],
+      ["closing", "Finish closing"],
       ["closed", "Reveal"],
     ] as const) {
       const api = makeStubApi([dayRow({ status, submitted: false })]);
       const view = render(<DevApp api={api} />);
-      await screen.findByText(control);
+      await screen.findByRole("button", { name: control });
       expect(screen.queryByText("Open the next day")).toBeNull();
       view.unmount();
     }
@@ -452,26 +452,31 @@ describe("the operator console", () => {
       dayRow({ day: "2026-08-12", status: "revealed", submitted: false }),
     ]);
     render(<DevApp api={api} />);
-    await screen.findByText("Close the day (scores now)");
+    await screen.findByText("Close the day");
     fireEvent.change(screen.getByLabelText("stored day"), {
       target: { value: "2026-08-12" },
     });
     await waitFor(() => {
       expect(screen.queryByText("Open the next day")).toBeNull();
-      expect(screen.queryByText("Close the day (scores now)")).toBeNull();
-      expect(screen.queryByText("Reveal")).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Close the day" }),
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Reveal" })).toBeNull();
     });
+    // A day that is done says so, and the note names the latest day.
+    expect(screen.getByText("Nothing is due for this day")).toBeDefined();
+    expect(screen.getByText(/behind the latest one/)).toBeDefined();
   });
 
   it("asks in the page before close, and posts on yes", async () => {
     const api = makeStubApi([dayRow({ status: "open", submitted: false })]);
     const native = vi.spyOn(window, "confirm");
     render(<DevApp api={api} />);
-    fireEvent.click(await screen.findByText("Close the day (scores now)"));
+    fireEvent.click(await screen.findByText("Close the day"));
     expect(screen.getByText(/Close 2026-08-12\? New sends stop/)).toBeDefined();
     fireEvent.click(screen.getByText("Cancel"));
     expect(api.lifecycle).toEqual([]);
-    fireEvent.click(screen.getByText("Close the day (scores now)"));
+    fireEvent.click(screen.getByText("Close the day"));
     fireEvent.click(screen.getByText("Yes, close and score"));
     await waitFor(() => expect(api.lifecycle).toEqual(["close"]));
     // No browser dialog: a blocked one answers "no" with no sign.
@@ -484,7 +489,7 @@ describe("the operator console", () => {
       dayRow({ day: "2026-08-12", status: "revealed", submitted: false }),
     ]);
     render(<DevApp api={api} />);
-    const toggle = await screen.findByText("Show the target");
+    const toggle = await screen.findByText("Show the day's photo");
     expect(screen.queryByAltText(/target for/)).toBeNull();
     fireEvent.click(toggle);
     expect(await screen.findByAltText("target for 2026-08-13")).toBeDefined();
@@ -494,7 +499,7 @@ describe("the operator console", () => {
     await waitFor(() => {
       expect(screen.queryByAltText(/target for/)).toBeNull();
     });
-    expect(screen.getByText("Show the target")).toBeDefined();
+    expect(screen.getByText("Show the day's photo")).toBeDefined();
   });
 
   it("loads rankings itself when closed, by hand while open", async () => {
@@ -591,7 +596,10 @@ describe("the console's async discipline", () => {
     window.localStorage.removeItem(TOKEN_KEY);
     const api = makeStubApi([dayRow({ status: "revealed" })]);
     const first = render(<DevApp api={api} />);
-    const field = await screen.findByLabelText("operator token");
+    // The server accepts the listing, thus the field waits behind the
+    // quiet control in the header.
+    fireEvent.click(await screen.findByText("Change token"));
+    const field = screen.getByLabelText("operator token");
     // A password field: the token is a credential, not a setting.
     expect(field.getAttribute("type")).toBe("password");
     fireEvent.change(field, { target: { value: "an-operator-token" } });
@@ -599,7 +607,8 @@ describe("the console's async discipline", () => {
     first.unmount();
 
     render(<DevApp api={api} />);
-    const again = await screen.findByLabelText("operator token");
+    fireEvent.click(await screen.findByText("Change token"));
+    const again = screen.getByLabelText("operator token");
     expect((again as HTMLInputElement).value).toBe("an-operator-token");
     window.localStorage.removeItem(TOKEN_KEY);
   });
@@ -616,8 +625,9 @@ describe("the console's async discipline", () => {
       getDays: () => Promise.reject(new DevApiError(404, "not found")),
     };
     render(<DevApp api={api} />);
-    const note = await screen.findByText(/start the server with --dev/);
-    expect(note.textContent).toContain("operator token is missing or wrong");
+    const card = await screen.findByTestId("console-locked");
+    expect(card.textContent).toContain("Check the token");
+    expect(card.textContent).toContain("start the server with --dev");
   });
 
   it("makes no account and no invite (spec A2 §10.1)", async () => {
@@ -697,6 +707,7 @@ describe("the console's async discipline", () => {
       expect(within(panel()).getByText(/start the server with/)).toBeDefined(),
     );
     openTab("Players");
+    fireEvent.click(screen.getByText("Change token"));
     fireEvent.blur(screen.getByLabelText("operator token"));
     await waitFor(() =>
       expect(
@@ -937,7 +948,7 @@ describe("the Automatic days tab", () => {
     render(<DevApp api={api} />);
     openTab("Automatic days");
     expect(await screen.findByText("Timer")).toBeDefined();
-    expect(screen.getByText("failed")).toBeDefined();
+    expect(screen.getByText("Failed")).toBeDefined();
     expect(
       screen.getByText("rollover failed: reveal did not complete"),
     ).toBeDefined();
@@ -1246,7 +1257,7 @@ describe("the console shows what each move did", () => {
         ),
     };
     render(<DevApp api={api} />);
-    fireEvent.click(await screen.findByText("Close the day (scores now)"));
+    fireEvent.click(await screen.findByText("Close the day"));
     fireEvent.click(screen.getByText("Yes, close and score"));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("OPENROUTER_API_KEY");
@@ -1261,7 +1272,7 @@ describe("the console shows what each move did", () => {
     const base = makeStubApi([dayRow({ status: "open" })]);
     const api: DevApi = { ...base, postClose: () => gate };
     render(<DevApp api={api} />);
-    fireEvent.click(await screen.findByText("Close the day (scores now)"));
+    fireEvent.click(await screen.findByText("Close the day"));
     fireEvent.click(screen.getByText("Yes, close and score"));
     expect(
       await screen.findByText(/Closing 2026-08-12 and scoring each send/),
@@ -1278,7 +1289,7 @@ describe("the console shows what each move did", () => {
       dayRow({ day: "2026-08-14", status: "closed" }),
     ]);
     render(<DevApp api={api} />);
-    await screen.findByText("Close the day (scores now)");
+    await screen.findByText("Close the day");
     fireEvent.change(screen.getByLabelText("stored day"), {
       target: { value: "2026-08-14" },
     });
@@ -1295,7 +1306,7 @@ describe("the console shows what each move did", () => {
       ).toBe("2026-08-14"),
     );
     // The latest day's close is not offered while an earlier day shows.
-    expect(screen.queryByText("Close the day (scores now)")).toBeNull();
+    expect(screen.queryByText("Close the day")).toBeNull();
   });
 });
 
@@ -1347,7 +1358,7 @@ describe("the Days tab's reloads", () => {
       getDays: () => Promise.reject(new DevApiError(404, "not found")),
     };
     render(<DevApp api={api} />);
-    await screen.findByText(/start the server with --dev/);
+    await screen.findByTestId("console-locked");
     expect(screen.queryByText("Open the next day")).toBeNull();
   });
 
@@ -1369,10 +1380,489 @@ describe("the Days tab's reloads", () => {
       },
     };
     render(<DevApp api={api} />);
+    fireEvent.click(screen.getByText("Change token"));
     fireEvent.blur(screen.getByLabelText("operator token"));
-    expect(await screen.findByText("status revealed")).toBeDefined();
+    await waitFor(() =>
+      expect(screen.getByTestId("day-status").textContent).toBe("Revealed"),
+    );
     releaseFirst({ days: [dayRow({ status: "closed" })] });
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(screen.getByText("status revealed")).toBeDefined();
+    expect(screen.getByTestId("day-status").textContent).toBe("Revealed");
+  });
+});
+
+// ── the console polish: the locked card, the stages, the next step ──
+
+describe("the locked console", () => {
+  afterEach(() => {
+    window.localStorage.removeItem(TOKEN_KEY);
+  });
+
+  const refused = () => Promise.reject(new DevApiError(404, "not found"));
+
+  it("shows one locked card and no tab while the server refuses the token", async () => {
+    const base = makeStubApi([dayRow({ status: "open" })]);
+    const api: DevApi = { ...base, getDays: refused };
+    render(<DevApp api={api} />);
+    const card = await screen.findByTestId("console-locked");
+    expect(
+      within(card).getByRole("heading", { name: "Enter the operator token" }),
+    ).toBeDefined();
+    const field = within(card).getByLabelText("operator token");
+    expect(field.getAttribute("type")).toBe("password");
+    expect(within(card).getByText("Operator token")).toBeDefined();
+    expect(within(card).getByRole("button", { name: "Unlock" })).toBeDefined();
+    // The plain words, with the two causes, and not the raw line.
+    expect(card.textContent).toContain(
+      "The server answered “not found”. Check the token, or start the server with --dev.",
+    );
+    expect(screen.queryByText(/^not found:/)).toBeNull();
+    // No tab and no skeleton stand beside the card.
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+    expect(screen.queryByText("······")).toBeNull();
+    expect(screen.queryByText(/behind the latest one/)).toBeNull();
+    expect(screen.queryByText(/^loading/i)).toBeNull();
+    expect(screen.queryByText("Change token")).toBeNull();
+    expect(screen.getByTestId("console-connection").textContent).toBe("Locked");
+    // Before a try, the help is a plain line and not an alert.
+    expect(within(card).queryByRole("alert")).toBeNull();
+  });
+
+  it("unlocks with the button or Enter, and then says Connected", async () => {
+    let accepted = false;
+    let listings = 0;
+    const base = makeStubApi([dayRow({ status: "open" })]);
+    const api: DevApi = {
+      ...base,
+      getDays: () => {
+        listings += 1;
+        return accepted ? base.getDays() : refused();
+      },
+    };
+    render(<DevApp api={api} />);
+    const card = await screen.findByTestId("console-locked");
+    const field = within(card).getByLabelText("operator token");
+    fireEvent.change(field, { target: { value: "a-wrong-token" } });
+    const before = listings;
+    fireEvent.click(within(card).getByRole("button", { name: "Unlock" }));
+    // A refused try reads the listing again and says so in a red box.
+    const alert = await within(card).findByRole("alert");
+    expect(alert.textContent).toContain("did not open the console");
+    expect(listings).toBeGreaterThan(before);
+
+    accepted = true;
+    fireEvent.change(field, { target: { value: "the-operator-token" } });
+    const form = field.closest("form");
+    if (form === null) {
+      throw new Error("the token field has no form");
+    }
+    // Enter in the field submits the form.
+    fireEvent.submit(form);
+    expect(await screen.findByRole("tab", { name: "Days" })).toBeDefined();
+    expect(screen.queryByTestId("console-locked")).toBeNull();
+    expect(screen.getByTestId("console-connection").textContent).toBe(
+      "Connected",
+    );
+    expect(screen.getByText("Change token")).toBeDefined();
+    // The storage key is the one from before the polish.
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBe("the-operator-token");
+    expect(
+      await screen.findByRole("button", { name: "Close the day" }),
+    ).toBeDefined();
+  });
+
+  it("locks again when a changed token is refused", async () => {
+    let accepted = true;
+    const base = makeStubApi([dayRow({ status: "open" })]);
+    const api: DevApi = {
+      ...base,
+      getDays: () => (accepted ? base.getDays() : refused()),
+    };
+    render(<DevApp api={api} />);
+    fireEvent.click(await screen.findByText("Change token"));
+    accepted = false;
+    const field = screen.getByLabelText("operator token");
+    fireEvent.change(field, { target: { value: "a-wrong-token" } });
+    fireEvent.blur(field);
+    const card = await screen.findByTestId("console-locked");
+    expect(within(card).getByRole("alert").textContent).toContain(
+      "did not open the console",
+    );
+    expect(screen.queryByRole("tab")).toBeNull();
+  });
+
+  it("keeps the tabs for a failure that no token repairs", async () => {
+    const base = makeStubApi([dayRow({ status: "open" })]);
+    const api: DevApi = {
+      ...base,
+      getDays: () =>
+        Promise.reject(new DevApiError(0, "the server did not answer")),
+    };
+    render(<DevApp api={api} />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("the server did not answer");
+    expect(screen.queryByTestId("console-locked")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Days" })).toBeDefined();
+    expect(screen.getByTestId("console-connection").textContent).toBe(
+      "Not connected",
+    );
+  });
+});
+
+describe("the day's stage track", () => {
+  /** Each stage of the shown day as [stage, state], in sequence. */
+  function stages(): Array<[string | null, string | null]> {
+    return Array.from(
+      document.querySelectorAll(".dev-track [data-stage]"),
+      (item) => [
+        item.getAttribute("data-stage"),
+        item.getAttribute("data-state"),
+      ],
+    );
+  }
+
+  it("shows three stages for a commit-v1 day: no pick after the close", async () => {
+    render(
+      <DevApp
+        api={makeStubApi([dayRow({ status: "open", submitted: false })])}
+      />,
+    );
+    const track = await screen.findByRole("list", { name: "Day stages" });
+    expect(stages()).toEqual([
+      ["opened", "done"],
+      ["close", "current"],
+      ["reveal", "pending"],
+    ]);
+    expect(within(track).queryByText(/Pick photo/)).toBeNull();
+    expect(within(track).getByText(/Close and score/)).toBeDefined();
+    // The stage that the next move completes is the current step.
+    expect(
+      track.querySelector('[aria-current="step"]')?.getAttribute("data-stage"),
+    ).toBe("close");
+    expect(screen.getByText(/picked its photo when it opened/)).toBeDefined();
+  });
+
+  it("adds the pick stage for a vp1 day, which has no photo before the close", async () => {
+    // The record of a vp1 day holds no target and no commitment until
+    // the close (spec VP1 §6).
+    render(
+      <DevApp
+        api={makeStubApi([
+          dayRow({
+            status: "open",
+            submitted: false,
+            target_id: null,
+            commitment: null,
+          }),
+        ])}
+      />,
+    );
+    const track = await screen.findByRole("list", { name: "Day stages" });
+    expect(stages()).toEqual([
+      ["opened", "done"],
+      ["close", "current"],
+      ["pick", "pending"],
+      ["reveal", "pending"],
+    ]);
+    expect(within(track).getByText(/Pick photo/)).toBeDefined();
+    expect(
+      screen.getByText(/A public random number picks this day's photo/),
+    ).toBeDefined();
+    // No photo exists, thus the row does not say that one is hidden,
+    // and opening it asks the server for no image.
+    expect(screen.getByText("Not picked yet")).toBeDefined();
+    expect(screen.queryByText("Hidden so you can stay blind")).toBeNull();
+    fireEvent.click(screen.getByText("Show the day's photo"));
+    expect(await screen.findByText(/has no photo yet/)).toBeDefined();
+    expect(document.querySelector("img.dev-target")).toBeNull();
+  });
+
+  it("marks the pick and the close done on a closed vp1 day", async () => {
+    render(
+      <DevApp
+        api={makeStubApi([
+          dayRow({ status: "closed", submitted: false, commitment: null }),
+        ])}
+      />,
+    );
+    await screen.findByRole("list", { name: "Day stages" });
+    expect(stages()).toEqual([
+      ["opened", "done"],
+      ["close", "done"],
+      ["pick", "done"],
+      ["reveal", "current"],
+    ]);
+  });
+
+  it("marks each stage done on a revealed commit-v1 day", async () => {
+    render(
+      <DevApp
+        api={makeStubApi([dayRow({ status: "revealed", submitted: false })])}
+      />,
+    );
+    await screen.findByRole("list", { name: "Day stages" });
+    expect(stages()).toEqual([
+      ["opened", "done"],
+      ["close", "done"],
+      ["reveal", "done"],
+    ]);
+  });
+
+  it("keeps the photo out of the page until the operator asks", async () => {
+    const api = makeStubApi([dayRow({ status: "open", submitted: false })]);
+    render(<DevApp api={api} />);
+    await screen.findByText("Show the day's photo");
+    expect(screen.getByText("Hidden so you can stay blind")).toBeDefined();
+    // Neither the image nor the target identifier is in the page.
+    expect(document.querySelector("img.dev-target")).toBeNull();
+    expect(document.body.textContent).not.toContain("t".repeat(64));
+    fireEvent.click(screen.getByText("Show the day's photo"));
+    expect(await screen.findByAltText("target for 2026-08-12")).toBeDefined();
+    fireEvent.click(screen.getByText("Hide the day's photo"));
+    expect(document.querySelector("img.dev-target")).toBeNull();
+  });
+});
+
+describe("the day's numbers and its one next step", () => {
+  /** The value of the tile with this label. */
+  function tile(label: string): string | null | undefined {
+    return screen
+      .getByText(label, { selector: ".tile-label" })
+      .parentElement?.querySelector(".tile-value")?.textContent;
+  }
+
+  it("shows the sends, the close, the photos, and the automatic days", async () => {
+    render(<DevApp api={makeStubApi([dayRow({ status: "open" })])} />);
+    await screen.findByRole("list", { name: "Day stages" });
+    await waitFor(() => expect(tile("Automatic days")).toBe("On"));
+    await waitFor(() => expect(tile("Photos in set")).toBe("40"));
+    expect(tile("Sends")).toBe("1");
+    // The fixture's close instant is in August, before this clock.
+    expect(tile("Closes in")).toBe("Due now");
+  });
+
+  it("shows a pause from the Automatic days tab on the Days tab", async () => {
+    render(<DevApp api={makeStubApi([dayRow({ status: "open" })])} />);
+    openTab("Automatic days");
+    fireEvent.click(await screen.findByText("Pause automatic days"));
+    await screen.findByText("Automatic days are paused");
+    openTab("Days");
+    expect(tile("Automatic days")).toBe("Paused");
+    expect(
+      screen.getByText(/Automatic days are paused, so the schedule does not/),
+    ).toBeDefined();
+  });
+
+  it("offers the close as an outlined danger button, with what it does", async () => {
+    render(
+      <DevApp
+        api={makeStubApi([dayRow({ status: "open", submitted: false })])}
+      />,
+    );
+    const close = await screen.findByRole("button", { name: "Close the day" });
+    expect(close.className).toContain("btn-danger");
+    expect(close.className).not.toContain("btn-primary");
+    expect(screen.getByText("Next step: close the day")).toBeDefined();
+    expect(
+      screen.getByText(
+        /stops new sends and scores everyone\. It can't be reopened\./,
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText("These controls act on the latest day."),
+    ).toBeDefined();
+    // The yes of an irreversible move is the solid red button.
+    fireEvent.click(close);
+    expect(screen.getByText("Yes, close and score").className).toContain(
+      "btn-danger-solid",
+    );
+  });
+
+  it("offers the reveal and the part-way close as danger buttons too", async () => {
+    for (const [status, name] of [
+      ["closed", "Reveal"],
+      ["closing", "Finish closing"],
+    ] as const) {
+      const view = render(
+        <DevApp api={makeStubApi([dayRow({ status, submitted: false })])} />,
+      );
+      const button = await screen.findByRole("button", { name });
+      expect(button.className).toContain("btn-danger");
+      expect(button.className).not.toContain("btn-primary");
+      view.unmount();
+    }
+  });
+
+  it("says nothing is due while the schedule waits for the close", async () => {
+    const base = makeStubApi([dayRow({ status: "open", submitted: false })]);
+    const api: DevApi = {
+      ...base,
+      getDay: async (day) => ({
+        ...(await base.getDay(day)),
+        closes_at: "2999-01-01T22:00:00+00:00",
+      }),
+    };
+    render(<DevApp api={api} />);
+    expect(await screen.findByText("Nothing is due yet")).toBeDefined();
+    expect(
+      screen.getByText(
+        /The schedule closes this day by itself at 2999-01-01 22:00 UTC/,
+      ),
+    ).toBeDefined();
+    // The close by hand stays, with its confirmation.
+    expect(screen.getByRole("button", { name: "Close the day" })).toBeDefined();
+  });
+
+  it("keeps the record's raw facts in a row that opens", async () => {
+    render(<DevApp api={makeStubApi([dayRow({ status: "open" })])} />);
+    const row = (await screen.findByText("Technical details")).closest(
+      "details",
+    );
+    if (row === null) {
+      throw new Error("the technical details are not a row that opens");
+    }
+    expect(row.open).toBe(false);
+    expect(within(row).getByText("c".repeat(64))).toBeDefined();
+    expect(within(row).getByText("commit-v1")).toBeDefined();
+    expect(within(row).getByText("9".repeat(16))).toBeDefined();
+    expect(screen.getByText("How a day runs")).toBeDefined();
+    // The duplicate of the status badge is gone.
+    expect(screen.queryByText(/^status /)).toBeNull();
+    expect(screen.getByTestId("day-status").textContent).toBe("Open");
+    expect(screen.getByText("Latest day")).toBeDefined();
+  });
+});
+
+describe("the Automatic days tab after the polish", () => {
+  it("lists the next run one time, with the due steps as one sentence", async () => {
+    const base = makeStubApi([dayRow({})]);
+    const api: DevApi = {
+      ...base,
+      getSchedule: () =>
+        Promise.resolve(
+          scheduleFixture({
+            due_now: {
+              at: "2026-08-12T23:00:00+00:00",
+              steps: ["close", "reveal", "open"],
+              opens: "2026-08-13",
+            },
+          }),
+        ),
+    };
+    render(<DevApp api={api} />);
+    openTab("Automatic days");
+    await screen.findByText("Automatic days are on");
+    // One list: the steps of the next run. The due steps are a sentence.
+    expect(document.querySelectorAll("#dev-panel-schedule ol")).toHaveLength(1);
+    expect(screen.getAllByText("Close 2026-08-12 and score it")).toHaveLength(
+      1,
+    );
+    expect(
+      screen.getByText(
+        "Close 2026-08-12 and score it, then reveal 2026-08-12, then open 2026-08-13.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        "Does what the timer would do at this moment. The pause does not stop it.",
+      ),
+    ).toBeDefined();
+    const run = screen.getByRole("button", { name: "Do what is due now" });
+    expect(run.className).toContain("btn-secondary");
+  });
+
+  it("keeps the timer details in a row that opens", async () => {
+    render(<DevApp api={makeStubApi([dayRow({})])} />);
+    openTab("Automatic days");
+    const row = (await screen.findByText("Timer details")).closest("details");
+    if (row === null) {
+      throw new Error("the timer details are not a row that opens");
+    }
+    expect(row.open).toBe(false);
+    expect(within(row).getByText(/systemctl list-timers/)).toBeDefined();
+    expect(row.textContent).toContain("2026-08-12 12:00 UTC");
+  });
+});
+
+describe("the Players tab after the polish", () => {
+  async function openAde(api: DevApi): Promise<void> {
+    render(<DevApp api={api} />);
+    openTab("Players");
+    fireEvent.click(await screen.findByRole("button", { name: "Manage ade" }));
+    await screen.findByText("Firefox on Linux");
+  }
+
+  /** The section of the account panel with this heading. */
+  function group(name: string): HTMLElement {
+    const section = screen.getByRole("heading", { name }).closest("section");
+    if (section === null) {
+      throw new Error(`no group ${name}`);
+    }
+    return section;
+  }
+
+  it("writes the roster headers in sentence case", async () => {
+    render(<DevApp api={makeStubApi([dayRow({})])} />);
+    openTab("Players");
+    await screen.findByRole("button", { name: "Manage ade" });
+    const roster = document.querySelector("#roster-panel table");
+    expect(
+      Array.from(roster?.querySelectorAll("th") ?? [], (th) => th.textContent),
+    ).toEqual([
+      "Player",
+      "Status",
+      "Devices",
+      "Last sign-in (UTC)",
+      "Sends",
+      "Created (UTC)",
+      "Action",
+    ]);
+  });
+
+  it("puts each account control in its group", async () => {
+    await openAde(makeStubApi([dayRow({})]));
+    const help = group("Help them sign in");
+    const code = within(help).getByRole("button", { name: "Recovery code" });
+    expect(code.className).toContain("btn-secondary");
+    expect(code.className).not.toContain("btn-primary");
+
+    const moderate = group("Moderate the profile");
+    for (const name of ["Save", "Clear", "Replace picture", "Remove picture"]) {
+      expect(within(moderate).getByRole("button", { name })).toBeDefined();
+    }
+    expect(
+      within(moderate).getByTestId("moderation-description"),
+    ).toBeDefined();
+
+    const remove = group("Remove access");
+    expect(
+      within(remove).getByRole("button", { name: "Sign out every device" })
+        .className,
+    ).toContain("btn-secondary");
+    for (const name of ["Revoke access", "Delete account"]) {
+      const button = within(remove).getByRole("button", { name });
+      expect(button.className).toContain("btn-danger");
+      expect(button.className).not.toContain("btn-danger-solid");
+    }
+    // The devices table stays below the groups.
+    expect(screen.getByText("Devices signed in · 1")).toBeDefined();
+  });
+
+  it("closes the account panel and moves nothing", async () => {
+    const api = makeStubApi([dayRow({})]);
+    await openAde(api);
+    const before = [...api.calls];
+    fireEvent.click(screen.getByRole("button", { name: "Close ade" }));
+    expect(
+      screen.queryByRole("heading", { name: "Help them sign in" }),
+    ).toBeNull();
+    expect(screen.queryByText("ade — history")).toBeNull();
+    expect(api.calls).toEqual(before);
+    // The roster stays, and the panel opens again.
+    fireEvent.click(screen.getByRole("button", { name: "Manage ade" }));
+    expect(
+      await screen.findByRole("heading", { name: "Help them sign in" }),
+    ).toBeDefined();
   });
 });

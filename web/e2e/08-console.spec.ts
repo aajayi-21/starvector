@@ -10,9 +10,16 @@ test("the console reads players, devices, and the results database", async ({
   page,
 }) => {
   await page.goto("/dev.html");
+  // With no token the server refuses the day listing, and the console
+  // shows the locked card alone: no tab stands beside it.
+  await expect(
+    page.getByRole("heading", { name: "Enter the operator token" }),
+  ).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(0);
   const token = page.getByLabel("operator token");
   await token.fill(OPERATOR_TOKEN);
-  await token.blur();
+  await page.getByRole("button", { name: "Unlock" }).click();
+  await expect(page.getByTestId("console-connection")).toHaveText("Connected");
   await expect(page.getByLabel("stored day")).toBeVisible();
 
   await page.getByRole("tab", { name: "Players" }).click();
@@ -59,9 +66,7 @@ test("the console closes and reveals the day by hand", async ({ page }) => {
   // then close and reveal it from the Days tab.
   await page.getByRole("button", { name: "Open the next day" }).click();
   await expect(page.getByText(/^Opened \d{4}-\d{2}-\d{2}/)).toBeVisible();
-  await page
-    .getByRole("button", { name: "Close the day (scores now)" })
-    .click();
+  await page.getByRole("button", { name: "Close the day" }).click();
   await page.getByRole("button", { name: "Yes, close and score" }).click();
   await expect(page.getByText(/^Closed .*scored\.$/)).toBeVisible();
   await page.getByRole("button", { name: "Reveal", exact: true }).click();
@@ -69,7 +74,7 @@ test("the console closes and reveals the day by hand", async ({ page }) => {
   await expect(
     page.getByText(/^Revealed \d{4}-\d{2}-\d{2}\. Players/),
   ).toBeVisible();
-  await expect(page.getByText("status revealed")).toBeVisible();
+  await expect(page.getByTestId("day-status")).toHaveText("Revealed");
 });
 
 test("the console does what is due and the day moves", async ({ page }) => {
@@ -89,5 +94,5 @@ test("the console does what is due and the day moves", async ({ page }) => {
   await expect(page.getByText("Nothing is due now.")).toBeVisible();
 
   await page.getByRole("tab", { name: "Days", exact: true }).click();
-  await expect(page.getByText("status open")).toBeVisible();
+  await expect(page.getByTestId("day-status")).toHaveText("Open");
 });

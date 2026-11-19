@@ -102,10 +102,10 @@ test("a browser with no session meets the gate screen", async ({ browser }) => {
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await expect(page.getByLabel("Username")).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "I do not have my password" }),
-  ).toBeVisible();
-  await expect(page.getByLabel("Signed in on another device?")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Forgot it?" })).toBeVisible();
+  // The device code folds into a row of the sign-in card.
+  await page.getByText("Use a code from another device").click();
+  await expect(page.getByLabel("Device code")).toBeVisible();
   await expect(page.getByText(/invite/i)).toHaveCount(0);
   // The landing replaces the app rather than sitting beside it.
   await expect(page.getByRole("link", { name: "Today" })).toBeHidden();

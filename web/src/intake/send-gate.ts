@@ -21,7 +21,7 @@ export function sendBlock(
 export function sendBlockHint(block: SendBlock, minStrokes: number): string {
   switch (block) {
     case "too-few-strokes":
-      return `A sketch needs at least ${minStrokes} strokes. Add another, or clear it and use words only.`;
+      return `A sketch needs at least ${minStrokes} lines. Add another, or clear it and use words only.`;
     case "empty":
       return "Draw something or add a word first.";
     case null:

@@ -18,7 +18,7 @@ beforeEach(() => {
 
 const HEADING = "Before you play";
 const REVIEW = "Review and send";
-const SEND = "Send today's session";
+const SEND = "Send my sketch";
 
 /** The mock with a count of the consent and the start calls. */
 function world(
@@ -214,7 +214,7 @@ describe("a send refused for the notice (spec R1 §3.3)", () => {
         "Your unsent sketch and words are still saved on this device.",
       ),
     ).toBeDefined();
-    expect(screen.queryByText(/you're in for today/)).toBeNull();
+    expect(screen.queryByText(/you're in for today/i)).toBeNull();
     const saved = window.localStorage.getItem(`sv:draft:${HARNESS_TODAY}`);
     expect(JSON.parse(saved as string).impressions).toEqual(["cold"]);
 
@@ -225,7 +225,7 @@ describe("a send refused for the notice (spec R1 §3.3)", () => {
     expect(consents).toEqual([NOTICE_VERSION]);
     fireEvent.click(screen.getByText(REVIEW));
     fireEvent.click(await screen.findByText(SEND));
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/you're in for today/i);
     expect(sends).toEqual([["cold"], ["cold"]]);
     // One start for the page load, with two visits of the screen.
     expect(count.starts).toBe(1);
@@ -246,7 +246,7 @@ describe("a send refused for the notice (spec R1 §3.3)", () => {
     expect(sends).toEqual([["cold"]]);
     // Nothing was sent, the word stays, and the review step is closed.
     expect(screen.getByLabelText("Remove cold")).toBeDefined();
-    expect(screen.queryByText(/you're in for today/)).toBeNull();
+    expect(screen.queryByText(/you're in for today/i)).toBeNull();
     expect(screen.queryByText(SEND)).toBeNull();
     expect((screen.getByText(REVIEW) as HTMLButtonElement).disabled).toBe(
       false,

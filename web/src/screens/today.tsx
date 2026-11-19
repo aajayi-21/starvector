@@ -1,9 +1,14 @@
 /**
- * Today's session (mock 1a, spec W1 B6; layout and copy per spec
+ * Today's sketch (mock 1a, spec W1 B6; layout and copy per spec
  * BR1 §6). The eye goes to two places: the canvas, and the one Send
  * button. Words sit beside the canvas; labeling parts and notes are
  * optional and fold away. Views: no day, open, sent, closing or
  * closed, and revealed (hand-off to the results screen).
+ *
+ * One grid holds the header, the toolbar, the canvas, and the side
+ * panel, so they share edges. The send bar ends the side panel on a
+ * wide screen and is pinned over the tab bar on a phone, so the one
+ * action is always in reach.
  *
  * The send is a mutation with an in-flight lock, behind a review step
  * (spec PL1 §8); drafts stay in localStorage as disposable caches (W1
@@ -16,7 +21,14 @@
  * screen (spec R1 §3.3).
  */
 
-import { CheckCircle } from "@phosphor-icons/react";
+import {
+  CaretRight,
+  Check,
+  CheckCircle,
+  Image as ImageIcon,
+  Lock,
+  Shuffle,
+} from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -33,6 +45,7 @@ import {
   findEarlierDraft,
   hasContent,
   readDraft,
+  readSent,
   removeEarlierDrafts,
   removeStorage,
   sentKey,
@@ -41,6 +54,7 @@ import {
 import { GroupControls } from "../intake/groups-card";
 import { ImpressionsCard } from "../intake/impressions-card";
 import { sendBlock, sendBlockHint } from "../intake/send-gate";
+import { ReplayCanvas } from "../sketch/canvas";
 import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
   addRelation,
@@ -59,8 +73,13 @@ import {
   undo,
 } from "../sketch/core";
 import { CodeCells } from "../ui/code-cells";
-import { ClosesIn, ClosesInBadge } from "../ui/countdown";
-import { formatCloseMoment, formatDay } from "../ui/format";
+import { useRemaining } from "../ui/countdown";
+import {
+  formatCloseMoment,
+  formatDay,
+  formatLocalClock,
+  formatRemaining,
+} from "../ui/format";
 import { isPostClose } from "../ui/pick-copy";
 
 const DRAFT_DEBOUNCE_MS = 500;
@@ -112,14 +131,14 @@ export function TodayScreen(): React.JSX.Element {
   if (day.isPending) {
     return (
       <p className="subtle" aria-busy="true">
-        Loading today's session…
+        Loading today…
       </p>
     );
   }
   if (day.isError || day.data === undefined) {
     if (!isRefusal(day.error)) {
       return (
-        <MessageCard title="Today's session">
+        <MessageCard title="Today">
           <div className="notice notice-bad" role="alert">
             {friendlyMessage(day.error)}
           </div>
@@ -127,7 +146,7 @@ export function TodayScreen(): React.JSX.Element {
       );
     }
     return (
-      <MessageCard title="No session is open right now">
+      <MessageCard title="No day is open right now">
         <p className="muted">
           The next day starts soon. Meanwhile, you can practice on a past photo.
         </p>
@@ -144,12 +163,12 @@ export function TodayScreen(): React.JSX.Element {
     return <Navigate to="/reveal" />;
   }
   if (view.submitted) {
-    return <SentView day={view.day} closesAt={view.closes_at} />;
+    return <SentView view={view} />;
   }
   if (view.status === "closing" || view.status === "closed") {
     const unsent = readDraft(view.day);
     return (
-      <MessageCard title="Today's session has closed">
+      <MessageCard title="Today has closed">
         <p className="muted">
           Results are being worked out. The photo appears here in a few minutes,
           and this page updates by itself.
@@ -166,30 +185,120 @@ export function TodayScreen(): React.JSX.Element {
   return <OpenWorkspace view={view} />;
 }
 
-function SentView(props: {
-  day: string;
-  closesAt?: string | null | undefined;
-}): React.JSX.Element {
+/**
+ * The line of a day: its date, and the countdown to the close while
+ * the close time is known.
+ */
+function dayLine(day: DayView, remaining: number | null): string {
+  if (remaining !== null && typeof day.closes_at === "string") {
+    return `${formatDay(day.day)} · closes in ${formatRemaining(remaining)} (${formatLocalClock(day.closes_at)})`;
+  }
+  const close = formatCloseMoment(day.closes_at);
+  return close === null
+    ? formatDay(day.day)
+    : `${formatDay(day.day)} · ${close}`;
+}
+
+/**
+ * After the send: what this device sent, when the photo is revealed,
+ * and the steps between. The sketch and the words are the player's
+ * own, read from this device, and no score is in them (I7).
+ */
+function SentView(props: { view: DayView }): React.JSX.Element {
+  const { view } = props;
+  const remaining = useRemaining(view.closes_at);
+  const [record] = useState(() => readSent(view.day));
+  const postClose = isPostClose(view.protocol);
   return (
     <div className="page-narrow" style={{ margin: "0 auto" }}>
       <section className="card card-hero" aria-labelledby="sent-heading">
         <div className="row" style={{ color: "var(--good)" }}>
           <CheckCircle size={32} weight="fill" aria-hidden="true" />
           <h2 id="sent-heading" style={{ color: "var(--text)" }}>
-            Sent — you're in for today
+            Sent. You're in for today
           </h2>
         </div>
-        <p className="muted">
-          Your sketch is locked in for the session of {formatDay(props.day)}.
-          The photo is revealed when the day closes
-          <ClosesIn closesAt={props.closesAt} prefix=" — in" />.
-        </p>
+
+        {record === null ? null : (
+          <div className="sent-summary">
+            {record.canvas_strokes.length === 0 ? null : (
+              <div className="sent-thumb" aria-hidden="true">
+                <ReplayCanvas strokes={record.canvas_strokes} />
+              </div>
+            )}
+            <div className="stack-sm">
+              <span className="subtle small">
+                What you sent for {view.trial_code}
+              </span>
+              {record.impressions.length === 0 ? null : (
+                <ul className="chips" aria-label="Your words">
+                  {record.impressions.map((word, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
+                    <li key={`${word}-${index}`} className="badge chip">
+                      {word}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {remaining === null || typeof view.closes_at !== "string" ? (
+          <p className="muted">The photo is revealed when the day closes.</p>
+        ) : (
+          <div className="tile">
+            <span className="tile-label">The photo is revealed at</span>
+            <span className="tile-value">
+              {formatLocalClock(view.closes_at)}{" "}
+              <span className="subtle small" style={{ fontWeight: 400 }}>
+                in {formatRemaining(remaining)}
+              </span>
+            </span>
+          </div>
+        )}
+
+        <ol className="step-list" aria-label="What happens next">
+          <li className="step-item is-done">
+            <span className="step-icon">
+              <Check size={16} weight="bold" aria-hidden="true" />
+            </span>
+            <span className="step-text">
+              Your sketch is locked in for {formatDay(view.day)}
+            </span>
+          </li>
+          <li className="step-item is-pending">
+            <span className="step-icon">
+              <Lock size={16} aria-hidden="true" />
+            </span>
+            <span className="step-text">The day closes for everyone</span>
+          </li>
+          {/* Only a day with the pick after the close has this step: on
+              an earlier day the photo was picked before the day opened. */}
+          {postClose ? (
+            <li className="step-item is-pending">
+              <span className="step-icon">
+                <Shuffle size={16} aria-hidden="true" />
+              </span>
+              <span className="step-text">
+                A public random number picks the photo
+              </span>
+            </li>
+          ) : null}
+          <li className="step-item is-pending">
+            <span className="step-icon">
+              <ImageIcon size={16} aria-hidden="true" />
+            </span>
+            <span className="step-text">You see the photo and your result</span>
+          </li>
+        </ol>
+
         <div className="row">
-          <Link to="/" className="btn btn-primary">
-            Back to home
-          </Link>
           <Link to="/practice" className="btn btn-secondary">
             Practice while you wait
+          </Link>
+          <Link to="/" className="btn btn-ghost">
+            Back to home
           </Link>
         </div>
       </section>
@@ -373,7 +482,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   }, [doc, impressions, pastedText, typedWord, draftDay, sent]);
 
   if (sent) {
-    return <SentView day={view.day} closesAt={view.closes_at} />;
+    return <SentView view={view} />;
   }
 
   const typed = typedWord.trim();
@@ -470,7 +579,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const labeled = doc.groups.length;
   const summaryParts = [
     plural(impressions.length, "word", "words"),
-    plural(doc.strokes.length, "stroke", "strokes"),
+    plural(doc.strokes.length, "line", "lines"),
     ...(labeled > 0 ? [plural(labeled, "labeled part", "labeled parts")] : []),
     ...(pastedText.trim() !== "" ? ["notes"] : []),
   ];
@@ -478,47 +587,47 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const sketchHint =
     mode === "select"
       ? selection.size > 0
-        ? `${plural(selection.size, "stroke", "strokes")} picked — name them under “Label parts of your sketch”.`
-        : "Tap the strokes that belong together."
+        ? `${plural(selection.size, "line", "lines")} picked — name them under “Label parts of your sketch”.`
+        : "Tap the lines that belong together."
       : doc.strokes.length === 0
-        ? "Draw whatever comes to mind. Each line you draw is one stroke."
+        ? "Draw whatever comes to mind."
         : "Keep going, or add some words.";
 
+  // The second line of the send bar: why Send is off, or that the
+  // draft is safe.
+  const barNote = scoreable
+    ? draftSaved
+      ? "Draft saved on this device"
+      : ""
+    : sendBlockHint(block, view.min_strokes);
+
   return (
-    <div className="stack-lg">
-      <header className="row-between" style={{ alignItems: "flex-end" }}>
-        <div className="stack-sm">
-          <div className="eyebrow">
-            Today's session ·{" "}
-            {formatCloseMoment(view.closes_at) ?? formatDay(view.day)}
-          </div>
-          <div className="row" style={{ gap: 16 }}>
-            <CodeCells code={view.trial_code} />
-            <p className="muted" style={{ maxWidth: 360 }}>
-              {isPostClose(view.protocol)
-                ? "The photo for this code is picked when the session closes."
-                : "A photo is hidden behind this code."}{" "}
-              Sketch and describe whatever comes to mind.{" "}
-              <Link to="/how" className="small">
-                How it works
-              </Link>
-            </p>
-          </div>
+    <div className="workspace">
+      <header className="workspace-header">
+        <CodeCells code={view.trial_code} />
+        <div className="workspace-header-text">
+          <DayLine view={view} />
+          <p className="muted small hide-narrow">
+            {isPostClose(view.protocol)
+              ? "The photo for this code is picked when the day closes."
+              : "A photo is hidden behind this code."}{" "}
+            Sketch and describe whatever comes to mind.{" "}
+            <Link to="/how">How it works</Link>
+          </p>
         </div>
-        <ClosesInBadge closesAt={view.closes_at} />
       </header>
 
       {dayMoved && !empty ? (
         <section
-          className="notice"
+          className="notice workspace-notice"
           role="alert"
           aria-label="Your earlier sketch"
         >
           <p>
-            You started this sketch for the session of {formatDay(draftDay)},
-            and that session has closed, so it wasn't scored.{" "}
+            You started this sketch for {formatDay(draftDay)}, and that day has
+            closed, so it wasn't scored.{" "}
             {isPostClose(view.protocol)
-              ? "A new session has started with a new code."
+              ? "A new day has started with a new code."
               : "A new photo is now hidden behind a new code."}
           </p>
           <div className="row">
@@ -540,180 +649,195 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
         </section>
       ) : null}
 
-      <div className="workspace">
-        <CanvasPanel
-          doc={doc}
-          selection={selection}
-          mode={mode}
-          colorIndex={colorIndex}
-          onPickColor={setColorIndex}
-          onCommitStroke={onCommitStroke}
-          onPickStroke={onPickStroke}
-          canUndo={canUndo(history)}
-          canRedo={canRedo(history)}
-          onUndo={() => {
-            setHistory((h) => undo(h));
-            resetPicks();
-          }}
-          onRedo={() => {
-            setHistory((h) => redo(h));
-            resetPicks();
-          }}
-          onClear={() => {
-            commit(clearSketch(doc));
-            resetPicks();
-            setMode("draw");
-          }}
-          disabled={send.isPending || dayMoved}
-          hint={sketchHint}
-        />
+      <CanvasPanel
+        doc={doc}
+        selection={selection}
+        mode={mode}
+        colorIndex={colorIndex}
+        onPickColor={setColorIndex}
+        onCommitStroke={onCommitStroke}
+        onPickStroke={onPickStroke}
+        canUndo={canUndo(history)}
+        canRedo={canRedo(history)}
+        onUndo={() => {
+          setHistory((h) => undo(h));
+          resetPicks();
+        }}
+        onRedo={() => {
+          setHistory((h) => redo(h));
+          resetPicks();
+        }}
+        onClear={() => {
+          commit(clearSketch(doc));
+          resetPicks();
+          setMode("draw");
+        }}
+        disabled={send.isPending || dayMoved}
+        hint={sketchHint}
+      />
 
-        <aside className="stack side-panel" aria-label="Your answer">
-          <ImpressionsCard
-            impressions={impressions}
-            input={typedWord}
-            onInputChange={setTypedWord}
-            onAdd={(text) => setImpressions((rows) => [...rows, text])}
-            onRemoveAt={(index) =>
-              setImpressions((rows) => rows.filter((_, at) => at !== index))
-            }
-          />
+      <aside className="side-cell" aria-label="Your answer">
+        <div className="card side-panel">
+          <div className="side-scroll">
+            <ImpressionsCard
+              impressions={impressions}
+              input={typedWord}
+              onInputChange={setTypedWord}
+              onAdd={(text) => setImpressions((rows) => [...rows, text])}
+              onRemoveAt={(index) =>
+                setImpressions((rows) => rows.filter((_, at) => at !== index))
+              }
+            />
 
-          <details className="card disclosure">
-            <summary>
-              Label parts of your sketch{" "}
-              <span className="subtle" style={{ fontWeight: 500 }}>
-                (optional)
-              </span>
-            </summary>
-            <div className="disclosure-body">
-              <GroupControls
-                doc={doc}
-                mode={mode}
-                selectionSize={selection.size}
-                onToggleSelect={() => {
-                  setMode((old) => (old === "select" ? "draw" : "select"));
-                  setSelection(new Set());
-                }}
-                onMakeGroup={makeGroupWith}
-              />
-              {labeled < 2 ? null : (
-                <>
-                  <hr className="divider" />
-                  <div className="label">Where things are</div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr",
-                      gap: 6,
+            <div className="row-list side-rows">
+              <details className="row-disclosure">
+                <summary>
+                  Label parts of your sketch
+                  <OptionalMark />
+                </summary>
+                <div className="row-body">
+                  <GroupControls
+                    doc={doc}
+                    mode={mode}
+                    selectionSize={selection.size}
+                    onToggleSelect={() => {
+                      setMode((old) => (old === "select" ? "draw" : "select"));
+                      setSelection(new Set());
                     }}
-                  >
-                    <select
-                      className="input"
-                      aria-label="first part"
-                      value={relationFirst}
-                      onChange={(event) => setRelationFirst(event.target.value)}
-                    >
-                      <option value="">Pick…</option>
-                      {doc.groups.map((group) => (
-                        <option key={group.id} value={group.id}>
-                          {group.label}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="input"
-                      aria-label="position"
-                      value={relationName}
-                      onChange={(event) => setRelationName(event.target.value)}
-                    >
-                      {view.relation_vocabulary.map((name) => (
-                        <option key={name} value={name}>
-                          {wordingOf(name)}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="input"
-                      aria-label="second part"
-                      value={relationSecond}
-                      onChange={(event) =>
-                        setRelationSecond(event.target.value)
-                      }
-                    >
-                      <option value="">Pick…</option>
-                      {doc.groups.map((group) => (
-                        <option key={group.id} value={group.id}>
-                          {group.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      disabled={!relationReady}
-                      onClick={addRelationNow}
-                    >
-                      Add
-                    </button>
-                  </div>
-                  {doc.relations.length === 0 ? null : (
-                    <ul
-                      className="stack-sm"
-                      style={{ margin: 0, padding: 0, listStyle: "none" }}
-                    >
-                      {doc.relations.map((relation, index) => (
-                        <li
-                          key={`${relation.relation}-${relation.of[0]}-${relation.of[1]}-${
-                            // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
-                            index
-                          }`}
-                          className="row-between"
+                    onMakeGroup={makeGroupWith}
+                  />
+                  {labeled < 2 ? null : (
+                    <>
+                      <hr className="divider" />
+                      <div className="label">Where things are</div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr 1fr",
+                          gap: 6,
+                        }}
+                      >
+                        <select
+                          className="input"
+                          aria-label="first part"
+                          value={relationFirst}
+                          onChange={(event) =>
+                            setRelationFirst(event.target.value)
+                          }
                         >
-                          <span>
-                            {groupName(relation.of[0])}{" "}
-                            {wordingOf(relation.relation)}{" "}
-                            {groupName(relation.of[1])}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            aria-label="Remove this position"
-                            onClick={() => commit(removeRelation(doc, index))}
-                          >
-                            Remove
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                          <option value="">Pick…</option>
+                          {doc.groups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="input"
+                          aria-label="position"
+                          value={relationName}
+                          onChange={(event) =>
+                            setRelationName(event.target.value)
+                          }
+                        >
+                          {view.relation_vocabulary.map((name) => (
+                            <option key={name} value={name}>
+                              {wordingOf(name)}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="input"
+                          aria-label="second part"
+                          value={relationSecond}
+                          onChange={(event) =>
+                            setRelationSecond(event.target.value)
+                          }
+                        >
+                          <option value="">Pick…</option>
+                          {doc.groups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={!relationReady}
+                          onClick={addRelationNow}
+                        >
+                          Add
+                        </button>
+                      </div>
+                      {doc.relations.length === 0 ? null : (
+                        <ul
+                          className="stack-sm"
+                          style={{ margin: 0, padding: 0, listStyle: "none" }}
+                        >
+                          {doc.relations.map((relation, index) => (
+                            <li
+                              key={`${relation.relation}-${relation.of[0]}-${relation.of[1]}-${
+                                // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
+                                index
+                              }`}
+                              className="row-between"
+                            >
+                              <span>
+                                {groupName(relation.of[0])}{" "}
+                                {wordingOf(relation.relation)}{" "}
+                                {groupName(relation.of[1])}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                aria-label="Remove this position"
+                                onClick={() =>
+                                  commit(removeRelation(doc, index))
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
                   )}
-                </>
-              )}
-            </div>
-          </details>
+                </div>
+              </details>
 
-          <details className="card disclosure">
-            <summary>
-              Notes{" "}
-              <span className="subtle" style={{ fontWeight: 500 }}>
-                (optional)
-              </span>
-            </summary>
-            <div className="disclosure-body">
-              <textarea
-                className="input"
-                aria-label="Notes"
-                placeholder="Paste or type longer notes here."
-                value={pastedText}
-                onChange={(event) => setPastedText(event.target.value)}
-              />
+              <details className="row-disclosure">
+                <summary>
+                  Notes
+                  <OptionalMark />
+                </summary>
+                <div className="row-body">
+                  <textarea
+                    className="input"
+                    aria-label="Notes"
+                    placeholder="Paste or type longer notes here."
+                    value={pastedText}
+                    onChange={(event) => setPastedText(event.target.value)}
+                  />
+                </div>
+              </details>
             </div>
-          </details>
-
-          <section className="card" aria-label="Send">
-            <p className="muted small">{summaryParts.join(" · ")}</p>
+          </div>
+          <section
+            className={
+              reviewing
+                ? "action-bar send-bar is-reviewing"
+                : "action-bar send-bar"
+            }
+            aria-label="Send"
+          >
+            <div className="send-bar-facts">
+              <span>{summaryParts.join(" · ")}</span>
+              <span className="send-bar-note">{barNote}</span>
+            </div>
             {reviewing ? (
               <ReviewPanel
                 words={impressions}
@@ -726,7 +850,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
               />
             ) : null}
             {reviewing ? (
-              <div className="stack-sm">
+              <div className="stack-sm send-bar-buttons">
                 <button
                   type="button"
                   className="btn btn-primary btn-large btn-block"
@@ -742,7 +866,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
                     });
                   }}
                 >
-                  {send.isPending ? "Sending…" : "Send today's session"}
+                  {send.isPending ? "Sending…" : "Send my sketch"}
                 </button>
                 <button
                   type="button"
@@ -756,7 +880,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
             ) : (
               <button
                 type="button"
-                className="btn btn-primary btn-large btn-block"
+                className="btn btn-primary btn-large btn-block send-bar-buttons"
                 disabled={!scoreable || dayMoved}
                 onClick={() => {
                   setIncludeTyped(true);
@@ -767,11 +891,8 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
                 Review and send
               </button>
             )}
-            <p className="hint">
-              {scoreable
-                ? "You can send once, and you can't change it after."
-                : sendBlockHint(block, view.min_strokes)}
-              {draftSaved ? " Your draft is saved on this device." : ""}
+            <p className="hint send-bar-hint">
+              You get one send, and you can't change it after.
             </p>
             {send.isError && !sent ? (
               <div className="notice notice-bad" role="alert">
@@ -779,10 +900,26 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
               </div>
             ) : null}
           </section>
-        </aside>
-      </div>
+        </div>
+      </aside>
     </div>
   );
+}
+
+/** The mark of a part the player can skip, with the row's chevron. */
+function OptionalMark(): React.JSX.Element {
+  return (
+    <span className="row-meta">
+      Optional
+      <CaretRight size={16} aria-hidden="true" className="row-chevron" />
+    </span>
+  );
+}
+
+/** The day's date and the countdown to the close, over the canvas. */
+function DayLine(props: { view: DayView }): React.JSX.Element {
+  const remaining = useRemaining(props.view.closes_at);
+  return <div className="eyebrow">{dayLine(props.view, remaining)}</div>;
 }
 
 /** What this send holds, in the player's words (spec PL1 §8). */
@@ -806,7 +943,7 @@ function ReviewPanel(props: {
         <strong>Sketch:</strong>{" "}
         {strokes === 0
           ? "none"
-          : `${plural(strokes, "stroke", "strokes")}${
+          : `${plural(strokes, "line", "lines")}${
               labeled > 0
                 ? `, ${plural(labeled, "labeled part", "labeled parts")}`
                 : ""

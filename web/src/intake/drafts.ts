@@ -5,6 +5,7 @@
  * sketch from a day that has closed comes back with its day named.
  */
 
+import type { WireRecord } from "../api/types";
 import type { SketchDoc } from "../sketch/core";
 
 export interface Draft {
@@ -53,6 +54,14 @@ export function removeStorage(key: string): void {
   } catch {
     // Disposable cache.
   }
+}
+
+/** The record this device sent for a day, or null (another device). */
+export function readSent(day: string): WireRecord | null {
+  const record = readJson<WireRecord>(sentKey(day));
+  return record !== null && Array.isArray(record.canvas_strokes)
+    ? record
+    : null;
 }
 
 export function readDraft(day: string): Draft | null {

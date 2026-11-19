@@ -14,7 +14,7 @@ describe("the send gate", () => {
 
   it("takes the floor from the server", () => {
     expect(sendBlock(2, false, 3)).toBe("too-few-strokes");
-    expect(sendBlockHint("too-few-strokes", 3)).toMatch(/at least 3 strokes/);
+    expect(sendBlockHint("too-few-strokes", 3)).toMatch(/at least 3 lines/);
     expect(sendBlockHint(null, 3)).toBe("");
   });
 });

@@ -32,10 +32,45 @@ function button(name: string): HTMLButtonElement {
   return screen.getByRole("button", { name }) as HTMLButtonElement;
 }
 
-/** The rule line with these words, and if the screen marks it met. */
-function rule(text: RegExp): { met: boolean } {
-  const line = screen.getByText(text).closest("li") as HTMLElement;
-  return { met: line.className.includes("rule-ok") };
+const NAME_SUMMARY =
+  "3 to 20 letters, numbers, or hyphens, starting with a letter";
+const WORD_SUMMARY = "At least 12 characters. A few unrelated words work well.";
+
+/** The element that describes a field: its one helper line. */
+function helperLine(label: string): HTMLElement {
+  const field = screen.getByLabelText(label);
+  return document.getElementById(
+    field.getAttribute("aria-describedby") ?? "",
+  ) as HTMLElement;
+}
+
+/** The words of a field's helper line, and the state the screen marks. */
+function helper(label: string): {
+  text: string;
+  state: "neutral" | "met" | "broken";
+} {
+  const line = helperLine(label);
+  return {
+    text: line.textContent ?? "",
+    state: line.className.includes("rule-hint-broken")
+      ? "broken"
+      : line.className.includes("rule-hint-met")
+        ? "met"
+        : "neutral",
+  };
+}
+
+/** The progress line of a sign-up, or null when the screen has none. */
+function progress(): Array<{ text: string; current: boolean }> | null {
+  const line = screen.queryByRole("list", { name: "Creating your account" });
+  return line === null
+    ? null
+    : within(line)
+        .getAllByRole("listitem")
+        .map((part) => ({
+          text: part.textContent ?? "",
+          current: part.getAttribute("aria-current") === "step",
+        }));
 }
 
 describe("the gate screen (spec A2 §3)", () => {
@@ -46,12 +81,145 @@ describe("the gate screen (spec A2 §3)", () => {
     ).toBeDefined();
     expect(button("Sign in")).toBeDefined();
     expect(
-      await screen.findByRole("button", { name: "Make an account" }),
+      await screen.findByRole("button", { name: "Create an account" }),
     ).toBeDefined();
-    expect(button("I do not have my password")).toBeDefined();
+    expect(button("Forgot it?")).toBeDefined();
     // The device code stays: the way in with no password to type.
-    expect(screen.getByLabelText("Signed in on another device?")).toBeDefined();
+    expect(screen.getByLabelText("Device code")).toBeDefined();
     expect(screen.queryByText(/invite/i)).toBeNull();
+    // A sign-in has no parts to show.
+    expect(progress()).toBeNull();
+  });
+
+  it("holds each way in in the one card, the quiet ones as closed rows", async () => {
+    renderAt("/", signedOut());
+    const heading = await screen.findByRole("heading", { name: "Sign in" });
+    const card = heading.closest("section") as HTMLElement;
+    // `Forgot it?` comes after the password in the document, thus Tab
+    // goes from the password to it.
+    const forgot = button("Forgot it?");
+    expect(forgot.type).toBe("button");
+    expect(
+      screen.getByLabelText("Password").compareDocumentPosition(forgot) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    // The device code is a row of the card, closed until it is opened.
+    const row = screen
+      .getByText("Use a code from another device")
+      .closest("details") as HTMLDetailsElement;
+    expect(card.contains(row)).toBe(true);
+    expect(row.open).toBe(false);
+    const code = within(row).getByLabelText("Device code");
+    const facts = document.getElementById(
+      code.getAttribute("aria-describedby") ?? "",
+    ) as HTMLElement;
+    expect(facts.textContent).toMatch(/choose “Add a device”/);
+    expect(facts.textContent).toMatch(/8-character code/);
+    expect(facts.textContent).toMatch(/won't need your password/);
+    // No dev door on this server, thus no operator row.
+    expect(screen.queryByText("Operator sign-in")).toBeNull();
+    expect(screen.queryByText("Test server")).toBeNull();
+  });
+
+  it("adds the operator row on a test server, with its sign", async () => {
+    renderAt(
+      "/",
+      signedOut({ getDoor: () => Promise.resolve({ open: true }) }),
+    );
+    const title = await screen.findByText("Operator sign-in");
+    const row = title.closest("details") as HTMLDetailsElement;
+    const card = screen
+      .getByRole("heading", { name: "Sign in" })
+      .closest("section") as HTMLElement;
+    expect(card.contains(row)).toBe(true);
+    expect(row.open).toBe(false);
+    const summary = row.querySelector("summary") as HTMLElement;
+    expect(within(summary).getByText("Test server").className).toContain(
+      "badge-warn",
+    );
+    expect(row.textContent).toMatch(/This is a test server/);
+    expect(row.textContent).toMatch(/operator\s+token instead of a password/);
+    expect(row.textContent).toMatch(/Real servers don't show this/);
+    expect(within(row).getByLabelText("Player name")).toBeDefined();
+    expect(within(row).getByLabelText("Operator token")).toBeDefined();
+  });
+
+  it("signs in with a device code from its row", async () => {
+    const codes: string[] = [];
+    const base = signedOut();
+    renderAt(
+      "/",
+      signedOut({
+        ...base,
+        redeemDeviceCode: async (code) => {
+          codes.push(code);
+          // A session of the mock's first player, as a good code gives.
+          await base.signIn("ade", MOCK_PASSWORD);
+          return { player: "ade", display_name: "ade" };
+        },
+      }),
+    );
+    const title = await screen.findByText("Use a code from another device");
+    const row = title.closest("details") as HTMLDetailsElement;
+    fireEvent.click(title);
+    const field = within(row).getByLabelText("Device code");
+    const submit = within(row).getByText("Use this code") as HTMLButtonElement;
+    expect(submit.type).toBe("submit");
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: "abcd-efgh" } });
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() => expect(codes).toEqual(["abcd-efgh"]));
+    expect(await screen.findByText(/Today's photo is hidden/)).toBeDefined();
+  });
+
+  it("signs the operator in by name from its row", async () => {
+    const doors: Array<[string, string | undefined]> = [];
+    const base = signedOut();
+    renderAt(
+      "/",
+      signedOut({
+        ...base,
+        getDoor: () => Promise.resolve({ open: true }),
+        postDoor: (name, label, token) => {
+          doors.push([name, token]);
+          return base.postDoor(name, label, token);
+        },
+      }),
+    );
+    const title = await screen.findByText("Operator sign-in");
+    const row = title.closest("details") as HTMLDetailsElement;
+    fireEvent.click(title);
+    const submit = within(row).getByText(
+      "Sign in by name",
+    ) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(within(row).getByLabelText("Player name"), {
+      target: { value: "walkin" },
+    });
+    fireEvent.change(within(row).getByLabelText("Operator token"), {
+      target: { value: "token" },
+    });
+    fireEvent.click(submit);
+    expect(await screen.findByText(/, walkin$/)).toBeDefined();
+    expect(doors).toEqual([["walkin", "token"]]);
+  });
+
+  it("says a test season is a test season, by the headline", async () => {
+    renderAt("/", signedOut());
+    // The shell shows its own season badge while it reads me: wait for
+    // the gate.
+    await screen.findByRole("heading", { name: "Sign in" });
+    const badge = await screen.findByText("Test season");
+    expect(badge.className).toContain("badge-warn");
+    const note = badge.closest('[role="note"]') as HTMLElement;
+    expect(note.textContent).toMatch(
+      /Results won't carry over to the public launch\./,
+    );
+    // Adjacent to the headline, and not a strip above the page.
+    const headline = screen.getByRole("heading", { level: 1 });
+    expect(headline.parentElement?.contains(note)).toBe(true);
+    expect(document.querySelector(".season-note")).toBeNull();
   });
 
   it("offers no new account when sign-up answers the constant 404", async () => {
@@ -66,11 +234,11 @@ describe("the gate screen (spec A2 §3)", () => {
       await screen.findByText("This server isn't making new accounts now."),
     ).toBeDefined();
     expect(
-      screen.queryByRole("button", { name: "Make an account" }),
+      screen.queryByRole("button", { name: "Create an account" }),
     ).toBeNull();
     // Sign-in and recovery stay for each account the store holds.
     expect(button("Sign in")).toBeDefined();
-    expect(button("I do not have my password")).toBeDefined();
+    expect(button("Forgot it?")).toBeDefined();
   });
 
   it("reads the sign-up switch one time", async () => {
@@ -86,10 +254,10 @@ describe("the gate screen (spec A2 §3)", () => {
       }),
     );
     fireEvent.click(
-      await screen.findByRole("button", { name: "Make an account" }),
+      await screen.findByRole("button", { name: "Create an account" }),
     );
     fireEvent.click(button("Back to sign in"));
-    fireEvent.click(button("I do not have my password"));
+    fireEvent.click(button("Forgot it?"));
     fireEvent.click(button("Back to sign in"));
     expect(reads).toBe(1);
     // A sign-in starts the app's reads again, and not this one.
@@ -201,73 +369,167 @@ describe("make an account (spec A2 §3.1)", () => {
   async function openSignUp(api: Api): Promise<void> {
     renderAt("/", api);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Make an account" }),
+      await screen.findByRole("button", { name: "Create an account" }),
     );
-    await screen.findByRole("heading", { name: "Make an account" });
+    await screen.findByRole("heading", { name: "Create an account" });
   }
 
-  it("shows the rules while the player types", async () => {
+  it("shows the summary of each field's rules before the player types", async () => {
     await openSignUp(signedOut());
-    // Each rule is on screen before a character is typed.
-    expect(rule(/3 to 20 characters/).met).toBe(false);
-    expect(rule(/letters a to z, the digits 0 to 9, and the hyphen/).met).toBe(
-      false,
-    );
-    expect(rule(/Starts with a letter/).met).toBe(false);
-    expect(rule(/No hyphen at the end/).met).toBe(false);
-    expect(rule(/12 to 128 characters/).met).toBe(false);
-    expect(
-      screen.getByText("Not a password that many people use"),
-    ).toBeDefined();
-    expect(
-      screen.getByText(/don't need capitals, digits, or\s+symbols/),
-    ).toBeDefined();
-    expect(button("Make an account").disabled).toBe(true);
-
-    const name = type("Username", "Nova-");
-    expect(name.value).toBe("nova-");
-    expect(rule(/3 to 20 characters/).met).toBe(true);
-    expect(rule(/Starts with a letter/).met).toBe(true);
-    expect(rule(/No hyphen at the end/).met).toBe(false);
-    type("Username", "nova");
-    expect(rule(/No hyphen at the end/).met).toBe(true);
-
-    // The password must not hold the username.
-    type("Password", "nova nova nova nova");
-    expect(rule(/12 to 128 characters/).met).toBe(true);
-    expect(rule(/Does not contain your username/).met).toBe(false);
-    expect(button("Make an account").disabled).toBe(true);
-    type("Password", GOOD);
-    expect(rule(/Does not contain your username/).met).toBe(true);
-    expect(button("Make an account").disabled).toBe(false);
+    expect(helper("Username")).toEqual({
+      text: NAME_SUMMARY,
+      state: "neutral",
+    });
+    expect(helper("Password")).toEqual({
+      text: WORD_SUMMARY,
+      state: "neutral",
+    });
+    expect(screen.getByText("Capital letters become lowercase.")).toBeDefined();
+    expect(button("Create account").disabled).toBe(true);
   });
 
-  it("ties each rule list to its field, with the state in words", async () => {
+  it("names each broken username rule in the helper line", async () => {
     await openSignUp(signedOut());
-    const name = screen.getByLabelText("Username");
-    const rules = document.getElementById(
-      name.getAttribute("aria-describedby") ?? "",
-    ) as HTMLElement;
-    expect(within(rules).getAllByText("(not met yet)")).toHaveLength(4);
+    const cases: Array<[string, string]> = [
+      ["no", "Use 3 to 20 characters."],
+      ["a23456789012345678901", "Use 3 to 20 characters."],
+      ["under_score", "Letters a to z, numbers, and hyphens only."],
+      ["9lives", "Start with a letter."],
+      ["nova-", "No hyphen at the end, and no two hyphens in a row."],
+      ["no--va", "No hyphen at the end, and no two hyphens in a row."],
+      // Each broken rule shows, in the sequence of the rules.
+      [
+        "9_",
+        "Use 3 to 20 characters. Letters a to z, numbers, and hyphens only. " +
+          "Start with a letter.",
+      ],
+    ];
+    for (const [name, broken] of cases) {
+      type("Username", name);
+      expect(helper("Username")).toEqual({ text: broken, state: "broken" });
+      expect(button("Create account").disabled).toBe(true);
+    }
+    // Typed capitals become small letters, and the rules read those.
+    const name = type("Username", "Nova-");
+    expect(name.value).toBe("nova-");
+    expect(helper("Username").state).toBe("broken");
+    // Each rule met: the summary again, marked met.
     type("Username", "nova");
-    expect(within(rules).getAllByText("(met)")).toHaveLength(4);
+    expect(helper("Username")).toEqual({
+      text: `${NAME_SUMMARY} (met)`,
+      state: "met",
+    });
+    // An empty field goes back to the summary, with no error.
+    type("Username", "");
+    expect(helper("Username")).toEqual({
+      text: NAME_SUMMARY,
+      state: "neutral",
+    });
+  });
+
+  it("names each broken password rule in the helper line", async () => {
+    await openSignUp(signedOut());
+    type("Username", "nova");
+    const cases: Array<[string, string]> = [
+      ["elevenchars", "Use at least 12 characters."],
+      ["x".repeat(129), "Use no more than 128 characters."],
+      // The password must not hold the username.
+      ["nova nova nova nova", "Don't include your username."],
+      ["nova", "Use at least 12 characters. Don't include your username."],
+    ];
+    for (const [word, broken] of cases) {
+      type("Password", word);
+      expect(helper("Password")).toEqual({ text: broken, state: "broken" });
+      expect(button("Create account").disabled).toBe(true);
+    }
+    type("Password", GOOD);
+    expect(helper("Password")).toEqual({
+      text: `${WORD_SUMMARY} (met)`,
+      state: "met",
+    });
+    expect(button("Create account").disabled).toBe(false);
+  });
+
+  it("names the usual-password rule when the server refuses for it", async () => {
+    // The screen does not hold the table of usual passwords: the rule
+    // shows in the helper line after the server's refusal.
+    await openSignUp(
+      signedOut({
+        signUp: () => Promise.reject(new ApiError(400, "password-usual")),
+      }),
+    );
+    type("Username", "nova");
+    type("Password", GOOD);
+    expect(helper("Password").state).toBe("met");
+    fireEvent.click(button("Create account"));
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /one many people use/,
+    );
+    expect(helper("Password")).toEqual({
+      text: "Don't use a password that many people use.",
+      state: "broken",
+    });
+    // The line is for the refused password alone.
+    type("Password", "five slow north harbors");
+    expect(helper("Password").state).toBe("met");
+    type("Password", GOOD);
+    expect(helper("Password").state).toBe("broken");
+  });
+
+  it("ties each helper line to its field, with the state in words", async () => {
+    await openSignUp(signedOut());
+    const rules = helperLine("Username");
+    // A polite live region: a screen reader says the line when it changes.
+    expect(rules.getAttribute("aria-live")).toBe("polite");
+    expect(within(rules).queryByText("(met)")).toBeNull();
+    type("Username", "nova");
+    expect(within(rules).getByText("(met)")).toBeDefined();
     const word = screen.getByLabelText("Password") as HTMLInputElement;
     expect(word.autocomplete).toBe("new-password");
-    expect(
-      document.getElementById(word.getAttribute("aria-describedby") ?? ""),
-    ).not.toBeNull();
+    expect(helperLine("Password").getAttribute("aria-live")).toBe("polite");
   });
 
   it("says what a username is before the account is made", async () => {
     await openSignUp(signedOut());
     // The season line is a note too: this one is in the form.
     const note = screen
-      .getByText("Before you make it:")
+      .getByText(/Everyone sees this name/)
       .closest('[role="note"]') as HTMLElement;
     expect(note.closest("form")).not.toBeNull();
-    expect(note.textContent).toMatch(/shown to every\s+other player/);
+    expect(note.className).toContain("notice-warn");
+    expect(note.textContent).toMatch(/Everyone sees this name/);
     expect(note.textContent).toMatch(/can never be changed/);
-    expect(note.textContent).toMatch(/Don't use your real name/);
+    expect(note.textContent).toMatch(/Don't use your\s+real name/);
+  });
+
+  it("shows the parts of a sign-up above the card", async () => {
+    await openSignUp(signedOut());
+    expect(progress()).toEqual([
+      { text: "1Name and password", current: true },
+      { text: "2Recovery code", current: false },
+      { text: "3Your first day", current: false },
+    ]);
+    // The line is above the card, and not in it.
+    const line = screen.getByRole("list", { name: "Creating your account" });
+    const card = screen
+      .getByRole("heading", { name: "Create an account" })
+      .closest("section") as HTMLElement;
+    expect(card.contains(line)).toBe(false);
+    expect(
+      line.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    type("Username", "nova");
+    type("Password", GOOD);
+    fireEvent.click(button("Create account"));
+    await screen.findByRole("heading", { name: "Save your recovery code" });
+    expect(progress()).toEqual([
+      { text: "Name and password (done)", current: false },
+      { text: "2Recovery code", current: true },
+      { text: "3Your first day", current: false },
+    ]);
+    fireEvent.click(button("I've saved my code"));
+    await screen.findByText(/Today's photo is hidden/);
+    expect(progress()).toBeNull();
   });
 
   it("shows the recovery code one time before the app", async () => {
@@ -285,21 +547,21 @@ describe("make an account (spec A2 §3.1)", () => {
     type("Username", "nova");
     type("Password", GOOD);
     const readsBefore = meReads;
-    fireEvent.click(button("Make an account"));
+    fireEvent.click(button("Create account"));
 
     expect(
       await screen.findByRole("heading", { name: "Save your recovery code" }),
     ).toBeDefined();
     const code = screen.getByTestId("recovery-code").textContent ?? "";
     expect(code).toMatch(/^[A-Z2-9]{24}$/);
-    expect(screen.getByText("It will not be shown again.")).toBeDefined();
+    expect(screen.getByText("You won't see it again.")).toBeDefined();
     // The account exists and the cookie is set, but the app waits:
     // nothing reads me again, and nothing replaces the code.
     expect(meReads).toBe(readsBefore);
     expect(screen.queryByRole("navigation")).toBeNull();
     expect(screen.queryByLabelText("Username")).toBeNull();
 
-    fireEvent.click(button("I have my code"));
+    fireEvent.click(button("I've saved my code"));
     expect(await screen.findByText(/Today's photo is hidden/)).toBeDefined();
     expect(await screen.findByText(/, nova$/)).toBeDefined();
     // The code is gone with the step.
@@ -322,11 +584,11 @@ describe("make an account (spec A2 §3.1)", () => {
         signedOut({ signUp: () => Promise.reject(error) }),
       );
       fireEvent.click(
-        await view.findByRole("button", { name: "Make an account" }),
+        await view.findByRole("button", { name: "Create an account" }),
       );
       type("Username", "nova");
       type("Password", GOOD);
-      fireEvent.click(button("Make an account"));
+      fireEvent.click(button("Create account"));
       expect((await view.findByRole("alert")).textContent).toMatch(expected);
       // No account, thus no recovery code and no app.
       expect(view.queryByTestId("recovery-code")).toBeNull();
@@ -339,7 +601,7 @@ describe("make an account (spec A2 §3.1)", () => {
     // a-d-e folds to ade, which the mock's first player holds.
     type("Username", "a-d-e");
     type("Password", GOOD);
-    fireEvent.click(button("Make an account"));
+    fireEvent.click(button("Create account"));
     expect((await screen.findByRole("alert")).textContent).toMatch(/taken/);
   });
 });
@@ -350,13 +612,18 @@ describe("get back in with the recovery code (spec A2 §3.3)", () => {
     const made = await api.signUp("nova", GOOD, true);
     await api.signOut();
     renderAt("/", api);
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I do not have my password" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot it?" }));
     await screen.findByRole("heading", {
       name: "Get back in with your recovery code",
     });
     expect(button("Set a new password").disabled).toBe(true);
+    // The new password has the helper line of a sign-up password.
+    expect(helper("New password")).toEqual({
+      text: WORD_SUMMARY,
+      state: "neutral",
+    });
+    // A recovery is not a sign-up: no parts to show.
+    expect(progress()).toBeNull();
     type("Username", "nova");
     // Small letters and spaces: capitals and hyphens do not count.
     type(
@@ -375,16 +642,15 @@ describe("get back in with the recovery code (spec A2 §3.3)", () => {
     expect(next).toMatch(/^[A-Z2-9]{24}$/);
     expect(next).not.toBe(made.recovery_code.replaceAll("-", ""));
     expect(screen.getByText(/had before has stopped working/)).toBeDefined();
+    expect(progress()).toBeNull();
     expect(screen.queryByRole("navigation")).toBeNull();
-    fireEvent.click(button("I have my code"));
+    fireEvent.click(button("I've saved my code"));
     expect(await screen.findByText(/, nova$/)).toBeDefined();
   });
 
   it("waits for a code of the right shape", async () => {
     renderAt("/", signedOut());
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I do not have my password" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot it?" }));
     type("Username", "nova");
     type("New password", "five slow north harbors");
     type("Recovery code", "ABCD-EFGH");
@@ -395,9 +661,7 @@ describe("get back in with the recovery code (spec A2 §3.3)", () => {
 
   it("gives one message for each recovery that does not work", async () => {
     renderAt("/", signedOut());
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I do not have my password" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot it?" }));
     type("Username", "ade");
     type("Recovery code", "ABCD-EFGH-JKMN-PQRS-TUVW-XYZ2");
     type("New password", "five slow north harbors");
@@ -416,7 +680,7 @@ describe("get back in with the recovery code (spec A2 §3.3)", () => {
     await screen.findByRole("heading", { name: "Sign in" });
     type("Username", "nova");
     type("Password", "something typed");
-    fireEvent.click(button("I do not have my password"));
+    fireEvent.click(button("Forgot it?"));
     expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe(
       "nova",
     );
@@ -433,9 +697,9 @@ describe("the notice on the sign-up card (spec R1 §3.1)", () => {
   async function openSignUp(api: Api): Promise<void> {
     renderAt("/", api);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Make an account" }),
+      await screen.findByRole("button", { name: "Create an account" }),
     );
-    await screen.findByRole("heading", { name: "Make an account" });
+    await screen.findByRole("heading", { name: "Create an account" });
   }
 
   it("holds the ruled text, version 1", () => {
@@ -452,22 +716,31 @@ describe("the notice on the sign-up card (spec R1 §3.1)", () => {
     const lead = screen.getByText(NOTICE_LEAD);
     expect(lead.tagName).toBe("STRONG");
     const note = lead.closest('[role="note"]') as HTMLElement;
-    expect(note.textContent).toContain(`${NOTICE_LEAD} ${NOTICE_BODY}`);
+    // The ruled text and no more: the card does not shorten it.
+    expect(note.textContent).toBe(`${NOTICE_LEAD} ${NOTICE_BODY}`);
+    expect(note.className).toContain("notice-warn");
     // No box to tick: the click is the agreement, and the card says so.
-    expect(note.textContent).toMatch(/When you make an account, you agree/);
+    const agreement = screen.getByText(
+      "By creating an account, you agree to this.",
+    );
     expect(screen.queryByRole("checkbox")).toBeNull();
     // In the form of the username facts, and before its one control.
     const facts = screen
-      .getByText("Before you make it:")
+      .getByText(/Everyone sees this name/)
       .closest('[role="note"]') as HTMLElement;
     expect(note.closest("form")).toBe(facts.closest("form"));
-    const make = button("Make an account");
+    expect(agreement.closest("form")).toBe(note.closest("form"));
+    const make = button("Create account");
     expect(make.form).toBe(note.closest("form"));
     expect(
       note.compareDocumentPosition(make) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
-    // A screen reader hears the notice at the control.
-    expect(make.getAttribute("aria-describedby")).toBe(note.id);
+    // A screen reader hears the notice and the agreement at the control.
+    expect(make.getAttribute("aria-describedby")).toBe(
+      `${note.id} ${agreement.id}`,
+    );
+    expect(note.id).not.toBe("");
+    expect(agreement.id).not.toBe("");
   });
 
   it("sends the agreement with the sign-up", async () => {
@@ -484,7 +757,7 @@ describe("the notice on the sign-up card (spec R1 §3.1)", () => {
     );
     type("Username", "nova");
     type("Password", GOOD);
-    fireEvent.click(button("Make an account"));
+    fireEvent.click(button("Create account"));
     await screen.findByRole("heading", { name: "Save your recovery code" });
     expect(sent).toEqual([["nova", GOOD, true]]);
   });
@@ -509,13 +782,13 @@ describe("the notice on the sign-up card (spec R1 §3.1)", () => {
     ).toBeDefined();
     expect(button("Reload")).toBeDefined();
     expect(
-      screen.queryByRole("button", { name: "Make an account" }),
+      screen.queryByRole("button", { name: "Create an account" }),
     ).toBeNull();
     expect(screen.queryByText(NOTICE_LEAD)).toBeNull();
     expect(signUps).toBe(0);
     // Sign-in and recovery do not agree to a notice, thus they stay.
     expect(button("Sign in")).toBeDefined();
-    expect(button("I do not have my password")).toBeDefined();
+    expect(button("Forgot it?")).toBeDefined();
   });
 
   it("says so when the server refuses a sign-up for the notice", async () => {
@@ -526,7 +799,7 @@ describe("the notice on the sign-up card (spec R1 §3.1)", () => {
     );
     type("Username", "nova");
     type("Password", GOOD);
-    fireEvent.click(button("Make an account"));
+    fireEvent.click(button("Create account"));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/agreement that your results are public/);
     expect(alert.textContent).not.toMatch(/Something went wrong/);

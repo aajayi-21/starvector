@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { Api } from "../../src/api/client";
@@ -56,11 +56,25 @@ describe("the pick after the close (spec VP1 §8)", () => {
     expect(screen.queryByText(/hidden behind this code/)).toBeNull();
   });
 
+  it("names the pick as a step after the send", async () => {
+    const base = vp1Api();
+    const api: Api = {
+      ...base,
+      getDay: async () => ({ ...(await base.getDay()), submitted: true }),
+    };
+    renderAt("/today", api);
+    const steps = await screen.findByRole("list", {
+      name: "What happens next",
+    });
+    expect(
+      within(steps).getByText("A public random number picks the photo"),
+    ).toBeDefined();
+    expect(within(steps).getAllByRole("listitem")).toHaveLength(4);
+  });
+
   it("says so on the today screen", async () => {
     renderAt("/today", vp1Api());
-    expect(
-      await screen.findByText(/picked when the session closes/),
-    ).toBeDefined();
+    expect(await screen.findByText(/picked when the day closes/)).toBeDefined();
   });
 
   it("explains the beacon on the how-it-works screen", async () => {
@@ -85,7 +99,7 @@ describe("the pick after the close (spec VP1 §8)", () => {
   it("shows the pulse, the position, and the set, and no secret", async () => {
     renderAt("/reveal", vp1Api());
     fireEvent.click(await screen.findByText("Check that this day was fair"));
-    expect(screen.getByText(/pulse 28832419 of the drand/)).toBeDefined();
+    expect(screen.getByText(/Pulse 28832419 of the drand/)).toBeDefined();
     expect(screen.getByText(/position 417 \(from 0\) of 1000/)).toBeDefined();
     expect(screen.getByText("a".repeat(64))).toBeDefined();
     expect(screen.getByRole("link", { name: "28832419" })).toBeDefined();
