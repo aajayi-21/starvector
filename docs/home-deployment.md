@@ -25,6 +25,13 @@ Three facts frame the setup.
   lands, this same box serves it after one data copy, one config
   edit, and one `systemctl restart` (section 16).
 
+*Note, 2026-11-19:* these three facts are the record of the test
+season. From spec A2 (2026-11-13), a person makes an account at the
+sign-up screen when the server config opens sign-up, and no invite
+exists. The production pool `prod-wit-001` (1,393 images) passed its
+gates on 2026-11-13. `docs/production-cutover.md` is the sequence that
+moves this box to it, with a new store and open sign-up.
+
 ## 2. The pool and the storage budget
 
 The 10 GB budget is more than this run wants. Measured 2026-08-17:
@@ -77,6 +84,12 @@ There are four secrets. No other credential is in the system.
 
 Player invites are not stored. The store keeps a digest alone, and
 each invite prints one time.
+
+*Note, 2026-11-19 (spec A2 §5.2):* there is a fifth secret from
+2026-11-13, `STARVECTOR_PASSWORD_PEPPER`, in `/etc/starvector/env`.
+Make it with the command of section 10, and keep a copy away from the
+box: if it is gone, each stored password stops. The invite is gone from
+that date.
 
 Three rules:
 
@@ -302,6 +315,10 @@ record, each visitor plays as the configured player. The mint
 writes the store and needs no server. A private box with no sign-in
 starts with `--single-player` in the unit's `ExecStart` line.
 
+*Note, 2026-11-19 (spec A2 §10.2):* the mint is gone. A server with an
+empty store starts when `service.json` holds `"signup": "open"`, and
+the environment file holds the operator token and the password pepper.
+
 The uvicorn process binds `127.0.0.1` alone. On your own network,
 the only doors are Caddy's 80 and 443 — and SSH from the LAN.
 
@@ -312,9 +329,12 @@ mobile connection works.
 
 - `https://<domain>/` loads the landing page with its sign-in card.
   That is success: no session, no play.
-- `curl -sI https://<domain>/join/bogus` answers 401 with a JSON
-  content type. HTML here means the invite path fell to the app
-  shell, and no invite URL can sign anybody in.
+- `curl -sI https://<domain>/join/bogus` answers 404 with a JSON
+  content type. HTML here means the `/join` path fell to the app
+  shell, thus the edge does not send it to the server. *Note,
+  2026-11-13 (spec A2):* the answer was 401 before that date.
+- `curl -s https://<domain>/api/signup` answers `"open": true` when
+  sign-up is open.
 - `curl -s -o /dev/null -w "%{http_code}" https://<domain>/dev.html`
   answers 404. The same for `/api/dev`, `/api/day/close`, and
   `/api/players`.
@@ -328,6 +348,12 @@ flag, thus a plain-HTTP visit cannot keep a session, and the failure
 names nothing.
 
 ## 13. Invite players
+
+*Note, 2026-11-19 (spec A2) — superseded:* the invite is gone from
+2026-11-13. No command mints a player, and a `/join` address answers
+404. Section 13 of `docs/droplet-deployment.md` has the sign-up
+procedure, and it is the same on this box. The text below this note is
+the record of the procedure before that date.
 
 The console (section 14) has an invite panel with an `origin` field.
 The command line, on the box:
@@ -540,6 +566,12 @@ against them forever. When the production pool lands, its release
 is a new preparation adjacent to the earlier one. The move is one
 `rsync` of new artifacts, one `service.json` edit, and one
 `systemctl restart`.
+
+*Note, 2026-11-19:* the move to `prod-wit-001` is more than that. It
+also starts a new store (spec R1 ruling D9), the pick after the close
+(spec VP1), and open sign-up (spec A2). `docs/production-cutover.md`
+has the steps in sequence. Section 15a of `docs/droplet-deployment.md`
+has the results snapshot, and it is the same on this box.
 
 ## 17. What is open and what is closed
 

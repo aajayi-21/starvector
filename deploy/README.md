@@ -81,6 +81,12 @@ Mint the first player (§7) before the first start: a server with no
 player record refuses to start without `--dev` or `--single-player`
 (spec BR1 §4).
 
+*Note, 2026-11-19 (spec A2 §10.2):* no command mints a player from
+2026-11-13. A server with an empty store starts when the server config
+holds `"signup": "open"`, and the environment file holds the operator
+token and the password pepper. The server refuses to start when one of
+the two secrets has no value.
+
 The daily rollover, after a week of days moved by hand:
 
 ```
@@ -270,6 +276,12 @@ each process and there is nothing to hide.
 
 ### Inviting a player
 
+*Note, 2026-11-19 (spec A2) — superseded:* the `mint`, `rotate`, and
+`restore` commands below are gone, and a `/join` address answers 404.
+Each person makes an account at the sign-up screen. The note at the
+start of §7 has the procedure. This section is the record of the
+procedure before 2026-11-13.
+
 ```
 # on the box, as the starvector user
 cd /srv/starvector/app
@@ -312,7 +324,8 @@ script reads the revealed trial rows with the bearer:
 
 From the first day after the player records start again (ruling D8), the
 production server picks each target from a drand pulse after the close.
-Do these steps before that day opens. The box reads
+Do these steps before that day opens. `docs/production-cutover.md` puts
+them in sequence with the pool copy, the new store, and sign-up. The box reads
 `/etc/starvector/service.json` and runs the app as `starvector` in
 `/srv/starvector/app`.
 
@@ -394,12 +407,15 @@ When a pool version retires, publish its key adjacent to its root file
   → 404. The same for `/api/dev`, `/api/dev/days`,
   `/api/day/close`, `/api/players`, and `/api/ops/trials`.
 - `curl https://<domain>/image/<an unrevealed image id>` → 404.
-- **`curl -sI https://<domain>/join/bogus` → the server's 401, and
+- **`curl -sI https://<domain>/join/bogus` → the server's 404, and
   the content type is JSON and not `text/html`.** HTML here means
-  the invite path fell to the app fallback. The server then sees no
-  invite, and no invite URL can sign anybody in. No test in the
-  repository sees this one, because it lives in the edge
-  configuration alone.
+  the `/join` path fell to the app fallback, thus the edge does not
+  send it to the server. No test in the repository sees this one,
+  because it lives in the edge configuration alone. *Note,
+  2026-11-19 (spec A2):* the server answered 401 here before
+  2026-11-13. The invite is gone, and each token gets the constant 404.
+- `curl -s https://<domain>/api/signup` → a JSON body with `"open": true` when the
+  server config opens sign-up.
 - With the dev unit started and the tunnel up, the console shows
   the days, the automatic days, the players with their devices, and
   the results database (spec BR1 §7).

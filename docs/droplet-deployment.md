@@ -40,6 +40,13 @@ Four facts frame the setup.
   firewall on the box is thus the first layer here and not the second,
   and port 22 is reachable from anywhere.
 
+*Note, 2026-11-19:* the first two facts are the record of the test
+season. From spec A2 (2026-11-13), a person makes an account at the
+sign-up screen when the server config opens sign-up, and no invite
+exists. The production pool `prod-wit-001` passed its gates on
+2026-11-13. `docs/production-cutover.md` is the sequence that moves this
+box to it, with a new store and open sign-up.
+
 ## 2. The droplet plan
 
 Spec S2 ruling 1 names the target: a DigitalOcean basic droplet, US,
@@ -93,19 +100,24 @@ production pool wants the 4 GB plan and not a larger disk.
 
 ## 4. Keys and secrets
 
-There are four secrets in the app. No other credential is in the
-system. Your SSH key is a fifth, and it is yours and not the
+There are five secrets in the app. No other credential is in the
+system. Your SSH key is a sixth, and it is yours and not the
 deployment's.
 
 | secret | where it lives | who reads it | how you get it |
 |---|---|---|---|
 | `OPENROUTER_API_KEY` | `/etc/starvector/env` (root, 0600) | systemd, as root, before privileges drop | make a key at openrouter.ai and set a spend cap of $5–10 |
 | `STARVECTOR_OPERATOR_TOKEN` | `/etc/starvector/env` | same | make one on the box (section 10) |
+| `STARVECTOR_PASSWORD_PEPPER` | `/etc/starvector/env` | same | make one on the box (section 10), and keep a copy away from the box |
 | restic repository password | `/etc/starvector/restic-env` (0600) | the backup units | make one on the box |
 | backup storage credential | `/etc/starvector/restic-env` | same | from your storage provider — use an append-only credential |
 
 Player invites are not stored. The store keeps a digest alone, and
 each invite prints one time.
+
+*Note, 2026-11-19 (spec A2):* the pepper row is new from 2026-11-13,
+and the invite is gone from that date. The store keeps a slow digest of
+each password, with the pepper mixed in.
 
 Three rules:
 
@@ -520,6 +532,10 @@ record, each visitor plays as the configured player. The mint
 writes the store and needs no server. A private box with no sign-in
 starts with `--single-player` in the unit's `ExecStart` line.
 
+*Note, 2026-11-19 (spec A2 §10.2):* the mint is gone. A server with an
+empty store starts when `service.json` holds `"signup": "open"`, and
+the environment file holds the operator token and the password pepper.
+
 The uvicorn process binds `127.0.0.1` alone. The doors from the
 internet are Caddy's 80 and 443, and SSH on 22.
 
@@ -531,12 +547,12 @@ such behaviour, thus each check here runs from anywhere.
 
 - `https://<domain>/` loads the landing page with its sign-in card.
   That is success: no session, no play.
-- *Note, 2026-11-13 (spec A2):* this check answers 404 from that date,
-  with a JSON content type. `curl -s https://<domain>/api/signup`
-  answers `{"open":true}` when sign-up is open.
-- `curl -sI https://<domain>/join/bogus` answers 401 with a JSON
-  content type. HTML here means the invite path fell to the app shell,
-  and no invite URL can sign anybody in.
+- `curl -sI https://<domain>/join/bogus` answers 404 with a JSON
+  content type. HTML here means the `/join` path fell to the app shell,
+  thus the edge does not send it to the server. *Note, 2026-11-13
+  (spec A2):* the answer was 401 before that date.
+- `curl -s https://<domain>/api/signup` answers `"open": true` when
+  sign-up is open.
 - `curl -s -o /dev/null -w "%{http_code}" https://<domain>/dev.html`
   answers 404. The same for `/api/dev`, `/api/day/close`, and
   `/api/players`.
@@ -853,6 +869,11 @@ days, earlier configs, or earlier releases — stored days rescore
 against them forever. When the production pool lands, its release is a
 new preparation adjacent to the earlier one. The move is one `rsync` of
 new artifacts, one `service.json` edit, and one `systemctl restart`.
+
+*Note, 2026-11-19:* the move to `prod-wit-001` is more than that. It
+also starts a new store (spec R1 ruling D9), the pick after the close
+(spec VP1), and open sign-up (spec A2). `docs/production-cutover.md`
+has the steps in sequence.
 
 ## 17. What is open and what is closed
 
