@@ -22,10 +22,11 @@ import sqlite3
 import sys
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from service import console, index, rollover, schedule, store
+from service import (access, auth, console, index, players, rollover,
+                     schedule, signin, store)
 from service import operator_plan as plan
 from service import operator_view as view
 from service.config import ServiceConfig, load_service_config
@@ -43,16 +44,21 @@ _STATUS_TIMEOUT_SECONDS = 3.0
 # index. Each one prints as one line and not as a traceback.
 _REFUSALS = (ValueError, index.ResultsIndexError, sqlite3.Error)
 
+# The errors of a journal write: a rule of the journal, and the disk.
+_JOURNAL_ERRORS = (store.StoreError, plan.Refusal, OSError)
+
 
 @dataclass(frozen=True, slots=True)
 class Context:
     """The values that each handler reads, made one time for a command.
 
-    root is the store folder. login and login_source are the actor of
-    the journal. base_url is the loopback address of the public server.
-    The last six fields are the values that a test can inject.
+    command is the row of the command table. root is the store folder.
+    login and login_source are the actor of the journal. base_url is
+    the loopback address of the public server. The last six fields are
+    the values that a test can inject.
     """
 
+    command: plan.Command
     config: ServiceConfig
     config_path: str
     root: Path
@@ -70,6 +76,32 @@ class Context:
 
 
 Handler = Callable[[Context, argparse.Namespace], int]
+
+
+@dataclass(frozen=True, slots=True)
+class Done:
+    """What a change gives when it completes.
+
+    value is the JSON output and lines is the text output. facts are
+    the machine facts of the `end` record of the journal. day is the
+    day of the change when only the change knows it.
+    """
+
+    value: object
+    lines: Sequence[str]
+    facts: Mapping[str, object] = field(default_factory=dict)
+    day: str | None = None
+
+
+class _Stopped(Exception):
+    """A change that did not complete, with the outcome and the error
+    type for the journal. The text is for the operator, and it does not
+    go in the journal."""
+
+    def __init__(self, message: str, outcome: str, error_kind: str) -> None:
+        super().__init__(message)
+        self.outcome = outcome
+        self.error_kind = error_kind
 
 
 # ---- the argument tree ----
@@ -143,6 +175,51 @@ def _add_player_reads(commands, shared: argparse.ArgumentParser) -> None:
     avatar.add_argument("--save", required=True, metavar="PATH")
 
 
+def _add_player_changes(commands, shared: argparse.ArgumentParser) -> None:
+    for name, text in (
+            ("recovery-code", "make the operator's recovery code"),
+            ("restore", "make a revoked account active, with a code")):
+        code = _leaf(commands, name, shared, text)
+        code.add_argument("player")
+        code.add_argument("--code-to-pipe", action="store_true",
+                          help="print the code when the standard output "
+                               "is not a terminal")
+    for name, text in (("revoke", "revoke an account"),
+                       ("avatar-clear", "remove the avatar of a player")):
+        _leaf(commands, name, shared, text).add_argument("player")
+    signout = _leaf(commands, "signout", shared,
+                    "end each device of a player, or one")
+    signout.add_argument("player")
+    signout.add_argument("--session", default=None, metavar="ID",
+                         help="the first characters of one session id")
+    _add_describe(commands, shared)
+    avatar_set = _leaf(commands, "avatar-set", shared,
+                       "replace the avatar of a player")
+    avatar_set.add_argument("player")
+    avatar_set.add_argument("--file", required=True)
+    delete = _leaf(commands, "delete", shared,
+                   "show what a deletion removes, or delete with --confirm")
+    delete.add_argument("player")
+    delete.add_argument("--confirm", default=None, metavar="NAME",
+                        help="the username again: this deletes the account")
+    _leaf(commands, "prune", shared,
+          "remove each expired session and device code")
+    _leaf(commands, "claim-names", shared,
+          "claim the name of each stored player")
+
+
+def _add_describe(commands, shared: argparse.ArgumentParser) -> None:
+    describe = _leaf(commands, "describe", shared,
+                     "set or clear the description of a player")
+    describe.add_argument("player")
+    source = describe.add_mutually_exclusive_group(required=True)
+    source.add_argument("--text", default=None)
+    source.add_argument("--text-file", default=None, metavar="F",
+                        help="a UTF-8 file; one line end at its end does "
+                             "not count")
+    source.add_argument("--clear", action="store_true")
+
+
 def _add_db_reads(commands, shared: argparse.ArgumentParser) -> None:
     _leaf(commands, "status", shared, "the results index and its tables")
     _leaf(commands, "verify", shared, "if the index agrees with the store")
@@ -159,6 +236,7 @@ def _add_db_reads(commands, shared: argparse.ArgumentParser) -> None:
     trials.add_argument("--from", dest="from_day", default=None)
     trials.add_argument("--to", dest="to_day", default=None)
     trials.add_argument("--player", default=None)
+    _leaf(commands, "build", shared, "build the results index again")
 
 
 def _add_log(groups, shared: argparse.ArgumentParser) -> None:
@@ -191,6 +269,7 @@ def _parser() -> argparse.ArgumentParser:
     _players, player_commands = _group(groups, "players", shared,
                                        "the players")
     _add_player_reads(player_commands, shared)
+    _add_player_changes(player_commands, shared)
     _db, db_commands = _group(groups, "db", shared, "the results index")
     _add_db_reads(db_commands, shared)
     _add_log(groups, shared)
@@ -251,7 +330,8 @@ def _or(value, default):
     return default if value is None else value
 
 
-def _context(args: argparse.Namespace, *, call: rollover.Call | None,
+def _context(args: argparse.Namespace, command: plan.Command, *,
+             call: rollover.Call | None,
              ask: Callable[[str], str] | None,
              now: Callable[[], datetime.datetime] | None,
              environ: Mapping[str, str] | None,
@@ -266,7 +346,8 @@ def _context(args: argparse.Namespace, *, call: rollover.Call | None,
     base_url = plan.check_loopback(
         args.base_url or f"http://127.0.0.1:{config.port}")
     return Context(
-        config=config, config_path=args.service_config, root=root,
+        command=command, config=config, config_path=args.service_config,
+        root=root,
         login=login, login_source=login_source, as_json=args.json,
         assume_yes=args.yes, base_url=base_url,
         call=_or(call, rollover.http_call(base_url,
@@ -326,6 +407,14 @@ def _stored_day(ctx: Context, named: str | None) -> str:
     if named not in store.list_days(ctx.root):
         raise plan.Refusal(f"no stored day {named!r}")
     return named
+
+
+def _stored_player(ctx: Context, name: str) -> str:
+    """The name, when it is legal and the store has its record."""
+    store.check_player_name(name, "player")
+    if store.read_player_or_none(ctx.root, name) is None:
+        raise plan.Refusal(f"no stored player {name!r}")
+    return name
 
 
 def _visibility(ctx: Context, day: str, show_target: bool = False) -> str:
@@ -454,9 +543,7 @@ def _players_history(ctx: Context, args: argparse.Namespace) -> int:
 
 
 def _players_avatar(ctx: Context, args: argparse.Namespace) -> int:
-    store.check_player_name(args.player, "player")
-    if store.read_player_or_none(ctx.root, args.player) is None:
-        raise plan.Refusal(f"no stored player {args.player!r}")
+    _stored_player(ctx, args.player)
     data = store.read_avatar_or_none(ctx.root, args.player)
     if data is None:
         raise plan.Refusal(f"{args.player} has no avatar")
@@ -599,6 +686,355 @@ def _log(ctx: Context, args: argparse.Namespace) -> int:
     return plan.EXIT_DONE
 
 
+# ---- a change and its journal (spec OC1 sections 6 and 7) ----
+
+
+def _confirm(ctx: Context, command: plan.Command,
+             question: str | None) -> None:
+    """Print the question of a change, read the answer, and stop on each
+    answer that is not the word `yes`. With no question, or with
+    `--yes`, nothing prints.
+
+    The refusal comes before the `start` record: a change that the
+    operator declines did not start, and it gets no journal record.
+    """
+    plan.check_terminal(command, question, ctx.assume_yes, ctx.stdin_is_tty)
+    if question is None or ctx.assume_yes:
+        return
+    print(question, file=sys.stderr)
+    try:
+        answer = ctx.ask("Type yes to continue: ")
+    except EOFError:
+        answer = ""
+    if not plan.accepts(answer):
+        raise plan.Refusal("the answer was not yes. Nothing changed.")
+
+
+def _journal(ctx: Context, entry_id: str, phase: str, *,
+             player: str | None, day: str | None,
+             outcome: str | None = None,
+             facts: Mapping[str, object] | None = None,
+             error_kind: str | None = None) -> None:
+    """Write one record of the operator journal."""
+    store.write_operator_entry(ctx.root, store.OperatorEntry(
+        **plan.journal_fields(
+            entry_id=entry_id, phase=phase, at=ctx.now().isoformat(),
+            login=ctx.login, login_source=ctx.login_source,
+            command=ctx.command, player=player, day=day, outcome=outcome,
+            facts=facts, error_kind=error_kind)))
+
+
+def _end_written(ctx: Context, entry_id: str, **fields: object) -> bool:
+    """Write the `end` record, and say if the write completed."""
+    try:
+        _journal(ctx, entry_id, "end", **fields)
+    except _JOURNAL_ERRORS:
+        return False
+    return True
+
+
+def _report_stop(ctx: Context, entry_id: str, *, player: str | None,
+                 day: str | None, outcome: str, error_kind: str | None,
+                 message: str) -> int:
+    """The end of a change that did not complete: the `end` record, and
+    one line for the operator. The message stays out of the journal."""
+    written = _end_written(ctx, entry_id, player=player, day=day,
+                           outcome=outcome, error_kind=error_kind)
+    print(f"{outcome}: {view.safe_text(message)}", file=sys.stderr)
+    if not written:
+        print("the end record of the journal could not be written",
+              file=sys.stderr)
+    return plan.EXIT_REFUSED
+
+
+def _print_done(ctx: Context, done: Done) -> None:
+    if ctx.as_json:
+        print(view.to_json(done.value))
+        return
+    for line in done.lines:
+        print(line)
+
+
+def _journaled(ctx: Context, work: Callable[[], Done], *,
+               player: str | None = None, day: str | None = None,
+               start_facts: Mapping[str, object] | None = None) -> int:
+    """Do one change between its two journal records.
+
+    The `start` record goes in first, and when its write does not
+    complete the change does not start. A StoreError or a refusal of
+    the plan module gives the outcome of a refusal. Each other error
+    gives the outcome of a failure, and an error that is not a known
+    one continues to the caller after its `end` record. A change that
+    completes with no `end` record gives the exit code 3.
+    """
+    entry_id = ctx.new_id()
+    try:
+        _journal(ctx, entry_id, "start", player=player, day=day,
+                 facts=start_facts)
+    except _JOURNAL_ERRORS as error:
+        raise plan.Refusal("the start record of the journal could not be "
+                           f"written: {error}. Nothing changed.") from error
+    stop = {"player": player, "day": day}
+    try:
+        done = work()
+    except _Stopped as error:
+        return _report_stop(ctx, entry_id, **stop, outcome=error.outcome,
+                            error_kind=error.error_kind, message=str(error))
+    except (store.StoreError, plan.Refusal) as error:
+        return _report_stop(ctx, entry_id, **stop, outcome="refused",
+                            error_kind=plan.error_kind_of(error),
+                            message=str(error))
+    except _REFUSALS as error:
+        return _report_stop(ctx, entry_id, **stop, outcome="failed",
+                            error_kind=plan.error_kind_of(error),
+                            message=str(error))
+    except Exception as error:
+        _end_written(ctx, entry_id, **stop, outcome="failed",
+                     error_kind=plan.error_kind_of(error))
+        raise
+    written = _end_written(ctx, entry_id, player=player,
+                           day=done.day or day, outcome="done",
+                           facts=done.facts)
+    _print_done(ctx, done)
+    if written:
+        return plan.EXIT_DONE
+    print("the change completed, and the end record of the journal could "
+          "not be written. 'sv log' shows this command with no outcome.",
+          file=sys.stderr)
+    return plan.EXIT_NO_END_RECORD
+
+
+def _change(ctx: Context, work: Callable[[], Done], *,
+            player: str | None = None, day: str | None = None,
+            question_facts: Mapping[str, object] | None = None,
+            start_facts: Mapping[str, object] | None = None) -> int:
+    """One command that changes the store: the question, then the
+    change with its journal records (spec OC1 section 3.2)."""
+    named = {key: value for key, value in (("player", player), ("day", day))
+             if value is not None}
+    question = plan.confirmation_for(ctx.command,
+                                     {**named, **(question_facts or {})})
+    _confirm(ctx, ctx.command, question)
+    return _journaled(ctx, work, player=player, day=day,
+                      start_facts=start_facts)
+
+
+# ---- the player commands (spec OC1 section 3.2) ----
+
+
+def _check_code_output(ctx: Context, args: argparse.Namespace) -> None:
+    """Refuse a recovery code that goes to a pipe (ruling D9).
+
+    The check comes before the question and before the command makes
+    the code: a new code replaces the earlier one and starts the notice
+    on each device of the player. JSON output obeys the same rule.
+    """
+    if not plan.code_output_allowed(ctx.stdout_is_tty, args.code_to_pipe):
+        raise plan.Refusal(
+            "the standard output is not a terminal, and a recovery code "
+            "prints one time. Give --code-to-pipe to send it to a pipe. "
+            "No code was made.")
+
+
+def _code_done(player: str, code: str, usable_at: str,
+               status: str | None = None) -> Done:
+    """The one output of a new recovery code. The code is in no fact."""
+    shown = auth.display_recovery_code(code)
+    value = {"player": player, "recovery_code": shown, "usable_at": usable_at}
+    lines = view.recovery_code_lines(player, shown, usable_at)
+    if status is not None:
+        value["status"] = status
+        lines = [f"player {player} {status}", *lines]
+    return Done(value=value, lines=lines)
+
+
+def _players_recovery_code(ctx: Context, args: argparse.Namespace) -> int:
+    _check_code_output(ctx, args)
+    player = _stored_player(ctx, args.player)
+
+    def work() -> Done:
+        code, usable_at = players.operator_code(
+            ctx.config, player=player, instant=ctx.now())
+        return _code_done(player, code, usable_at)
+
+    return _change(ctx, work, player=player)
+
+
+def _players_restore(ctx: Context, args: argparse.Namespace) -> int:
+    _check_code_output(ctx, args)
+    player = _stored_player(ctx, args.player)
+
+    def work() -> Done:
+        record, code, usable_at = players.restore_player(
+            ctx.config, player=player, instant=ctx.now())
+        return _code_done(player, code, usable_at, record.status)
+
+    return _change(ctx, work, player=player)
+
+
+def _players_revoke(ctx: Context, args: argparse.Namespace) -> int:
+    player = _stored_player(ctx, args.player)
+
+    def work() -> Done:
+        record = players.revoke_player(ctx.config, player=player)
+        return Done(value={"player": record.player, "status": record.status},
+                    lines=[f"player {record.player} {record.status}"])
+
+    return _change(ctx, work, player=player)
+
+
+def _signout_one(ctx: Context, player: str, prefix: str) -> int:
+    """End the one live session that starts with the prefix, as the
+    console does with the full identifier."""
+    live = [str(row["id"]) for row in
+            access.session_rows(ctx.root, player, None, ctx.now())]
+    session = plan.match_session(prefix, live)
+    facts = {"session": session[:12]}
+
+    def work() -> Done:
+        if not store.delete_session(ctx.root, player, session):
+            raise store.StoreError("no live session by that id")
+        return Done(value={"player": player, "ended": 1},
+                    lines=[f"player {player} sessions ended: 1"],
+                    facts={**facts, "ended": 1})
+
+    return _change(ctx, work, player=player,
+                   question_facts={"session": session}, start_facts=facts)
+
+
+def _players_signout(ctx: Context, args: argparse.Namespace) -> int:
+    player = _stored_player(ctx, args.player)
+    if args.session is not None:
+        return _signout_one(ctx, player, args.session)
+
+    def work() -> Done:
+        ended = players.signout_player(ctx.config, player=player)
+        return Done(value={"player": player, "ended": ended},
+                    lines=[f"player {player} sessions ended: {ended}"],
+                    facts={"ended": ended})
+
+    return _change(ctx, work, player=player)
+
+
+def _description_text(args: argparse.Namespace) -> str:
+    """The new description: empty text for `--clear`."""
+    if args.clear:
+        return ""
+    if args.text is not None:
+        return args.text
+    text = _read_file(Path(args.text_file)).decode("utf-8")
+    # A text file ends with one line end, which is not part of the text.
+    for ending in ("\r\n", "\n"):
+        if text.endswith(ending):
+            return text[:-len(ending)]
+    return text
+
+
+def _players_describe(ctx: Context, args: argparse.Namespace) -> int:
+    player = _stored_player(ctx, args.player)
+    text = _description_text(args)
+    # An illegal text stops here, before the journal: it is not a change.
+    store.check_description(text, "description")
+    facts = {"field": "description"}
+
+    def work() -> Done:
+        account = players.set_description(ctx.config, player=player,
+                                          text=text)
+        return Done(
+            value={"player": player, "description": account.description},
+            lines=[f"player {player}: description "
+                   f"{'set' if text else 'cleared'}"], facts=facts)
+
+    return _change(ctx, work, player=player, start_facts=facts)
+
+
+def _avatar_change(ctx: Context, player: str, data: bytes | None) -> int:
+    """Replace the avatar with the bytes, or remove it for None."""
+    facts = {"field": "avatar"}
+
+    def work() -> Done:
+        if data is None:
+            account = players.clear_avatar(ctx.config, player=player)
+        else:
+            account = players.set_avatar(ctx.config, player=player,
+                                         data=data)
+        return Done(
+            value={"player": player, "avatar_hash": account.avatar_hash},
+            lines=[f"player {player}: avatar "
+                   f"{'removed' if data is None else 'set'}"], facts=facts)
+
+    return _change(ctx, work, player=player, start_facts=facts)
+
+
+def _players_avatar_set(ctx: Context, args: argparse.Namespace) -> int:
+    player = _stored_player(ctx, args.player)
+    return _avatar_change(ctx, player, _read_file(Path(args.file)))
+
+
+def _players_avatar_clear(ctx: Context, args: argparse.Namespace) -> int:
+    return _avatar_change(ctx, _stored_player(ctx, args.player), None)
+
+
+def _players_delete(ctx: Context, args: argparse.Namespace) -> int:
+    """The two steps of a deletion (spec MD1 section 4.4). With no
+    typed copy of the name the command prints the preview and is a
+    read. The flag `--yes` does not replace the typed copy."""
+    player = _stored_player(ctx, args.player)
+    if args.confirm is None:
+        _emit(ctx, players.deletion_preview(ctx.config, player=player),
+              view.deletion_preview_lines)
+        return plan.EXIT_DONE
+    if not plan.deletion_confirmed(player, args.confirm):
+        raise plan.Refusal(
+            f"--confirm does not equal the name {player!r}. Nothing is "
+            "deleted.")
+
+    def work() -> Done:
+        deleted = players.delete_player(ctx.config, player=player,
+                                        confirm=args.confirm)
+        return Done(
+            value={"player": player, "deleted": True,
+                   "identifier": deleted.identifier},
+            lines=[f"player {player} deleted - the earlier results show "
+                   f"as {deleted.identifier}"])
+
+    return _change(ctx, work, player=player)
+
+
+def _players_prune(ctx: Context, _args: argparse.Namespace) -> int:
+    def work() -> Done:
+        counts = access.prune(ctx.root, ctx.now())
+        return Done(value=counts,
+                    lines=[f"pruned sessions={counts['sessions']} "
+                           f"device_codes={counts['device_codes']}"],
+                    facts={"sessions": counts["sessions"],
+                           "device_codes": counts["device_codes"]})
+
+    return _change(ctx, work)
+
+
+def _players_claim_names(ctx: Context, _args: argparse.Namespace) -> int:
+    def work() -> Done:
+        claimed = signin.claim_stored_names(ctx.root, ctx.now())
+        names = ", ".join(claimed) or "none - each name has its claim"
+        return Done(value={"claimed": claimed},
+                    lines=[f"claimed {len(claimed)} name(s): {names}"])
+
+    return _change(ctx, work)
+
+
+def _db_build(ctx: Context, _args: argparse.Namespace) -> int:
+    """Build the results index again. The index is a cache, thus the
+    command asks no question."""
+    def work() -> Done:
+        target = _index_target(ctx)
+        index.build(ctx.root, target)
+        described = index.describe(ctx.root, target)
+        return Done(value=described, lines=view.index_lines(described))
+
+    return _change(ctx, work)
+
+
 # ---- the dispatch ----
 
 
@@ -633,6 +1069,28 @@ def _handler_for(command: plan.Command) -> Handler:
             return _db_trials
         case ("log",):
             return _log
+        case ("players", "recovery-code"):
+            return _players_recovery_code
+        case ("players", "restore"):
+            return _players_restore
+        case ("players", "revoke"):
+            return _players_revoke
+        case ("players", "signout"):
+            return _players_signout
+        case ("players", "describe"):
+            return _players_describe
+        case ("players", "avatar-set"):
+            return _players_avatar_set
+        case ("players", "avatar-clear"):
+            return _players_avatar_clear
+        case ("players", "delete"):
+            return _players_delete
+        case ("players", "prune"):
+            return _players_prune
+        case ("players", "claim-names"):
+            return _players_claim_names
+        case ("db", "build"):
+            return _db_build
         case _:
             raise plan.Refusal(
                 f"sv {plan.journal_name(command)} is not built")
@@ -664,8 +1122,8 @@ def main(argv: list[str] | None = None, *,
     args = parser.parse_args(argv)
     try:
         command = plan.command_for(_path_of(args))
-        ctx = _context(args, call=call, ask=ask, now=now, environ=environ,
-                       stdin_is_tty=stdin_is_tty,
+        ctx = _context(args, command, call=call, ask=ask, now=now,
+                       environ=environ, stdin_is_tty=stdin_is_tty,
                        stdout_is_tty=stdout_is_tty, new_id=new_id)
         return _handler_for(command)(ctx, args)
     except _REFUSALS as error:
