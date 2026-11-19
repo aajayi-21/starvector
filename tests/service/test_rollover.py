@@ -317,3 +317,12 @@ def test_the_run_records_read_back_newest_first(tmp_path) -> None:
             started_at="2026-09-24T22:00:00+00:00",
             finished_at="2026-09-24T22:00:00+00:00", source="cron",
             outcome="moved", steps=(), detail=""))
+
+
+def test_the_json_sender_names_a_server_that_does_not_answer() -> None:
+    # Spec OC1 section 4: the same transport error as the poster gives.
+    call = rollover.http_call("http://127.0.0.1:9", "a-token")
+    with pytest.raises(rollover.TransportError):
+        call("POST", "/api/day/close", {"day": "2026-08-12"}, 0.5)
+    with pytest.raises(rollover.TransportError):
+        rollover.http_post("http://127.0.0.1:9", None)("/api/day/open", 0.5)

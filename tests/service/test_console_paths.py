@@ -527,3 +527,87 @@ def test_a_named_move_wants_a_stored_day(tmp_path, monkeypatch) -> None:
                          json={"day": OPEN_DAY})
     assert closed.status_code == 200
     assert closed.json() == {"trial_rows": 1, "quarantined": 0}
+
+
+# -- spec OC1 D1: a named day on the public operator paths --
+
+
+def _strand_the_open_day(fixture, config) -> tuple[str, str]:
+    """Close the open day and put a newer revealed day in front of it."""
+    close_day(config, clock=lambda: FIXED_CLOCK)
+    stranded = OPEN_DAY
+    newer = "2026-08-14"
+    record = store.read_day_record(fixture["store"], stranded)
+    store.write_day_record(fixture["store"], dataclasses.replace(
+        record, day=newer, status="open", closed_at=None,
+        revealed_at=None))
+    for before, after, field in (("open", "closed", "closed_at"),
+                                 ("closed", "revealed", "revealed_at")):
+        store.update_day_status(fixture["store"], newer,
+                                expect_status=before, new_status=after,
+                                timestamp_field=field,
+                                timestamp=FIXED_CLOCK)
+    return stranded, newer
+
+
+def test_the_public_reveal_moves_a_named_day_with_no_dev_mode(
+        tmp_path, monkeypatch) -> None:
+    fixture, config, client, _clock = _world(tmp_path, monkeypatch,
+                                             dev_mode=False)
+    stranded, newer = _strand_the_open_day(fixture, config)
+    assert store.latest_day(fixture["store"]) == newer
+
+    answer = client.post("/api/day/reveal", headers=HEADERS,
+                         json={"day": stranded})
+    assert answer.status_code == 200 and answer.json() == {"day": stranded}
+    assert store.read_day_record(fixture["store"],
+                                 stranded).status == "revealed"
+
+
+def test_the_public_close_moves_a_named_day(tmp_path, monkeypatch) -> None:
+    fixture, _config, client, _clock = _world(tmp_path, monkeypatch,
+                                              dev_mode=False)
+    closed = client.post("/api/day/close", headers=HEADERS,
+                         json={"day": OPEN_DAY})
+    assert closed.status_code == 200
+    assert closed.json() == {"trial_rows": 1, "quarantined": 0}
+    assert store.read_day_record(fixture["store"],
+                                 OPEN_DAY).status == "closed"
+
+
+def test_an_empty_body_moves_the_latest_day_as_before(
+        tmp_path, monkeypatch) -> None:
+    fixture, _config, client, _clock = _world(tmp_path, monkeypatch,
+                                              dev_mode=False)
+    closed = client.post("/api/day/close", headers=HEADERS)
+    assert closed.status_code == 200
+    assert store.read_day_record(fixture["store"],
+                                 OPEN_DAY).status == "closed"
+
+
+def test_a_named_public_move_keeps_the_bearer_gate(
+        tmp_path, monkeypatch) -> None:
+    fixture, _config, client, _clock = _world(tmp_path, monkeypatch,
+                                              dev_mode=False)
+    for headers in ({}, {"Authorization": "Bearer not-the-token"}):
+        answer = client.post("/api/day/close", headers=headers,
+                             json={"day": OPEN_DAY})
+        assert answer.status_code == 401
+        assert answer.json() == {"detail": "unauthorized"}
+    # The refusal comes before the body is read: nothing moved.
+    assert store.read_day_record(fixture["store"],
+                                 OPEN_DAY).status == "open"
+
+
+def test_a_named_public_move_wants_one_stored_day(
+        tmp_path, monkeypatch) -> None:
+    _fixture, _config, client, _clock = _world(tmp_path, monkeypatch,
+                                               dev_mode=False)
+    for body, code in (({}, 400), ({"day": 12}, 400),
+                       ({"day": OPEN_DAY, "more": 1}, 400),
+                       ({"day": "2026-01-01"}, 404)):
+        answer = client.post("/api/day/close", headers=HEADERS, json=body)
+        assert answer.status_code == code, body
+    not_json = client.post("/api/day/reveal", headers=HEADERS,
+                           content=b"day=2026-08-12")
+    assert not_json.status_code == 400
