@@ -1,0 +1,45 @@
+{
+  "configs": {
+    "scoring-config-channels.json": {
+      "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+      "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+      "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554"
+    },
+    "scoring-config.json": {
+      "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+      "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+      "scoring_config_hash": "5de83ffb99a02af788970d01a8b9c1f836373e53aedb073227a96149ab0608b6"
+    }
+  },
+  "data_root": "pool/data",
+  "dimension": 32,
+  "fixture_only": {
+    "password": "frozen store fixture password",
+    "pepper": "frozen-store-fixture-pepper"
+  },
+  "made_at_commit": "530180cf93c513af07cf2cc9b22014abc8afbd28",
+  "note": "A frozen store of spec SC1. Do not change a file here and do not make this directory again.",
+  "refused_texts": [
+    "refuse-input: one"
+  ],
+  "service_configs": {
+    "commit-v1": {
+      "closes_at_utc": null,
+      "pick_protocol": "commit-v1",
+      "pool_roots_dir": "configs/pool-roots",
+      "scoring_config": "scoring-config-channels.json"
+    },
+    "vp1": {
+      "closes_at_utc": "00:00",
+      "pick_protocol": "vp1",
+      "pool_roots_dir": "pool-roots",
+      "scoring_config": "scoring-config-channels.json"
+    }
+  },
+  "slot_hashes": {
+    "sketch_encoder": "51cdd21397eb160e9bce8ffccf7b6dfc4d12abb23d260d2a76d7fa4b14ef1307",
+    "sketch_pairs": "5624f838ccdad2fa3ce189e5f92917906a8e8e99cdeaf96655b7324b0e6276f5",
+    "text_encoder": "d013c1532e45d1194f7504251fd93cee9e78ede0a72e615bdb96af4318e02915"
+  },
+  "store_root": "store"
+}
