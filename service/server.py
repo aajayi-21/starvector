@@ -1037,20 +1037,7 @@ def create_app(service_config: ServiceConfig,
         if not (dev_mode and _operator_ok(request)):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
-        rows = []
-        for day in reversed(store.list_days(root)):
-            record = store.read_day_record(root, day)
-            rows.append({
-                "day": record.day,
-                "status": record.status,
-                "trial_code": record.trial_code,
-                "target_id": record.target_id,
-                "commitment": record.commitment,
-                "submitted": player in store.list_submissions(root, day),
-                "sends": len(store.list_submissions(root, day)),
-                "quarantined": len(store.list_quarantined(root, day)),
-            })
-        return JSONResponse({"days": rows})
+        return JSONResponse({"days": console.day_rows(root, player)})
 
     def _picked_player(name: str | None) -> str | Response:
         """The named player, or the configured one - the spec A1
@@ -1117,25 +1104,9 @@ def create_app(service_config: ServiceConfig,
         picked_player = _picked_player(player)
         if isinstance(picked_player, Response):
             return picked_player
-        rows = []
-        for day in reversed(store.list_days(root)):
-            record = store.read_day_record(root, day)
-            stored = store.read_json_or_none(
-                store.trial_row_path(root, day, picked_player))
-            trial = None if stored is None else {
-                "p": stored["p"], "target_rank": stored["target_rank"],
-                "decoy_count": stored["decoy_count"],
-                "beaten": stored["beaten"], "tied": stored["tied"]}
-            rows.append({
-                "day": record.day,
-                "status": record.status,
-                "trial_code": record.trial_code,
-                "target_id": record.target_id,
-                "submitted": picked_player in store.list_submissions(
-                    root, day),
-                "trial": trial,
-            })
-        return JSONResponse({"player": picked_player, "days": rows})
+        return JSONResponse({
+            "player": picked_player,
+            "days": console.history_rows(root, picked_player)})
 
     @app.get("/api/dev")
     def dev_view(request: Request) -> Response:
@@ -1996,19 +1967,41 @@ def create_app(service_config: ServiceConfig,
         status, body = _day_move("open")
         return JSONResponse(body, status_code=status)
 
-    @app.post("/api/day/close")
-    def day_close(request: Request) -> Response:
+    async def _operator_day_move(request: Request, step: str) -> Response:
+        """Close or reveal the latest day, or the day the body names.
+
+        With no body the move is on the latest day, as before. A body
+        `{"day": D}` names a stored day (spec OC1 section 11, D1), for a
+        day behind the latest one. The paths are the same, thus the edge
+        refuses them as before, and the gate is the operator bearer.
+        The move goes to a thread, because a close scores each send.
+        """
         if not _operator_ok(request):
             return _unauthorized()
-        status, body = _day_move("close")
-        return JSONResponse(body, status_code=status)
+        named: str | None = None
+        if (await request.body()).strip():
+            body = await _json_object_body(request)
+            if isinstance(body, Response):
+                return body
+            if set(body) != {"day"} or not isinstance(body["day"], str):
+                return JSONResponse(
+                    {"cause": "bad-shape",
+                     "detail": "day: expected a stored day"},
+                    status_code=400)
+            picked = _picked_day(body["day"])
+            if isinstance(picked, Response):
+                return picked
+            named = picked
+        status, answer = await asyncio.to_thread(_day_move, step, named)
+        return JSONResponse(answer, status_code=status)
+
+    @app.post("/api/day/close")
+    async def day_close(request: Request) -> Response:
+        return await _operator_day_move(request, "close")
 
     @app.post("/api/day/reveal")
-    def day_reveal(request: Request) -> Response:
-        if not _operator_ok(request):
-            return _unauthorized()
-        status, body = _day_move("reveal")
-        return JSONResponse(body, status_code=status)
+    async def day_reveal(request: Request) -> Response:
+        return await _operator_day_move(request, "reveal")
 
     @app.get("/api/about")
     def about_view() -> Response:

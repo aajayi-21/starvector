@@ -179,6 +179,11 @@ answers 404 without the flag.
 
 ## 5. The operator console
 
+*Note, 2026-11-19 (spec OC1):* the operator command `sv` gives the
+functions of this section on the server computer. The rule of the
+hidden target is in the command too: the browser alone held it before.
+The public close and reveal accept a named day (spec OC1 §11, D1).
+
 A second build entry, `web/dev.html` with `web/src/dev/`, with the
 earlier console's full function set on the existing dev wire
 shapes verbatim:

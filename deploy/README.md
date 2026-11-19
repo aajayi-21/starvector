@@ -189,6 +189,65 @@ The two processes share the store. The store's `write_once_json`
 records and its guarded status moves keep that safe, and the
 operator moves days from the dev unit.
 
+### The operator command (spec OC1)
+
+`sv` is the operator's command on the box. It does each thing that
+the console does, with no dev unit and no tunnel. Install it one time:
+
+```
+sudo install -o root -g root -m 0755 deploy/sv /usr/local/sbin/sv
+```
+
+Then sign in with SSH and use it:
+
+```
+sudo sv status                       # the latest day, the schedule, the server
+sudo sv days                         # each stored day
+sudo sv day show                     # the latest day and its sends
+sudo sv day close                    # close and score
+sudo sv day reveal
+sudo sv day open
+sudo sv schedule                     # the automatic days
+sudo sv schedule pause --note "..."  # also: resume, run
+sudo sv players list
+sudo sv players show <name>
+sudo sv players recovery-code <name>
+sudo sv players revoke <name>
+sudo sv players delete <name>        # the preview. Add --confirm <name>
+sudo sv db status
+sudo sv db query "SELECT ..."
+sudo sv log                          # who did what, and when
+```
+
+`sudo sv --help` and `sudo sv <group> --help` show each command.
+
+- **The key is `sudo`.** The script reads the operator token from
+  `/etc/starvector/env` and becomes the user `starvector`, thus each
+  record that it writes is one that the server can read. Do not start
+  `python -m service.operator_cli` as `root` or as your own user on the
+  box: the command refuses a user that does not own the store.
+- **Day moves go to the public process** on the loopback address, with
+  the bearer. The other commands read and write the store directly,
+  and the server reads each change at its next read.
+- **A question comes first.** A command that cannot be put back asks,
+  and continues on the word `yes`. `--yes` gives the answer for a
+  script. A deletion wants the typed username in `--confirm`.
+- **A recovery code prints one time,** to a terminal. It does not go
+  to a file or a pipe without `--code-to-pipe`.
+- **The target of a day that is not revealed does not show.** The
+  terminal refuses the target and the rank of an open day (spec S1
+  R3).
+- **The journal.** Each change writes a `start` record and an `end`
+  record in `store/operator-log/`: the time, your login name, the
+  command, the player or the day, and the outcome. It holds no code,
+  no token, and no text that a player wrote. `sudo sv log` reads it.
+- `--json` gives each answer as JSON.
+
+The module commands (`service.players`, `service.day`,
+`service.index`, and the others) stay, and the timer unit uses
+`service.rollover`. They write no journal record, thus use `sv` for
+the work of each day.
+
 ### The operator token
 
 The tunnel and the proxy refusal are two layers. The bearer token

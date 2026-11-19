@@ -43,8 +43,8 @@ STEPS = ("open", "close", "reveal", "wait")
 # A close encodes each new submission through the provider. The
 # provider client retries each POST for some minutes at most, thus
 # the loopback timeout is much longer than that.
-_CLOSE_TIMEOUT_SECONDS = 900.0
-_STEP_TIMEOUT_SECONDS = 120.0
+CLOSE_TIMEOUT_SECONDS = 900.0
+STEP_TIMEOUT_SECONDS = 120.0
 _MAX_MOVES = 6
 
 
@@ -134,8 +134,8 @@ def _post_with_retries(post: Post, step: str, *, retries: int,
     the caller reads the status again to learn why. A 401 comes back
     immediately too: no retry repairs a missing operator token.
     """
-    timeout = _CLOSE_TIMEOUT_SECONDS if step == "close" \
-        else _STEP_TIMEOUT_SECONDS
+    timeout = CLOSE_TIMEOUT_SECONDS if step == "close" \
+        else STEP_TIMEOUT_SECONDS
     wait = backoff_seconds
     attempt = 0
     while True:
@@ -216,15 +216,31 @@ def iter_rollover(*, root: Path, closes_at_utc: str, post: Post,
         f"{taken}")
 
 
-def http_post(base_url: str, token: str | None) -> Post:
-    """A poster for the live server's loopback address."""
+# A sender for one HTTP message to the live server and its answer: the
+# method, the path, the JSON body or None, and the time limit in seconds.
+Call = Callable[[str, str, dict | None, float], Answer]
 
-    def post(path: str, timeout: float) -> Answer:
+
+def http_call(base_url: str, token: str | None) -> Call:
+    """A sender for the live server's loopback address.
+
+    With a body, the sender gives it as JSON. With None, it gives an
+    empty body, which a day move reads as the latest day. A failure to
+    get an answer raises TransportError.
+    """
+
+    def call(method: str, path: str, body: dict | None,
+             timeout: float) -> Answer:
         headers = {} if token is None \
             else {"Authorization": f"Bearer {token}"}
-        request = urllib.request.Request(base_url.rstrip("/") + path,
-                                         data=b"", method="POST",
-                                         headers=headers)
+        data = b""
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            base_url.rstrip("/") + path,
+            data=data if method != "GET" else None,
+            method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as reply:
                 return Answer(status=reply.status,
@@ -233,6 +249,16 @@ def http_post(base_url: str, token: str | None) -> Post:
             return Answer(status=error.code, body=_json_object(error.read()))
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise TransportError(str(error)) from error
+
+    return call
+
+
+def http_post(base_url: str, token: str | None) -> Post:
+    """A poster for the live server's loopback address."""
+    call = http_call(base_url, token)
+
+    def post(path: str, timeout: float) -> Answer:
+        return call("POST", path, None, timeout)
 
     return post
 

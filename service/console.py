@@ -48,6 +48,60 @@ def _waiting_codes(root: Path, instant: datetime.datetime
     return waiting
 
 
+def day_rows(root: Path, configured_player: str) -> list[dict]:
+    """One row for each stored day, newest first.
+
+    Each row holds the day, its status, its code, its target, its
+    commitment, the send count, and the quarantine count. `submitted`
+    says if the configured player sent on that day. The server's day
+    listing and the operator command (spec OC1 section 4) share this
+    function. The command hides the target of a day that is not
+    revealed, and this function does not.
+    """
+    rows = []
+    for day in reversed(store.list_days(root)):
+        record = store.read_day_record(root, day)
+        senders = store.list_submissions(root, day)
+        rows.append({
+            "day": record.day,
+            "status": record.status,
+            "trial_code": record.trial_code,
+            "target_id": record.target_id,
+            "commitment": record.commitment,
+            "submitted": configured_player in senders,
+            "sends": len(senders),
+            "quarantined": len(store.list_quarantined(root, day)),
+        })
+    return rows
+
+
+def history_rows(root: Path, player: str) -> list[dict]:
+    """Each stored day of one player, newest first (spec A1 section 5).
+
+    Each row holds the sent flag and the stored trial row. The view
+    reads open days too. The server's history path and the operator
+    command (spec OC1 section 4) share this function.
+    """
+    rows = []
+    for day in reversed(store.list_days(root)):
+        record = store.read_day_record(root, day)
+        stored = store.read_json_or_none(
+            store.trial_row_path(root, day, player))
+        trial = None if stored is None else {
+            "p": stored["p"], "target_rank": stored["target_rank"],
+            "decoy_count": stored["decoy_count"],
+            "beaten": stored["beaten"], "tied": stored["tied"]}
+        rows.append({
+            "day": record.day,
+            "status": record.status,
+            "trial_code": record.trial_code,
+            "target_id": record.target_id,
+            "submitted": player in store.list_submissions(root, day),
+            "trial": trial,
+        })
+    return rows
+
+
 def roster_rows(root: Path, configured_player: str,
                 instant: datetime.datetime) -> list[dict]:
     """One row for each stored player, with devices and sends.

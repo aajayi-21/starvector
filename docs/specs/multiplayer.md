@@ -96,6 +96,12 @@ asserted in the code and checked by no test.
 
 ## 4. Identity and access
 
+*Note, 2026-11-19 (spec OC1 §11, D1):* the close and the reveal of the
+day lifecycle accept a body `{"day": D}` for a day behind the latest
+one. The paths and the bearer gate do not change. On the server
+computer, the operator command `sv` gets the token from the environment
+file through `sudo`, and no person types it.
+
 ### Player records
 
 The store keys submissions and trial rows by player name today

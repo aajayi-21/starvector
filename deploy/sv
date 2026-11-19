@@ -1,0 +1,94 @@
+#!/bin/sh
+# The operator command (spec OC1 section 5). Install:
+#   install -o root -g root -m 0755 deploy/sv /usr/local/sbin/sv
+# Use, after an SSH sign-in:
+#   sudo sv status
+#   sudo sv players list
+#   sudo sv day close
+#
+# The permission to use sudo on this computer is the operator's key.
+# This script does four things and nothing more:
+#   1. It finds the login name of the person at the keyboard, for the
+#      operator journal.
+#   2. It reads the operator token and the provider key from the env
+#      file that root alone can read. It reads no other value: the
+#      password pepper stays behind.
+#   3. It becomes the user that owns the store, with no procedure to
+#      get more rights. A record that root wrote would be a record
+#      that the server cannot read.
+#   4. It starts the command.
+#
+# No secret is an argument of a process: an argument shows to each user
+# of the computer. The values go in the environment of the one process
+# that this script becomes.
+set -eu
+
+APP=/srv/starvector/app
+ENV_FILE=/etc/starvector/env
+CONFIG=/etc/starvector/service.json
+RUN_AS=starvector
+
+refuse() {
+    echo "refused: $1" >&2
+    exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || refuse "start this command with sudo: sudo sv ..."
+
+# The login name. The kernel keeps the identifier of the SSH sign-in,
+# and it stays the same through sudo and su. SUDO_USER is the second
+# source.
+login=""
+login_source=""
+if [ -r /proc/self/loginuid ]; then
+    login_uid=$(cat /proc/self/loginuid)
+    if [ "$login_uid" != 4294967295 ]; then
+        login=$(id -nu "$login_uid" 2>/dev/null || true)
+        login_source=login-uid
+    fi
+fi
+if [ -z "$login" ] && [ -n "${SUDO_USER:-}" ]; then
+    login=$SUDO_USER
+    login_source=sudo-user
+fi
+[ -n "$login" ] || refuse "no login name: sign in with SSH, then use sudo"
+
+# The env file must be root's own and closed to each other user. The
+# script reads two named lines from it as text. It does not run the
+# file as a script.
+[ -f "$ENV_FILE" ] || refuse "no env file at $ENV_FILE"
+[ "$(stat -c %u "$ENV_FILE")" = 0 ] || refuse "$ENV_FILE is not root's file"
+case "$(stat -c %a "$ENV_FILE")" in
+    600 | 400) ;;
+    *) refuse "$ENV_FILE must have mode 600" ;;
+esac
+
+value_of() {
+    sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1
+}
+
+token=$(value_of STARVECTOR_OPERATOR_TOKEN)
+provider_key=$(value_of OPENROUTER_API_KEY)
+
+# Nothing of the caller's environment changes how Python starts, and
+# the pepper does not go to the command.
+unset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONINSPECT \
+    LD_PRELOAD LD_LIBRARY_PATH STARVECTOR_PASSWORD_PEPPER \
+    STARVECTOR_OPERATOR_TOKEN OPENROUTER_API_KEY
+
+if [ -n "$token" ]; then
+    export STARVECTOR_OPERATOR_TOKEN="$token"
+fi
+if [ -n "$provider_key" ]; then
+    export OPENROUTER_API_KEY="$provider_key"
+fi
+export STARVECTOR_OPERATOR_LOGIN="$login"
+export STARVECTOR_OPERATOR_LOGIN_SOURCE="$login_source"
+HOME=$(getent passwd "$RUN_AS" | cut -d: -f6)
+export HOME
+
+cd "$APP"
+exec setpriv --reuid="$RUN_AS" --regid="$RUN_AS" --init-groups \
+    --no-new-privs \
+    "$APP/.venv/bin/python" -E -s -m service.operator_cli \
+    --service-config "$CONFIG" "$@"
