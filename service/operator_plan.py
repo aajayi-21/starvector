@@ -55,8 +55,11 @@ LOGIN_SOURCE_VARIABLE = "STARVECTOR_OPERATOR_LOGIN_SOURCE"
 # The sources that the script of spec OC1 section 5 can name.
 SCRIPT_LOGIN_SOURCES: tuple[str, ...] = ("login-uid", "sudo-user")
 EFFECTIVE_USER_SOURCE = "effective-user"
+# The source of an entry that the server writes (spec OC1 section 13).
+SERVER_LOGIN_SOURCE = "operator-token"
 LOGIN_SOURCES: tuple[str, ...] = (*SCRIPT_LOGIN_SOURCES,
-                                  EFFECTIVE_USER_SOURCE)
+                                  EFFECTIVE_USER_SOURCE,
+                                  SERVER_LOGIN_SOURCE)
 _LOGIN_RULE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 
 # The journal rules of spec OC1 section 7. The store has the same rules,

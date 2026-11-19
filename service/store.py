@@ -2007,8 +2007,12 @@ from collections.abc import Mapping
 OPERATOR_JOURNAL_VERSION = 1
 OPERATOR_PHASES: tuple[str, ...] = ("start", "end")
 OPERATOR_OUTCOMES: tuple[str, ...] = ("done", "refused", "failed")
+# The first three are the sources of the operator command. The last
+# one is the server (spec OC1 section 13): it knows that the caller
+# held the operator token, and it knows no person.
 OPERATOR_LOGIN_SOURCES: tuple[str, ...] = ("login-uid", "sudo-user",
-                                           "effective-user")
+                                           "effective-user",
+                                           "operator-token")
 # The closed set of machine facts an entry can hold (spec OC1 section 7).
 # No key holds text that a person wrote.
 OPERATOR_FACT_KEYS: tuple[str, ...] = (
@@ -2250,6 +2254,28 @@ def _read_operator_entry(path: Path) -> OperatorEntry:
         raise StoreError(f"{path}: the file name does not agree with the "
                          f"record")
     return entry
+
+
+def open_operator_start(store: Path, entry_id: object) -> OperatorEntry | None:
+    """The `start` record of a command that has no `end` record.
+
+    The server uses this for a day move that the operator command sent
+    (spec OC1 section 13). The command wrote its `start` record before
+    the move, thus the server finds that record by its identifier and
+    writes no second one. None: the identifier is not legal, the
+    journal holds no such `start` record, or the command has its `end`
+    record.
+    """
+    if not isinstance(entry_id, str) \
+            or _OPERATOR_ID_RULE.fullmatch(entry_id) is None:
+        return None
+    base = operator_journal_dir(store)
+    if not base.is_dir():
+        return None
+    starts = sorted(base.glob(f"*-{entry_id}-0-start.json"))
+    if len(starts) != 1 or any(base.glob(f"*-{entry_id}-1-end.json")):
+        return None
+    return _read_operator_entry(starts[0])
 
 
 def list_operator_entries(store: Path) -> tuple[OperatorEntry, ...]:

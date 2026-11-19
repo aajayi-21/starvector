@@ -428,3 +428,21 @@ def test_each_legal_fact_shape_goes_in_and_comes_back(tmp_path) -> None:
         "retries": 0})
     store.write_operator_entry(root, entry)
     assert store.list_operator_entries(root) == (entry,)
+
+
+# -- spec OC1 section 13: the start record of a command with no end --
+
+
+def test_an_open_start_record_is_found_by_its_identifier(tmp_path) -> None:
+    root = _root(tmp_path)
+    start = _start()
+    assert store.open_operator_start(root, start.entry_id) is None
+    store.write_operator_entry(root, start)
+    assert store.open_operator_start(root, start.entry_id) == start
+    # A different identifier, and one that is not legal, find nothing.
+    assert store.open_operator_start(root, "f" * 16) is None
+    for bad in ("", "not-hex", "*", "../x", None, 12):
+        assert store.open_operator_start(root, bad) is None
+    # With its `end` record the command is not open.
+    store.write_operator_entry(root, _end())
+    assert store.open_operator_start(root, start.entry_id) is None
