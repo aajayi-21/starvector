@@ -1,7 +1,7 @@
 # Spec OC1 — the operator command line
 
-**Status:** ruled 2026-11-19 (§11). The build is on branch
-`feat/operator-cli`.
+**Status:** ruled 2026-11-19 (§11), and built on branch
+`feat/operator-cli` with the changes of §12.
 **Phase:** before the first public day. The operator's tools are a browser
 console that needs a second server and an SSH tunnel, and a set of module
 commands that do not cover the console.
@@ -367,4 +367,47 @@ The owner accepted each proposal as it was written.
 
 ## 12. Changes at build time
 
-None. The build adds them.
+- **The facts of a journal entry.** §7 gives a small set of machine
+  facts. In the store, each fact key has one shape: a count, a flag, a
+  step name, a field name, or the hexadecimal digits of a session
+  identifier. No fact is text, thus a recovery code in its groups of
+  four fits in no fact.
+- **A close and a reveal name their day each time.** The body holds the
+  day of the question, also for the latest day. The server thus moves
+  the day that the operator accepted, and not a newer day that a
+  rollover opened in the time between.
+- **The lock and the question.** A day move and `sv schedule run` look
+  at the lock before the question, and stop with the exit code 2 when a
+  rollover holds it. They get the lock after the answer, thus a person
+  who reads the question does not stop the timer.
+- **A change that stops before its question** writes no journal record:
+  a player or a day that is not stored, a confirmation of a deletion
+  that does not agree, a code to a pipe, a path of a new file that is
+  in use. A change that the store or the server refuses after the
+  `start` record has the outcome `refused`.
+- **`sv schedule run` with no step due** refuses before the journal. The
+  console writes a record for the same condition. A rollover that did
+  not complete has the error type `rollover-failed`.
+- **A `vp1` day before its pick.** `sv day target` prints
+  `no target until the close` with the exit code 0, and `sv day rank`
+  refuses with the same words.
+- **`sv db verify`** has the exit code 1 when the index does not agree
+  with the store, as `service.index verify` has.
+- **More flags.** `sv day rank` takes `--show-target` and `--limit`.
+  `sv db trials` takes `--from`, `--to`, and `--player`.
+- **The store owner.** Each command checks the owner of the store
+  folder, the commands that read and the commands of §3.4 also.
+- **The start script.** It reads the two named lines of the env file as
+  text and does not use the file as a script. It refuses an env file
+  that `root` does not own or that a different user can read. It starts
+  Python with `-E -s`, thus the caller's environment does not change
+  how Python starts.
+- **The output of a completed change** prints when the `end` record
+  does not write (exit code 3). Thus the operator does not miss a new recovery code.
+- **`--text-file`** drops one line end at the end of the file, because
+  the store refuses a description that ends in a space character.
+- **A player path below the day paths.** `POST /api/day/start` is the
+  start report of a player (spec R1 §4). The parity test of §9 names it
+  with the paths that have no command.
+- **D4 is not built.** The console paths write no journal record. That
+  is a build item after this spec.
