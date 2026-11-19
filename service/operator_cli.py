@@ -836,7 +836,8 @@ def _print_done(ctx: Context, done: Done) -> None:
 
 def _journaled(ctx: Context, work: Callable[[], Done], *,
                player: str | None = None, day: str | None = None,
-               start_facts: Mapping[str, object] | None = None) -> int:
+               start_facts: Mapping[str, object] | None = None,
+               entry_id: str | None = None) -> int:
     """Do one change between its two journal records.
 
     The `start` record goes in first, and when its write does not
@@ -845,8 +846,11 @@ def _journaled(ctx: Context, work: Callable[[], Done], *,
     gives the outcome of a failure, and an error that is not a known
     one continues to the caller after its `end` record. A change that
     completes with no `end` record gives the exit code 3.
+
+    A day move gives its own identifier, because it sends that
+    identifier to the server (spec OC1 section 13).
     """
-    entry_id = ctx.new_id()
+    entry_id = entry_id or ctx.new_id()
     try:
         _journal(ctx, entry_id, "start", player=player, day=day,
                  facts=start_facts)
@@ -1133,7 +1137,8 @@ def _locked() -> int:
 def _locked_change(ctx: Context, work: Callable[[], Done], *,
                    day: str | None = None,
                    question_facts: Mapping[str, object] | None = None,
-                   start_facts: Mapping[str, object] | None = None) -> int:
+                   start_facts: Mapping[str, object] | None = None,
+                   entry_id: str | None = None) -> int:
     """One day move: the question, then the rollover lock with no wait,
     then the change with its journal records.
 
@@ -1148,7 +1153,8 @@ def _locked_change(ctx: Context, work: Callable[[], Done], *,
     if handle is None:
         return _locked()
     try:
-        return _journaled(ctx, work, day=day, start_facts=start_facts)
+        return _journaled(ctx, work, day=day, start_facts=start_facts,
+                          entry_id=entry_id)
     finally:
         os.close(handle)
 
@@ -1207,8 +1213,10 @@ def _day_open(ctx: Context, _args: argparse.Namespace) -> int:
     if rollover.lock_is_held(_lock_path(ctx)):
         return _locked()
 
+    entry_id = ctx.new_id()
+
     def work() -> Done:
-        body = _server_move(ctx, "open", None)
+        body = _server_move(ctx, "open", _own_record(entry_id))
         opened = body.get("day")
         lines = [f"day {_shown(opened)} open",
                  f"trial code {_shown(body.get('trial_code'))}"]
@@ -1217,7 +1225,7 @@ def _day_open(ctx: Context, _args: argparse.Namespace) -> int:
         return Done(value=body, lines=lines,
                     day=opened if isinstance(opened, str) else None)
 
-    return _locked_change(ctx, work)
+    return _locked_change(ctx, work, entry_id=entry_id)
 
 
 def _day_facts(ctx: Context, day: str) -> dict[str, object]:
@@ -1226,7 +1234,14 @@ def _day_facts(ctx: Context, day: str) -> dict[str, object]:
             "latest": day == store.latest_day(ctx.root)}
 
 
-def _named_body(day: str) -> dict:
+def _own_record(entry_id: str) -> dict:
+    """The part of a day move that names the `start` record of this
+    command (spec OC1 section 13). The server finds that record in the
+    journal and writes no second one for the same move."""
+    return {"journal_entry": entry_id}
+
+
+def _named_body(day: str, entry_id: str) -> dict:
     """The body of a close or a reveal (ruling D1).
 
     The body names the day each time, also for the latest day. The
@@ -1234,16 +1249,17 @@ def _named_body(day: str) -> dict:
     operator accepted and not a newer one that a rollover opened in
     the time between.
     """
-    return {"day": day}
+    return {"day": day, **_own_record(entry_id)}
 
 
 def _day_close(ctx: Context, args: argparse.Namespace) -> int:
     if rollover.lock_is_held(_lock_path(ctx)):
         return _locked()
     day = _stored_day(ctx, args.day)
+    entry_id = ctx.new_id()
 
     def work() -> Done:
-        body = _server_move(ctx, "close", _named_body(day))
+        body = _server_move(ctx, "close", _named_body(day, entry_id))
         facts = _counts(body, ("trial_rows", "quarantined"))
         counts = "  ".join(f"{key}={value}" for key, value in facts.items())
         return Done(value={"day": day, **body},
@@ -1251,20 +1267,23 @@ def _day_close(ctx: Context, args: argparse.Namespace) -> int:
                     facts=facts)
 
     return _locked_change(ctx, work, day=day,
-                          question_facts=_day_facts(ctx, day))
+                          question_facts=_day_facts(ctx, day),
+                          entry_id=entry_id)
 
 
 def _day_reveal(ctx: Context, args: argparse.Namespace) -> int:
     if rollover.lock_is_held(_lock_path(ctx)):
         return _locked()
     day = _stored_day(ctx, args.day)
+    entry_id = ctx.new_id()
 
     def work() -> Done:
-        body = _server_move(ctx, "reveal", _named_body(day))
+        body = _server_move(ctx, "reveal", _named_body(day, entry_id))
         return Done(value=body, lines=[f"day {day} revealed"])
 
     return _locked_change(ctx, work, day=day,
-                          question_facts=_day_facts(ctx, day))
+                          question_facts=_day_facts(ctx, day),
+                          entry_id=entry_id)
 
 
 def _set_pause(ctx: Context, paused: bool, note: str) -> int:
@@ -1321,11 +1340,15 @@ def _schedule_run(ctx: Context, _args: argparse.Namespace) -> int:
     if rollover.lock_is_held(_lock_path(ctx)):
         return _locked()
     facts = _run_facts(ctx, closes_at_utc)
+    entry_id = ctx.new_id()
 
     def work() -> Done:
+        # Each move of the run names the record of this command, thus
+        # the server writes no record for a step of the run.
         run = rollover.run_and_record(
             root=ctx.root, closes_at_utc=closes_at_utc,
-            post=lambda path, timeout: ctx.call("POST", path, None, timeout),
+            post=lambda path, timeout: ctx.call(
+                "POST", path, _own_record(entry_id), timeout),
             now=ctx.now, source="command-line", retries=0,
             say=_say_on_stderr)
         done = {"steps": run.steps, "retries": 0}
@@ -1344,7 +1367,8 @@ def _schedule_run(ctx: Context, _args: argparse.Namespace) -> int:
 
     return _locked_change(ctx, work, question_facts=facts,
                           start_facts={"steps": facts["steps"],
-                                       "retries": 0})
+                                       "retries": 0},
+                          entry_id=entry_id)
 
 
 # ---- the target, the rank, and the quarantine (spec OC1 section 3.3) ----

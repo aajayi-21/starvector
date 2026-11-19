@@ -53,9 +53,13 @@ def test_close_reveal_and_open_move_the_day_through_the_server(
     assert _status(world, OPEN_DAY) == "closed"
     # The body names the day of the question, also for the latest day,
     # and a close has the long time limit.
-    assert world.sent == [("POST", "/api/day/close", {"day": OPEN_DAY},
-                           900.0)]
     start, end = _pair(world, "day close")
+    # The body names the record of this command too, thus the server
+    # writes no second record for the move (spec OC1 section 13).
+    assert world.sent == [("POST", "/api/day/close",
+                           {"day": OPEN_DAY,
+                            "journal_entry": start.entry_id}, 900.0)]
+    assert start.login == "opal"
     assert start.day == end.day == OPEN_DAY and start.facts == {}
     assert end.outcome == "done"
     assert end.facts == {"trial_rows": 1, "quarantined": 0}
@@ -65,9 +69,10 @@ def test_close_reveal_and_open_move_the_day_through_the_server(
     assert f"Reveal {OPEN_DAY}? Players see the photo" in captured.err
     assert json.loads(captured.out) == {"day": OPEN_DAY}
     assert _status(world, OPEN_DAY) == "revealed"
-    assert world.sent[-1] == ("POST", "/api/day/reveal",
-                              {"day": OPEN_DAY}, 120.0)
     start, end = _pair(world, "day reveal")
+    assert world.sent[-1] == ("POST", "/api/day/reveal",
+                              {"day": OPEN_DAY,
+                               "journal_entry": start.entry_id}, 120.0)
     assert start.day == OPEN_DAY and end.outcome == "done"
 
     # The open has no question, and the server gives the label.
@@ -99,15 +104,15 @@ def test_a_named_day_behind_the_latest_one_closes_and_reveals(
     captured = capsys.readouterr()
     assert (f"{OPEN_DAY} is still open behind a newer day. Close it and "
             "score its sends?") in captured.err
-    assert world.sent[-1][:3] == ("POST", "/api/day/close",
-                                  {"day": OPEN_DAY})
+    assert world.sent[-1][:2] == ("POST", "/api/day/close")
+    assert world.sent[-1][2]["day"] == OPEN_DAY
     assert _status(world, OPEN_DAY) == "closed"
 
     assert sv(world, "day", "reveal", OPEN_DAY) == 0
     captured = capsys.readouterr()
     assert f"{OPEN_DAY} stayed closed behind a newer day" in captured.err
-    assert world.sent[-1][:3] == ("POST", "/api/day/reveal",
-                                  {"day": OPEN_DAY})
+    assert world.sent[-1][:2] == ("POST", "/api/day/reveal")
+    assert world.sent[-1][2]["day"] == OPEN_DAY
     assert _status(world, OPEN_DAY) == "revealed"
     assert _status(world, newer) == "revealed"
     for command in ("day close", "day reveal"):

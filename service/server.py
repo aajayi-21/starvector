@@ -25,7 +25,8 @@ import sqlite3
 import sys
 import threading
 import urllib.parse
-from collections.abc import Container
+from collections.abc import Container, Mapping
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -43,8 +44,8 @@ from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
 from service import (access, auth, console, credits, digests, limits,
-                     notice, passwords, rollover, rollup, schedule, signin,
-                     store)
+                     notice, operator_plan, passwords, rollover, rollup,
+                     schedule, signin, store)
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from service.pulse import chain_named, pulse_time
@@ -179,6 +180,27 @@ credential_log = logging.getLogger("starvector.credentials")
 # The operator's moderation and deletions (spec MD1). A line names the
 # player and the field, and holds no text and no image.
 moderation_log = logging.getLogger("starvector.moderation")
+
+# The operator journal that the server writes (spec OC1 section 13). A
+# line here says that a journal record did not go in. It names the
+# command and holds no text of a player.
+operator_log = logging.getLogger("starvector.operator")
+
+
+@dataclass(frozen=True, slots=True)
+class _JournalEntry:
+    """One command that the server writes in the operator journal.
+
+    `own` marks a day move that the operator command sent with its own
+    `start` record: the command writes the two records, and the server
+    writes none.
+    """
+
+    entry_id: str
+    command: str
+    player: str | None
+    day: str | None
+    own: bool = False
 
 
 def _skill_value(trials: list[TrialCounts]) -> dict | None:
@@ -1152,6 +1174,16 @@ def create_app(service_config: ServiceConfig,
                                  "detail": "the pulse after the close picks "
                                            "this day's target"},
                                 status_code=409)
+        # The rank of a day that is not revealed shows its target, and
+        # that ends a blind view of the day. The journal gets a record
+        # of this read (spec OC1 section 13, D11).
+        entry: _JournalEntry | Response | None = None
+        if record.status != "revealed":
+            entry = _journal_begin("day rank", player=picked_player,
+                                   day=picked,
+                                   facts={"shows_target": True})
+            if isinstance(entry, Response):
+                return entry
         try:
             # An earlier day scores with the resident context - a
             # drifted config gives the browser numbers different
@@ -1160,9 +1192,13 @@ def create_app(service_config: ServiceConfig,
             value = dev_rankings(stored["record"], record.target_id,
                                  _resident())
         except Exception as error:
-            return JSONResponse({"cause": "dev-score-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse(value)
+            answer = JSONResponse({"cause": "dev-score-failed",
+                                   "detail": str(error)}, status_code=400)
+        else:
+            answer = JSONResponse(value)
+        if entry is None:
+            return answer
+        return _journal_end(entry, answer, facts={"shows_target": True})
 
     # ── the console's growth (spec BR1 section 7) ──────────────────
     #
@@ -1188,6 +1224,113 @@ def create_app(service_config: ServiceConfig,
                                  "detail": "the body must be an object"},
                                 status_code=400)
         return body
+
+    # ---- spec OC1 section 13: the server writes the operator journal ----
+    #
+    # Each path that changes the store writes a `start` record before the
+    # change and an `end` record after it, as the operator command does.
+    # The server knows that the caller held the operator token and knows
+    # no person, thus the login name is a fixed one: `console` in the dev
+    # unit, which the console alone gets to, and `token-holder` in a
+    # process with no dev mode.
+    journal_login = "console" if dev_mode else "token-holder"
+
+    def _journal_write(entry: _JournalEntry, phase: str, *,
+                       day: str | None = None, outcome: str | None = None,
+                       facts: Mapping[str, object] | None = None,
+                       error_kind: str | None = None) -> None:
+        store.write_operator_entry(root, store.OperatorEntry(
+            entry_id=entry.entry_id, phase=phase,
+            at=utc_now().isoformat(), login=journal_login,
+            login_source=operator_plan.SERVER_LOGIN_SOURCE,
+            command=entry.command, player=entry.player,
+            day=day or entry.day, outcome=outcome,
+            facts=dict(facts or {}), error_kind=error_kind))
+
+    def _own_record(own_entry: object, command: str,
+                    day: str | None) -> bool:
+        """Tell if the caller wrote the `start` record of this move.
+
+        The operator command sends the identifier of its record with a
+        day move. The server reads that record from the journal, thus a
+        caller cannot skip the journal with a made identifier. The
+        record must be for this move, or for the rollover that makes it.
+        """
+        found = store.open_operator_start(root, own_entry)
+        return found is not None \
+            and found.command in (command, "schedule run") \
+            and found.day in (None, day)
+
+    def _journal_begin(command: str, *, player: str | None = None,
+                       day: str | None = None,
+                       facts: Mapping[str, object] | None = None,
+                       own_entry: object = None
+                       ) -> _JournalEntry | Response:
+        """Write the `start` record of one change.
+
+        When the record does not go in, the answer is a 500 and nothing
+        changes: a change with no record is not legal (spec OC1 section
+        7).
+        """
+        if own_entry is not None and _own_record(own_entry, command, day):
+            return _JournalEntry("", command, player, day, own=True)
+        entry = _JournalEntry(secrets.token_hex(8), command, player, day)
+        try:
+            _journal_write(entry, "start", facts=facts)
+        except (store.StoreError, OSError):
+            operator_log.error("no start record: command=%s", command)
+            return JSONResponse(
+                {"cause": "journal",
+                 "detail": "the operator journal did not get its start "
+                           "record, and nothing changed"},
+                status_code=500)
+        return entry
+
+    def _answer_cause(answer: Response) -> str | None:
+        """The machine cause of a refusal, when its body names one."""
+        try:
+            cause = json.loads(bytes(answer.body)).get("cause")
+        except (ValueError, AttributeError):
+            return None
+        return cause if isinstance(cause, str) else None
+
+    def _journal_end(entry: _JournalEntry | Response, answer: Response, *,
+                     day: str | None = None,
+                     facts: Mapping[str, object] | None = None,
+                     run_error: str | None = None) -> Response:
+        """Write the `end` record of one change, and give the answer.
+
+        The outcome comes from the HTTP status of the answer. `run_error`
+        names the error type of a change that did not complete and has a
+        200 answer, which a rollover can give. The record holds the status and
+        the machine cause, and not the words of the answer. When the
+        record does not go in, the journal shows the command with no
+        outcome, and a line goes to the server journal.
+        """
+        if isinstance(entry, Response) or entry.own:
+            return answer
+        status = answer.status_code
+        outcome = "done" if status < 400 else \
+            "refused" if status < 500 else "failed"
+        error_kind = None if status < 400 else operator_plan.error_kind_of(
+            None, status, _answer_cause(answer))
+        if run_error is not None:
+            outcome, error_kind = "failed", run_error
+        try:
+            _journal_write(entry, "end", day=day, outcome=outcome,
+                           facts=facts if outcome == "done" else None,
+                           error_kind=error_kind)
+        except (store.StoreError, OSError):
+            operator_log.error("no end record: command=%s", entry.command)
+        return answer
+
+    def _move_facts(step: str, answer: Mapping[str, object]
+                    ) -> dict[str, object]:
+        """The journal facts of a day move: the counts of a close."""
+        if step != "close":
+            return {}
+        return {key: answer[key] for key in ("trial_rows", "quarantined")
+                if type(answer.get(key)) is int and answer[key] >= 0}
 
     def _stored_player(name: str) -> store.PlayerRecord | Response:
         """The record a path names, or the refusal that says why."""
@@ -1241,14 +1384,21 @@ def create_app(service_config: ServiceConfig,
             return JSONResponse({"cause": "bad-shape",
                                  "detail": "paused: expected true or false"},
                                 status_code=400)
+        # The note stays out of the journal: a person wrote it.
+        entry = _journal_begin(
+            "schedule pause" if paused else "schedule resume")
+        if isinstance(entry, Response):
+            return entry
         try:
             store.write_rollover_control(root, store.RolloverControl(
                 paused=paused, changed_at=utc_now().isoformat(),
                 note=body.get("note", "")))
         except store.StoreError as error:
-            return JSONResponse({"cause": "bad-note", "detail": str(error)},
-                                status_code=400)
-        return JSONResponse(_schedule_value())
+            return _journal_end(entry, JSONResponse(
+                {"cause": "bad-note", "detail": str(error)},
+                status_code=400))
+        return _journal_end(entry, JSONResponse(_schedule_value()),
+                            facts={"paused": paused})
 
     def _local_post(path: str, _timeout: float) -> rollover.Answer:
         """The rollover's poster in this process: the step is the last
@@ -1278,15 +1428,27 @@ def create_app(service_config: ServiceConfig,
             return JSONResponse({"cause": "locked",
                                  "detail": "a rollover holds the lock"},
                                 status_code=409)
+        # The lock comes first: a start that meets the lock moved
+        # nothing, and it gets no journal record. The moves of the run
+        # go through _day_move and not through a day path, thus the run
+        # has one journal entry and not one for each step.
         try:
+            entry = _journal_begin("schedule run", facts={"retries": 0})
+            if isinstance(entry, Response):
+                return entry
             run = rollover.run_and_record(
                 root=root, closes_at_utc=closes_at_utc, post=_local_post,
                 now=lambda: utc_now(), source="console", retries=0,
                 backoff_seconds=0.0, sleep=lambda _seconds: None)
         finally:
             os.close(handle)
-        return JSONResponse({"run": console.run_value(run),
-                             "schedule": _schedule_value()})
+        return _journal_end(
+            entry,
+            JSONResponse({"run": console.run_value(run),
+                          "schedule": _schedule_value()}),
+            facts={"steps": tuple(run.steps), "retries": 0},
+            run_error="rollover-failed" if run.outcome == "failed"
+            else None)
 
     async def _named_day_move(request: Request, step: str) -> Response:
         """Close or reveal the day the body names (spec BR1 section 7.6).
@@ -1309,8 +1471,12 @@ def create_app(service_config: ServiceConfig,
         picked = _picked_day(named)
         if isinstance(picked, Response):
             return picked
+        entry = _journal_begin(f"day {step}", day=picked)
+        if isinstance(entry, Response):
+            return entry
         status, answer = await asyncio.to_thread(_day_move, step, picked)
-        return JSONResponse(answer, status_code=status)
+        return _journal_end(entry, JSONResponse(answer, status_code=status),
+                            facts=_move_facts(step, answer))
 
     @app.post("/api/dev/day/close")
     async def dev_day_close(request: Request) -> Response:
@@ -1352,6 +1518,18 @@ def create_app(service_config: ServiceConfig,
         record = _stored_player(name)
         if isinstance(record, Response):
             return record
+        entry = _journal_begin(f"players {command}", player=name)
+        if isinstance(entry, Response):
+            return entry
+        answer, facts = _player_answer(name, command)
+        return _journal_end(entry, answer, facts=facts)
+
+    def _player_answer(name: str, command: str
+                       ) -> tuple[Response, dict[str, object]]:
+        """The answer of one player command, and its journal facts. The
+        recovery code is in the answer alone, and in no fact."""
+        from service import players
+
         try:
             match command:
                 case "restore":
@@ -1362,7 +1540,7 @@ def create_app(service_config: ServiceConfig,
                          "status": restored.status,
                          "recovery_code": auth.display_recovery_code(code),
                          "usable_at": usable_at},
-                        headers={"cache-control": "no-store"})
+                        headers={"cache-control": "no-store"}), {}
                 case "recovery-code":
                     code, usable_at = players.operator_code(
                         service_config, player=name, instant=utc_now())
@@ -1370,21 +1548,22 @@ def create_app(service_config: ServiceConfig,
                         {"player": name,
                          "recovery_code": auth.display_recovery_code(code),
                          "usable_at": usable_at},
-                        headers={"cache-control": "no-store"})
+                        headers={"cache-control": "no-store"}), {}
                 case "revoke":
                     revoked = players.revoke_player(service_config,
                                                     player=name)
                     return JSONResponse({"player": revoked.player,
-                                         "status": revoked.status})
+                                         "status": revoked.status}), {}
                 case "signout":
                     ended = players.signout_player(service_config,
                                                    player=name)
-                    return JSONResponse({"player": name, "ended": ended})
+                    return JSONResponse({"player": name, "ended": ended}), \
+                        {"ended": ended}
                 case _:
                     raise ValueError(f"unknown command {command!r}")
         except store.StoreError as error:
             return JSONResponse({"cause": "refused", "detail": str(error)},
-                                status_code=409)
+                                status_code=409), {}
 
     @app.post("/api/dev/players/{name}/recovery-code")
     def dev_player_recovery_code(request: Request, name: str) -> Response:
@@ -1425,16 +1604,24 @@ def create_app(service_config: ServiceConfig,
             return JSONResponse({"cause": "bad-shape",
                                  "detail": "description: expected a string"},
                                 status_code=400)
+        # The journal names the player and the field, and holds no
+        # text (spec MD1 section 3).
+        entry = _journal_begin("players describe", player=name)
+        if isinstance(entry, Response):
+            return entry
         try:
             account = players.set_description(service_config, player=name,
                                               text=text)
         except store.StoreError as error:
-            return JSONResponse({"cause": "bad-description",
-                                 "detail": str(error)}, status_code=400)
+            return _journal_end(entry, JSONResponse(
+                {"cause": "bad-description", "detail": str(error)},
+                status_code=400))
         moderation_log.info("operator edit: player=%s field=description",
                             name)
-        return JSONResponse({"player": name,
-                             "description": account.description})
+        return _journal_end(
+            entry, JSONResponse({"player": name,
+                                 "description": account.description}),
+            facts={"field": "description"})
 
     @app.put("/api/dev/players/{name}/avatar")
     async def dev_player_avatar(request: Request, name: str) -> Response:
@@ -1447,15 +1634,22 @@ def create_app(service_config: ServiceConfig,
         record = _stored_player(name)
         if isinstance(record, Response):
             return record
+        data = await request.body()
+        entry = _journal_begin("players avatar-set", player=name)
+        if isinstance(entry, Response):
+            return entry
         try:
             account = players.set_avatar(service_config, player=name,
-                                         data=await request.body())
+                                         data=data)
         except store.StoreError as error:
-            return JSONResponse({"cause": "bad-avatar",
-                                 "detail": str(error)}, status_code=400)
+            return _journal_end(entry, JSONResponse(
+                {"cause": "bad-avatar", "detail": str(error)},
+                status_code=400))
         moderation_log.info("operator edit: player=%s field=avatar", name)
-        return JSONResponse({"player": name,
-                             "avatar_hash": account.avatar_hash})
+        return _journal_end(
+            entry, JSONResponse({"player": name,
+                                 "avatar_hash": account.avatar_hash}),
+            facts={"field": "avatar"})
 
     @app.delete("/api/dev/players/{name}/avatar")
     def dev_player_avatar_remove(request: Request, name: str) -> Response:
@@ -1468,9 +1662,14 @@ def create_app(service_config: ServiceConfig,
         record = _stored_player(name)
         if isinstance(record, Response):
             return record
+        entry = _journal_begin("players avatar-clear", player=name)
+        if isinstance(entry, Response):
+            return entry
         players.clear_avatar(service_config, player=name)
         moderation_log.info("operator edit: player=%s field=avatar", name)
-        return JSONResponse({"player": name, "avatar_hash": None})
+        return _journal_end(
+            entry, JSONResponse({"player": name, "avatar_hash": None}),
+            facts={"field": "avatar"})
 
     @app.get("/api/dev/players/{name}/deletion")
     def dev_player_deletion_preview(request: Request,
@@ -1502,16 +1701,21 @@ def create_app(service_config: ServiceConfig,
         if isinstance(body, Response):
             return body
         confirm = body.get("confirm")
+        entry = _journal_begin("players delete", player=name)
+        if isinstance(entry, Response):
+            return entry
         try:
             deleted = players.delete_player(
                 service_config, player=name,
                 confirm=confirm if isinstance(confirm, str) else None)
         except store.StoreError as error:
-            return JSONResponse({"cause": "refused", "detail": str(error)},
-                                status_code=409)
+            return _journal_end(entry, JSONResponse(
+                {"cause": "refused", "detail": str(error)},
+                status_code=409))
         moderation_log.info("operator deletion: player=%s", name)
-        return JSONResponse({"player": name, "deleted": True,
-                             "identifier": deleted.identifier})
+        return _journal_end(entry, JSONResponse(
+            {"player": name, "deleted": True,
+             "identifier": deleted.identifier}))
 
     @app.post("/api/dev/players/{name}/restore")
     def dev_player_restore(request: Request, name: str) -> Response:
@@ -1544,23 +1748,42 @@ def create_app(service_config: ServiceConfig,
         record = _stored_player(name)
         if isinstance(record, Response):
             return record
+        # The journal holds the start of the identifier, as the operator
+        # command does. An identifier that is not a digest gets no fact.
+        short = session_id[:12]
+        session_fact = {"session": short} \
+            if len(short) == 12 and all(
+                character in "0123456789abcdef" for character in short) \
+            else {}
+        entry = _journal_begin("players signout", player=name,
+                               facts=session_fact)
+        if isinstance(entry, Response):
+            return entry
         try:
             ended = store.delete_session(root, name, session_id)
         except store.StoreError:
             # An id that is not a digest names no session.
             ended = False
         if not ended:
-            return JSONResponse({"cause": "no-session",
-                                 "detail": "no live session by that id"},
-                                status_code=404)
-        return JSONResponse({"player": name, "ended": 1})
+            return _journal_end(entry, JSONResponse(
+                {"cause": "no-session",
+                 "detail": "no live session by that id"},
+                status_code=404))
+        return _journal_end(entry,
+                            JSONResponse({"player": name, "ended": 1}),
+                            facts={**session_fact, "ended": 1})
 
     @app.post("/api/dev/prune")
     def dev_prune(request: Request) -> Response:
         refused = _dev_refused(request)
         if refused is not None:
             return refused
-        return JSONResponse(access.prune(root, utc_now()))
+        entry = _journal_begin("players prune")
+        if isinstance(entry, Response):
+            return entry
+        pruned = access.prune(root, utc_now())
+        return _journal_end(entry, JSONResponse(pruned), facts={
+            key: pruned[key] for key in ("sessions", "device_codes")})
 
     @app.get("/api/dev/index")
     def dev_index(request: Request) -> Response:
@@ -1579,13 +1802,18 @@ def create_app(service_config: ServiceConfig,
         if refused is not None:
             return refused
         target = index.index_path(data_root)
+        entry = _journal_begin("db build")
+        if isinstance(entry, Response):
+            return entry
         try:
             index.build(root, target)
         except (index.ResultsIndexError, store.StoreError,
                 sqlite3.Error) as error:
-            return JSONResponse({"cause": "index-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse(index.describe(root, target))
+            return _journal_end(entry, JSONResponse(
+                {"cause": "index-failed", "detail": str(error)},
+                status_code=400))
+        return _journal_end(entry,
+                            JSONResponse(index.describe(root, target)))
 
     @app.post("/api/dev/index/verify")
     def dev_index_verify(request: Request) -> Response:
@@ -1960,40 +2188,57 @@ def create_app(service_config: ServiceConfig,
         except Exception as error:
             return 400, {"cause": f"{step}-failed", "detail": str(error)}
 
-    @app.post("/api/day/open")
-    def day_open(request: Request) -> Response:
-        if not _operator_ok(request):
-            return _unauthorized()
-        status, body = _day_move("open")
-        return JSONResponse(body, status_code=status)
-
     async def _operator_day_move(request: Request, step: str) -> Response:
-        """Close or reveal the latest day, or the day the body names.
+        """Open the due day, or close or reveal a day, for the operator.
 
-        With no body the move is on the latest day, as before. A body
-        `{"day": D}` names a stored day (spec OC1 section 11, D1), for a
-        day behind the latest one. The paths are the same, thus the edge
-        refuses them as before, and the gate is the operator bearer.
-        The move goes to a thread, because a close scores each send.
+        With no body, a close or a reveal moves the latest day, as
+        before. A body can hold two keys. `day` names a stored day for a
+        close or a reveal (spec OC1 section 11, D1), for a day behind
+        the latest one. `journal_entry` is the identifier of the `start`
+        record that the operator command wrote for this move (section
+        13): with it the server writes no second record. The paths are
+        the same, thus the edge refuses them as before, and the gate is
+        the operator bearer. The move goes to a thread, because a close
+        scores each send.
         """
         if not _operator_ok(request):
             return _unauthorized()
         named: str | None = None
+        own_entry: object = None
         if (await request.body()).strip():
             body = await _json_object_body(request)
             if isinstance(body, Response):
                 return body
-            if set(body) != {"day"} or not isinstance(body["day"], str):
+            legal = {"journal_entry"} if step == "open" \
+                else {"day", "journal_entry"}
+            if not body or not set(body) <= legal \
+                    or not all(isinstance(value, str)
+                               for value in body.values()):
                 return JSONResponse(
                     {"cause": "bad-shape",
                      "detail": "day: expected a stored day"},
                     status_code=400)
-            picked = _picked_day(body["day"])
-            if isinstance(picked, Response):
-                return picked
-            named = picked
+            own_entry = body.get("journal_entry")
+            if "day" in body:
+                picked = _picked_day(body["day"])
+                if isinstance(picked, Response):
+                    return picked
+                named = picked
+        # An open learns its day from the move. A close or a reveal with
+        # no named day is on the latest stored day.
+        day = None if step == "open" else named or store.latest_day(root)
+        entry = _journal_begin(f"day {step}", day=day, own_entry=own_entry)
+        if isinstance(entry, Response):
+            return entry
         status, answer = await asyncio.to_thread(_day_move, step, named)
-        return JSONResponse(answer, status_code=status)
+        opened = answer.get("day") if step == "open" and status == 200 \
+            else None
+        return _journal_end(entry, JSONResponse(answer, status_code=status),
+                            day=opened, facts=_move_facts(step, answer))
+
+    @app.post("/api/day/open")
+    async def day_open(request: Request) -> Response:
+        return await _operator_day_move(request, "open")
 
     @app.post("/api/day/close")
     async def day_close(request: Request) -> Response:
