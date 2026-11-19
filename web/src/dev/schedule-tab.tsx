@@ -1,7 +1,8 @@
 /**
- * The Automatic days tab (spec BR1 §7.2): the rollover hour, what the
- * next timer run will do, what is due now, the pause, and the recent
- * runs from the timer, the command line, and this console.
+ * The Automatic days tab (spec BR1 §7.2): the rollover hour, the
+ * pause, the next timer run with its steps, the control that does the
+ * steps due at this moment, and the recent runs from the timer, the
+ * command line, and this console.
  *
  * The timer itself lives in systemd, which the server cannot see. The
  * tab shows the hour the server is configured with and the run records
@@ -15,10 +16,13 @@ import { localTimeOfUtc } from "../ui/format";
 import type { DevApi } from "./api";
 import {
   ConfirmAction,
+  Disclosure,
   ErrorNote,
   messageOf,
   refusedRead,
   StatusBadge,
+  sentenceCase,
+  useNow,
   WorkingNote,
 } from "./controls";
 import { relative, utcStamp } from "./format";
@@ -69,24 +73,33 @@ function PlanSteps(props: {
   );
 }
 
-/** Ticks every 30 s so the "in 3 h" distances stay true. */
-function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
+/** The due steps as one sentence: "Close D and score it, then reveal D". */
+export function dueSentence(plan: DevPlan, latestDay: string | null): string {
+  return plan.steps
+    .map((step, index) => {
+      const text = stepText(step, latestDay, plan.opens);
+      return index === 0 ? text : text.charAt(0).toLowerCase() + text.slice(1);
+    })
+    .join(", then ");
 }
 
 export function ScheduleTab(props: {
   api: DevApi;
   reload: number;
   onChanged: () => void;
+  /** Gets each schedule this tab reads, for the Days tab's numbers. */
+  onView?: (view: DevSchedule) => void;
 }): React.JSX.Element {
-  const { api, reload, onChanged } = props;
+  const { api, reload, onChanged, onView } = props;
   const now = useNow();
-  const [view, setView] = useState<DevSchedule | null>(null);
+  const [view, setShown] = useState<DevSchedule | null>(null);
+  const setView = useCallback(
+    (next: DevSchedule) => {
+      setShown(next);
+      onView?.(next);
+    },
+    [onView],
+  );
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState(false);
@@ -101,7 +114,7 @@ export function ScheduleTab(props: {
     } catch (error) {
       setNote(refusedRead(error));
     }
-  }, [api]);
+  }, [api, setView]);
 
   useEffect(() => {
     void reload;
@@ -145,10 +158,12 @@ export function ScheduleTab(props: {
   };
 
   if (view === null) {
-    return (
+    return note === "" ? (
       <p className="muted small" role="status">
-        {note === "" ? "loading…" : note}
+        Loading…
       </p>
+    ) : (
+      <ErrorNote text={note} />
     );
   }
 
@@ -215,7 +230,7 @@ export function ScheduleTab(props: {
                   <input
                     className="input"
                     aria-label="pause note"
-                    placeholder="why (optional)"
+                    placeholder="Reason (optional)"
                     maxLength={200}
                     style={{ width: 260 }}
                     value={pauseNote}
@@ -234,69 +249,76 @@ export function ScheduleTab(props: {
             </div>
           </section>
 
-          <div className="dev-grid-2">
-            <section className="card" aria-label="Next run">
-              <span className="eyebrow">Next timer run</span>
-              <p className="dev-big">{utcStamp(view.next_run.at)}</p>
-              <p className="muted small">{relative(view.next_run.at, now)}</p>
-              {view.paused ? (
-                <p className="muted small">Paused: it will move nothing.</p>
-              ) : (
+          <section className="card" aria-label="Next run">
+            <span className="eyebrow">Next run</span>
+            <div className="dev-row dev-wrap dev-baseline">
+              <span className="dev-big">{utcStamp(view.next_run.at)}</span>
+              <span className="muted small">
+                {relative(view.next_run.at, now)}
+              </span>
+            </div>
+            {view.paused ? (
+              <p className="muted small">Paused: it will move nothing.</p>
+            ) : (
+              <>
+                {view.next_run.steps.length === 0 ? null : (
+                  <p className="muted small">This run will:</p>
+                )}
                 <PlanSteps
                   plan={view.next_run}
                   latestDay={latestDay}
                   empty={`Nothing: ${latestDay ?? "the latest day"} is not due until ${utcStamp(view.latest?.closes_at)}.`}
                 />
-              )}
-            </section>
+              </>
+            )}
 
-            <section className="card" aria-label="Due now">
-              <span className="eyebrow">Due now</span>
-              <div className="dev-row">
-                <span>Latest day</span>
+            <div className="dev-next">
+              <div className="dev-row dev-wrap">
+                <h3 className="dev-next-title">Due now</h3>
                 {view.latest === null ? (
-                  <span className="muted small">none yet</span>
+                  <span className="muted small">No day yet</span>
                 ) : (
-                  <>
-                    <strong>{view.latest.day}</strong>
+                  <span className="dev-row">
+                    <span className="muted small">
+                      Latest day {view.latest.day}
+                    </span>
                     <StatusBadge status={view.latest.status} />
-                  </>
+                  </span>
                 )}
               </div>
-              <PlanSteps
-                plan={view.due_now}
-                latestDay={latestDay}
-                empty="Nothing is due now."
+              <p>
+                {view.due_now.steps.length === 0
+                  ? "Nothing is due now."
+                  : `${dueSentence(view.due_now, latestDay)}.`}
+              </p>
+              <ConfirmAction
+                label="Do what is due now"
+                question={`${view.due_now.steps
+                  .map((step) =>
+                    stepText(step, latestDay, view.due_now?.opens ?? null),
+                  )
+                  .join(", then ")} — now?`}
+                confirmLabel="Yes, do it now"
+                variant="secondary"
+                disabled={
+                  busy ||
+                  running ||
+                  view.lock_held ||
+                  view.due_now.steps.length === 0
+                }
+                onConfirm={() => void runNow()}
               />
-              <div className="dev-controls">
-                <ConfirmAction
-                  label="Do what is due now"
-                  question={`${view.due_now.steps
-                    .map((step) =>
-                      stepText(step, latestDay, view.due_now?.opens ?? null),
-                    )
-                    .join(", then ")} — now?`}
-                  confirmLabel="Yes, do it now"
-                  disabled={
-                    busy ||
-                    running ||
-                    view.lock_held ||
-                    view.due_now.steps.length === 0
-                  }
-                  onConfirm={() => void runNow()}
-                />
-                {running ? (
-                  <WorkingNote text="Working through the due steps… a close with the live model can take a minute." />
-                ) : (
-                  <p className="subtle small">
-                    {view.lock_held
-                      ? "A rollover is running now — wait for it to end."
-                      : "Does what the timer would do at this moment. The pause does not stop it."}
-                  </p>
-                )}
-              </div>
-            </section>
-          </div>
+              {running ? (
+                <WorkingNote text="Working through the due steps… a close with the live model can take a minute." />
+              ) : (
+                <p className="subtle small">
+                  {view.lock_held
+                    ? "A rollover is running now — wait for it to end."
+                    : "Does what the timer would do at this moment. The pause does not stop it."}
+                </p>
+              )}
+            </div>
+          </section>
         </>
       )}
 
@@ -329,11 +351,11 @@ export function ScheduleTab(props: {
           <table className="table dev-table">
             <thead>
               <tr>
-                <th>started</th>
-                <th>from</th>
-                <th>outcome</th>
-                <th>steps</th>
-                <th>lines</th>
+                <th>Started</th>
+                <th>From</th>
+                <th>Outcome</th>
+                <th>Steps</th>
+                <th>Lines</th>
               </tr>
             </thead>
             <tbody>
@@ -350,13 +372,17 @@ export function ScheduleTab(props: {
                     <span
                       className={`dev-outcome dev-outcome-${run.outcome.replace(" ", "-")}`}
                     >
-                      {run.outcome}
+                      {sentenceCase(run.outcome)}
                     </span>
                   </td>
-                  <td>{run.steps.length === 0 ? "—" : run.steps.join(", ")}</td>
+                  <td>
+                    {run.steps.length === 0
+                      ? "—"
+                      : sentenceCase(run.steps.join(", "))}
+                  </td>
                   <td>
                     <details>
-                      <summary>show</summary>
+                      <summary>Show</summary>
                       <pre className="dev-pre">
                         {run.detail || "(no lines)"}
                       </pre>
@@ -367,12 +393,20 @@ export function ScheduleTab(props: {
             </tbody>
           </table>
         )}
-        <p className="subtle small">
-          The timer is <code>starvector-day.timer</code> in systemd; its hour
-          must equal <code>closes_at_utc</code>. On the box,{" "}
-          <code>systemctl list-timers starvector-day.timer</code> shows its next
-          start. The server clock read {utcStamp(view.now)} at the last refresh.
-        </p>
+      </section>
+
+      <section className="card dev-rows" aria-label="More">
+        <div className="row-list">
+          <Disclosure title="Timer details" meta="systemd">
+            <p className="muted small">
+              The timer is <code>starvector-day.timer</code> in systemd; its
+              hour must equal <code>closes_at_utc</code>. On the box,{" "}
+              <code>systemctl list-timers starvector-day.timer</code> shows its
+              next start. The server clock read {utcStamp(view.now)} at the last
+              refresh.
+            </p>
+          </Disclosure>
+        </div>
       </section>
     </div>
   );

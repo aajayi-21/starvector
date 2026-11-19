@@ -1,13 +1,14 @@
 /**
  * The gate card (spec A2 §3): the three ways in with a username.
- * `Sign in` is the card's first form. `Make an account` shows only
- * when the server makes accounts, and `I do not have my password`
- * opens the recovery form.
+ * `Sign in` is the card's first form. `Create an account` shows only
+ * when the server makes accounts, and `Forgot it?` at the password
+ * opens the recovery form. Below the form, two rows open the ways in
+ * with no password: a device code and, on a dev server, the open door.
  *
  * The sign-up form shows the notice that results are public above the
  * control that makes the account (spec R1 §3.1). Publication is a
  * condition of the account, thus the form has no box to tick: the
- * click on `Make an account` is the agreement, and the form says so.
+ * click on `Create account` is the agreement, and the form says so.
  * A page with a notice version that is not the server's does not make
  * accounts.
  *
@@ -17,32 +18,61 @@
  * else on this device.
  */
 
+import { Globe, Warning } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
-import { credentialMessage } from "../api/types";
+import { ApiError, credentialMessage } from "../api/types";
 import { PasswordField, RuleList } from "./fields";
 import { NOTICE_VERSION } from "./notice";
 import { NoticeText, OutOfDate } from "./notice-text";
+import { DeviceCodeRow, DoorRow } from "./other-ways";
 import {
   allOk,
   isRecoveryCodeShape,
   normalizeUsername,
+  PASSWORD_MIN,
   passwordChecks,
+  USERNAME_MAX,
+  USERNAME_MIN,
   usernameChecks,
 } from "./rules";
+import { SignupProgress } from "./signup-progress";
 
 type Mode = "signin" | "signup" | "recover";
 
 const HEADINGS: Record<Mode, string> = {
   signin: "Sign in",
-  signup: "Make an account",
+  signup: "Create an account",
   recover: "Get back in with your recovery code",
 };
 
+/** The helper line of a new username before the player types. */
+const USERNAME_SUMMARY = `${USERNAME_MIN} to ${USERNAME_MAX} letters, numbers, or hyphens, starting with a letter`;
+
+/** The helper line of a new password before the player types. */
+const PASSWORD_SUMMARY = `At least ${PASSWORD_MIN} characters. A few unrelated words work well.`;
+
 /** The password rule the screen cannot check: the server holds the table. */
-const USUAL_NOTE = "Not a password that many people use";
+const USUAL_NOTE = "Don't use a password that many people use";
+
+/**
+ * The usual-password rule when the server refused this typed password
+ * for it, and `undefined` in each other condition. The helper line of
+ * the field then names the rule until the player changes the password.
+ */
+function usualRefusal(
+  error: unknown,
+  refused: string | undefined,
+  typed: string,
+): string | undefined {
+  return error instanceof ApiError &&
+    error.refusalCause === "password-usual" &&
+    refused === typed
+    ? USUAL_NOTE
+    : undefined;
+}
 
 export function GateCard(props: {
   /** True when GET /api/signup said the server makes accounts. */
@@ -51,6 +81,8 @@ export function GateCard(props: {
   signupClosed: boolean;
   /** The notice version that read gave, when it answered. */
   noticeVersion: number | undefined;
+  /** True when GET /api/door said the dev door is open (spec A1 §4). */
+  doorOpen: boolean;
   /** A session is open on this device and no code waits to be shown. */
   onSignedIn: () => void;
   /** A session is open, and this recovery code shows one time first. */
@@ -82,72 +114,74 @@ export function GateCard(props: {
     props.signupOpen && props.noticeVersion !== NOTICE_VERSION;
 
   return (
-    <section className="card card-hero" aria-labelledby="gate-heading">
-      <h2 id="gate-heading" ref={heading} tabIndex={-1}>
-        {HEADINGS[mode]}
-      </h2>
-      {mode === "signin" ? (
-        <SignInForm
-          username={username}
-          onUsername={typeUsername}
-          onSignedIn={props.onSignedIn}
-        />
-      ) : mode === "signup" ? (
-        <SignUpForm
-          username={username}
-          onUsername={typeUsername}
-          onRecoveryCode={(code) => props.onRecoveryCode(code, false)}
-        />
-      ) : (
-        <RecoverForm
-          username={username}
-          onUsername={typeUsername}
-          onRecoveryCode={(code) => props.onRecoveryCode(code, true)}
-        />
-      )}
-      <hr className="divider" />
-      {mode === "signin" ? (
-        <div className="stack-sm">
-          <div className="row">
+    <>
+      {mode === "signup" ? <SignupProgress current={1} /> : null}
+      <section
+        className="card card-hero gate-card"
+        aria-labelledby="gate-heading"
+      >
+        <h2 id="gate-heading" ref={heading} tabIndex={-1}>
+          {HEADINGS[mode]}
+        </h2>
+        {mode === "signin" ? (
+          <>
+            <SignInForm
+              username={username}
+              onUsername={typeUsername}
+              onSignedIn={props.onSignedIn}
+              onForgot={() => go("recover")}
+            />
             {props.signupOpen && !signupStale ? (
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn-secondary btn-block"
                 onClick={() => go("signup")}
               >
-                Make an account
+                Create an account
               </button>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => go("recover")}
-            >
-              I do not have my password
-            </button>
-          </div>
-          {props.signupClosed ? (
-            <p className="hint">This server isn't making new accounts now.</p>
-          ) : null}
-          {signupStale ? (
-            <OutOfDate>
-              This page is out of date, so it can't make an account. Reload it
-              and try again.
-            </OutOfDate>
-          ) : null}
-        </div>
-      ) : (
-        <div>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => go("signin")}
-          >
-            Back to sign in
-          </button>
-        </div>
-      )}
-    </section>
+            {props.signupClosed ? (
+              <p className="hint">This server isn't making new accounts now.</p>
+            ) : null}
+            {signupStale ? (
+              <OutOfDate>
+                This page is out of date, so it can't make an account. Reload it
+                and try again.
+              </OutOfDate>
+            ) : null}
+            <div className="row-list gate-more">
+              <DeviceCodeRow onSignedIn={props.onSignedIn} />
+              {props.doorOpen ? <DoorRow /> : null}
+            </div>
+          </>
+        ) : (
+          <>
+            {mode === "signup" ? (
+              <SignUpForm
+                username={username}
+                onUsername={typeUsername}
+                onRecoveryCode={(code) => props.onRecoveryCode(code, false)}
+              />
+            ) : (
+              <RecoverForm
+                username={username}
+                onUsername={typeUsername}
+                onRecoveryCode={(code) => props.onRecoveryCode(code, true)}
+              />
+            )}
+            <div className="gate-back">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => go("signin")}
+              >
+                Back to sign in
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -190,6 +224,8 @@ function SignInForm(props: {
   username: string;
   onUsername: (typed: string) => void;
   onSignedIn: () => void;
+  /** The player has no password to type: open the recovery form. */
+  onForgot: () => void;
 }): React.JSX.Element {
   const api = useApi();
   const [password, setPassword] = useState("");
@@ -220,16 +256,23 @@ function SignInForm(props: {
         autoComplete="current-password"
         value={password}
         onChange={setPassword}
+        labelAction={
+          <button
+            type="button"
+            className="text-button"
+            onClick={props.onForgot}
+          >
+            Forgot it?
+          </button>
+        }
       />
-      <div>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={!ready || signIn.isPending}
-        >
-          {signIn.isPending ? "Signing in…" : "Sign in"}
-        </button>
-      </div>
+      <button
+        type="submit"
+        className="btn btn-primary btn-block"
+        disabled={!ready || signIn.isPending}
+      >
+        {signIn.isPending ? "Signing in…" : "Sign in"}
+      </button>
       {signIn.isError ? <Refusal error={signIn.error} /> : null}
     </form>
   );
@@ -245,7 +288,7 @@ function SignUpForm(props: {
   const signUp = useMutation({
     // The form shows the notice above its one control, thus a click on
     // that control is the agreement (spec R1 §3.2).
-    mutationFn: () => api.signUp(props.username, password, true),
+    mutationFn: (word: string) => api.signUp(props.username, word, true),
     onSuccess: (answer) => props.onRecoveryCode(answer.recovery_code),
   });
   const nameChecks = usernameChecks(props.username);
@@ -257,7 +300,7 @@ function SignUpForm(props: {
       onSubmit={(event) => {
         event.preventDefault();
         if (ready && !signUp.isPending) {
-          signUp.mutate();
+          signUp.mutate(password);
         }
       }}
     >
@@ -268,8 +311,20 @@ function SignUpForm(props: {
           onChange={props.onUsername}
           describedBy="signup-username-rules"
         />
-        <RuleList id="signup-username-rules" checks={nameChecks} />
-        <p className="hint">Capitals you type become small letters.</p>
+        <RuleList
+          id="signup-username-rules"
+          checks={nameChecks}
+          summary={USERNAME_SUMMARY}
+          typed={props.username !== ""}
+        />
+        <p className="hint">Capital letters become lowercase.</p>
+      </div>
+      <div className="notice notice-warn" role="note">
+        <Warning size={18} aria-hidden="true" />
+        <span>
+          Everyone sees this name and it can never be changed. Don't use your
+          real name.
+        </span>
       </div>
       <div className="stack-sm">
         <PasswordField
@@ -284,33 +339,27 @@ function SignUpForm(props: {
           id="signup-password-rules"
           checks={wordChecks}
           notes={[USUAL_NOTE]}
+          summary={PASSWORD_SUMMARY}
+          typed={password !== ""}
+          refused={usualRefusal(signUp.error, signUp.variables, password)}
         />
-        <p className="hint">
-          Any characters work, spaces too. You don't need capitals, digits, or
-          symbols. A few unrelated words make a good password.
-        </p>
-      </div>
-      <div className="notice notice-warn" role="note">
-        <span>
-          <strong>Before you make it:</strong> your username is shown to every
-          other player, and it can never be changed. Don't use your real name.
-        </span>
       </div>
       <div className="notice notice-warn" role="note" id="signup-notice">
-        <div className="stack-sm">
-          <NoticeText />
-          <p>When you make an account, you agree to this.</p>
-        </div>
+        <Globe size={18} aria-hidden="true" />
+        <NoticeText />
       </div>
-      <div>
+      <div className="stack-sm">
         <button
           type="submit"
-          className="btn btn-primary"
-          aria-describedby="signup-notice"
+          className="btn btn-primary btn-block"
+          aria-describedby="signup-notice signup-agreement"
           disabled={!ready || signUp.isPending}
         >
-          {signUp.isPending ? "Making your account…" : "Make an account"}
+          {signUp.isPending ? "Creating your account…" : "Create account"}
         </button>
+        <p className="hint gate-agreement" id="signup-agreement">
+          By creating an account, you agree to this.
+        </p>
       </div>
       {signUp.isError ? <Refusal error={signUp.error} /> : null}
     </form>
@@ -326,7 +375,8 @@ function RecoverForm(props: {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const recover = useMutation({
-    mutationFn: () => api.recover(props.username, code.trim(), password),
+    mutationFn: (word: string) =>
+      api.recover(props.username, code.trim(), word),
     onSuccess: (answer) => props.onRecoveryCode(answer.recovery_code),
   });
   const wordChecks = passwordChecks(password, props.username);
@@ -338,13 +388,13 @@ function RecoverForm(props: {
       onSubmit={(event) => {
         event.preventDefault();
         if (ready && !recover.isPending) {
-          recover.mutate();
+          recover.mutate(password);
         }
       }}
     >
       <p className="muted">
-        Type the recovery code you saved when you made your account, and choose
-        a new password. Each device you were signed in on signs out.
+        Enter the recovery code you saved when you created your account, and
+        choose a new password. Every device you were signed in on signs out.
       </p>
       <UsernameField
         id="recover-username"
@@ -384,17 +434,18 @@ function RecoverForm(props: {
           id="recover-password-rules"
           checks={wordChecks}
           notes={[USUAL_NOTE]}
+          summary={PASSWORD_SUMMARY}
+          typed={password !== ""}
+          refused={usualRefusal(recover.error, recover.variables, password)}
         />
       </div>
-      <div>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={!ready || recover.isPending}
-        >
-          {recover.isPending ? "Working…" : "Set a new password"}
-        </button>
-      </div>
+      <button
+        type="submit"
+        className="btn btn-primary btn-block"
+        disabled={!ready || recover.isPending}
+      >
+        {recover.isPending ? "Working…" : "Set a new password"}
+      </button>
       {recover.isError ? <Refusal error={recover.error} /> : null}
       <p className="hint">
         No recovery code? Ask the operator for one. A code from the operator

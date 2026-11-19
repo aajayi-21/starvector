@@ -4,12 +4,19 @@
  * best and the typical result, the recent days against the 50%
  * guessing line, and each day with a link to its results.
  *
+ * The summary card leads with the skill number on a scale whose
+ * middle is chance, and one line of what it stands for. The longer
+ * explanations fold behind one row with their words unchanged: each
+ * sentence is a claim about the scoring. The card states numbers and
+ * no verdict. Four equal tiles hold the single numbers.
+ *
  * The two repairs of docs/final-push.md §7.2: the best result is the
  * best share beaten — ranks from pools of different sizes do not
  * compare — and the median of an even count is the mean of the two
  * middle values.
  */
 
+import { CaretRight } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
@@ -79,7 +86,7 @@ export function HistoryScreen(): React.JSX.Element {
           ) : null}
           <div>
             <Link to="/today" className="btn btn-primary">
-              Go to today's session
+              Go to today's sketch
             </Link>
           </div>
         </section>
@@ -127,73 +134,92 @@ function HistoryBody(props: {
 
   return (
     <>
-      <div className="cards">
-        <section className="card card-hero" aria-labelledby="skill-heading">
-          <h2 id="skill-heading" className="eyebrow" style={{ fontSize: 13 }}>
-            Skill number
-          </h2>
-          {view.skill === null ? (
+      <section className="card card-hero" aria-labelledby="skill-heading">
+        {view.skill === null ? (
+          <>
+            <h2 id="skill-heading" className="eyebrow">
+              Skill number
+            </h2>
             <p className="muted">
               Your skill number appears after your first result.
             </p>
-          ) : (
-            <>
-              <div className="big-number" style={{ fontSize: 52 }}>
-                {view.skill.theta.toFixed(2)}
+          </>
+        ) : (
+          <>
+            <div className="skill-top">
+              <div className="stack-sm">
+                <h2 id="skill-heading" className="eyebrow">
+                  Skill number
+                </h2>
+                <div className="big-number" style={{ fontSize: 52 }}>
+                  {view.skill.theta.toFixed(2)}
+                </div>
               </div>
-              <p className="muted small">
-                1.00 is chance, the same thing as averaging 50%. Yours is the
-                same as averaging {skillAsPercent(view.skill.theta)}%. Based on{" "}
-                {view.skill.n} {view.skill.n === 1 ? "result" : "results"}.
+              <SkillScale theta={view.skill.theta} />
+            </div>
+            <p className="muted small">
+              1.00 is chance, the same thing as averaging 50%. Yours is the same
+              as averaging {skillAsPercent(view.skill.theta)}%. Based on{" "}
+              {view.skill.n} {view.skill.n === 1 ? "result" : "results"}.
+            </p>
+            <p className="small">{luckSentence(view.skill.evidence_p)}</p>
+            {view.skill.n < EARLY_RESULTS ? (
+              <p
+                className="badge badge-warn"
+                style={{ alignSelf: "flex-start" }}
+              >
+                Early estimate — it swings a lot until you have more days
               </p>
-              <p className="hint">
-                The leaderboard shows a steadied version of this number, which
-                stays near the middle until enough results back it. The two can
-                differ.
-              </p>
-              <div className="row" style={{ alignItems: "baseline" }}>
-                <span className="label">Hit number</span>
-                <span
-                  className="tabular"
-                  style={{ fontSize: 22, fontWeight: 650 }}
-                  data-testid="hit-number"
-                >
-                  {view.skill.hit_number.toFixed(2)}
+            ) : null}
+            <details className="row-disclosure skill-more">
+              <summary>
+                What these numbers mean
+                <span className="row-meta">
+                  <CaretRight
+                    size={16}
+                    aria-hidden="true"
+                    className="row-chevron"
+                  />
                 </span>
-              </div>
-              <p className="muted small">
-                Chance is 1.00 here as well. Higher means more of your results
-                land near the very top. The skill number rewards a steady edge,
-                and the hit number rewards occasional strong hits.
-              </p>
-              {view.skill.n < EARLY_RESULTS ? (
-                <p
-                  className="badge badge-warn"
-                  style={{ alignSelf: "flex-start" }}
-                >
-                  Early estimate — it swings a lot until you have more days
+              </summary>
+              <div className="row-body">
+                <p className="muted small">
+                  The leaderboard shows a steadied version of the skill number,
+                  which stays near the middle until enough results back it. The
+                  two can differ.
                 </p>
-              ) : null}
-              <p className="small">{luckSentence(view.skill.evidence_p)}</p>
-            </>
+                <p className="muted small">
+                  For the hit number, chance is 1.00 as well. Higher means more
+                  of your results land near the very top. The skill number
+                  rewards a steady edge, and the hit number rewards occasional
+                  strong hits.
+                </p>
+              </div>
+            </details>
+          </>
+        )}
+        <div className="tiles">
+          {view.skill === null ? null : (
+            <Tile label="Hit number">
+              <span data-testid="hit-number">
+                {view.skill.hit_number.toFixed(2)}
+              </span>
+            </Tile>
           )}
-        </section>
-        <StatCard
-          label="Streak"
-          value={`${streak}`}
-          unit={streak === 1 ? "day" : "days"}
-        />
-        <StatCard
-          label="Best result"
-          value={best === undefined ? "—" : `${percentBeaten(best.p)}%`}
-          unit={best === undefined ? "" : formatShortDay(best.day)}
-        />
-        <StatCard
-          label="Typical result"
-          value={typical === undefined ? "—" : `${percentBeaten(typical)}%`}
-          unit="the middle of your results"
-        />
-      </div>
+          <Tile
+            label="Best result"
+            unit={best === undefined ? "" : formatShortDay(best.day)}
+          >
+            {best === undefined ? "—" : `${percentBeaten(best.p)}%`}
+          </Tile>
+          <Tile label="Typical result" unit="the middle of your results">
+            {typical === undefined ? "—" : `${percentBeaten(typical)}%`}
+          </Tile>
+          <Tile label="Streak" unit={streak === 1 ? "day" : "days"}>
+            {streak}
+          </Tile>
+        </div>
+      </section>
 
       <section className="card" aria-labelledby="recent-heading">
         <div className="stack-sm">
@@ -215,7 +241,7 @@ function HistoryBody(props: {
                 <th>Date</th>
                 <th>Code</th>
                 <th className="num">Result</th>
-                <th className="num">Hidden photo's place</th>
+                <th className="num">Place</th>
                 <th>
                   <span className="visually-hidden">Details and share</span>
                 </th>
@@ -237,21 +263,55 @@ function HistoryBody(props: {
   );
 }
 
-function StatCard(props: {
+/** One single number of the summary, with its label over it. */
+function Tile(props: {
   label: string;
-  value: string;
-  unit: string;
+  unit?: string;
+  children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <section className="card">
-      <div className="eyebrow">{props.label}</div>
-      <div className="row" style={{ alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 36, fontWeight: 700 }} className="tabular">
-          {props.value}
-        </span>
-        <span className="subtle small">{props.unit}</span>
+    <div className="tile">
+      <span className="tile-label">{props.label}</span>
+      <span className="tile-value">
+        {props.children}
+        {props.unit === undefined || props.unit === "" ? null : (
+          <span className="tile-unit">{props.unit}</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** The two ends of the skill scale: half of chance and twice chance. */
+const SCALE_LOW = 0.5;
+const SCALE_HIGH = 2;
+
+/**
+ * Where a skill number sits against chance. The scale is in ratios, so
+ * 1.00 is its middle, and a number beyond an end sits at that end. A
+ * drawing of the number above it: it adds no fact and no verdict.
+ */
+function SkillScale(props: { theta: number }): React.JSX.Element {
+  const span = Math.log(SCALE_HIGH) - Math.log(SCALE_LOW);
+  const raw =
+    (Math.log(Math.max(props.theta, 1e-6)) - Math.log(SCALE_LOW)) / span;
+  const at = Math.max(0, Math.min(1, raw)) * 100;
+  return (
+    <div className="stack-sm skill-scale">
+      <div
+        className="meter"
+        role="img"
+        aria-label={`Skill number ${props.theta.toFixed(2)}. 1.00 is chance.`}
+      >
+        <div className="meter-chance" />
+        <div className="skill-dot" style={{ left: `${at}%` }} />
       </div>
-    </section>
+      <div className="meter-scale" aria-hidden="true">
+        <span>{SCALE_LOW.toFixed(2)}</span>
+        <span>1.00 · guessing</span>
+        <span>{SCALE_HIGH.toFixed(2)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -305,7 +365,7 @@ function ScoredLine(props: { row: HistoryDayRow }): React.JSX.Element {
       <td>{formatShortDay(row.day)}</td>
       <td style={{ fontFamily: "var(--mono)" }}>{row.trial_code}</td>
       <td className="num">{percentBeaten(row.p)}%</td>
-      <td className="num">
+      <td className="num nowrap">
         {ordinal(row.target_rank)} of {row.decoy_count + 1}
       </td>
       <td>

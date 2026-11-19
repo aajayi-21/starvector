@@ -30,7 +30,9 @@ describe("the shell", () => {
     ]) {
       expect(within(top).getByRole("link", { name })).toBeDefined();
     }
-    expect(await screen.findByText(/-day streak/)).toBeDefined();
+    // The top bar's badge, and the greeting row that holds the streak
+    // on a phone, where the badge hides.
+    expect(await screen.findAllByText(/-day streak/)).not.toHaveLength(0);
     expect(screen.getByLabelText("Your account")).toBeDefined();
   });
 
@@ -56,6 +58,18 @@ describe("the shell", () => {
   it("says a test season is a test season", async () => {
     renderAt("/");
     expect(await screen.findByText(/Test season/)).toBeDefined();
+  });
+
+  it("opens the full season sentence from the badge", async () => {
+    renderAt("/");
+    const badge = await screen.findByRole("button", { name: "Test season" });
+    expect(badge.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("note")).toBeNull();
+    fireEvent.click(badge);
+    expect(badge.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("note").textContent).toMatch(
+      /won't carry over to the public launch/,
+    );
   });
 
   it("says nothing about a season when the pool is public", async () => {
@@ -99,8 +113,8 @@ describe("the signed-out landing page", () => {
     // With the door off: the username and the device code. The
     // password field has no textbox role while it hides its value.
     expect(screen.getAllByRole("textbox")).toHaveLength(2);
-    expect(screen.getByLabelText("Signed in on another device?")).toBeDefined();
-    expect(screen.queryByText("Test server sign-in")).toBeNull();
+    expect(screen.getByLabelText("Device code")).toBeDefined();
+    expect(screen.queryByText("Operator sign-in")).toBeNull();
   });
 
   it("signs in with a device code and then shows the app", async () => {
@@ -121,7 +135,7 @@ describe("the signed-out landing page", () => {
       },
     };
     renderAt("/", api);
-    const field = await screen.findByLabelText("Signed in on another device?");
+    const field = await screen.findByLabelText("Device code");
     const submit = screen.getByRole("button", { name: "Use this code" });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(field, { target: { value: "abcd-efgh" } });
@@ -138,7 +152,7 @@ describe("the signed-out landing page", () => {
       redeemDeviceCode: () => Promise.reject(new ApiError(400, "bad-code")),
     };
     renderAt("/", api);
-    const field = await screen.findByLabelText("Signed in on another device?");
+    const field = await screen.findByLabelText("Device code");
     fireEvent.change(field, { target: { value: "ZZZZ-ZZZZ" } });
     fireEvent.click(screen.getByRole("button", { name: "Use this code" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(
@@ -149,7 +163,7 @@ describe("the signed-out landing page", () => {
   it("adds the name sign-in on a test server (spec A1 §4)", async () => {
     // The mock's door is on — the dev world.
     renderAt("/", refusing(new ApiError(401, undefined, "unauthorized")));
-    expect(await screen.findByText("Test server sign-in")).toBeDefined();
+    expect(await screen.findByText("Operator sign-in")).toBeDefined();
     expect(await screen.findByLabelText("Player name")).toBeDefined();
     expect(
       await screen.findByRole("button", { name: "Sign in by name" }),

@@ -42,7 +42,7 @@ test("a stale tab gets the server's 409, spends nothing, and keeps the sketch", 
   await page.getByLabel("Add a word").press("Enter");
   await page.getByRole("button", { name: "Review and send" }).click();
   stale = false;
-  await page.getByRole("button", { name: "Send today's session" }).click();
+  await page.getByRole("button", { name: "Send my sketch" }).click();
 
   await expect.poll(() => answers).toEqual([409]);
   // Nothing landed on the earlier label, and the word survives on the
@@ -78,7 +78,7 @@ test("the home screen moves by itself when the close finishes", async ({
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Today's session has closed" }),
+    page.getByRole("heading", { name: "Today has closed" }),
   ).toBeVisible();
   const before = reads;
   status = "open";

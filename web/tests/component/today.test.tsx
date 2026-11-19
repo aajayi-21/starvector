@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 const REVIEW = "Review and send";
-const SEND = "Send today's session";
+const SEND = "Send my sketch";
 
 /** Open the review step, and give the button that sends. */
 async function openReview(): Promise<HTMLElement> {
@@ -110,15 +110,15 @@ describe("the Today screen", () => {
     firePointer(live, "pointermove", 280, 30);
     firePointer(live, "pointerup", 280, 30);
     await typeWord("tall vertical structure");
-    fireEvent.click(screen.getByText("Pick strokes"));
+    fireEvent.click(screen.getByText("Pick lines"));
     firePointer(live, "pointerdown", 90, 90);
-    fireEvent.change(screen.getByLabelText("Name the picked strokes"), {
+    fireEvent.change(screen.getByLabelText("Name the picked lines"), {
       target: { value: "tower" },
     });
     fireEvent.click(screen.getByText("Label"));
     await screen.findByText("tower");
     fireEvent.click(await openReview());
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/You're in for today/);
     expect(sent).toEqual([
       {
         impressions: ["tall vertical structure"],
@@ -154,7 +154,7 @@ describe("the Today screen", () => {
     ).toBeDefined();
     await typeWord("tall vertical structure");
     await waitFor(() => expect(send.disabled).toBe(false));
-    expect(screen.getByText(/You can send once/)).toBeDefined();
+    expect(screen.getByText(/You get one send/)).toBeDefined();
   });
 
   it("adds a word with the Add button, not only with Enter", async () => {
@@ -185,7 +185,7 @@ describe("the Today screen", () => {
     const sending = (await screen.findByText("Sending…")) as HTMLButtonElement;
     expect(sending.disabled).toBe(true);
     release({ trial_id: "ab".repeat(16), day: HARNESS_TODAY, atom_count: 1 });
-    expect(await screen.findByText(/you're in for today/)).toBeDefined();
+    expect(await screen.findByText(/You're in for today/)).toBeDefined();
   });
 
   it("fires exactly one POST for a synchronous double-click", async () => {
@@ -209,7 +209,7 @@ describe("the Today screen", () => {
     fireEvent.click(send);
     fireEvent.click(send);
     release({ trial_id: "cd".repeat(16), day: HARNESS_TODAY, atom_count: 1 });
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/You're in for today/);
     expect(calls).toBe(1);
   });
 
@@ -222,7 +222,7 @@ describe("the Today screen", () => {
     await typeWord("cold");
     fireEvent.click(await openReview());
     // The 409 locks the screen into the sent view.
-    expect(await screen.findByText(/you're in for today/)).toBeDefined();
+    expect(await screen.findByText(/You're in for today/)).toBeDefined();
     expect(screen.queryByText("already-submitted")).toBeNull();
   });
 
@@ -264,7 +264,7 @@ describe("the Today screen", () => {
       getDay: async () => ({ ...(await base.getDay()), submitted: true }),
     };
     renderAt("/today", api);
-    expect(await screen.findByText(/you're in for today/)).toBeDefined();
+    expect(await screen.findByText(/You're in for today/)).toBeDefined();
     expect(screen.queryByText(SEND)).toBeNull();
   });
 
@@ -275,7 +275,7 @@ describe("the Today screen", () => {
       getDay: async () => ({ ...(await base.getDay()), status: "closing" }),
     };
     renderAt("/today", api);
-    expect(await screen.findByText("Today's session has closed")).toBeDefined();
+    expect(await screen.findByText("Today has closed")).toBeDefined();
     expect(screen.queryByText(SEND)).toBeNull();
   });
 
@@ -285,9 +285,7 @@ describe("the Today screen", () => {
       getDay: () => Promise.reject(new ApiError(404, undefined, "no day open")),
     };
     renderAt("/today", api);
-    expect(
-      await screen.findByText("No session is open right now"),
-    ).toBeDefined();
+    expect(await screen.findByText("No day is open right now")).toBeDefined();
     expect(
       within(screen.getByRole("main")).getByRole("link", { name: "Practice" }),
     ).toBeDefined();
@@ -305,7 +303,7 @@ describe("the countdown", () => {
       }),
     };
     renderAt("/today", api);
-    expect(await screen.findByText(/Closes in \d+ h/)).toBeDefined();
+    expect(await screen.findByText(/closes in \d+ h/)).toBeDefined();
   });
 
   it("stays absent when closes_at is null or past", async () => {
@@ -319,7 +317,7 @@ describe("the countdown", () => {
     };
     renderAt("/today", api);
     await screen.findByText(REVIEW);
-    expect(screen.queryByText(/Closes in/)).toBeNull();
+    expect(screen.queryByText(/closes in/)).toBeNull();
   });
 });
 
@@ -373,7 +371,7 @@ describe("the review step", () => {
     const send = await openReview();
     expect(screen.getByLabelText(/Include “cold”/)).toBeDefined();
     fireEvent.click(send);
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/You're in for today/);
     expect(sent[0]?.impressions).toEqual(["cold"]);
   });
 
@@ -394,7 +392,7 @@ describe("the review step", () => {
     const send = await openReview();
     fireEvent.click(screen.getByLabelText(/Include “dropped”/));
     fireEvent.click(send);
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/You're in for today/);
     expect(sent[0]?.impressions).toEqual(["kept"]);
   });
 
@@ -413,7 +411,7 @@ describe("the review step", () => {
     const review = (await screen.findByText(REVIEW)) as HTMLButtonElement;
     const live = stubCanvasBox(view.container);
     drawOneStroke(live, 30);
-    await screen.findByText(/at least 2 strokes/);
+    await screen.findByText(/at least 2 lines/);
     expect(review.disabled).toBe(true);
     drawOneStroke(live, 120);
     await waitFor(() => expect(review.disabled).toBe(false));
@@ -443,7 +441,7 @@ describe("the stale tab and the rollover", () => {
     renderAt("/today", api);
     await typeWord("cold");
     fireEvent.click(await openReview());
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/You're in for today/);
     expect(days).toEqual([HARNESS_TODAY]);
   });
 
@@ -465,7 +463,7 @@ describe("the stale tab and the rollover", () => {
     // The sketch stays, and nothing sends until the player chooses.
     const keep = await screen.findByText("Keep it for today");
     expect(screen.getByText("cold")).toBeDefined();
-    expect(screen.queryByText(/you're in for today/)).toBeNull();
+    expect(screen.queryByText(/You're in for today/)).toBeNull();
     const review = screen.getByText(REVIEW) as HTMLButtonElement;
     expect(review.disabled).toBe(true);
     fireEvent.click(keep);
@@ -537,17 +535,45 @@ describe("the stale tab and the rollover", () => {
     renderAt("/today");
     fireEvent.click(await screen.findByText("Keep it for today"));
     fireEvent.click(await openReview());
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/You're in for today/);
     expect(window.localStorage.getItem("sv:draft:2026-08-10")).toBeNull();
   });
 
-  it("names the session in the sent view", async () => {
+  it("names the day in the sent view", async () => {
     renderAt("/today");
     await typeWord("cold");
     fireEvent.click(await openReview());
+    expect(await screen.findByText(/locked in for/)).toBeDefined();
+  });
+
+  it("shows what was sent and the steps that follow", async () => {
+    renderAt("/today");
+    await typeWord("cold");
+    await typeWord("tall");
+    fireEvent.click(await openReview());
+    const words = await screen.findByRole("list", { name: "Your words" });
     expect(
-      await screen.findByText(/locked in for the session of/),
-    ).toBeDefined();
+      within(words)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["cold", "tall"]);
+    const steps = screen.getByRole("list", { name: "What happens next" });
+    // A day with the photo picked before it opened has no pick step.
+    expect(within(steps).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(steps).queryByText(/random number/)).toBeNull();
+    // No result is on this screen: the day is open (I7).
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it("shows the sent view with no local copy on another device", async () => {
+    const base = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...base,
+      getDay: async () => ({ ...(await base.getDay()), submitted: true }),
+    };
+    renderAt("/today", api);
+    await screen.findByText(/You're in for today/);
+    expect(screen.queryByRole("list", { name: "Your words" })).toBeNull();
   });
 
   it("says a closed day's sketch is saved", async () => {
@@ -582,8 +608,7 @@ describe("the stale tab and the rollover", () => {
       }),
     };
     renderAt("/today", api);
-    expect(await screen.findByText(/Today's session · closes/)).toBeDefined();
-    const badge = await screen.findByText(/Closes in \d+ h/);
+    const badge = await screen.findByText(/closes in \d+ h/);
     expect(badge.textContent).toMatch(/\(.*\d:\d\d.*\)/);
   });
 
@@ -662,7 +687,7 @@ describe("the start report (spec R1 §4)", () => {
   it("does not go out from the home screen", async () => {
     const { api, count } = counting();
     renderAt("/", api);
-    await screen.findByRole("link", { name: "Start today's session" });
+    await screen.findByRole("link", { name: "Start today's sketch" });
     expect(count.starts).toBe(0);
   });
 
@@ -671,19 +696,19 @@ describe("the start report (spec R1 §4)", () => {
     const cases: Array<[Partial<Api>, RegExp]> = [
       [
         { getDay: async () => ({ ...(await mock.getDay()), submitted: true }) },
-        /you're in for today/,
+        /You're in for today/,
       ],
       [
         {
           getDay: async () => ({ ...(await mock.getDay()), status: "closing" }),
         },
-        /Today's session has closed/,
+        /Today has closed/,
       ],
       [
         {
           getDay: async () => ({ ...(await mock.getDay()), status: "closed" }),
         },
-        /Today's session has closed/,
+        /Today has closed/,
       ],
       [
         {
@@ -699,7 +724,7 @@ describe("the start report (spec R1 §4)", () => {
           getDay: () =>
             Promise.reject(new ApiError(404, undefined, "no day open")),
         },
-        /No session is open right now/,
+        /No day is open right now/,
       ],
     ];
     for (const [overrides, shown] of cases) {
@@ -731,7 +756,7 @@ describe("the start report (spec R1 §4)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     await typeWord("cold");
     fireEvent.click(await openReview());
-    await screen.findByText(/you're in for today/);
+    await screen.findByText(/You're in for today/);
     expect(sent[0]?.impressions).toEqual(["cold"]);
     // A failed report is not sent a second time.
     expect(count.starts).toBe(1);

@@ -7,8 +7,11 @@
  * The writers write for the resolved caller alone — no player
  * parameter on this screen.
  *
- * `Delete my account` (spec MD1 §4.3) is the last section: the username
- * typed again and the password, then a red button.
+ * The page ends with one card of rows: the data download, the sign-out
+ * of this device, and `Delete account`. That last row opens the
+ * `Delete my account` section (spec MD1 §4.3), the last thing on the
+ * page: what goes and what stays, the username typed again and the
+ * password, then a red button.
  *
  * The username is the one name of a player (spec A2 ruling 3) and it
  * does not change, thus this screen shows it and edits no name.
@@ -18,9 +21,18 @@
  * instead of offering moves that do nothing.
  */
 
-import { DeviceMobile, Laptop } from "@phosphor-icons/react";
+import {
+  CaretRight,
+  DeviceMobile,
+  DownloadSimple,
+  Eye,
+  Laptop,
+  LockSimple,
+  SignOut,
+  X,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
 import type { DeviceCodeView, MeView, SessionRow } from "../api/types";
@@ -90,21 +102,8 @@ function AccountBody(props: { me: MeView }): React.JSX.Element {
           error={sessions.isError ? sessions.error : null}
         />
       )}
-      <section className="card" aria-labelledby="data-heading">
-        <h2 id="data-heading">Your data</h2>
-        <p className="muted small">
-          Download each sketch and set of words you've sent, with your results
-          for each day that's been revealed, as one file.
-        </p>
-        <div>
-          <a className="btn btn-secondary" href={api.exportUrl()} download>
-            Download my data
-          </a>
-        </div>
-      </section>
       <PublicDataCard />
-      {accounts === true ? <SignOutCard me={me} /> : null}
-      {accounts === true ? <DeleteAccountCard me={me} /> : null}
+      <ClosingCard me={me} accounts={accounts === true} />
     </div>
   );
 }
@@ -130,12 +129,12 @@ function PublicDataCard(): React.JSX.Element {
       </p>
       <ul className="fact-list">
         <li>
-          The database holds your username, each score, the words you typed, and
-          each sketch.
+          The database holds your username, every score, the words you typed,
+          and every sketch.
         </li>
         <li>Anyone can download it and study it.</li>
         <li>
-          A published snapshot stays published, with your username in it, also
+          A published snapshot stays published, with your username in it, even
           after your account is gone.
         </li>
       </ul>
@@ -184,65 +183,62 @@ function ProfileCard(props: { me: MeView }): React.JSX.Element {
 
   return (
     <section className="card card-hero" aria-label="Profile">
-      <div className="row" style={{ gap: 20 }}>
+      <div className="account-profile">
         <AvatarCircle
           player={me.player}
           avatarHash={me.avatar_hash}
           size={88}
           streak={me.streak}
         />
-        <div className="stack-sm">
+        {/* One column: the name, the badge, and the picture controls
+            start at the same left edge. */}
+        <div className="account-profile-text">
           <h2 style={{ fontSize: 24 }}>
             <StreakName streak={me.streak}>{me.player}</StreakName>
           </h2>
           <span className="subtle small">
-            Your username. Other players see it on the boards, and it can't be
-            changed.
+            Your username. Other players see it on the leaderboard, and it can't
+            be changed.
           </span>
           {me.streak > 0 ? (
-            <span
-              className="badge badge-accent"
-              style={{ alignSelf: "flex-start" }}
-            >
-              {me.streak}-day streak
-            </span>
+            <span className="badge badge-accent">{me.streak}-day streak</span>
           ) : null}
+          <div className="row account-profile-controls">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              aria-label="Choose a profile picture"
+              style={{ display: "none" }}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                // The same file picked twice must fire again.
+                event.target.value = "";
+                if (file !== undefined) {
+                  putAvatar.mutate(file);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              {putAvatar.isPending ? "Uploading…" : "Change picture"}
+            </button>
+            {me.avatar_hash === null ? null : (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={busy}
+                onClick={() => removeAvatar.mutate()}
+              >
+                Remove picture
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="row">
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          aria-label="Choose a profile picture"
-          style={{ display: "none" }}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            // The same file picked twice must fire again.
-            event.target.value = "";
-            if (file !== undefined) {
-              putAvatar.mutate(file);
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
-        >
-          {putAvatar.isPending ? "Uploading…" : "Change picture"}
-        </button>
-        {me.avatar_hash === null ? null : (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={busy}
-            onClick={() => removeAvatar.mutate()}
-          >
-            Remove picture
-          </button>
-        )}
       </div>
       {avatarError === null ? null : (
         <div className="notice notice-bad" role="alert">
@@ -316,7 +312,7 @@ function DescriptionCard(props: { me: MeView }): React.JSX.Element {
 }
 
 /** The password rule the screen cannot check: the server holds the table. */
-const USUAL_NOTE = "Not a password that many people use";
+const USUAL_NOTE = "Don't use a password that many people use";
 
 /**
  * A username field that a password manager reads and a person does
@@ -393,8 +389,8 @@ function PasswordCard(props: { me: MeView }): React.JSX.Element {
       <h2 id="password-heading">{title}</h2>
       <p className="muted small">
         {first
-          ? `This account has no password yet. Set one, and you can sign in on a new device with your username (${me.player}) and the password.`
-          : "Each other device signs out when you change your password."}
+          ? `This account has no password yet. Set one, and you can sign in on a new device with your username (${me.player}) and password.`
+          : "Changing your password signs out your other devices."}
       </p>
       <form
         className="stack"
@@ -429,6 +425,8 @@ function PasswordCard(props: { me: MeView }): React.JSX.Element {
             id="account-password-rules"
             checks={checks}
             notes={[USUAL_NOTE]}
+            summary="At least 12 characters. A few unrelated words work well."
+            typed={next !== ""}
           />
         </div>
         <div>
@@ -482,8 +480,8 @@ function RecoveryCodeCard(props: { me: MeView }): React.JSX.Element {
       <h2 id="recovery-heading">Recovery code</h2>
       <p className="muted small">
         Your recovery code gets you back in if you lose your password. It was
-        shown one time, when it was made. If you don't have it, make a new one:
-        the earlier code stops working.
+        shown once, when it was created. If you've lost it, make a new one; the
+        old code stops working.
       </p>
       <form
         className="stack"
@@ -603,18 +601,11 @@ function DevicesCard(props: {
           {friendlyMessage(props.error)}
         </div>
       ) : (
-        <ul
-          className="stack-sm"
-          style={{ margin: 0, padding: 0, listStyle: "none" }}
-        >
+        <ul className="account-devices">
           {rows.map((row) => {
             const Icon = isPhone(row.label) ? DeviceMobile : Laptop;
             return (
-              <li
-                key={row.id}
-                className="row-between"
-                style={{ padding: "6px 0" }}
-              >
+              <li key={row.id}>
                 <span className="row" style={{ gap: 12, flexWrap: "nowrap" }}>
                   <Icon size={24} aria-hidden="true" className="subtle" />
                   <span className="stack-sm" style={{ gap: 0 }}>
@@ -637,7 +628,7 @@ function DevicesCard(props: {
                 {row.current ? null : (
                   <button
                     type="button"
-                    className="btn btn-ghost"
+                    className="account-text-button"
                     disabled={remove.isPending}
                     onClick={() => remove.mutate(row.id)}
                   >
@@ -687,8 +678,8 @@ function DeviceCodePanel(props: {
       ) : (
         <>
           <p>
-            On your other device, open Starvector and find “Signed in on another
-            device?”. Then type this code:
+            On your other device, open Starvector, find “Signed in on another
+            device?”, and enter this code:
           </p>
           <div
             style={{
@@ -718,9 +709,26 @@ function DeviceCodePanel(props: {
   );
 }
 
-function SignOutCard(props: { me: MeView }): React.JSX.Element {
+/**
+ * The last card of the page: one row for each closing move. The data
+ * download is there on each server. The sign-out of this device and
+ * `Delete account` are there when the server has accounts.
+ *
+ * `Delete account` opens the `Delete my account` section below the
+ * card and closes it again. The section is closed at first, thus the
+ * one move that cannot be put back is two deliberate clicks away.
+ */
+function ClosingCard(props: {
+  me: MeView;
+  accounts: boolean;
+}): React.JSX.Element {
   const api = useApi();
   const queryClient = useQueryClient();
+  const { me, accounts } = props;
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  // The anonymous name of the deleted account, when the deletion is done.
+  const [identifier, setIdentifier] = useState<string | null>(null);
+  const deleteRow = useRef<HTMLButtonElement>(null);
   const signOut = useMutation({
     mutationFn: () => api.signOut(),
     onSuccess: () => {
@@ -729,98 +737,212 @@ function SignOutCard(props: { me: MeView }): React.JSX.Element {
       void queryClient.resetQueries();
     },
   });
+
   return (
-    <section className="card card-quiet" aria-labelledby="signout-heading">
-      <h2 id="signout-heading">Sign out</h2>
-      <p className="muted small">
-        Sign out of this device. To sign back in, type your username and
-        password, or use a code from another device.
-      </p>
-      {props.me.has_password ? null : (
-        <div className="notice notice-warn" role="note">
-          This account has no password yet. Set one before you sign out, or the
-          only ways back in are a code from another signed-in device and a
-          recovery code from the operator.
+    <>
+      <section className="card" aria-labelledby="closing-heading">
+        <h2 id="closing-heading">
+          {accounts ? "Your data and account" : "Your data"}
+        </h2>
+        <div className="row-list account-closing-rows">
+          <a
+            className="row-link"
+            href={api.exportUrl()}
+            download
+            aria-describedby="download-hint"
+          >
+            Download my data
+            <span className="row-meta">
+              <DownloadSimple size={20} aria-hidden="true" />
+            </span>
+          </a>
+          <p id="download-hint" className="hint account-row-hint">
+            Download every sketch and set of words you've sent, with your
+            results for each revealed day, as one file.
+          </p>
+          {accounts ? (
+            <>
+              <button
+                type="button"
+                className="row-link"
+                aria-describedby="signout-hint"
+                disabled={signOut.isPending}
+                onClick={() => signOut.mutate()}
+              >
+                Sign out of this device
+                <span className="row-meta">
+                  <SignOut size={20} aria-hidden="true" />
+                </span>
+              </button>
+              <p id="signout-hint" className="hint account-row-hint">
+                To sign back in, you'll need your username and password, or a
+                code from another device.
+              </p>
+              {me.has_password ? null : (
+                <div
+                  className="notice notice-warn account-row-note"
+                  role="note"
+                >
+                  This account has no password yet. Set one before you sign out,
+                  or your only ways back in will be a code from another
+                  signed-in device or a recovery code from the operator.
+                </div>
+              )}
+              {signOut.isError ? (
+                <div
+                  className="notice notice-bad account-row-note"
+                  role="alert"
+                >
+                  {friendlyMessage(signOut.error)}
+                </div>
+              ) : null}
+              {identifier !== null ? null : (
+                <button
+                  ref={deleteRow}
+                  type="button"
+                  className="row-link row-link-danger"
+                  aria-expanded={deleteOpen}
+                  aria-controls={deleteOpen ? DELETE_PANEL_ID : undefined}
+                  onClick={() => setDeleteOpen((open) => !open)}
+                >
+                  Delete account
+                  <span className="row-meta">
+                    <CaretRight size={18} aria-hidden="true" />
+                  </span>
+                </button>
+              )}
+            </>
+          ) : null}
         </div>
-      )}
-      <div>
-        <button
-          type="button"
-          className="btn btn-danger"
-          disabled={signOut.isPending}
-          onClick={() => signOut.mutate()}
-        >
-          Sign out of this device
-        </button>
-      </div>
-      {signOut.isError ? (
-        <div className="notice notice-bad" role="alert">
-          {friendlyMessage(signOut.error)}
-        </div>
+      </section>
+      {!accounts ? null : identifier !== null ? (
+        <section className="card" aria-label="Your account is deleted">
+          <div className="notice notice-good" role="status">
+            Your account is deleted. Your earlier results show as {identifier}.
+          </div>
+          <div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              // Each query reads again: me answers 401 and the shell
+              // shows the landing page.
+              onClick={() => void queryClient.resetQueries()}
+            >
+              Done
+            </button>
+          </div>
+        </section>
+      ) : deleteOpen ? (
+        <DeleteAccountPanel
+          me={me}
+          onDeleted={setIdentifier}
+          onClose={() => {
+            setDeleteOpen(false);
+            // The row opened the section, thus the keyboard goes back to it.
+            deleteRow.current?.focus();
+          }}
+        />
       ) : null}
-    </section>
+    </>
   );
 }
 
+const DELETE_PANEL_ID = "delete-panel";
+
+/** What a deletion removes (spec MD1 §4.1, the `Goes` column). */
+const DELETION_REMOVES: ReadonlyArray<string> = [
+  "Your account and sign-in",
+  "Your picture and description",
+  "Your password and recovery code",
+  "Every signed-in device",
+];
+
 /**
- * `Delete my account` (spec MD1 §4.3). It says what goes and what
- * stays, and that a published snapshot keeps the username. The player
- * types the username and the password; the red button stays off until
- * the username agrees. An account with no password sets one first.
+ * `Delete my account` (spec MD1 §4.3), the section that the
+ * `Delete account` row opens. It says what goes and what stays, and
+ * that a published snapshot keeps the username. The player types the
+ * username and the password; the red button stays off until the
+ * username agrees. An account with no password sets one first.
+ *
+ * The section shows after a click on a row above it, thus focus moves
+ * to its heading: a screen reader announces it and the keyboard starts
+ * there.
  */
-function DeleteAccountCard(props: { me: MeView }): React.JSX.Element {
+function DeleteAccountPanel(props: {
+  me: MeView;
+  onClose: () => void;
+  /** Gets the anonymous name that the earlier results show. */
+  onDeleted: (identifier: string) => void;
+}): React.JSX.Element {
   const api = useApi();
-  const queryClient = useQueryClient();
-  const { me } = props;
+  const { me, onClose, onDeleted } = props;
   const [typed, setTyped] = useState("");
   const [password, setPassword] = useState("");
-  const [identifier, setIdentifier] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   const remove = useMutation({
     mutationFn: () => api.deleteAccount(typed, password),
-    onSuccess: (answer) => {
-      setPassword("");
-      setIdentifier(answer.identifier);
-    },
+    // The parent swaps this section for the deleted note, and the typed
+    // password goes with the section's state.
+    onSuccess: (answer) => onDeleted(answer.identifier),
   });
 
-  if (identifier !== null) {
-    return (
-      <section className="card" aria-label="Your account is deleted">
-        <div className="notice notice-good" role="status">
-          Your account is deleted. Your earlier results show as {identifier}.
-        </div>
-        <div>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            // Each query reads again: me answers 401 and the shell
-            // shows the landing page.
-            onClick={() => void queryClient.resetQueries()}
-          >
-            Done
-          </button>
-        </div>
-      </section>
-    );
-  }
   return (
-    <section className="card card-quiet" aria-labelledby="delete-heading">
-      <h2 id="delete-heading">Delete my account</h2>
-      <ul className="fact-list">
-        <li>
-          Your account, your picture, your description, your password, your
-          recovery code, and each signed-in device go.
-        </li>
-        <li>
-          Your earlier sends and results stay in the results, under an anonymous
-          name, with no picture.
-        </li>
-        <li>No one can register your username again, you included.</li>
-        <li>
-          A public snapshot that is already published keeps your username.
-        </li>
-        <li>This can't be undone.</li>
-      </ul>
+    <section
+      id={DELETE_PANEL_ID}
+      className="card card-quiet account-delete"
+      aria-labelledby="delete-heading"
+    >
+      <div className="stack-sm">
+        <h2 id="delete-heading" ref={heading} tabIndex={-1}>
+          Delete my account
+        </h2>
+        <p className="muted">This can't be reversed.</p>
+      </div>
+      <div className="account-delete-columns">
+        <div className="account-delete-column account-delete-removed">
+          <h3 id="delete-removed-heading">Removed for good</h3>
+          <ul aria-labelledby="delete-removed-heading">
+            {DELETION_REMOVES.map((text) => (
+              <li key={text}>
+                <X size={16} weight="bold" aria-hidden="true" />
+                <span>{text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="account-delete-column account-delete-stays">
+          <h3 id="delete-stays-heading">Stays public</h3>
+          <ul aria-labelledby="delete-stays-heading">
+            <li>
+              <Eye size={16} aria-hidden="true" />
+              <span>
+                Your past sketches, words, and results, under an anonymous name
+                with no picture
+              </span>
+            </li>
+            <li>
+              <Eye size={16} aria-hidden="true" />
+              <span>Your username in any snapshot already published</span>
+            </li>
+            <li>
+              <LockSimple size={16} aria-hidden="true" />
+              <span>
+                The name {me.player} stays closed: nobody can register it again,
+                you included
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div>
+        <a className="foot-link" href={api.exportUrl()} download>
+          <DownloadSimple size={18} aria-hidden="true" />
+          Download my data first
+        </a>
+      </div>
       {me.has_password ? (
         <form
           className="stack"
@@ -831,27 +953,41 @@ function DeleteAccountCard(props: { me: MeView }): React.JSX.Element {
             }
           }}
         >
-          <div className="field">
-            <label htmlFor="delete-username">
-              Type your username ({me.player}) to confirm
-            </label>
-            <input
-              id="delete-username"
-              className="input"
-              value={typed}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => setTyped(event.target.value)}
+          <div className="account-delete-fields">
+            <div className="field">
+              <label className="label" htmlFor="delete-username">
+                Type {me.player} to confirm
+              </label>
+              <input
+                id="delete-username"
+                className="input"
+                value={typed}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setTyped(event.target.value)}
+              />
+            </div>
+            <PasswordField
+              id="delete-password"
+              label="Password"
+              autoComplete="current-password"
+              value={password}
+              onChange={setPassword}
             />
           </div>
-          <PasswordField
-            id="delete-password"
-            label="Your password"
-            autoComplete="current-password"
-            value={password}
-            onChange={setPassword}
-          />
-          <div>
+          {remove.isError ? (
+            <div className="notice notice-bad" role="alert">
+              {credentialMessage(remove.error)}
+            </div>
+          ) : null}
+          <div className="account-delete-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+            >
+              Keep my account
+            </button>
             <button
               type="submit"
               className="btn btn-danger-solid"
@@ -859,20 +995,26 @@ function DeleteAccountCard(props: { me: MeView }): React.JSX.Element {
                 typed !== me.player || password === "" || remove.isPending
               }
             >
-              {remove.isPending ? "Working…" : "Delete my account"}
+              {remove.isPending ? "Deleting…" : "Delete my account"}
             </button>
           </div>
-          {remove.isError ? (
-            <div className="notice notice-bad" role="alert">
-              {credentialMessage(remove.error)}
-            </div>
-          ) : null}
         </form>
       ) : (
-        <div className="notice notice-warn" role="note">
-          This account has no password yet. Set a password first, then you can
-          delete the account here. Or send the operator a message.
-        </div>
+        <>
+          <div className="notice notice-warn" role="note">
+            This account has no password yet. Set a password first, and then you
+            can delete your account here. Or send the operator a message.
+          </div>
+          <div className="account-delete-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+            >
+              Keep my account
+            </button>
+          </div>
+        </>
       )}
     </section>
   );

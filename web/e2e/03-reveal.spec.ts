@@ -46,6 +46,9 @@ test("close and reveal over HTTP, then the results render", async ({
 
   // The fairness check folds away and holds the command to run.
   await page.getByText("Check that this day was fair").click();
+  // Three plain steps come first; the raw values open from a row.
+  await expect(page.getByText("When the day opened")).toBeVisible();
+  await page.getByText("Show the values and check it yourself").click();
   await expect(page.getByText(LIVE_SECRET).first()).toBeVisible();
   await expect(page.getByText(/\| sha256sum$/)).toBeVisible();
 

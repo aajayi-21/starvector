@@ -14,6 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { useApi } from "../api/client";
 import { AvatarCircle } from "./avatar";
@@ -44,42 +45,74 @@ const PLACES: ReadonlyArray<Place> = [
 export function TopBar(): React.JSX.Element {
   const api = useApi();
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
+  const about = useQuery({
+    queryKey: ["about"],
+    queryFn: () => api.getAbout(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const [seasonOpen, setSeasonOpen] = useState(false);
+  const testSeason = about.data?.test_season === true;
   return (
-    <header className="topbar">
-      <Link to="/" className="brand" aria-label="Starvector home">
-        <LogoMark />
-        Starvector
-      </Link>
-      <nav className="topnav" aria-label="Main">
-        {PLACES.map((place) => (
-          <Link
-            key={place.to}
-            to={place.to}
-            activeProps={activeProps}
-            activeOptions={{ exact: place.to === "/" }}
-          >
-            {place.label}
-          </Link>
-        ))}
-      </nav>
-      <div className="topbar-end">
-        {me.data === undefined || me.data.streak === 0 ? null : (
-          <span className="badge badge-accent hide-narrow">
-            {me.data.streak}-day streak
-          </span>
-        )}
-        {me.data === undefined ? null : (
-          <Link to="/account" className="avatar-link" aria-label="Your account">
-            <AvatarCircle
-              player={me.data.player}
-              avatarHash={me.data.avatar_hash}
-              size={34}
-              streak={me.data.streak}
-            />
-          </Link>
-        )}
-      </div>
-    </header>
+    <>
+      <header className="topbar">
+        <Link to="/" className="brand" aria-label="Starvector home">
+          <LogoMark />
+          Starvector
+        </Link>
+        <nav className="topnav" aria-label="Main">
+          {PLACES.map((place) => (
+            <Link
+              key={place.to}
+              to={place.to}
+              activeProps={activeProps}
+              activeOptions={{ exact: place.to === "/" }}
+            >
+              {place.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="topbar-end">
+          {/* The short sign of a test season, on each screen (spec P1a
+              R13). The full sentence opens under the bar. */}
+          {testSeason ? (
+            <button
+              type="button"
+              className="badge badge-warn season-badge"
+              aria-expanded={seasonOpen}
+              aria-controls="season-note"
+              onClick={() => setSeasonOpen((open) => !open)}
+            >
+              Test season
+            </button>
+          ) : null}
+          {me.data === undefined || me.data.streak === 0 ? null : (
+            <span className="badge badge-accent hide-narrow">
+              {me.data.streak}-day streak
+            </span>
+          )}
+          {me.data === undefined ? null : (
+            <Link
+              to="/account"
+              className="avatar-link"
+              aria-label="Your account"
+            >
+              <AvatarCircle
+                player={me.data.player}
+                avatarHash={me.data.avatar_hash}
+                size={34}
+                streak={me.data.streak}
+              />
+            </Link>
+          )}
+        </div>
+      </header>
+      {testSeason && seasonOpen ? (
+        <div id="season-note" className="season-note" role="note">
+          Results use a small practice set of {about.data?.photo_count} photos
+          and won't carry over to the public launch.
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -101,27 +134,5 @@ export function TabBar(): React.JSX.Element {
         );
       })}
     </nav>
-  );
-}
-
-/**
- * The test-season line (spec P1a R13): while the pool is a
- * development pool, each screen says its numbers are test numbers.
- */
-export function SeasonNote(): React.JSX.Element | null {
-  const api = useApi();
-  const about = useQuery({
-    queryKey: ["about"],
-    queryFn: () => api.getAbout(),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  if (about.data?.test_season !== true) {
-    return null;
-  }
-  return (
-    <div className="season-note" role="note">
-      Test season — results use a small practice set of {about.data.photo_count}{" "}
-      photos and won't carry over to the public launch.
-    </div>
   );
 }

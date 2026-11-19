@@ -63,9 +63,9 @@ test("the account page says what is public", async ({ page }) => {
   });
   await expect(section).toBeVisible();
   await expect(section.getByRole("listitem")).toHaveText([
-    "The database holds your username, each score, the words you typed, and each sketch.",
+    "The database holds your username, every score, the words you typed, and every sketch.",
     "Anyone can download it and study it.",
-    "A published snapshot stays published, with your username in it, also after your account is gone.",
+    "A published snapshot stays published, with your username in it, even after your account is gone.",
   ]);
   // The address comes from the season facts: a link when the server
   // names one, and a plain line when no snapshot is published.
@@ -103,9 +103,8 @@ test("a device code signs a second browser in", async ({ page, browser }) => {
   });
   const second = await phone.newPage();
   await second.goto("/");
-  await second
-    .getByLabel("Signed in on another device?")
-    .fill(code.toLowerCase());
+  await second.getByText("Use a code from another device").click();
+  await second.getByLabel("Device code").fill(code.toLowerCase());
   await second.getByRole("button", { name: "Use this code" }).click();
   // The greeting names the username: the one name (spec A2 ruling 3).
   await expect(

@@ -8,6 +8,7 @@
  * and a word typed and not added goes in with the check.
  */
 
+import { CaretRight } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -209,8 +210,8 @@ function PracticeWorkspace(props: {
   };
 
   return (
-    <div className="stack-lg">
-      <header className="row-between" style={{ alignItems: "flex-end" }}>
+    <div className="workspace">
+      <header className="workspace-header workspace-header-wide">
         <div className="stack-sm">
           <h1>Practice</h1>
           <p className="muted">
@@ -245,43 +246,46 @@ function PracticeWorkspace(props: {
         </div>
       </header>
 
-      <div className="workspace">
-        <CanvasPanel
-          doc={doc}
-          selection={selection}
-          mode={mode}
-          colorIndex={colorIndex}
-          onPickColor={setColorIndex}
-          onCommitStroke={onCommitStroke}
-          onPickStroke={onPickStroke}
-          canUndo={canUndo(history)}
-          canRedo={canRedo(history)}
-          onUndo={() => {
-            setHistory((h) => undo(h));
-            setSelection(new Set());
-          }}
-          onRedo={() => {
-            setHistory((h) => redo(h));
-            setSelection(new Set());
-          }}
-          onClear={() => {
-            commit(clearSketch(doc));
-            setSelection(new Set());
-            setMode("draw");
-          }}
-          disabled={score.isPending || result !== null}
-          hint={
-            result !== null
-              ? "Choose “Edit and check again” to keep drawing."
-              : mode === "select"
-                ? "Tap the strokes that belong together."
-                : "Draw whatever comes to mind for this day's code."
-          }
-        />
+      <CanvasPanel
+        doc={doc}
+        selection={selection}
+        mode={mode}
+        colorIndex={colorIndex}
+        onPickColor={setColorIndex}
+        onCommitStroke={onCommitStroke}
+        onPickStroke={onPickStroke}
+        canUndo={canUndo(history)}
+        canRedo={canRedo(history)}
+        onUndo={() => {
+          setHistory((h) => undo(h));
+          setSelection(new Set());
+        }}
+        onRedo={() => {
+          setHistory((h) => redo(h));
+          setSelection(new Set());
+        }}
+        onClear={() => {
+          commit(clearSketch(doc));
+          setSelection(new Set());
+          setMode("draw");
+        }}
+        disabled={score.isPending || result !== null}
+        hint={
+          result !== null
+            ? "Choose “Edit and check again” to keep drawing."
+            : mode === "select"
+              ? "Tap the lines that belong together."
+              : "Draw whatever comes to mind for this day's code."
+        }
+      />
 
-        <aside className="stack side-panel" aria-label="Practice">
-          {result === null ? (
-            <>
+      <aside
+        className={result === null ? "side-cell" : "side-cell is-free stack"}
+        aria-label="Practice"
+      >
+        {result === null ? (
+          <div className="card side-panel">
+            <div className="side-scroll">
               <ImpressionsCard
                 impressions={impressions}
                 input={typedWord}
@@ -291,70 +295,88 @@ function PracticeWorkspace(props: {
                   setImpressions((rows) => rows.filter((_, at) => at !== index))
                 }
               />
-              <details className="card disclosure">
-                <summary>
-                  Label parts of your sketch{" "}
-                  <span className="subtle" style={{ fontWeight: 500 }}>
-                    (optional)
-                  </span>
-                </summary>
-                <div className="disclosure-body">
-                  <GroupControls
-                    doc={doc}
-                    mode={mode}
-                    selectionSize={selection.size}
-                    onToggleSelect={() => {
-                      setMode((old) => (old === "select" ? "draw" : "select"));
-                      setSelection(new Set());
-                    }}
-                    onMakeGroup={makeGroupWith}
-                  />
-                </div>
-              </details>
-              <section className="card" aria-label="Check">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-large btn-block"
-                  disabled={!scoreable || score.isPending || day === ""}
-                  onClick={() => {
-                    if (scoringRef.current) {
-                      return;
-                    }
-                    scoringRef.current = true;
-                    // A typed word counts: the player can see it on the
-                    // screen, and nothing here is final.
-                    const words =
-                      typed === "" ? impressions : [...impressions, typed];
-                    setImpressions(words);
-                    setTypedWord("");
-                    score.mutate(words);
-                  }}
-                >
-                  {score.isPending ? "Checking…" : "Check my practice"}
-                </button>
-                <p className="hint">
-                  {scoreable
-                    ? "See the photo and how close you came. You can try many times, up to an hourly limit. Your draft is saved on this device."
-                    : sendBlockHint(block, props.minStrokes)}
-                </p>
-                {score.isError ? (
-                  <div className="notice notice-bad" role="alert">
-                    {friendlyMessage(score.error)}
+              <div className="row-list side-rows">
+                <details className="row-disclosure">
+                  <summary>
+                    Label parts of your sketch
+                    <span className="row-meta">
+                      Optional
+                      <CaretRight
+                        size={16}
+                        aria-hidden="true"
+                        className="row-chevron"
+                      />
+                    </span>
+                  </summary>
+                  <div className="row-body">
+                    <GroupControls
+                      doc={doc}
+                      mode={mode}
+                      selectionSize={selection.size}
+                      onToggleSelect={() => {
+                        setMode((old) =>
+                          old === "select" ? "draw" : "select",
+                        );
+                        setSelection(new Set());
+                      }}
+                      onMakeGroup={makeGroupWith}
+                    />
                   </div>
-                ) : null}
-              </section>
-            </>
-          ) : (
-            <PracticeResult
-              result={result}
-              onEdit={() => setResult(null)}
-              onStartOver={startOver}
-            />
-          )}
-        </aside>
-      </div>
+                </details>
+              </div>
+            </div>
+            <section className="action-bar send-bar" aria-label="Check">
+              <div className="send-bar-facts">
+                <span>Practice</span>
+                <span className="send-bar-note">
+                  {scoreable
+                    ? "Nothing is saved or counted"
+                    : sendBlockHint(block, props.minStrokes)}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-large btn-block send-bar-buttons"
+                disabled={!scoreable || score.isPending || day === ""}
+                onClick={() => {
+                  if (scoringRef.current) {
+                    return;
+                  }
+                  scoringRef.current = true;
+                  // A typed word counts: the player can see it on the
+                  // screen, and nothing here is final.
+                  const words =
+                    typed === "" ? impressions : [...impressions, typed];
+                  setImpressions(words);
+                  setTypedWord("");
+                  score.mutate(words);
+                }}
+              >
+                {score.isPending ? "Checking…" : "Check my practice"}
+              </button>
+              <p className="hint send-bar-hint">
+                See the photo and how close you came. You can try many times, up
+                to an hourly limit. Your draft is saved on this device.
+              </p>
+              {score.isError ? (
+                <div className="notice notice-bad" role="alert">
+                  {friendlyMessage(score.error)}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        ) : (
+          <PracticeResult
+            result={result}
+            onEdit={() => setResult(null)}
+            onStartOver={startOver}
+          />
+        )}
+      </aside>
       {result === null || result.report.length === 0 ? null : (
-        <WordMatches rows={result.report} />
+        <div className="workspace-wide">
+          <WordMatches rows={result.report} />
+        </div>
       )}
     </div>
   );

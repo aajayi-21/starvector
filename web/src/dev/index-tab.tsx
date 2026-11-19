@@ -12,7 +12,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { DevApi } from "./api";
-import { ErrorNote, messageOf, refusedRead, WorkingNote } from "./controls";
+import {
+  Disclosure,
+  ErrorNote,
+  messageOf,
+  refusedRead,
+  WorkingNote,
+} from "./controls";
 import { utcStamp } from "./format";
 import type {
   DevCell,
@@ -183,9 +189,13 @@ export function IndexTab(props: {
     <div className="dev-stack">
       <section className="card" aria-label="Index file">
         {status === null ? (
-          <p className="muted small" role="status">
-            {note === "" ? "loading…" : note}
-          </p>
+          note === "" ? (
+            <p className="muted small" role="status">
+              Loading…
+            </p>
+          ) : (
+            <ErrorNote text={note} />
+          )
         ) : (
           <>
             <div className="dev-row dev-wrap">
@@ -377,20 +387,32 @@ export function IndexTab(props: {
       </section>
 
       {status === null || status.tables.length === 0 ? null : (
-        <details className="card disclosure">
-          <summary>Tables and columns</summary>
-          <dl className="dev-schema">
-            {status.tables.map((table) => (
-              <div key={table.name}>
-                <dt className="dev-mono">
-                  {table.name}
-                  {table.view ? " (view: revealed days, pinned rows)" : ""}
-                </dt>
-                <dd className="dev-mono subtle">{table.columns.join(", ")}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
+        <section className="card dev-rows" aria-label="More">
+          <div className="row-list">
+            <Disclosure
+              title="Tables and columns"
+              meta={
+                status.tables.length === 1
+                  ? "1 table"
+                  : `${status.tables.length} tables`
+              }
+            >
+              <dl className="dev-schema">
+                {status.tables.map((table) => (
+                  <div key={table.name}>
+                    <dt className="dev-mono">
+                      {table.name}
+                      {table.view ? " (view: revealed days, pinned rows)" : ""}
+                    </dt>
+                    <dd className="dev-mono subtle">
+                      {table.columns.join(", ")}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </Disclosure>
+          </div>
+        </section>
       )}
     </div>
   );

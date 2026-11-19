@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DevApiError, makeDevApi, OLDER_SERVER } from "../../src/dev/api";
-import { refusedRead } from "../../src/dev/controls";
+import { accessOfFailure, refusedRead } from "../../src/dev/controls";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -107,6 +107,31 @@ describe("the console client after the review (spec BR1 §7.6)", () => {
       .getSchedule()
       .catch((failure: unknown) => failure);
     expect(refusedRead(error)).toMatch(/start the server with --dev/);
+    // Plain words with the two causes: the token and the flag.
+    expect(refusedRead(error)).toBe(
+      "The server answered “not found”. Check the operator token, or start the server with --dev.",
+    );
+  });
+
+  it("reads the constant 404 as locked, and each other failure as failed", async () => {
+    // The constant 404 means no token, a token that does not agree, or
+    // no --dev flag: a new token can repair it, thus the console locks.
+    expect(accessOfFailure(new DevApiError(404, "not found"))).toEqual({
+      state: "locked",
+    });
+    // An older server and a server that does not answer are failures
+    // that a token does not repair.
+    expect(accessOfFailure(new DevApiError(404, OLDER_SERVER))).toEqual({
+      state: "failed",
+      message: OLDER_SERVER,
+    });
+    expect(
+      accessOfFailure(new DevApiError(0, "the server did not answer")),
+    ).toEqual({ state: "failed", message: "the server did not answer" });
+    expect(accessOfFailure(new Error("other"))).toEqual({
+      state: "failed",
+      message: "refused",
+    });
   });
 
   it("sends the named day in the body of a named move", async () => {

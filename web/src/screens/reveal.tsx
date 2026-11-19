@@ -1,14 +1,22 @@
 /**
  * The results screen for one day (mock 1c, spec W1 B8; layout and
- * copy per spec BR1 §6). The eye goes to the result first — the
- * share of the other photos beaten, against the 50% guessing mark —
- * then to the hidden photo beside the sketch. The word matches and
- * the day's board follow, and the fairness check folds away.
+ * copy per spec BR1 §6). The heading states the result. The eye then
+ * goes to the photo beside the sketch, which is the reason to open
+ * the screen, and to the result against the 50% guessing mark. The
+ * word matches and the day's board follow, and the fairness check
+ * folds away: three plain steps first, the raw values behind a row.
  *
  * No "good match" wording anywhere (spec M1 §9 copy rules): the
  * screen states the result against chance and grades nothing.
  */
 
+import {
+  CaretRight,
+  DownloadSimple,
+  Lock,
+  PencilSimpleLine,
+  Shuffle,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
 
@@ -114,29 +122,6 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
       </div>
 
       <div className="result-hero">
-        <section className="card card-hero" aria-label="Your result">
-          {trial === null && view.quarantined ? (
-            <p className="muted" data-testid="not-scored">
-              We couldn't score your send this day. It doesn't count toward your
-              results, and your streak still stands.
-            </p>
-          ) : trial === null ? (
-            <p className="muted">
-              You didn't send a sketch this day, so there's no result — but
-              here's{" "}
-              {isPostClose(view.protocol)
-                ? "the day's photo"
-                : "the photo that was hidden"}
-              .
-            </p>
-          ) : (
-            <ResultSummary
-              trial={trial}
-              day={view.day}
-              protocol={view.protocol}
-            />
-          )}
-        </section>
         <div className="pictures">
           <figure className="picture" style={{ margin: 0 }}>
             <div className="picture-frame">
@@ -171,6 +156,29 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
             </figcaption>
           </figure>
         </div>
+        <section className="card card-hero" aria-label="Your result">
+          {trial === null && view.quarantined ? (
+            <p className="muted" data-testid="not-scored">
+              We couldn't score your send this day. It doesn't count toward your
+              results, and your streak still stands.
+            </p>
+          ) : trial === null ? (
+            <p className="muted">
+              You didn't send a sketch this day, so there's no result — but
+              here's{" "}
+              {isPostClose(view.protocol)
+                ? "the day's photo"
+                : "the photo that was hidden"}
+              .
+            </p>
+          ) : (
+            <ResultSummary
+              trial={trial}
+              day={view.day}
+              protocol={view.protocol}
+            />
+          )}
+        </section>
       </div>
 
       <div className="two-columns">
@@ -234,11 +242,9 @@ function ResultSummary(props: {
 }): React.JSX.Element {
   const { trial } = props;
   const noun = photoNoun(props.protocol);
-  const percent = percentBeaten(trial.p);
   const total = trial.decoy_count + 1;
   return (
     <div className="stack">
-      <div className="big-number">{percent}%</div>
       <p style={{ fontSize: 17 }}>
         Your sketch matched {noun} better than{" "}
         <strong>
@@ -400,44 +406,96 @@ function DayBoard(props: {
   );
 }
 
+/** The look of a raw value in the fairness check. */
+const MONO: React.CSSProperties = {
+  fontFamily: "var(--mono)",
+  fontSize: 13,
+  wordBreak: "break-all",
+  background: "var(--surface-2)",
+  padding: "8px 10px",
+  borderRadius: 8,
+};
+
+/** One step of the fairness check: an icon, a moment, and what held. */
+function FairStep(props: {
+  icon: React.ReactNode;
+  when: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <li className="step-item">
+      <span className="step-icon">{props.icon}</span>
+      <span className="step-text">
+        <strong>{props.when}</strong>
+        <span className="muted small">{props.children}</span>
+      </span>
+    </li>
+  );
+}
+
+/** The row that opens the raw values of the fairness check. */
+function ValuesRow(props: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <details className="row-disclosure fair-values">
+      <summary>
+        Show the values and check it yourself
+        <span className="row-meta">
+          <CaretRight size={16} aria-hidden="true" className="row-chevron" />
+        </span>
+      </summary>
+      <div className="row-body">{props.children}</div>
+    </details>
+  );
+}
+
 function Fairness(props: { view: RevealView }): React.JSX.Element {
   const { view } = props;
-  const mono: React.CSSProperties = {
-    fontFamily: "var(--mono)",
-    fontSize: 13,
-    wordBreak: "break-all",
-    background: "var(--surface-2)",
-    padding: "8px 10px",
-    borderRadius: 8,
-  };
   return (
     <details className="card disclosure">
       <summary>Check that this day was fair</summary>
       <div className="disclosure-body">
-        <p className="muted small">
-          When the day opened, the server published a fingerprint of the hidden
-          photo. Anyone can recompute it from the photo's id and the secret
-          below and see that it matches — so the photo couldn't be swapped after
-          the sketches came in.
-        </p>
-        <div className="stack-sm">
-          <span className="label">Fingerprint published at the start</span>
-          <code style={mono}>{view.commitment}</code>
-        </div>
-        <div className="stack-sm">
-          <span className="label">Photo id</span>
-          <code style={mono}>{view.target_id}</code>
-        </div>
-        <div className="stack-sm">
-          <span className="label">Secret</span>
-          <code style={mono}>{view.secret}</code>
-        </div>
-        <div className="stack-sm">
-          <span className="label">Check it yourself</span>
-          <code style={mono}>
-            printf '%s:%s' {view.target_id} {view.secret} | sha256sum
-          </code>
-        </div>
+        <ol className="step-list">
+          <FairStep
+            icon={<Lock size={16} aria-hidden="true" />}
+            when="When the day opened"
+          >
+            The server published a fingerprint of the hidden photo.
+          </FairStep>
+          <FairStep
+            icon={<PencilSimpleLine size={16} aria-hidden="true" />}
+            when="While you played"
+          >
+            The photo stayed hidden. Its fingerprint was already public, so the
+            photo couldn't be swapped after the sketches came in.
+          </FairStep>
+          <FairStep
+            icon={<Shuffle size={16} aria-hidden="true" />}
+            when="After the reveal"
+          >
+            Anyone can recompute the fingerprint from the photo's id and the
+            secret, and see that it matches.
+          </FairStep>
+        </ol>
+        <ValuesRow>
+          <div className="stack-sm">
+            <span className="label">Fingerprint published at the start</span>
+            <code style={MONO}>{view.commitment}</code>
+          </div>
+          <div className="stack-sm">
+            <span className="label">Photo id</span>
+            <code style={MONO}>{view.target_id}</code>
+          </div>
+          <div className="stack-sm">
+            <span className="label">Secret</span>
+            <code style={MONO}>{view.secret}</code>
+          </div>
+          <div className="stack-sm">
+            <span className="label">Check it yourself</span>
+            <code style={MONO}>
+              printf '%s:%s' {view.target_id} {view.secret} | sha256sum
+            </code>
+          </div>
+        </ValuesRow>
       </div>
     </details>
   );
@@ -483,74 +541,90 @@ function saveCheckFile(view: RevealView): void {
  */
 function PulseFairness(props: { view: RevealView }): React.JSX.Element {
   const { view } = props;
-  const mono: React.CSSProperties = {
-    fontFamily: "var(--mono)",
-    fontSize: 13,
-    wordBreak: "break-all",
-    background: "var(--surface-2)",
-    padding: "8px 10px",
-    borderRadius: 8,
-  };
   const publicBeacon = view.beacon_chain === "drand-quicknet";
   const pulseAddress = `https://api.drand.sh/${view.beacon_chain_hash}/public/${view.beacon_round}`;
   return (
     <details className="card disclosure">
       <summary>Check that this day was fair</summary>
       <div className="disclosure-body">
-        <p className="muted small">
-          No photo was chosen while this day was open, so nobody could know it.
-          A minute after the close, pulse {view.beacon_round} of the drand
-          public randomness beacon picked it from a set of {view.pool_count}{" "}
-          photos. The set's fingerprint was published before the day opened, so
-          it couldn't be changed to suit the pulse.
+        <ol className="step-list">
+          <FairStep
+            icon={<Lock size={16} aria-hidden="true" />}
+            when="Before the day opened"
+          >
+            The set of {view.pool_count} photos was fixed and its fingerprint
+            published, so the set couldn't be changed to suit the pick.
+          </FairStep>
+          <FairStep
+            icon={<PencilSimpleLine size={16} aria-hidden="true" />}
+            when="While you played"
+          >
+            No photo was chosen while this day was open, so nobody, us included,
+            could know it.
+          </FairStep>
+          <FairStep
+            icon={<Shuffle size={16} aria-hidden="true" />}
+            when="A minute after the close"
+          >
+            Pulse {view.beacon_round} of the drand public randomness beacon
+            picked the photo from the set.
+          </FairStep>
+        </ol>
+        <p className="notice" role="note">
+          drand is a public randomness service that a group of independent
+          organizations runs together. No single one of them can predict or
+          change its numbers.
         </p>
         {publicBeacon ? null : (
-          <div className="notice" role="note">
+          <div className="notice notice-warn" role="note">
             This day used a test beacon, not the public one, so its pick proves
             nothing.
           </div>
         )}
-        <div className="stack-sm">
-          <span className="label">Beacon pulse</span>
-          <code style={mono}>
-            {publicBeacon ? (
-              <a href={pulseAddress} target="_blank" rel="noreferrer">
-                {view.beacon_round}
-              </a>
-            ) : (
-              view.beacon_round
-            )}{" "}
-            at {view.round_time}
-          </code>
+        <div className="row">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => saveCheckFile(view)}
+          >
+            <DownloadSimple size={18} aria-hidden="true" />
+            Save the check file
+          </button>
         </div>
-        <div className="stack-sm">
-          <span className="label">Randomness from that pulse</span>
-          <code style={mono}>{view.randomness}</code>
-        </div>
-        <div className="stack-sm">
-          <span className="label">Photo id and its place in the set</span>
-          <code style={mono}>
-            {view.target_id}, position {view.target_index} (from 0) of{" "}
-            {view.pool_count}
-          </code>
-        </div>
-        <div className="stack-sm">
-          <span className="label">Fingerprint of the set</span>
-          <code style={mono}>{view.pool_root}</code>
-        </div>
-        <div className="stack-sm">
-          <span className="label">Check it yourself</span>
-          <div className="row">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => saveCheckFile(view)}
-            >
-              Save the check file
-            </button>
+        <ValuesRow>
+          <div className="stack-sm">
+            <span className="label">Beacon pulse</span>
+            <code style={MONO}>
+              {publicBeacon ? (
+                <a href={pulseAddress} target="_blank" rel="noreferrer">
+                  {view.beacon_round}
+                </a>
+              ) : (
+                view.beacon_round
+              )}{" "}
+              at {view.round_time}
+            </code>
           </div>
-          <code style={mono}>{view.check}</code>
-        </div>
+          <div className="stack-sm">
+            <span className="label">Randomness from that pulse</span>
+            <code style={MONO}>{view.randomness}</code>
+          </div>
+          <div className="stack-sm">
+            <span className="label">Photo id and its place in the set</span>
+            <code style={MONO}>
+              {view.target_id}, position {view.target_index} (from 0) of{" "}
+              {view.pool_count}
+            </code>
+          </div>
+          <div className="stack-sm">
+            <span className="label">Fingerprint of the set</span>
+            <code style={MONO}>{view.pool_root}</code>
+          </div>
+          <div className="stack-sm">
+            <span className="label">Check it yourself</span>
+            <code style={MONO}>{view.check}</code>
+          </div>
+        </ValuesRow>
       </div>
     </details>
   );

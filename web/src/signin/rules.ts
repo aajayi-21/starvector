@@ -23,7 +23,7 @@ export const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export interface RuleCheck {
   /** A stable key for the list. */
   id: string;
-  /** The rule, in the words the screen shows. */
+  /** The rule, in the words the screen shows when it is broken. */
   label: string;
   ok: boolean;
 }
@@ -44,22 +44,22 @@ export function usernameChecks(name: string): RuleCheck[] {
   return [
     {
       id: "length",
-      label: `${USERNAME_MIN} to ${USERNAME_MAX} characters`,
+      label: `Use ${USERNAME_MIN} to ${USERNAME_MAX} characters`,
       ok: name.length >= USERNAME_MIN && name.length <= USERNAME_MAX,
     },
     {
       id: "alphabet",
-      label: "Only the letters a to z, the digits 0 to 9, and the hyphen",
+      label: "Letters a to z, numbers, and hyphens only",
       ok: /^[a-z0-9-]+$/.test(name),
     },
     {
       id: "first",
-      label: "Starts with a letter",
+      label: "Start with a letter",
       ok: /^[a-z]/.test(name),
     },
     {
       id: "hyphens",
-      label: "No hyphen at the end, and no two hyphens together",
+      label: "No hyphen at the end, and no two hyphens in a row",
       ok: name !== "" && !name.endsWith("-") && !name.includes("--"),
     },
   ];
@@ -76,14 +76,19 @@ export function passwordChecks(
   const checks: RuleCheck[] = [
     {
       id: "length",
-      label: `${PASSWORD_MIN} to ${PASSWORD_MAX} characters`,
+      // One rule with two ends: the label names the end that a typed
+      // password can break, thus the screen says which one it is.
+      label:
+        length > PASSWORD_MAX
+          ? `Use no more than ${PASSWORD_MAX} characters`
+          : `Use at least ${PASSWORD_MIN} characters`,
       ok: length >= PASSWORD_MIN && length <= PASSWORD_MAX,
     },
   ];
   if (username !== "") {
     checks.push({
       id: "username",
-      label: "Does not contain your username",
+      label: "Don't include your username",
       ok: shape !== "" && !shape.toLowerCase().includes(username),
     });
   }

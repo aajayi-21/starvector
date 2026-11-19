@@ -12,8 +12,10 @@ export interface DevDayRow {
   day: string;
   status: DevDayStatus;
   trial_code: string;
-  target_id: string;
-  commitment: string;
+  /** Null on a vp1 day until the close records the pick (spec VP1 §6). */
+  target_id: string | null;
+  /** Null on a vp1 day: it holds no commitment at all (spec VP1 §6). */
+  commitment: string | null;
   /** The configured player sent this day. */
   submitted: boolean;
   /** Each player's sends this day (spec BR1 §7). */
@@ -103,7 +105,8 @@ export interface DevHistoryDay {
   day: string;
   status: DevDayStatus;
   trial_code: string;
-  target_id: string;
+  /** Null on a vp1 day until the close records the pick. */
+  target_id: string | null;
   submitted: boolean;
   /** Null before the day closes, or when nothing was sent. */
   trial: DevHistoryTrial | null;
@@ -155,8 +158,10 @@ export interface DevDayDetail {
   day: string;
   status: DevDayStatus;
   trial_code: string;
-  target_id: string;
-  commitment: string;
+  /** Null on a vp1 day until the close records the pick. */
+  target_id: string | null;
+  /** Null on a vp1 day. */
+  commitment: string | null;
   opened_at: string;
   closed_at: string | null;
   revealed_at: string | null;

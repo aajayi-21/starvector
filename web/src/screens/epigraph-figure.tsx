@@ -70,7 +70,9 @@ const Sizers = memo(function Sizers(props: {
             <ResolveText text={each.text} random={STILL} />
           </div>
           <div className="epigraph-cite">
-            {each.author}, <cite>{each.work}</cite>
+            <span>
+              {each.author}, <cite>{each.work}</cite>
+            </span>
           </div>
         </div>
       ))}
@@ -153,19 +155,27 @@ export function EpigraphFigure(props: {
           <ResolveText text={epigraph.text} random={random} />
         </blockquote>
         <figcaption className="epigraph-cite">
-          {epigraph.author}, <cite>{epigraph.work}</cite>
+          <span>
+            {epigraph.author}, <cite>{epigraph.work}</cite>
+          </span>
+          {/* On the citation line, so it lines up with the text it
+              stops and not with the corner of the frame. */}
+          {rotates ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon epigraph-toggle"
+              aria-label={paused ? "Play the epigraphs" : "Pause the epigraphs"}
+              onClick={() => setPaused((value) => !value)}
+            >
+              {paused ? (
+                <Play size={16} aria-hidden="true" />
+              ) : (
+                <Pause size={16} aria-hidden="true" />
+              )}
+            </button>
+          ) : null}
         </figcaption>
       </figure>
-      {rotates ? (
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon epigraph-toggle"
-          aria-label={paused ? "Play the epigraphs" : "Pause the epigraphs"}
-          onClick={() => setPaused((value) => !value)}
-        >
-          {paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
-        </button>
-      ) : null}
     </div>
   );
 }

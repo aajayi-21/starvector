@@ -26,16 +26,27 @@ test("a player deletes their own account", async ({ page }) => {
   expect(made.status()).toBe(201);
 
   await page.goto("/account");
-  await expect(
-    page.getByRole("heading", { name: "Delete my account" }),
-  ).toBeVisible();
-  await expect(page.getByText("This can't be undone.")).toBeVisible();
+  // The section is closed at first: the `Delete account` row, the last
+  // row of the page, opens it.
+  const heading = page.getByRole("heading", { name: "Delete my account" });
+  const row = page.getByRole("button", { name: "Delete account", exact: true });
+  await expect(row).toHaveAttribute("aria-expanded", "false");
+  await expect(heading).toHaveCount(0);
+  await row.click();
+  await expect(heading).toBeFocused();
+  await expect(page.getByText("This can't be reversed.")).toBeVisible();
+
+  // `Keep my account` closes the section and goes back to the row.
+  await page.getByRole("button", { name: "Keep my account" }).click();
+  await expect(heading).toHaveCount(0);
+  await expect(row).toBeFocused();
+  await row.click();
+
   const remove = page.getByRole("button", { name: "Delete my account" });
   await expect(remove).toBeDisabled();
-  await page
-    .getByLabel(`Type your username (${username}) to confirm`)
-    .fill(username);
-  await page.getByLabel("Your password", { exact: true }).fill(PASSWORD);
+  await page.getByLabel(`Type ${username} to confirm`).fill(username);
+  // By id: the label row of the password field is a shared component.
+  await page.locator("#delete-password").fill(PASSWORD);
   await expect(remove).toBeEnabled();
   await remove.click();
   await expect(
@@ -45,7 +56,7 @@ test("a player deletes their own account", async ({ page }) => {
   ).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
   await expect(
-    page.getByRole("button", { name: "Make an account" }),
+    page.getByRole("button", { name: "Create an account" }),
   ).toBeVisible();
 
   // The name is closed for each new sign-up, and the password signs
