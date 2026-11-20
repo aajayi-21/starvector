@@ -31,10 +31,10 @@ export function HowItWorksSteps(props: {
   protocol: PickProtocol | undefined;
 }): React.JSX.Element {
   return (
-    <ol className="steps" style={{ gridTemplateColumns: "1fr" }}>
-      <li className="step">
-        <span className="step-number">1</span>
-        <div className="stack-sm">
+    <ol className="step-list how-steps">
+      <li className="step-item">
+        <span className="step-icon" aria-hidden="true" />
+        <div className="step-text">
           <h3>Start from the code</h3>
           <p className="muted">
             {isPostClose(props.protocol)
@@ -43,24 +43,24 @@ export function HowItWorksSteps(props: {
           </p>
         </div>
       </li>
-      <li className="step">
-        <span className="step-number">2</span>
-        <div className="stack-sm">
+      <li className="step-item">
+        <span className="step-icon" aria-hidden="true" />
+        <div className="step-text">
           <h3>Sketch and describe</h3>
           <p className="muted">
-            Draw on the canvas and add a few words for whatever comes to mind —
+            Draw on the canvas and add a few words for whatever comes to mind:
             shapes, textures, colors, feelings. There are no wrong answers.
           </p>
         </div>
       </li>
-      <li className="step">
-        <span className="step-number">3</span>
-        <div className="stack-sm">
+      <li className="step-item">
+        <span className="step-icon" aria-hidden="true" />
+        <div className="step-text">
           <h3>See how close you came</h3>
           <p className="muted">
             When the day closes, the photo is revealed and your sketch is
             compared with every photo in the set. Guessing lands around 50% on
-            average — above that, you beat chance.
+            average. Above that, you beat chance.
           </p>
         </div>
       </li>
@@ -80,7 +80,7 @@ export function HowItWorksScreen(): React.JSX.Element {
   const protocol = about.data?.pick_protocol;
   const postClose = isPostClose(protocol);
   return (
-    <div className="page-narrow stack-lg" style={{ margin: "0 auto" }}>
+    <div className="page-narrow text-page">
       <div className="page-header">
         <h1>How Starvector works</h1>
         <p className="muted">
@@ -89,16 +89,16 @@ export function HowItWorksScreen(): React.JSX.Element {
         </p>
       </div>
 
-      <section className="card">
+      <section>
         <h2>The idea</h2>
         <Premise />
       </section>
 
-      <section className="card">
+      <section>
         <HowItWorksSteps protocol={protocol} />
       </section>
 
-      <section className="card">
+      <section>
         <h2>Your result</h2>
         <p>
           Your sketch and words are compared with each photo in the set
@@ -106,14 +106,14 @@ export function HowItWorksScreen(): React.JSX.Element {
           the share of the other photos that matched your sketch less closely
           than {postClose ? "the day's photo" : "the hidden one"} did.
         </p>
-        <ul className="muted stack-sm" style={{ margin: 0, paddingLeft: 20 }}>
+        <ul className="fact-list">
           <li>100% means {photoNoun(protocol)} was your closest match.</li>
           <li>50% is what random guessing averages.</li>
           <li>One day says little — luck moves single results a lot.</li>
         </ul>
       </section>
 
-      <section className="card">
+      <section>
         <h2>Your skill number</h2>
         <p>
           Over many days your results combine into one number. 1.00 is chance,
@@ -133,7 +133,7 @@ export function HowItWorksScreen(): React.JSX.Element {
         </p>
       </section>
 
-      <section className="card">
+      <section>
         <h2>Days and practice</h2>
         <p>
           You can send once each day, and you can't change it after.
@@ -147,7 +147,7 @@ export function HowItWorksScreen(): React.JSX.Element {
         </p>
       </section>
 
-      <section className="card">
+      <section>
         <h2>Fair play</h2>
         {postClose ? (
           <p>

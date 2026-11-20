@@ -35,7 +35,7 @@ export function GroupControls(props: {
   return (
     <>
       <p className="hint">
-        Pick the lines of one thing and name it — “tower”, “water”. Named parts
+        Pick the lines of one thing and name it: “tower”, “water”. Named parts
         are matched to details of the photo, like your words are.
       </p>
       <div>
@@ -92,7 +92,7 @@ export function GroupControls(props: {
                   style={{
                     width: 12,
                     height: 12,
-                    borderRadius: 4,
+                    borderRadius: "50%",
                     background: groupDisplay(index),
                     flex: "none",
                   }}

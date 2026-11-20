@@ -8,6 +8,11 @@
  * pause control meets WCAG 2.2.2 (pause, stop, hide) for content that
  * moves by itself for more than five seconds.
  *
+ * The next control moves to a different epigraph at once, in each of
+ * those states: it is the player's own move, not movement by itself.
+ * Each change starts the interval again, so an epigraph the player
+ * asked for stays for its full time.
+ *
  * The longest epigraphs also render, hidden, in the same grid cell, so
  * the frame is as tall as the tallest one at the current width and a
  * change never moves the page. Three by character count is sufficient:
@@ -15,7 +20,7 @@
  * for each letter, so rendering all of them slowed the home screen.
  */
 
-import { Pause, Play } from "@phosphor-icons/react";
+import { CaretRight, Pause, Play } from "@phosphor-icons/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { ResolveText } from "../ui/resolve-text";
@@ -126,10 +131,13 @@ export function EpigraphFigure(props: {
   const held = useHeld(frame);
   const tallest = useMemo(() => longest(epigraphs), [epigraphs]);
   const reduced = useReducedMotion();
-  const rotates = epigraphs.length >= 2 && !reduced;
+  const several = epigraphs.length >= 2;
+  const rotates = several && !reduced;
   const stopped = !rotates || paused || held;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `random` is a stable source, not a value that moves
+  // `index` is a key on purpose: each change, by the timer or by the
+  // next control, starts the interval again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `random` is a stable source, not a value that moves; `index` restarts the interval
   useEffect(() => {
     if (stopped) {
       return;
@@ -141,7 +149,7 @@ export function EpigraphFigure(props: {
       setIndex((current) => nextIndex(current, epigraphs.length, random));
     }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [epigraphs.length, intervalMs, stopped]);
+  }, [epigraphs.length, intervalMs, stopped, index]);
 
   const epigraph = epigraphs[index];
   if (epigraph === undefined) {
@@ -158,21 +166,39 @@ export function EpigraphFigure(props: {
           <span>
             {epigraph.author}, <cite>{epigraph.work}</cite>
           </span>
-          {/* On the citation line, so it lines up with the text it
-              stops and not with the corner of the frame. */}
-          {rotates ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon epigraph-toggle"
-              aria-label={paused ? "Play the epigraphs" : "Pause the epigraphs"}
-              onClick={() => setPaused((value) => !value)}
-            >
-              {paused ? (
-                <Play size={16} aria-hidden="true" />
-              ) : (
-                <Pause size={16} aria-hidden="true" />
-              )}
-            </button>
+          {/* On the citation line, so the controls line up with the
+              text they move and not with the corner of the frame. */}
+          {several ? (
+            <span className="epigraph-controls">
+              {rotates ? (
+                <button
+                  type="button"
+                  className="btn btn-icon"
+                  aria-label={
+                    paused ? "Play the epigraphs" : "Pause the epigraphs"
+                  }
+                  onClick={() => setPaused((value) => !value)}
+                >
+                  {paused ? (
+                    <Play size={16} aria-hidden="true" />
+                  ) : (
+                    <Pause size={16} aria-hidden="true" />
+                  )}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-icon"
+                aria-label="Next epigraph"
+                onClick={() =>
+                  setIndex((current) =>
+                    nextIndex(current, epigraphs.length, random),
+                  )
+                }
+              >
+                <CaretRight size={16} aria-hidden="true" />
+              </button>
+            </span>
           ) : null}
         </figcaption>
       </figure>

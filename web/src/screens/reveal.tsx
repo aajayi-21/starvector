@@ -2,26 +2,31 @@
  * The results screen for one day (mock 1c, spec W1 B8; layout and
  * copy per spec BR1 §6). The heading states the result. The eye then
  * goes to the photo beside the sketch, which is the reason to open
- * the screen, and to the result against the 50% guessing mark. The
- * word matches and the day's board follow, and the fairness check
- * folds away: three plain steps first, the raw values behind a row.
+ * the screen, and to the result against the 50% guessing mark. Below
+ * one hairline, three columns share the width: the word matches, the
+ * day's board, and the fairness check with its raw values behind a
+ * row. On a phone the word matches stay open, and the board and the
+ * fairness check are rows that open.
+ *
+ * Nothing here has a box: the photo, the sketch, and the buttons are
+ * the things with an edge or a fill.
  *
  * No "good match" wording anywhere (spec M1 §9 copy rules): the
  * screen states the result against chance and grades nothing.
  */
 
 import {
+  ArrowLeft,
   CaretRight,
   DownloadSimple,
-  Lock,
-  PencilSimpleLine,
-  Shuffle,
+  Warning,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
 
 import { useApi } from "../api/client";
 import type {
+  HistoryView,
   ImageCredit,
   LeaderboardView,
   ReportRow,
@@ -34,7 +39,13 @@ import { floorSentence, privateOwnRow } from "../board/core";
 import { ReplayCanvas } from "../sketch/canvas";
 import { AvatarCircle } from "../ui/avatar";
 import { ChanceMeter } from "../ui/chance-meter";
-import { formatDay, ordinal, percentBeaten } from "../ui/format";
+import {
+  formatDay,
+  formatShortDay,
+  ordinal,
+  percentBeaten,
+} from "../ui/format";
+import { useNarrow } from "../ui/narrow";
 import { isPostClose, photoNoun } from "../ui/pick-copy";
 import { PrivateRowBadge } from "../ui/private-row-badge";
 import { ShareResultButton } from "../ui/share-button";
@@ -65,39 +76,62 @@ export function RevealScreen(): React.JSX.Element {
   }
   if (reveal.isError || reveal.data === undefined) {
     return (
-      <div className="page-narrow" style={{ margin: "0 auto" }}>
-        <section className="card card-hero">
-          <h2>Results aren't in yet</h2>
-          {isRefusal(reveal.error) ? (
-            <p className="muted">
-              The photo is revealed when the day closes and the results are
-              worked out.
-            </p>
-          ) : (
-            <div className="notice notice-bad" role="alert">
-              {friendlyMessage(reveal.error)}
-            </div>
-          )}
-          <div>
-            <Link to="/" className="btn btn-secondary">
-              Back to home
-            </Link>
+      <section className="card page-narrow">
+        <h1>Results aren't in yet</h1>
+        {isRefusal(reveal.error) ? (
+          <p className="muted">
+            The photo is revealed when the day closes and the results are worked
+            out.
+          </p>
+        ) : (
+          <div className="notice notice-bad" role="alert">
+            {friendlyMessage(reveal.error)}
           </div>
-        </section>
-      </div>
+        )}
+        <div>
+          <Link to="/" className="btn btn-secondary">
+            Back to home
+          </Link>
+        </div>
+      </section>
     );
   }
   return <RevealBody view={reveal.data} />;
 }
 
+/**
+ * The code of a day and the played day before it, from the player's
+ * history. The history holds the days with a result, so a day with no
+ * send has neither.
+ */
+function placeInHistory(
+  history: HistoryView | undefined,
+  day: string,
+): { code: string | null; older: string | null } {
+  const days = history?.days ?? [];
+  const at = days.findIndex((row) => row.day === day);
+  if (at < 0) {
+    return { code: null, older: null };
+  }
+  return {
+    code: days[at]?.trial_code ?? null,
+    older: days[at + 1]?.day ?? null,
+  };
+}
+
 function RevealBody(props: { view: RevealView }): React.JSX.Element {
   const api = useApi();
   const { view } = props;
+  const narrow = useNarrow();
   const leaderboard = useQuery({
     queryKey: ["leaderboard", view.day],
     queryFn: () => api.getLeaderboard(view.day),
   });
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
+  const history = useQuery({
+    queryKey: ["history"],
+    queryFn: () => api.getHistory(),
+  });
   const submission = useQuery({
     queryKey: ["submission", view.day],
     queryFn: () => api.getSubmission(view.day),
@@ -107,23 +141,42 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
   const sentCopy = readSentCopy(view.day);
   const replayRecord = submission.data?.record ?? sentCopy;
   const trial = view.trial;
+  const place = placeInHistory(history.data, view.day);
+  const players = leaderboard.data?.rows.length ?? 0;
 
   return (
-    <div className="stack-lg">
-      <div className="page-header" style={{ marginBottom: 0 }}>
-        <div className="eyebrow">Results · {formatDay(view.day)}</div>
-        <h1>
-          {trial === null
-            ? isPostClose(view.protocol)
-              ? "The day's photo"
-              : "The hidden photo"
-            : `You beat ${percentBeaten(trial.p)}% of the photos`}
-        </h1>
-      </div>
+    <div className="result">
+      <header className="result-head">
+        <div className="result-title">
+          <p className="muted">
+            {formatDay(view.day)}
+            {place.code === null ? null : (
+              <span className="code result-code">{place.code}</span>
+            )}
+          </p>
+          <h1 className="h-display">
+            {trial === null
+              ? isPostClose(view.protocol)
+                ? "The day's photo"
+                : "The hidden photo"
+              : `You beat ${percentBeaten(trial.p)}% of the photos`}
+          </h1>
+        </div>
+        <nav className="result-nav" aria-label="Other days">
+          {place.older === null ? null : (
+            <Link to="/reveal" search={{ day: place.older }}>
+              <ArrowLeft size={18} aria-hidden="true" />
+              <span className="visually-hidden">The day before: </span>
+              {formatShortDay(place.older)}
+            </Link>
+          )}
+          <Link to="/history">All your results</Link>
+        </nav>
+      </header>
 
-      <div className="result-hero">
+      <div className="result-top">
         <div className="pictures">
-          <figure className="picture" style={{ margin: 0 }}>
+          <figure className="picture">
             <div className="picture-frame">
               <img
                 src={api.imageUrl(view.target_id)}
@@ -133,18 +186,15 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
                 }
               />
             </div>
-            <figcaption className="stack-sm">
-              <span style={{ fontWeight: 600 }}>
+            <figcaption>
+              <span className="picture-name">
                 {isPostClose(view.protocol) ? "The photo" : "The hidden photo"}
               </span>
               <Credit credit={view.credit} />
             </figcaption>
           </figure>
-          <figure className="picture" style={{ margin: 0 }}>
-            <div
-              className="picture-frame"
-              style={{ background: "var(--canvas)" }}
-            >
+          <figure className="picture">
+            <div className="picture-frame is-sketch">
               <SketchReplay
                 record={replayRecord ?? null}
                 loading={submission.isPending && sentCopy === null}
@@ -152,11 +202,11 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
               />
             </div>
             <figcaption>
-              <span style={{ fontWeight: 600 }}>Your sketch</span>
+              <span className="picture-name">Your sketch</span>
             </figcaption>
           </figure>
         </div>
-        <section className="card card-hero" aria-label="Your result">
+        <section className="result-summary" aria-label="Your result">
           {trial === null && view.quarantined ? (
             <p className="muted" data-testid="not-scored">
               We couldn't score your send this day. It doesn't count toward your
@@ -181,9 +231,9 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
         </section>
       </div>
 
-      <div className="two-columns">
+      <div className="result-more">
         {view.report.length === 0 ? (
-          <section className="card">
+          <section className="card result-words">
             <h2>What connected</h2>
             <p className="muted">
               {trial === null
@@ -194,19 +244,72 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
         ) : (
           <WordMatches rows={view.report} />
         )}
-        <DayBoard
-          view={leaderboard.data}
-          pending={leaderboard.isPending}
-          self={me.data?.player ?? ""}
-        />
+        <Fold
+          title="Everyone this day"
+          id="day-board"
+          narrow={narrow}
+          meta={
+            players === 0
+              ? null
+              : `${players} ${players === 1 ? "player" : "players"}`
+          }
+        >
+          <DayBoard
+            view={leaderboard.data}
+            pending={leaderboard.isPending}
+            self={me.data?.player ?? ""}
+          />
+        </Fold>
+        <Fold
+          title="Check that this day was fair"
+          id="day-fair"
+          narrow={narrow}
+        >
+          {isPostClose(view.protocol) ? (
+            <PulseFairness view={view} />
+          ) : (
+            <Fairness view={view} />
+          )}
+        </Fold>
       </div>
-
-      {isPostClose(view.protocol) ? (
-        <PulseFairness view={view} />
-      ) : (
-        <Fairness view={view} />
-      )}
     </div>
+  );
+}
+
+/**
+ * A part of the lower row. On a wide screen it is a column with its
+ * heading. On a phone it is a row that opens, so the photo, the result,
+ * and the word matches stay near the top of the page.
+ */
+function Fold(props: {
+  title: string;
+  id: string;
+  narrow: boolean;
+  /** A short fact at the right of the closed row. */
+  meta?: string | null;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  if (!props.narrow) {
+    return (
+      <section className="card" aria-labelledby={props.id}>
+        <h2 id={props.id}>{props.title}</h2>
+        {props.children}
+      </section>
+    );
+  }
+  return (
+    <details className="row-disclosure result-fold">
+      <summary>
+        <h2 id={props.id}>{props.title}</h2>
+        <span className="row-meta">
+          {props.meta}
+          <CaretRight size={16} aria-hidden="true" className="row-chevron" />
+        </span>
+      </summary>
+      <section className="row-body" aria-labelledby={props.id}>
+        {props.children}
+      </section>
+    </details>
   );
 }
 
@@ -225,7 +328,7 @@ function SketchReplay(props: {
   }
   if (props.record === null) {
     return (
-      <p className="small" style={{ color: "#b3bccb", padding: 16, margin: 0 }}>
+      <p className="small picture-empty">
         {props.sent
           ? "Your sketch isn't stored on this device."
           : "No sketch this day."}
@@ -244,8 +347,8 @@ function ResultSummary(props: {
   const noun = photoNoun(props.protocol);
   const total = trial.decoy_count + 1;
   return (
-    <div className="stack">
-      <p style={{ fontSize: 17 }}>
+    <>
+      <p className="result-lead">
         Your sketch matched {noun} better than{" "}
         <strong>
           {trial.beaten} of the other {trial.decoy_count}
@@ -253,16 +356,16 @@ function ResultSummary(props: {
         photos.
       </p>
       <ChanceMeter p={trial.p} />
-      <p className="muted small">
+      <p className="muted">
         {noun.charAt(0).toUpperCase() + noun.slice(1)} was your{" "}
         {ordinal(trial.target_rank)}-closest match out of {total}. Guessing
         averages 50%, and one day says little on its own —{" "}
         <Link to="/history">your results</Link> combine many days.
       </p>
-      <div>
+      <div className="result-share">
         <ShareResultButton day={props.day} trial={trial} />
       </div>
-    </div>
+    </>
   );
 }
 
@@ -277,18 +380,18 @@ export function Credit(props: {
       “{props.credit.title}” from{" "}
       <a href={props.credit.page} target="_blank" rel="noreferrer noopener">
         {props.credit.source}
-      </a>{" "}
-      — see the page for the author and license.
+      </a>
+      . See the page for the author and license.
     </span>
   );
 }
 
 /**
- * The words that connected. A matched word's bar is its matched mass
+ * The words that connected. A matched word's line is its matched mass
  * times the similarity of the pairing — how much it counted and how
  * close the pair was. A word with no match holds its mass in the
  * reserve bin (core/types.py MatchRow): it counted for nothing, so it
- * gets no bar and comes last.
+ * gets no line and comes last.
  */
 export function WordMatches(props: {
   rows: ReadonlyArray<ReportRow>;
@@ -301,31 +404,30 @@ export function WordMatches(props: {
   const unmatched = props.rows.filter((row) => row.element === null);
   const most = Math.max(...matched.map(strength), 1e-9);
   return (
-    <section className="card" aria-labelledby="words-matched">
-      <div className="stack-sm">
-        <h2 id="words-matched">What connected</h2>
-        <p className="hint">
-          Each word you wrote is paired with the closest detail listed for the
-          photo. A longer bar means a closer pairing that counted for more. Your
-          drawing's overall shape is compared too; that part isn't broken down
-          here.
-        </p>
+    <section className="card result-words" aria-labelledby="words-matched">
+      <h2 id="words-matched">What connected</h2>
+      <p className="muted small">
+        Each word you wrote is paired with the closest detail listed for the
+        photo. A longer line means a closer pairing that counted for more. Your
+        drawing's overall shape is compared too; that part isn't broken down
+        here.
+      </p>
+      <div className="word-heads" aria-hidden="true">
+        <span>You wrote</span>
+        <span>Closest detail in the photo</span>
       </div>
-      <ul
-        className="stack"
-        style={{ margin: 0, padding: 0, listStyle: "none" }}
-      >
+      <ul className="word-list">
         {matched.map((row) => {
           const share = Math.round((strength(row) / most) * 100);
           return (
-            <li key={row.atom_id} className="stack-sm">
-              <span>
-                <strong>“{row.atom_text}”</strong>{" "}
-                <span className="muted">→ {row.element}</span>
+            <li key={row.atom_id} className="word-row">
+              <span className="word-pair">
+                <span>{row.atom_text}</span>
+                <span className="visually-hidden"> is closest to </span>
+                <span className="word-detail">{row.element}</span>
               </span>
               <div
-                className="meter"
-                style={{ height: 8 }}
+                className="meter word-meter"
                 role="img"
                 aria-label={`${share}% as strong as your strongest word`}
               >
@@ -338,9 +440,13 @@ export function WordMatches(props: {
           );
         })}
         {unmatched.map((row) => (
-          <li key={row.atom_id}>
-            <strong>“{row.atom_text}”</strong>{" "}
-            <span className="subtle">had no close match in this photo</span>
+          <li key={row.atom_id} className="word-row">
+            <span className="word-pair">
+              <span>{row.atom_text}</span>{" "}
+              <span className="word-detail subtle">
+                no close match in this photo
+              </span>
+            </span>
           </li>
         ))}
       </ul>
@@ -357,8 +463,7 @@ function DayBoard(props: {
   // The caller's own row while it is below the floor of spec A2 §9.5.
   const hidden = view === undefined ? null : privateOwnRow(view.rows, self);
   return (
-    <section className="card" aria-labelledby="day-board">
-      <h2 id="day-board">Everyone this day</h2>
+    <>
       {pending ? (
         <p className="subtle">Loading…</p>
       ) : view === undefined || view.rows.length === 0 ? (
@@ -368,8 +473,10 @@ function DayBoard(props: {
           <table className="table">
             <thead>
               <tr>
-                <th>Player</th>
-                <th className="num">Result</th>
+                <th scope="col">Player</th>
+                <th scope="col" className="num">
+                  Result
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -379,14 +486,11 @@ function DayBoard(props: {
                   className={row.player === self ? "is-you" : undefined}
                 >
                   <td>
-                    <span
-                      className="row"
-                      style={{ gap: 8, flexWrap: "nowrap" }}
-                    >
+                    <span className="board-player">
                       <AvatarCircle
                         player={row.player}
                         avatarHash={row.avatar_hash}
-                        size={24}
+                        size={28}
                       />
                       <span>{row.player === self ? "You" : row.player}</span>
                     </span>
@@ -402,34 +506,34 @@ function DayBoard(props: {
       {view === undefined || hidden === null ? null : (
         <p className="hint">{floorSentence(view.floor)}</p>
       )}
-    </section>
+      <Link to="/leaderboard">Open the leaderboard</Link>
+    </>
   );
 }
 
-/** The look of a raw value in the fairness check. */
-const MONO: React.CSSProperties = {
-  fontFamily: "var(--mono)",
-  fontSize: 13,
-  wordBreak: "break-all",
-  background: "var(--surface-2)",
-  padding: "8px 10px",
-  borderRadius: 8,
-};
-
-/** One step of the fairness check: an icon, a moment, and what held. */
+/** One step of the fairness check: its number, a moment, and what held. */
 function FairStep(props: {
-  icon: React.ReactNode;
   when: string;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <li className="step-item">
-      <span className="step-icon">{props.icon}</span>
-      <span className="step-text">
-        <strong>{props.when}</strong>
-        <span className="muted small">{props.children}</span>
-      </span>
+    <li>
+      <strong>{props.when}</strong>
+      <span className="muted small">{props.children}</span>
     </li>
+  );
+}
+
+/** One raw value of the fairness check, under its name. */
+function RawValue(props: {
+  label: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className="raw-value">
+      <span className="label">{props.label}</span>
+      <code>{props.children}</code>
+    </div>
   );
 }
 
@@ -451,53 +555,31 @@ function ValuesRow(props: { children: React.ReactNode }): React.JSX.Element {
 function Fairness(props: { view: RevealView }): React.JSX.Element {
   const { view } = props;
   return (
-    <details className="card disclosure">
-      <summary>Check that this day was fair</summary>
-      <div className="disclosure-body">
-        <ol className="step-list">
-          <FairStep
-            icon={<Lock size={16} aria-hidden="true" />}
-            when="When the day opened"
-          >
-            The server published a fingerprint of the hidden photo.
-          </FairStep>
-          <FairStep
-            icon={<PencilSimpleLine size={16} aria-hidden="true" />}
-            when="While you played"
-          >
-            The photo stayed hidden. Its fingerprint was already public, so the
-            photo couldn't be swapped after the sketches came in.
-          </FairStep>
-          <FairStep
-            icon={<Shuffle size={16} aria-hidden="true" />}
-            when="After the reveal"
-          >
-            Anyone can recompute the fingerprint from the photo's id and the
-            secret, and see that it matches.
-          </FairStep>
-        </ol>
-        <ValuesRow>
-          <div className="stack-sm">
-            <span className="label">Fingerprint published at the start</span>
-            <code style={MONO}>{view.commitment}</code>
-          </div>
-          <div className="stack-sm">
-            <span className="label">Photo id</span>
-            <code style={MONO}>{view.target_id}</code>
-          </div>
-          <div className="stack-sm">
-            <span className="label">Secret</span>
-            <code style={MONO}>{view.secret}</code>
-          </div>
-          <div className="stack-sm">
-            <span className="label">Check it yourself</span>
-            <code style={MONO}>
-              printf '%s:%s' {view.target_id} {view.secret} | sha256sum
-            </code>
-          </div>
-        </ValuesRow>
-      </div>
-    </details>
+    <>
+      <ol className="fair-steps">
+        <FairStep when="When the day opened">
+          The server published a fingerprint of the hidden photo.
+        </FairStep>
+        <FairStep when="While you played">
+          The photo stayed hidden. Its fingerprint was already public, so the
+          photo couldn't be swapped after the sketches came in.
+        </FairStep>
+        <FairStep when="After the reveal">
+          Anyone can recompute the fingerprint from the photo's id and the
+          secret, and see that it matches.
+        </FairStep>
+      </ol>
+      <ValuesRow>
+        <RawValue label="Fingerprint published at the start">
+          {view.commitment}
+        </RawValue>
+        <RawValue label="Photo id">{view.target_id}</RawValue>
+        <RawValue label="Secret">{view.secret}</RawValue>
+        <RawValue label="Check it yourself">
+          printf '%s:%s' {view.target_id} {view.secret} | sha256sum
+        </RawValue>
+      </ValuesRow>
+    </>
   );
 }
 
@@ -544,88 +626,66 @@ function PulseFairness(props: { view: RevealView }): React.JSX.Element {
   const publicBeacon = view.beacon_chain === "drand-quicknet";
   const pulseAddress = `https://api.drand.sh/${view.beacon_chain_hash}/public/${view.beacon_round}`;
   return (
-    <details className="card disclosure">
-      <summary>Check that this day was fair</summary>
-      <div className="disclosure-body">
-        <ol className="step-list">
-          <FairStep
-            icon={<Lock size={16} aria-hidden="true" />}
-            when="Before the day opened"
-          >
-            The set of {view.pool_count} photos was fixed and its fingerprint
-            published, so the set couldn't be changed to suit the pick.
-          </FairStep>
-          <FairStep
-            icon={<PencilSimpleLine size={16} aria-hidden="true" />}
-            when="While you played"
-          >
-            No photo was chosen while this day was open, so nobody, us included,
-            could know it.
-          </FairStep>
-          <FairStep
-            icon={<Shuffle size={16} aria-hidden="true" />}
-            when="A minute after the close"
-          >
-            Pulse {view.beacon_round} of the drand public randomness beacon
-            picked the photo from the set.
-          </FairStep>
-        </ol>
-        <p className="notice" role="note">
-          drand is a public randomness service that a group of independent
-          organizations runs together. No single one of them can predict or
-          change its numbers.
-        </p>
-        {publicBeacon ? null : (
-          <div className="notice notice-warn" role="note">
+    <>
+      <ol className="fair-steps">
+        <FairStep when="Before the day opened">
+          The set of {view.pool_count} photos was fixed and its fingerprint
+          published, so the set couldn't be changed to suit the pick.
+        </FairStep>
+        <FairStep when="While you played">
+          No photo was chosen while this day was open, so nobody, us included,
+          could know it.
+        </FairStep>
+        <FairStep when="A minute after the close">
+          Pulse {view.beacon_round} of the drand public randomness beacon picked
+          the photo from the set.
+        </FairStep>
+      </ol>
+      <p className="muted small" role="note">
+        drand is a public randomness service that a group of independent
+        organizations runs together. No single one of them can predict or change
+        its numbers.
+      </p>
+      {publicBeacon ? null : (
+        <div className="notice notice-warn" role="note">
+          <Warning size={18} aria-hidden="true" />
+          <span>
             This day used a test beacon, not the public one, so its pick proves
             nothing.
-          </div>
-        )}
-        <div className="row">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => saveCheckFile(view)}
-          >
-            <DownloadSimple size={18} aria-hidden="true" />
-            Save the check file
-          </button>
+          </span>
         </div>
-        <ValuesRow>
-          <div className="stack-sm">
-            <span className="label">Beacon pulse</span>
-            <code style={MONO}>
-              {publicBeacon ? (
-                <a href={pulseAddress} target="_blank" rel="noreferrer">
-                  {view.beacon_round}
-                </a>
-              ) : (
-                view.beacon_round
-              )}{" "}
-              at {view.round_time}
-            </code>
-          </div>
-          <div className="stack-sm">
-            <span className="label">Randomness from that pulse</span>
-            <code style={MONO}>{view.randomness}</code>
-          </div>
-          <div className="stack-sm">
-            <span className="label">Photo id and its place in the set</span>
-            <code style={MONO}>
-              {view.target_id}, position {view.target_index} (from 0) of{" "}
-              {view.pool_count}
-            </code>
-          </div>
-          <div className="stack-sm">
-            <span className="label">Fingerprint of the set</span>
-            <code style={MONO}>{view.pool_root}</code>
-          </div>
-          <div className="stack-sm">
-            <span className="label">Check it yourself</span>
-            <code style={MONO}>{view.check}</code>
-          </div>
-        </ValuesRow>
+      )}
+      <ValuesRow>
+        <RawValue label="Beacon pulse">
+          {publicBeacon ? (
+            <a href={pulseAddress} target="_blank" rel="noreferrer">
+              {view.beacon_round}
+            </a>
+          ) : (
+            view.beacon_round
+          )}{" "}
+          at {view.round_time}
+        </RawValue>
+        <RawValue label="Randomness from that pulse">
+          {view.randomness}
+        </RawValue>
+        <RawValue label="Photo id and its place in the set">
+          {view.target_id}, position {view.target_index} (from 0) of{" "}
+          {view.pool_count}
+        </RawValue>
+        <RawValue label="Fingerprint of the set">{view.pool_root}</RawValue>
+        <RawValue label="Check it yourself">{view.check}</RawValue>
+      </ValuesRow>
+      <div>
+        <button
+          type="button"
+          className="text-button fair-save"
+          onClick={() => saveCheckFile(view)}
+        >
+          <DownloadSimple size={18} aria-hidden="true" />
+          Save the check file
+        </button>
       </div>
-    </details>
+    </>
   );
 }

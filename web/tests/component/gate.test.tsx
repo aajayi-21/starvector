@@ -506,9 +506,9 @@ describe("make an account (spec A2 §3.1)", () => {
   it("shows the parts of a sign-up above the card", async () => {
     await openSignUp(signedOut());
     expect(progress()).toEqual([
-      { text: "1Name and password", current: true },
-      { text: "2Recovery code", current: false },
-      { text: "3Your first day", current: false },
+      { text: "Name and password", current: true },
+      { text: "Recovery code", current: false },
+      { text: "Your first day", current: false },
     ]);
     // The line is above the card, and not in it.
     const line = screen.getByRole("list", { name: "Creating your account" });
@@ -525,8 +525,8 @@ describe("make an account (spec A2 §3.1)", () => {
     await screen.findByRole("heading", { name: "Save your recovery code" });
     expect(progress()).toEqual([
       { text: "Name and password (done)", current: false },
-      { text: "2Recovery code", current: true },
-      { text: "3Your first day", current: false },
+      { text: "Recovery code", current: true },
+      { text: "Your first day", current: false },
     ]);
     fireEvent.click(button("I've saved my code"));
     await screen.findByText(/Today's photo is hidden/);

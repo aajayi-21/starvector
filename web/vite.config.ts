@@ -38,8 +38,8 @@ export default defineConfig({
         start_url: "/",
         scope: "/",
         display: "standalone",
-        background_color: "#f4f6f9",
-        theme_color: "#f4f6f9",
+        background_color: "#0a1023",
+        theme_color: "#0a1023",
         icons: [
           {
             src: "icons/appicon-192.png",

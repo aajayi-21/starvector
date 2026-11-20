@@ -106,7 +106,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
     .split(/\s+/)
     .join("-");
   expect(firstCode).toMatch(/^([A-HJKMNP-Z2-9]{4}-){5}[A-HJKMNP-Z2-9]{4}$/);
-  await expect(page.getByRole("link", { name: "Today" })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Play" })).toBeHidden();
   await expect(parts.locator('[aria-current="step"]')).toHaveText(
     /Recovery code/,
   );

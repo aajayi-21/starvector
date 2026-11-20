@@ -85,8 +85,8 @@ export function NoticeScreen(props: { notice: NoticeView }): React.JSX.Element {
       <OperatorCodeNotice />
       <OfflineBanner />
       <main className="page page-has-footer">
-        <div className="page-narrow" style={{ margin: "0 auto" }}>
-          <section className="card card-hero" aria-labelledby="notice-heading">
+        <div className="page-narrow">
+          <section className="notice-screen" aria-labelledby="notice-heading">
             <h1 id="notice-heading" ref={heading} tabIndex={-1}>
               Before you play
             </h1>
@@ -97,7 +97,9 @@ export function NoticeScreen(props: { notice: NoticeView }): React.JSX.Element {
               </OutOfDate>
             ) : (
               <>
-                <NoticeText />
+                <div className="notice-screen-text">
+                  <NoticeText />
+                </div>
                 <p className="muted">
                   This is a condition of playing. To go on, agree to it.
                 </p>
@@ -108,7 +110,7 @@ export function NoticeScreen(props: { notice: NoticeView }): React.JSX.Element {
                 Your unsent sketch and words are still saved on this device.
               </p>
             ) : null}
-            <div className="row">
+            <div className="notice-screen-actions">
               {outOfDate ? null : (
                 <button
                   type="button"

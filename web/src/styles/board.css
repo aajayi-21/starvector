@@ -1,0 +1,328 @@
+/*
+ * The leaderboard (screens/leaderboard.tsx). Two columns: the star
+ * chart of the players and the caller's own evidence, then the latest
+ * day and the facts of all players. The ranked table follows at the
+ * full width. Nothing has a box, and each part starts under space or
+ * one hairline.
+ *
+ * Spec M1 §9 holds the rank, its range, and the result count at equal
+ * weight: no rule here sets a muted color, a smaller size, or a lower
+ * opacity on a cell of the ranked table.
+ */
+
+.board {
+  display: flex;
+  flex-direction: column;
+}
+.board .page-header {
+  margin-bottom: 36px;
+}
+.board-lead {
+  font-size: 19px;
+}
+.board h2 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+.board-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 48px 80px;
+  align-items: start;
+  padding-bottom: 56px;
+}
+.board-main,
+.board-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* The second part of each column starts under a hairline. */
+.board-own,
+.board-all {
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border);
+}
+.board-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+/* The name cell of a board row: the avatar, then the name. */
+.board-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* — the star chart — */
+.board-chart {
+  margin: 6px 0 0;
+}
+.board-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.board-chart-band {
+  fill: var(--accent);
+  opacity: 0.09;
+}
+.board-chart-scale text {
+  fill: var(--text-2);
+  font-family: var(--font);
+  font-size: 13.5px;
+}
+.board-chart-base {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.board-chart-chance {
+  stroke: var(--chance);
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+  opacity: 0.85;
+}
+.board-chart-label text {
+  fill: var(--text-3);
+  font-family: var(--atlas);
+  font-size: 15px;
+  font-style: italic;
+}
+.board-chart-halo {
+  fill: var(--accent);
+  opacity: 0.25;
+}
+.board-star {
+  fill: var(--text);
+}
+.board-star.is-you {
+  fill: var(--accent);
+}
+.board-star.is-unranked {
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 1.1;
+}
+.board-chart-you {
+  fill: var(--accent);
+  font-family: var(--atlas);
+  font-size: 17px;
+  font-style: italic;
+}
+.board-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-2);
+  font-size: 15px;
+  list-style: none;
+}
+.board-key li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.board-key-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.board-key-mark.is-you {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+}
+.board-key-mark.is-unranked {
+  background: none;
+  border: 1px solid var(--text-3);
+}
+.board-key-note {
+  max-width: 720px;
+}
+
+/* The one sentence that a part leads with. */
+.board-claim {
+  max-width: 640px;
+  font-family: var(--display);
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.board-own > .muted,
+.board-skill > .muted {
+  max-width: 640px;
+}
+
+details.row-disclosure.board-numbers {
+  margin-top: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.board-numbers .table td {
+  white-space: normal;
+}
+.board-numbers .table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* — the ranked table — */
+.board-ranked {
+  padding: 40px 0 12px;
+  border-top: 1px solid var(--border);
+}
+.board-table {
+  min-width: 760px;
+  margin-top: 8px;
+}
+.board-table th:nth-child(2),
+.board-table td:nth-child(2) {
+  padding-left: 28px;
+}
+.board-table th:first-child {
+  width: 70px;
+}
+.board-table .board-range-head {
+  width: 34%;
+  padding-left: 40px;
+}
+/* The range in numbers, then the same range as a drawing. */
+.board-range {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-left: 28px;
+}
+.board-range-text {
+  flex: none;
+  width: 66px;
+  font-variant-numeric: tabular-nums;
+}
+.board-range-bar {
+  position: relative;
+  flex: 1;
+  height: 15px;
+}
+.board-range-bar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 7px;
+  height: 1px;
+  background: var(--border);
+}
+.board-range-span {
+  position: absolute;
+  top: 6px;
+  height: 3px;
+  background: var(--accent);
+  opacity: 0.75;
+}
+.board-range-star {
+  position: absolute;
+  top: 3px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--text);
+}
+/* The cut between the head of the board and the caller's own row. */
+.board-table .board-gap td {
+  height: 12px;
+  padding: 0;
+  border-bottom: 1px solid var(--border-strong);
+}
+/* The range and the result count under a name, on a phone: the size
+   and the color of the name. */
+.board-under {
+  display: block;
+  padding-left: 38px;
+  font-variant-numeric: tabular-nums;
+}
+.board-ranked-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px 56px;
+  margin-top: 14px;
+}
+.board-ranked-foot .hint {
+  flex: 1 1 420px;
+  max-width: 760px;
+}
+
+@media (max-width: 760px) {
+  .board .page-header {
+    margin-bottom: 26px;
+  }
+  .board-lead {
+    font-size: 17px;
+  }
+  /* One column. The wrappers let go, and each section takes its place
+     by its order: the latest day, the chart, the caller's evidence,
+     the ranked table, and the facts of all players. */
+  .board-grid,
+  .board-main,
+  .board-side {
+    display: contents;
+  }
+  .board .card {
+    gap: 10px;
+    margin-top: 12px;
+    padding: 24px 0 0;
+    border-top: 1px solid var(--border);
+  }
+  .board .card.board-daily {
+    order: 1;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .board-skill {
+    order: 2;
+  }
+  .board-own {
+    order: 3;
+  }
+  .board-ranked {
+    order: 4;
+  }
+  .board-all {
+    order: 5;
+  }
+  .board-key {
+    gap: 8px 22px;
+    font-size: 14.5px;
+  }
+  .board-claim {
+    font-size: 21px;
+  }
+  .board-table {
+    min-width: 0;
+  }
+  .board-table th:first-child {
+    width: 44px;
+  }
+  .board-table th:nth-child(2),
+  .board-table td:nth-child(2) {
+    padding-left: 14px;
+  }
+  .board-under {
+    padding-left: 0;
+    white-space: normal;
+  }
+  .board-ranked-foot {
+    gap: 14px;
+  }
+  .board-ranked-foot .btn {
+    width: 100%;
+  }
+}

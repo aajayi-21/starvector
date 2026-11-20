@@ -1,14 +1,17 @@
 /**
- * The home screen (spec BR1 §6): one clear next step. The day's card
- * comes first, follows the day's status — start, sent, being scored,
- * results in — and holds the one primary button on the screen. The
- * epigraph sits in the card's second column on a wide screen and at the
- * end of the page on a phone. Below the card, the last result against
- * chance, the streak, and practice share one footer line. A player with
- * no result yet also sees how the game works.
+ * The home screen (spec BR1 §6): one clear next step. The day comes
+ * first, follows the day's status — start, sent, being scored, results
+ * in — and holds the one primary button on the screen. Beside it, the
+ * player's latest results stand as a line of stars over the epigraph;
+ * on a phone the stars follow the day and the epigraph ends the page.
+ * Below one hairline, the last result against chance, the streak, and
+ * practice share the width as three columns, each with one link. A
+ * player with no result yet also sees how the game works.
+ *
+ * Nothing here has a box: the day's button is the one filled thing.
  */
 
-import { ArrowRight, CaretRight, Clock } from "@phosphor-icons/react";
+import { ArrowRight, CaretRight } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -18,7 +21,8 @@ import { useDayQuery } from "../api/day-query";
 import type { DayView, HistoryView } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
 import { ChanceMeter } from "../ui/chance-meter";
-import { CodeCells } from "../ui/code-cells";
+import { DayCode } from "../ui/code-cells";
+import { Constellation } from "../ui/constellation";
 import { useRemaining } from "../ui/countdown";
 import {
   formatCloseMoment,
@@ -29,9 +33,9 @@ import {
   percentBeaten,
   sendCountText,
 } from "../ui/format";
+import { useNarrow } from "../ui/narrow";
 import { isPostClose } from "../ui/pick-copy";
 import { ResolveText } from "../ui/resolve-text";
-import { streakLabel } from "../ui/streak";
 import { EpigraphFigure } from "./epigraph-figure";
 import { EPIGRAPHS } from "./epigraphs";
 import { pickGreeting } from "./greeting";
@@ -55,46 +59,42 @@ export function HomeScreen(): React.JSX.Element {
     history.data.days.length === 0 &&
     day.data?.submitted !== true;
   const streak = me.data?.streak ?? 0;
+  const narrow = useNarrow();
 
   return (
-    <div className="stack-lg">
-      <div className="page-header home-greeting" style={{ marginBottom: 0 }}>
-        <h1>
-          <ResolveText text={greeting} />
-          {me.data === undefined ? null : (
-            <ResolveText text={`, ${me.data.player}`} />
-          )}
-        </h1>
-        {/* The top bar hides its streak badge on a phone, so the
-            greeting row holds the number there. */}
-        {streak === 0 ? null : (
-          <span className="show-narrow subtle small">
-            {streakLabel(streak)}
-          </span>
-        )}
-      </div>
-
-      {/* One card on a wide screen: the day on the left, the epigraph
-          on the right. On a phone the wrapper lets go of its two parts,
-          the day keeps the card, and the epigraph moves to the end. */}
-      <div className="card card-hero home-top">
-        <TodayCard
-          day={day.data}
-          pending={day.isPending}
-          error={day.isError ? day.error : null}
-        />
-        <div className="home-epigraph">
-          <EpigraphFigure epigraphs={EPIGRAPHS} />
+    <div className="home">
+      {/* Two columns on a wide screen: the day, and the sky. On a phone
+          the two wrappers let go, and each part takes its place in one
+          column by its order (styles/home.css). */}
+      <div className="home-top">
+        <div className="home-day">
+          <h1 className="h-display">
+            <ResolveText text={greeting} />
+            {me.data === undefined ? null : (
+              <ResolveText text={`, ${me.data.player}`} />
+            )}
+          </h1>
+          <TodayCard
+            day={day.data}
+            pending={day.isPending}
+            error={day.isError ? day.error : null}
+          />
+        </div>
+        <div className="home-sky">
+          <Constellation days={history.data?.days ?? []} narrow={narrow} />
+          <div className="home-epigraph">
+            <EpigraphFigure epigraphs={EPIGRAPHS} />
+          </div>
         </div>
       </div>
 
       {firstTime ? (
-        <section className="card" aria-labelledby="first-how">
+        <section className="card home-first" aria-labelledby="first-how">
           <div className="row-between">
             <h2 id="first-how">New here? Here's how it works</h2>
             <Link to="/how" className="foot-link">
               More detail
-              <ArrowRight size={16} aria-hidden="true" />
+              <ArrowRight size={18} aria-hidden="true" />
             </Link>
           </div>
           <Premise />
@@ -102,7 +102,7 @@ export function HomeScreen(): React.JSX.Element {
         </section>
       ) : null}
 
-      <div className="cards home-cards">
+      <div className="columns home-cards">
         <LastResultCard history={history.data} />
         <StreakCard
           streak={streak}
@@ -111,27 +111,24 @@ export function HomeScreen(): React.JSX.Element {
         />
         <section className="card" aria-labelledby="practice-card">
           <h3 id="practice-card">Practice</h3>
-          <p className="muted small home-card-detail">
+          <p className="muted">
             Replay a past photo and see how you'd have done. Nothing is saved.
           </p>
           <CardFoot to="/practice" label="Practice now" />
         </section>
-        {firstTime ? null : (
-          <section className="card show-narrow" aria-labelledby="how-card">
-            <h3 id="how-card">How it works</h3>
-            <CardFoot to="/how" label="Read how it works" />
-          </section>
-        )}
       </div>
+
+      {firstTime ? null : (
+        <Link to="/how" className="row-link home-how">
+          How it works
+          <CaretRight size={16} aria-hidden="true" />
+        </Link>
+      )}
     </div>
   );
 }
 
-/**
- * The one footer line of a home card: a text link, flush with the
- * card's left edge. On a phone the card is a row and the link covers
- * the whole row.
- */
+/** The one link that ends a home column: words and an arrow. */
 function CardFoot(props: {
   to: "/practice" | "/history" | "/how" | "/reveal";
   label: string;
@@ -144,9 +141,8 @@ function CardFoot(props: {
         {...(props.day === undefined ? {} : { search: { day: props.day } })}
         className="foot-link"
       >
-        <span className="foot-text">{props.label}</span>
-        <ArrowRight size={16} aria-hidden="true" className="foot-arrow" />
-        <CaretRight size={16} aria-hidden="true" className="foot-caret" />
+        {props.label}
+        <ArrowRight size={18} aria-hidden="true" />
       </Link>
     </div>
   );
@@ -155,30 +151,25 @@ function CardFoot(props: {
 /** The day's send count, in each hero state (spec H1 §3). */
 function SendCount(props: { day: DayView }): React.JSX.Element {
   return (
-    <p className="subtle small" data-testid="send-count">
+    <p className="muted" data-testid="send-count">
       {sendCountText(props.day.sends, props.day.status === "open")}
     </p>
   );
 }
 
 /**
- * The line over the day's card. While the day is open and the close
- * time is known, it counts down; otherwise it says the close moment or
- * the date.
+ * The line under the greeting. While the day is open and the close time
+ * is known, it counts down; otherwise it says the close moment or the
+ * date.
  */
 function DayEyebrow(props: { day: DayView }): React.JSX.Element {
   const { day } = props;
   const remaining = useRemaining(day.closes_at);
   const text =
     day.status === "open" && remaining !== null
-      ? `closes in ${formatRemaining(remaining)} (${formatLocalClock(day.closes_at as string)})`
-      : (formatCloseMoment(day.closes_at) ?? formatDay(day.day));
-  return (
-    <div className="eyebrow eyebrow-icon">
-      <Clock size={16} aria-hidden="true" />
-      Today · {text}
-    </div>
-  );
+      ? `Today closes in ${formatRemaining(remaining)} (${formatLocalClock(day.closes_at as string)})`
+      : `Today, ${formatCloseMoment(day.closes_at) ?? formatDay(day.day)}`;
+  return <p className="eyebrow">{text}</p>;
 }
 
 function TodayCard(props: {
@@ -265,13 +256,13 @@ function TodayCard(props: {
   return (
     <section className="home-today" aria-labelledby="today-heading">
       <DayEyebrow day={day} />
-      <h2 id="today-heading" className="home-title">
+      <h2 id="today-heading">
         {isPostClose(day.protocol)
           ? "Today's photo is picked after the close"
           : "Today's photo is hidden behind this code"}
       </h2>
-      <CodeCells code={day.trial_code} />
-      <p className="muted">
+      <DayCode code={day.trial_code} large />
+      <p className="home-lead">
         Sketch and describe whatever comes to mind. You get one send.
       </p>
       <div className="home-cta">
@@ -292,7 +283,7 @@ function LastResultCard(props: {
     <section className="card" aria-labelledby="last-result">
       <h3 id="last-result">Your last result</h3>
       {latest === undefined ? (
-        <p className="muted small">
+        <p className="muted">
           {props.history === undefined
             ? "Loading…"
             : "Your first result appears after your first day closes."}
@@ -300,12 +291,12 @@ function LastResultCard(props: {
       ) : (
         <>
           <div className="home-card-value">
-            <span className="home-card-number tabular">
+            <span className="home-card-number figure">
               {percentBeaten(latest.p)}%
             </span>
-            <span className="subtle small">{formatShortDay(latest.day)}</span>
+            <span className="muted">{formatShortDay(latest.day)}</span>
           </div>
-          <div className="home-card-detail">
+          <div className="home-meter">
             <ChanceMeter p={latest.p} />
           </div>
           <CardFoot to="/reveal" day={latest.day} label="See details" />
@@ -325,16 +316,31 @@ function shiftDay(day: string, by: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+const WEEKDAY_LETTER = new Intl.DateTimeFormat(undefined, {
+  weekday: "narrow",
+  timeZone: "UTC",
+});
+
+interface WeekDay {
+  /** The first letter of the weekday of the day's label. */
+  letter: string;
+  on: boolean;
+}
+
 /**
- * The seven days before today, oldest first: true where the player has
- * a revealed result. The row reads the history alone, which holds
+ * The seven days before today, oldest first: on where the player has a
+ * revealed result. The row reads the history alone, which holds
  * revealed days only, so it says nothing of the open day (I7).
  */
-function weekOf(history: HistoryView, today: string): boolean[] {
+function weekOf(history: HistoryView, today: string): WeekDay[] {
   const played = new Set(history.days.map((row) => row.day));
-  return Array.from({ length: WEEK_DAYS }, (_, index) =>
-    played.has(shiftDay(today, index - WEEK_DAYS)),
-  );
+  return Array.from({ length: WEEK_DAYS }, (_, index) => {
+    const day = shiftDay(today, index - WEEK_DAYS);
+    return {
+      letter: WEEKDAY_LETTER.format(new Date(`${day}T12:00:00Z`)),
+      on: played.has(day),
+    };
+  });
 }
 
 function StreakCard(props: {
@@ -350,29 +356,34 @@ function StreakCard(props: {
   return (
     <section className="card" aria-labelledby="streak-card">
       <h3 id="streak-card">Streak</h3>
-      <div className="home-card-value">
-        <span className="home-card-number tabular">{streak}</span>
-        <span className="subtle small">{streak === 1 ? "day" : "days"}</span>
-      </div>
-      {week === null ? null : (
-        <div className="home-card-detail">
-          <div className="week-dots" aria-hidden="true">
-            {week.map((on, index) => (
-              <span
-                // The row is positional: the index is the day.
-                // biome-ignore lint/suspicious/noArrayIndexKey: see above
-                key={index}
-                className={on ? "week-dot is-on" : "week-dot"}
-              />
-            ))}
-          </div>
-          <span className="visually-hidden">
-            You have a result on {week.filter(Boolean).length} of the last{" "}
-            {WEEK_DAYS} days.
-          </span>
+      <div className="home-streak">
+        <div className="home-card-value">
+          <span className="home-card-number figure">{streak}</span>
+          <span className="muted">{streak === 1 ? "day" : "days"}</span>
         </div>
-      )}
-      <p className="muted small home-card-detail">
+        {week === null ? null : (
+          <div>
+            <div className="week-dots" aria-hidden="true">
+              {week.map((each, index) => (
+                <span
+                  // The row is positional: the index is the day.
+                  // biome-ignore lint/suspicious/noArrayIndexKey: see above
+                  key={index}
+                  className={each.on ? "week-day is-on" : "week-day"}
+                >
+                  <span className="week-dot" />
+                  {each.letter}
+                </span>
+              ))}
+            </div>
+            <span className="visually-hidden">
+              You have a result on {week.filter((each) => each.on).length} of
+              the last {WEEK_DAYS} days.
+            </span>
+          </div>
+        )}
+      </div>
+      <p className="muted">
         {streak === 0
           ? "Send on consecutive days to build a streak."
           : "Send each day to keep it going."}

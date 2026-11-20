@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { makeMockApi } from "../../src/api/mock";
@@ -55,9 +55,32 @@ describe("the leaderboard screen", () => {
     // The cut is stated, never silent.
     expect(
       await screen.findByText(
-        new RegExp(`Showing 25 of ${board.eligible_count} ranked`),
+        new RegExp(`Showing 12 of ${board.eligible_count} ranked`),
       ),
     ).toBeDefined();
+  });
+
+  it("shows more ranked players on request", async () => {
+    const board = await api().getSkillLeaderboard();
+    renderAt("/leaderboard");
+    const table = await screen.findByTestId("ranked-table");
+    const rows = (): number => table.querySelectorAll("tbody tr").length;
+    const before = rows();
+    fireEvent.click(screen.getByRole("button", { name: "Show more players" }));
+    expect(rows()).toBeGreaterThan(before);
+    expect(rows()).toBeLessThanOrEqual(board.eligible_count + 2);
+  });
+
+  it("draws the likely range of each ranked row and hides the drawing", async () => {
+    // The drawing repeats the numbers of the row, so assistive
+    // technology reads the numbers and skips the drawing.
+    renderAt("/leaderboard");
+    const table = await screen.findByTestId("ranked-table");
+    const bars = table.querySelectorAll(".board-range-bar");
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of bars) {
+      expect(bar.getAttribute("aria-hidden")).toBe("true");
+    }
   });
 
   it("shows the hit number beside the steadied skill (spec AG1 §7)", async () => {
@@ -74,13 +97,15 @@ describe("the leaderboard screen", () => {
     ).toBeGreaterThanOrEqual(1);
   });
 
-  it("draws one dot for every player, ranked or not", async () => {
+  it("draws one star for every player, ranked or not", async () => {
     const board = await api().getSkillLeaderboard();
     const view = renderAt("/leaderboard");
     await screen.findByText("Skill ranking");
     const chart = view.container.querySelector("svg[role='img']");
     expect(chart).not.toBeNull();
-    expect(chart?.querySelectorAll("circle")).toHaveLength(board.rows.length);
+    expect(chart?.querySelectorAll(".board-star")).toHaveLength(
+      board.rows.length,
+    );
   });
 
   it("shows the rank, its range and the trial count at equal weight", async () => {

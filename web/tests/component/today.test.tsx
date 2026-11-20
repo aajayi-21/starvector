@@ -303,7 +303,7 @@ describe("the countdown", () => {
       }),
     };
     renderAt("/today", api);
-    expect(await screen.findByText(/closes in \d+ h/)).toBeDefined();
+    expect(await screen.findByText(/Closes at .*, in \d+ h/)).toBeDefined();
   });
 
   it("stays absent when closes_at is null or past", async () => {
@@ -317,7 +317,7 @@ describe("the countdown", () => {
     };
     renderAt("/today", api);
     await screen.findByText(REVIEW);
-    expect(screen.queryByText(/closes in/)).toBeNull();
+    expect(screen.queryByText(/Closes at/)).toBeNull();
   });
 });
 
@@ -608,15 +608,15 @@ describe("the stale tab and the rollover", () => {
       }),
     };
     renderAt("/today", api);
-    const badge = await screen.findByText(/closes in \d+ h/);
-    expect(badge.textContent).toMatch(/\(.*\d:\d\d.*\)/);
+    const line = await screen.findByText(/Closes at .*, in \d+ h/);
+    expect(line.textContent).toMatch(/Closes at \d+:\d\d/);
   });
 
   it("names no side of the screen in the hints", async () => {
     const view = renderAt("/today");
     await screen.findByText(REVIEW);
     drawTwoStrokes(view.container);
-    await screen.findByText(/Keep going, or add some words/);
+    await screen.findByText(/2 lines/);
     expect(view.container.textContent).not.toMatch(/on the right/);
   });
 });
@@ -679,7 +679,7 @@ describe("the start report (spec R1 §4)", () => {
     // The player leaves the drawing screen and comes back.
     fireEvent.click(topLink("Home"));
     await screen.findByText(/Today's photo is hidden/);
-    fireEvent.click(topLink("Today"));
+    fireEvent.click(topLink("Play"));
     await screen.findByText(REVIEW);
     expect(count.starts).toBe(1);
   });

@@ -5,6 +5,7 @@
  * instead. Dismissal is remembered on the device.
  */
 
+import { X } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
 const DISMISSED_KEY = "sv:install-hint-dismissed";
@@ -57,19 +58,19 @@ export function InstallHint(): React.JSX.Element | null {
   };
 
   return (
-    <div className="season-note" style={{ display: "flex", gap: 10 }}>
+    <div className="shell-note">
       {prompt === null ? (
-        <span style={{ flex: 1 }}>
+        <span className="shell-note-text">
           Add Starvector to your Home Screen: tap Share, then Add to Home
-          Screen. The app opens signed out the first time — sign in with a
-          device code from your Account page.
+          Screen. The app opens signed out the first time. Sign in with a device
+          code from your Account page.
         </span>
       ) : (
         <>
-          <span style={{ flex: 1 }}>Install Starvector as an app.</span>
+          <span className="shell-note-text">Install Starvector as an app.</span>
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-secondary shell-note-button"
             onClick={() => {
               void prompt.prompt();
               dismiss();
@@ -81,11 +82,11 @@ export function InstallHint(): React.JSX.Element | null {
       )}
       <button
         type="button"
-        className="btn btn-ghost"
+        className="btn btn-icon"
         aria-label="Dismiss"
         onClick={dismiss}
       >
-        ×
+        <X size={18} aria-hidden="true" />
       </button>
     </div>
   );

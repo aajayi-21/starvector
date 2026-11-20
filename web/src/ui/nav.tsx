@@ -1,19 +1,22 @@
 /**
- * The app chrome (spec BR1 §6): a top bar with the five places, and
+ * The app chrome (spec BR1 §6): a top bar with the four places, and
  * below 760 px a bottom tab bar instead, so a phone keeps one row of
  * chrome at the top and the thumb reaches the tabs. The avatar is the
  * way into the account screen (spec A1 §3).
+ *
+ * `Play` is one place with two views, today's sketch and practice. It
+ * leads to today's sketch, and it is the current place on each of the
+ * two paths.
  */
 
 import {
   ChartBar,
   House,
   PencilSimpleLine,
-  Target,
   UsersThree,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { useApi } from "../api/client";
@@ -23,7 +26,7 @@ import { LogoMark } from "./logo";
 const activeProps = { "aria-current": "page" } as const;
 
 interface Place {
-  to: "/" | "/today" | "/practice" | "/history" | "/leaderboard";
+  to: "/" | "/today" | "/history" | "/leaderboard";
   label: string;
   short: string;
   icon: typeof House;
@@ -31,8 +34,7 @@ interface Place {
 
 const PLACES: ReadonlyArray<Place> = [
   { to: "/", label: "Home", short: "Home", icon: House },
-  { to: "/today", label: "Today", short: "Today", icon: PencilSimpleLine },
-  { to: "/practice", label: "Practice", short: "Practice", icon: Target },
+  { to: "/today", label: "Play", short: "Play", icon: PencilSimpleLine },
   { to: "/history", label: "Your results", short: "Results", icon: ChartBar },
   {
     to: "/leaderboard",
@@ -41,6 +43,37 @@ const PLACES: ReadonlyArray<Place> = [
     icon: UsersThree,
   },
 ];
+
+/**
+ * The links of the places, for the top bar and for the tab bar. The
+ * router marks a link current on its own path; Play is also current
+ * on the practice path, which no link here points at.
+ */
+function PlaceLinks(props: { icons: boolean }): React.JSX.Element {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  return (
+    <>
+      {PLACES.map((place) => {
+        const Icon = place.icon;
+        const onPractice = place.to === "/today" && pathname === "/practice";
+        return (
+          <Link
+            key={place.to}
+            to={place.to}
+            activeProps={activeProps}
+            activeOptions={{ exact: place.to === "/" }}
+            {...(onPractice ? activeProps : {})}
+          >
+            {props.icons ? <Icon size={24} aria-hidden="true" /> : null}
+            {props.icons ? place.short : place.label}
+          </Link>
+        );
+      })}
+    </>
+  );
+}
 
 export function TopBar(): React.JSX.Element {
   const api = useApi();
@@ -60,16 +93,7 @@ export function TopBar(): React.JSX.Element {
           Starvector
         </Link>
         <nav className="topnav" aria-label="Main">
-          {PLACES.map((place) => (
-            <Link
-              key={place.to}
-              to={place.to}
-              activeProps={activeProps}
-              activeOptions={{ exact: place.to === "/" }}
-            >
-              {place.label}
-            </Link>
-          ))}
+          <PlaceLinks icons={false} />
         </nav>
         <div className="topbar-end">
           {/* The short sign of a test season, on each screen (spec P1a
@@ -99,7 +123,7 @@ export function TopBar(): React.JSX.Element {
               <AvatarCircle
                 player={me.data.player}
                 avatarHash={me.data.avatar_hash}
-                size={34}
+                size={32}
                 streak={me.data.streak}
               />
             </Link>
@@ -119,20 +143,7 @@ export function TopBar(): React.JSX.Element {
 export function TabBar(): React.JSX.Element {
   return (
     <nav className="tabbar" aria-label="Main">
-      {PLACES.map((place) => {
-        const Icon = place.icon;
-        return (
-          <Link
-            key={place.to}
-            to={place.to}
-            activeProps={activeProps}
-            activeOptions={{ exact: place.to === "/" }}
-          >
-            <Icon size={24} aria-hidden="true" />
-            {place.short}
-          </Link>
-        );
-      })}
+      <PlaceLinks icons />
     </nav>
   );
 }

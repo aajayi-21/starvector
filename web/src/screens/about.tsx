@@ -15,11 +15,11 @@ export const ABOUT_PARAGRAPHS: ReadonlyArray<string> = [
 
 export function AboutScreen(): React.JSX.Element {
   return (
-    <div className="page-narrow stack-lg" style={{ margin: "0 auto" }}>
+    <div className="page-narrow text-page">
       <div className="page-header">
         <h1>About Starvector</h1>
       </div>
-      <section className="card stack">
+      <section>
         {ABOUT_PARAGRAPHS.map((paragraph) => (
           <p key={paragraph}>{paragraph}</p>
         ))}
@@ -33,8 +33,8 @@ export function AboutScreen(): React.JSX.Element {
         {/* The author credit that the NOTICE file's section 7(b) term asks
             each copy to keep somewhere public. */}
         <p className="muted small">
-          Starvector by Adeolu Ajayi. Free software under the GNU AGPL,
-          version 3.
+          Starvector by Adeolu Ajayi. Free software under the GNU AGPL, version
+          3.
         </p>
       </section>
     </div>

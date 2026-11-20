@@ -129,7 +129,7 @@ records the cause.
 
 - A `<figure>` below the heading holds one epigraph and its attribution. It
   picks a first epigraph when the screen opens, and it then changes to a
-  different one at an interval of 12 seconds.
+  different one at an interval of 8 seconds.
 - The change stops while the tab is hidden, while the pointer or the focus
   is on the figure, and when `prefers-reduced-motion: reduce` is set. The
   screen reads that value again when the player changes it.
@@ -137,6 +137,10 @@ records the cause.
   2.2.2 asks for this on content that moves by itself for more than five
   seconds. With reduced movement set, the control does not show, because
   nothing moves.
+- A second control, `Next epigraph`, changes to a different epigraph
+  immediately. It shows when there are two or more epigraphs, also with
+  reduced movement set and while the change is paused. Each change starts
+  the interval again.
 - The three longest epigraphs also render, hidden, in the grid cell of the
   figure. The cell is as tall as the tallest epigraph at the current width,
   so a change does not move the page. The height follows the length, so
@@ -175,7 +179,7 @@ records the cause.
 - **Web component.** The home card text for the counts 0, 1, and 2. The ring
   and the hidden text on the avatar for each tier. The heading holds the
   full greeting and username as the name that assistive technology reads. The epigraph changes
-  after 12 seconds with fake timers. It does not change on a hidden tab,
+  after 8 seconds with fake timers. It does not change on a hidden tab,
   with reduced movement set at the start or during the visit, while the
   pointer is on it, or when paused. The ring around a stored picture leaves
   the correct picture dimension.
@@ -239,7 +243,8 @@ Each item is one commit, green and Vale-clean on the touched prose.
   names, and no other field follows the sends.
 - **D4 — the timing numbers.** The 1.4 second effect and the 12 second
   change of epigraph are cosmetic values that this spec proposes. They are
-  in one file of constants, so a change is one edit.
+  in one file of constants, so a change is one edit. The owner changed the
+  12 seconds to 8 seconds on 2026-11-20.
 
 ## 10. Out of scope, with causes
 

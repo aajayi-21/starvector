@@ -44,7 +44,7 @@ describe("the results screen", () => {
     ).toBeDefined();
   });
 
-  it("lists matched words with bars and unmatched words last", async () => {
+  it("lists matched words with lines and unmatched words last", async () => {
     const view = await api().getReveal();
     renderAt("/reveal");
     const card = (await screen.findByText("What connected")).closest(
@@ -54,8 +54,10 @@ describe("the results screen", () => {
     const unmatched = view.report.filter((row) => row.element === null);
     expect(within(card).getAllByRole("img")).toHaveLength(matched.length);
     for (const row of unmatched) {
-      const item = within(card).getByText(`“${row.atom_text}”`).closest("li");
-      expect(item?.textContent).toMatch(/had no close match/);
+      const item = within(card).getByText(row.atom_text).closest("li");
+      expect(item?.textContent).toMatch(/no close match in this photo/);
+      // No line: the word counted for nothing.
+      expect(item?.querySelector("[role='img']")).toBeNull();
     }
   });
 

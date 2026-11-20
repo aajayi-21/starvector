@@ -149,7 +149,7 @@ describe("the home screen (spec BR1 §6)", () => {
     ).toBeDefined();
   });
 
-  it("counts down in the line over the day's card", async () => {
+  it("counts down in the line under the greeting", async () => {
     const base = makeMockApi({ today: HARNESS_TODAY });
     const api: Api = {
       ...base,
@@ -160,7 +160,7 @@ describe("the home screen (spec BR1 §6)", () => {
     };
     renderAt("/", api);
     expect(
-      await screen.findByText(/Today · closes in \d+ h .*\(.*\d:\d\d.*\)/),
+      await screen.findByText(/Today closes in \d+ h .*\(.*\d:\d\d.*\)/),
     ).toBeDefined();
   });
 

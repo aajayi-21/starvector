@@ -20,7 +20,7 @@ export function ChanceMeter(props: { p: number }): React.JSX.Element {
       </div>
       <div className="meter-scale" aria-hidden="true">
         <span>0%</span>
-        <span>50% · guessing</span>
+        <span>50%, guessing</span>
         <span>100%</span>
       </div>
     </div>

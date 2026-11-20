@@ -28,13 +28,8 @@ export function ImpressionsCard(props: {
 
   return (
     <section className="words-block" aria-labelledby="words-heading">
-      <div className="stack-sm">
-        <h3 id="words-heading">Words</h3>
-        <p className="hint" id="words-hint">
-          A word or short phrase for each thing that comes to mind.
-        </p>
-      </div>
-      <div className="row" style={{ flexWrap: "nowrap" }}>
+      <h3 id="words-heading">Words</h3>
+      <div className="words-entry">
         <input
           className="input"
           aria-label="Add a word"
@@ -62,32 +57,24 @@ export function ImpressionsCard(props: {
           Add
         </button>
       </div>
+      <p className="subtle tiny" id="words-hint">
+        One word or short phrase at a time.
+      </p>
       {impressions.length === 0 ? null : (
-        <ul
-          className="row"
-          style={{ gap: 8, margin: 0, padding: 0, listStyle: "none" }}
-        >
+        <ul className="chips">
           {impressions.map((text, index) => (
             <li
               key={`${text}-${
                 // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
                 index
               }`}
-              className="badge"
-              style={{
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--text)",
-                padding: "4px 4px 4px 12px",
-              }}
+              className="chip"
             >
               {text}
               <button
                 type="button"
                 aria-label={`Remove ${text}`}
                 onClick={() => onRemoveAt(index)}
-                className="btn btn-ghost"
-                style={{ minHeight: 26, padding: 4, borderRadius: 999 }}
               >
                 <X size={14} aria-hidden="true" />
               </button>

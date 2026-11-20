@@ -23,10 +23,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The section of the days, with each day shown. */
 async function historyTable(): Promise<HTMLElement> {
-  return (await screen.findByText("Every day")).closest(
+  const section = (await screen.findByText("Every day you've played")).closest(
     "section",
   ) as HTMLElement;
+  fireEvent.click(within(section).getByRole("button", { name: /^Show all / }));
+  return section;
 }
 
 describe("the share control of a result", () => {

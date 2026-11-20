@@ -28,11 +28,9 @@ export function SiteFooter(props: {
     >
       <div className="site-footer-inner">
         <p className="site-footer-brand">
-          <LogoMark size={18} />
-          <span>
-            <span className="site-footer-name">Starvector</span> — a new photo
-            every day
-          </span>
+          <LogoMark size={20} />
+          <span className="site-footer-name">Starvector</span>
+          <span>A new photo every day</span>
         </p>
         {/* The email-updates box goes here, between the brand and the
             links, when the owner rules where the addresses go (spec F1

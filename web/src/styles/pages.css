@@ -1,0 +1,94 @@
+/*
+ * The pages of text (screens/how.tsx, about.tsx, releases.tsx), the
+ * notice screen (screens/notice.tsx), and the small notices of the
+ * shell (ui/offline-banner.tsx, ui/install-hint.tsx).
+ *
+ * A page of text is a column of sections on hairlines, at a readable
+ * line length from the page's left edge. Nothing has a box.
+ */
+
+/* — a page of text — */
+.text-page {
+  display: flex;
+  flex-direction: column;
+}
+.text-page > .page-header {
+  margin-bottom: 32px;
+}
+.text-page > section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 0 32px;
+  border-top: 1px solid var(--border);
+}
+.text-page > section:last-child {
+  padding-bottom: 8px;
+}
+.text-page .fact-list {
+  font-size: inherit;
+}
+
+/* The steps of how it works (screens/how.tsx HowItWorksSteps): each
+   step has a small heading and one paragraph. */
+.how-steps h3 {
+  font-size: 18px;
+}
+
+/* — the notice screen (spec R1 §3.2) — */
+.notice-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+/* The notice text is the one thing to read here: body size, between
+   two hairlines, with its lead in the ink color. */
+.notice-screen-text {
+  padding: 20px 0;
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: 19px;
+}
+.notice-screen-text strong {
+  color: var(--text);
+}
+.notice-screen-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: 6px;
+}
+
+/* — a notice of the shell: one sentence under the bar — */
+/* On the ground, as wide as the content, with one hairline under it:
+   not a filled band. */
+.shell-note {
+  display: flex;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 var(--gutter);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 15px;
+}
+.shell-note > svg {
+  flex: none;
+  color: var(--warn);
+}
+.shell-note-text {
+  flex: 1;
+  min-width: 0;
+}
+.shell-note-button {
+  min-height: 40px;
+  padding: 6px 16px;
+  font-size: 15px;
+}
+@media (max-width: 760px) {
+  .notice-screen-text {
+    font-size: 17px;
+  }
+}

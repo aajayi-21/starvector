@@ -111,7 +111,10 @@ describe("the epigraph figure (spec H1 §5)", () => {
       removeEventListener: () => undefined,
     }));
     render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
-    expect(screen.queryByRole("button")).toBeNull();
+    // Nothing moves by itself, thus there is nothing to pause. The
+    // next control stays: it is the player's own move.
+    expect(screen.queryByRole("button", { name: /Pause|Play/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Next epigraph" })).toBeDefined();
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
@@ -156,6 +159,46 @@ describe("the epigraph figure (spec H1 §5)", () => {
       vi.advanceTimersByTime(12_000);
     });
     expect(shown()).not.toBe("alpha");
+  });
+
+  it("moves at once from the next control, and starts the interval again", () => {
+    render(
+      <EpigraphFigure epigraphs={THREE} random={() => 0} intervalMs={8_000} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(7_000);
+    });
+    act(() => {
+      screen.getByRole("button", { name: "Next epigraph" }).click();
+    });
+    const asked = shown();
+    expect(asked).not.toBe("alpha");
+    // The epigraph the player asked for stays for its full time: the
+    // interval that was one second from its end does not fire.
+    act(() => {
+      vi.advanceTimersByTime(7_999);
+    });
+    expect(shown()).toBe(asked);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(shown()).not.toBe(asked);
+  });
+
+  it("moves from the next control while it is paused", () => {
+    render(<EpigraphFigure epigraphs={THREE} random={() => 0} />);
+    act(() => {
+      screen.getByRole("button", { name: "Pause the epigraphs" }).click();
+    });
+    act(() => {
+      screen.getByRole("button", { name: "Next epigraph" }).click();
+    });
+    const asked = shown();
+    expect(asked).not.toBe("alpha");
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(shown()).toBe(asked);
   });
 
   it("holds while the pointer is on it", () => {

@@ -1,11 +1,14 @@
 /**
  * Practice (mock 1e, spec W1 B7, grown by spec A1 §6; layout and
- * copy per spec BR1 §6): replay a revealed day with its own sketch —
- * nothing is shared with today's draft and nothing is stored. The
- * same canvas and word inputs as today. After a check, the result
- * takes the right column; the player goes back to edit or starts
- * over. The draft saves on this device with its own key (spec PL1 §8),
- * and a word typed and not added goes in with the check.
+ * copy per spec BR1 §6): the Practice view of the Play place, under
+ * the switch it shares with today's sketch (ui/play-switch.tsx).
+ * Replay a revealed day with its own sketch — nothing is shared with
+ * today's draft and nothing is stored. The same three columns, canvas,
+ * and word inputs as today; the first column holds the day's code and
+ * the day picker. After a check, the photo and the result take the
+ * third column, level with the sketch; the player goes back to edit or
+ * starts over. The draft saves on this device with its own key (spec
+ * PL1 §8), and a word typed and not added goes in with the check.
  */
 
 import { CaretRight } from "@phosphor-icons/react";
@@ -42,10 +45,20 @@ import {
   undo,
 } from "../sketch/core";
 import { ChanceMeter } from "../ui/chance-meter";
+import { DayCode } from "../ui/code-cells";
 import { formatDay, ordinal, percentBeaten } from "../ui/format";
+import { PlayFrame, PlayMessage } from "../ui/play-switch";
 import { Credit, WordMatches } from "./reveal";
 
 export function PracticeScreen(): React.JSX.Element {
+  return (
+    <PlayFrame>
+      <PracticeView />
+    </PlayFrame>
+  );
+}
+
+function PracticeView(): React.JSX.Element {
   const api = useApi();
   const days = useQuery({
     queryKey: ["practice-days"],
@@ -61,21 +74,18 @@ export function PracticeScreen(): React.JSX.Element {
   }
   if (days.isError || days.data === undefined) {
     return (
-      <div className="page-narrow" style={{ margin: "0 auto" }}>
-        <section className="card card-hero">
-          <h2>Practice</h2>
-          {isRefusal(days.error) ? (
-            <p className="muted">
-              Practice uses photos from days that are over. The first one
-              appears after the first day closes.
-            </p>
-          ) : (
-            <div className="notice notice-bad" role="alert">
-              {friendlyMessage(days.error)}
-            </div>
-          )}
-        </section>
-      </div>
+      <PlayMessage title="Practice">
+        {isRefusal(days.error) ? (
+          <p className="muted">
+            Practice uses photos from days that are over. The first one appears
+            after the first day closes.
+          </p>
+        ) : (
+          <div className="notice notice-bad" role="alert">
+            {friendlyMessage(days.error)}
+          </div>
+        )}
+      </PlayMessage>
     );
   }
   return (
@@ -210,41 +220,45 @@ function PracticeWorkspace(props: {
   };
 
   return (
-    <div className="workspace">
-      <header className="workspace-header workspace-header-wide">
-        <div className="stack-sm">
-          <h1>Practice</h1>
-          <p className="muted">
-            Replay a past day's photo and see how you'd have done. Nothing here
-            is saved or counted.
-          </p>
-        </div>
-        <div className="row">
+    <div className={result === null ? "workspace" : "workspace has-result"}>
+      <section className="play-brief" aria-label="Practice day">
+        <p className="subtle small play-brief-label">This day's code</p>
+        <DayCode
+          code={props.days.find((row) => row.day === day)?.trial_code ?? ""}
+        />
+        <div className="field practice-day">
           <label className="label" htmlFor="practice-day">
             Photo from
           </label>
           <select
             id="practice-day"
             className="input"
-            style={{ width: "auto" }}
             value={day}
             onChange={(event) => pickDay(event.target.value)}
           >
             {props.days.map((row) => (
               <option key={row.day} value={row.day}>
-                {formatDay(row.day)} · {row.trial_code}
+                {formatDay(row.day)}
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={surprise}
-          >
-            Surprise me
-          </button>
         </div>
-      </header>
+        <button
+          type="button"
+          className="btn btn-secondary practice-surprise"
+          onClick={surprise}
+        >
+          Surprise me
+        </button>
+        <hr className="divider play-brief-rule" />
+        <p className="play-brief-lead">
+          This day is over. Sketch and describe what comes to mind for its code,
+          then see the photo.
+        </p>
+        <p className="muted small play-brief-note">
+          Nothing here is saved or counted.
+        </p>
+      </section>
 
       <CanvasPanel
         doc={doc}
@@ -275,16 +289,13 @@ function PracticeWorkspace(props: {
             ? "Choose “Edit and check again” to keep drawing."
             : mode === "select"
               ? "Tap the lines that belong together."
-              : "Draw whatever comes to mind for this day's code."
+              : ""
         }
       />
 
-      <aside
-        className={result === null ? "side-cell" : "side-cell is-free stack"}
-        aria-label="Practice"
-      >
+      <aside className="side-cell" aria-label="Practice">
         {result === null ? (
-          <div className="card side-panel">
+          <div className="side-panel">
             <div className="side-scroll">
               <ImpressionsCard
                 impressions={impressions}
@@ -326,14 +337,13 @@ function PracticeWorkspace(props: {
               </div>
             </div>
             <section className="action-bar send-bar" aria-label="Check">
-              <div className="send-bar-facts">
-                <span>Practice</span>
-                <span className="send-bar-note">
-                  {scoreable
-                    ? "Nothing is saved or counted"
-                    : sendBlockHint(block, props.minStrokes)}
-                </span>
-              </div>
+              {scoreable ? null : (
+                <p className="send-bar-facts">
+                  <span className="send-bar-note">
+                    {sendBlockHint(block, props.minStrokes)}
+                  </span>
+                </p>
+              )}
               <button
                 type="button"
                 className="btn btn-primary btn-large btn-block send-bar-buttons"
@@ -354,7 +364,7 @@ function PracticeWorkspace(props: {
               >
                 {score.isPending ? "Checking…" : "Check my practice"}
               </button>
-              <p className="hint send-bar-hint">
+              <p className="subtle tiny send-bar-hint">
                 See the photo and how close you came. You can try many times, up
                 to an hourly limit. Your draft is saved on this device.
               </p>
@@ -391,12 +401,22 @@ function PracticeResult(props: {
   const { result } = props;
   const trial = result.trial;
   return (
-    <>
-      <section className="card card-hero" aria-label="Practice result">
-        <div className="eyebrow">Practice result</div>
-        <div className="big-number" style={{ fontSize: 52 }}>
-          {percentBeaten(trial.p)}%
+    <div className="practice-result">
+      <div className="practice-photo">
+        <div className="picture-frame">
+          <img
+            src={api.imageUrl(result.target_id)}
+            alt={
+              result.credit?.title ??
+              `Hidden target of ${formatDay(result.day)}`
+            }
+          />
         </div>
+        <Credit credit={result.credit} />
+      </div>
+      <section className="practice-score" aria-label="Practice result">
+        <h2 className="practice-score-label">Practice result</h2>
+        <div className="figure practice-number">{percentBeaten(trial.p)}%</div>
         <p>
           Your sketch matched this photo better than {trial.beaten} of the other{" "}
           {trial.decoy_count} photos.
@@ -422,22 +442,10 @@ function PracticeResult(props: {
             Start over
           </button>
         </div>
-      </section>
-      <section className="card">
-        <div className="picture-frame">
-          <img
-            src={api.imageUrl(result.target_id)}
-            alt={
-              result.credit?.title ??
-              `Hidden target of ${formatDay(result.day)}`
-            }
-          />
-        </div>
-        <Credit credit={result.credit} />
-        <Link to="/reveal" search={{ day: result.day }} className="small">
+        <Link to="/reveal" search={{ day: result.day }}>
           See everyone's results for this day
         </Link>
       </section>
-    </>
+    </div>
   );
 }

@@ -1,9 +1,16 @@
-import "@fontsource/inter/400.css";
-import "@fontsource/inter/500.css";
-import "@fontsource/inter/600.css";
-import "@fontsource/inter/700.css";
+import "@fontsource-variable/red-hat-display/wght.css";
+import "@fontsource-variable/red-hat-text/wght.css";
+import "@fontsource-variable/red-hat-mono/wght.css";
+import "@fontsource/newsreader/400-italic.css";
 import "./theme.css";
 import "./app.css";
+import "./styles/home.css";
+import "./styles/play.css";
+import "./styles/results.css";
+import "./styles/board.css";
+import "./styles/account.css";
+import "./styles/gate.css";
+import "./styles/pages.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

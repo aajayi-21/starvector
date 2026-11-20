@@ -44,9 +44,9 @@ test("the name sign-in turns a typed name into a session", async ({ page }) => {
   ).toBeVisible();
   await page.getByLabel("Your account").click();
   await expect(page.getByRole("heading", { name: "walkin" })).toBeVisible();
-  // A door record has no password (spec A2 §10.2), thus the account
-  // screen offers the first one.
+  // A door record has no password (spec A2 §10.2), thus the button of
+  // the Password section offers the first one.
   await expect(
-    page.getByRole("heading", { name: "Set a password" }),
+    page.getByRole("button", { name: "Set a password" }),
   ).toBeVisible();
 });

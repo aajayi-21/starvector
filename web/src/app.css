@@ -1,9 +1,19 @@
 /*
- * App layout on top of the theme (theme.css, which the operator
- * console shares since spec BR1 §7.6). One breakpoint, 760 px:
- * below it the top navigation hides and a bottom tab bar takes over,
- * so a phone keeps one row of chrome and the thumb reaches the tabs.
+ * The shell and the shared pieces, on top of the theme (theme.css,
+ * which the operator console shares since spec BR1 §7.6). Each screen
+ * has its own file in src/styles/. One breakpoint, 760 px: below it
+ * the top navigation hides and a bottom tab bar takes over, so a phone
+ * keeps one row of chrome and the thumb reaches the tabs.
+ *
+ * The rule of the look is in theme.css: an edge or a fill means you can
+ * type in it or press it. Nothing here draws a box around text.
  */
+
+:root {
+  /* The side margin of the page. The content is 1376 px wide at most,
+     and the bar, the page, and the footer share this one edge. */
+  --gutter: max(40px, calc((100% - 1376px) / 2));
+}
 
 /* — the shell — */
 .topbar {
@@ -11,86 +21,125 @@
   top: 0;
   z-index: 20;
   display: flex;
-  align-items: center;
-  gap: 28px;
-  height: 60px;
-  padding: 0 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  align-items: stretch;
+  gap: 8px;
+  min-height: 60px;
+  padding: 0 var(--gutter);
+  background: var(--bg);
+}
+/* The hairline under the bar is as wide as the content, not the
+   window. */
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
 }
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  margin-right: 28px;
   color: var(--text);
+  font-family: var(--display);
   font-weight: 700;
   font-size: 18px;
-  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.brand:hover {
   text-decoration: none;
 }
 .brand-mark {
-  color: var(--accent);
+  color: var(--text);
   flex: none;
 }
 .topnav {
   display: flex;
   align-items: stretch;
-  gap: 4px;
-  height: 100%;
 }
 .topnav a {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 18px;
   color: var(--text-2);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   text-decoration: none;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
 }
 .topnav a:hover {
   color: var(--text);
 }
 .topnav a[aria-current="page"] {
   color: var(--text);
+  font-weight: 700;
   border-bottom-color: var(--accent);
 }
 .topbar-end {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
+}
+/* A short upright hairline between the facts at the end of the bar. */
+.topbar-end > * + *::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 1px;
+  height: 22px;
+  margin-top: -11px;
+  background: var(--border-strong);
+}
+.topbar-end > * {
+  position: relative;
 }
 .avatar-link {
   display: inline-flex;
+  align-items: center;
   border-radius: 50%;
   text-decoration: none;
 }
 
+/* The season sign (spec P1a R13): the short words on each screen, and
+   the full sentence when the player opens it. */
+.season-badge {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.season-badge:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 .season-note {
-  padding: 7px 16px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
+  padding: 10px var(--gutter);
   color: var(--text-2);
-  font-size: 13px;
-  text-align: center;
+  font-size: 15px;
 }
 
 .page {
   width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 32px 24px 56px;
+  padding: 40px var(--gutter) 64px;
 }
+/* A page of running text keeps a readable line, from the same left
+   edge as each other page. */
 .page-narrow {
-  max-width: 680px;
+  max-width: 720px;
 }
 .page-header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 24px;
+  gap: 8px;
+  margin-bottom: 28px;
 }
 
 .tabbar {
@@ -99,11 +148,10 @@
 
 /* — the site footer (spec F1) — */
 /*
- * A quiet band at the end of the page: one rule on top, the page
- * ground behind it, and the page's own width. On a short page it sits
- * at the end of the window: the root is a column as tall as the window
- * where a footer is in it, and nowhere else, thus the drawing screens
- * and the operator console keep their layout.
+ * One hairline, then the brand and the ways out on the ground. On a
+ * short page it sits at the end of the window: the root is a column as
+ * tall as the window where a footer is in it, and nowhere else, thus
+ * the drawing screens and the operator console keep their layout.
  */
 #root:has(> .site-footer) {
   display: flex;
@@ -114,39 +162,39 @@
   flex: 1 0 auto;
 }
 .page-has-footer {
-  padding-bottom: 40px;
+  padding-bottom: 48px;
 }
 .site-footer {
   width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 0 24px 28px;
+  padding: 0 var(--gutter);
 }
 .site-footer-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 24px;
-  padding-top: 16px;
+  gap: 8px 32px;
+  padding: 24px 0 28px;
   border-top: 1px solid var(--border);
 }
 .site-footer-brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  color: var(--text-3);
-  font-size: 14px;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 16px;
 }
 .site-footer-name {
+  margin-right: 22px;
   color: var(--text);
-  font-weight: 650;
+  font-family: var(--display);
+  font-weight: 700;
 }
 .site-footer-links {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0 24px;
+  gap: 0 32px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -157,8 +205,7 @@
   gap: 6px;
   min-height: 32px;
   color: var(--text-2);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
   text-decoration: none;
 }
 .site-footer-links a:hover {
@@ -180,7 +227,7 @@
 .stack-lg {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
 }
 .row {
   display: flex;
@@ -198,17 +245,29 @@
 .spacer {
   flex: 1;
 }
-.cards {
+.nowrap {
+  white-space: nowrap;
+}
+/* Columns of equal width that share the whole page. Each column is a
+   group on the ground; the space between them does the separating. */
+.columns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 40px 72px;
+  align-items: start;
+}
+/* A group that starts under a hairline. */
+.ruled {
+  padding-top: 32px;
+  border-top: 1px solid var(--border);
 }
 
 /*
- * — the shared pieces of the detail polish —
+ * — the shared pieces —
  * Each screen builds from the same few parts, so the app reads as one
- * thing: a row that leads somewhere or opens, a footer link, a step
- * list, tiles for single numbers, and a bar that holds the one action.
+ * thing: a row that leads somewhere or opens, a link that goes on, a
+ * line of stars for steps, single numbers on hairlines, and a bar that
+ * holds the one action.
  */
 .row-list {
   display: flex;
@@ -219,16 +278,16 @@ details.row-disclosure > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   width: 100%;
-  min-height: 48px;
+  min-height: 52px;
   padding: 10px 0;
   border: 0;
   border-top: 1px solid var(--border);
   background: none;
   color: var(--text);
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -240,6 +299,7 @@ details.row-disclosure > summary {
 .row-link:hover,
 details.row-disclosure > summary:hover {
   color: var(--accent-text);
+  text-decoration: none;
 }
 .row-link-danger {
   color: var(--bad);
@@ -250,10 +310,10 @@ details.row-disclosure > summary:hover {
 .row-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: none;
   color: var(--text-3);
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 400;
 }
 .row-meta svg {
@@ -265,9 +325,6 @@ details.row-disclosure > summary {
 details.row-disclosure > summary::-webkit-details-marker {
   display: none;
 }
-details.row-disclosure > summary .row-chevron {
-  transition: none;
-}
 details.row-disclosure[open] > summary .row-chevron {
   transform: rotate(90deg);
 }
@@ -275,555 +332,222 @@ details.row-disclosure > .row-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 4px 0 16px;
+  padding: 4px 0 18px;
 }
 
+/* A link that goes on to a place: words and an arrow. */
 .card-foot {
   margin-top: auto;
 }
 .foot-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 32px;
   color: var(--accent-text);
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
   text-decoration: none;
 }
 .foot-link:hover {
   text-decoration: underline;
 }
 
+/* A button drawn as words: a quiet action inside a line of text. */
+.text-button {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.text-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/*
+ * The star line: steps in sequence, as stars on one upright line. A
+ * done step is a bright star, the current step has a halo, and a step
+ * to come is a ring. The line runs from each star to the next.
+ */
 .step-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .step-item {
+  position: relative;
   display: flex;
-  gap: 12px;
+  gap: 18px;
   align-items: flex-start;
+  padding-bottom: 22px;
+}
+.step-item:last-child {
+  padding-bottom: 0;
+}
+.step-item:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 13px;
+  bottom: -13px;
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 .step-icon {
+  position: relative;
   flex: none;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  width: 21px;
+  height: 26px;
 }
-.step-item.is-done .step-icon {
-  background: var(--good-soft);
-  color: var(--good);
+/* The star takes the place of an icon: a step's own words say what it
+   is. */
+.step-icon > * {
+  display: none;
+}
+.step-icon::after {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.step-item.is-current .step-icon::after {
+  background: var(--accent);
+  box-shadow: 0 0 0 6px var(--accent-soft);
+}
+.step-item.is-pending .step-icon::after {
+  background: var(--bg);
+  border: 1.5px solid var(--text-3);
 }
 .step-item.is-pending {
   color: var(--text-2);
 }
-.step-item.is-pending .step-icon {
-  background: var(--surface-2);
-  color: var(--text-3);
-}
 .step-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-height: 28px;
+  gap: 4px;
+  min-height: 26px;
   justify-content: center;
 }
 
+/* Single numbers in a row: each stands on its own hairline. */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 24px 40px;
 }
 .tile {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-strong);
 }
 .tile-label {
-  color: var(--text-3);
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--text-2);
+  font-size: 15px;
+  font-weight: 500;
 }
 .tile-value {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.25;
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+}
+.tile-unit {
+  display: block;
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
 }
 
 .action-bar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding-top: 16px;
   border-top: 1px solid var(--border-strong);
-  background: var(--surface-2);
 }
 .action-bar-facts {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   color: var(--text-2);
-  font-size: 14px;
-}
-
-/* The season badge (spec P1a R13): the short sign on each screen, and
-   the full sentence when the player opens it. */
-.season-badge {
-  border: 0;
-  cursor: pointer;
-}
-
-/* — the target code — */
-.code-cells {
-  display: flex;
-  gap: 6px;
-}
-.code-cell {
-  width: 44px;
-  height: 56px;
-  display: grid;
-  place-items: center;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  font-size: 28px;
-  font-weight: 650;
-  font-family: var(--mono);
-  color: var(--text);
-}
-.code-cells-small .code-cell {
-  width: 30px;
-  height: 38px;
-  font-size: 19px;
-  border-radius: 8px;
-}
-
-/* — home — */
-/* One card, two columns: the day and the epigraph. */
-.card.home-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 0;
-  align-items: stretch;
-}
-.home-today {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-  padding-right: 28px;
-}
-.home-title {
-  font-size: 24px;
-}
-.home-epigraph {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding-left: 28px;
-  border-left: 1px solid var(--border);
-}
-.home-cta {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.eyebrow-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.home-greeting {
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-}
-.home-card-value {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.home-card-number {
-  font-size: 36px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-.home-card-detail {
-  display: block;
-}
-.week-dots {
-  display: flex;
-  gap: 6px;
-}
-.week-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-}
-.week-dot.is-on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.foot-caret,
-.show-narrow {
-  display: none;
-}
-.card.show-narrow {
-  display: none;
-}
-.steps {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.step {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-.step-number {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  font-weight: 700;
   font-size: 15px;
 }
 
-/* — the workspace (today and practice) — */
-/*
- * One grid holds the header, the toolbar, the canvas, the hint, and
- * the side panel, so they share edges. The square canvas fits the
- * window height on a laptop: the top bar, the header, the toolbar, and
- * the hint take about 310 px.
- */
-.workspace {
-  --canvas-max: max(320px, calc(100dvh - 312px));
-  display: grid;
-  grid-template-columns: minmax(0, var(--canvas-max)) minmax(300px, 400px);
-  grid-template-rows: auto auto auto auto;
-  column-gap: 24px;
-  row-gap: 12px;
+/* The switch between two views of one screen: two links, one current. */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.seg a {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  align-items: start;
-}
-.workspace-header {
-  grid-area: 1 / 1 / 2 / -1;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 4px;
-}
-.workspace-header-wide {
-  justify-content: space-between;
-  align-items: flex-end;
-}
-.workspace-header-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  max-width: 460px;
-}
-.workspace-notice {
-  flex: 1 1 100%;
-  flex-direction: column;
-}
-/* The panel lets go of its box: its three parts are grid items. */
-.canvas-panel {
-  display: contents;
-}
-.toolbar {
-  grid-area: 2 / 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-.canvas-holder {
-  grid-area: 3 / 1;
-  min-width: 0;
-}
-.canvas-hint {
-  grid-area: 4 / 1;
-}
-.workspace-wide {
-  grid-column: 1 / -1;
-}
-.swatches {
-  display: flex;
-  gap: 6px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.swatch {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 2px solid var(--canvas);
-  border-radius: 8px;
-  box-shadow: 0 0 0 1px var(--border-strong);
-  cursor: pointer;
-}
-.swatch[aria-pressed="true"] {
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 0 0 4px var(--accent);
-}
-.tool {
-  flex: none;
-  min-height: 36px;
-  min-width: 36px;
-  padding: 6px;
+  min-height: 44px;
+  padding: 0 28px;
   color: var(--text-2);
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
 }
-/* The side panel is as tall as the canvas: the cell holds the row,
-   and the panel fills the cell. Its middle scrolls, and the send bar
-   stays at its foot. */
-.side-cell {
-  grid-area: 3 / 2;
-  position: relative;
-  align-self: stretch;
-  min-width: 0;
-}
-.side-panel {
-  position: absolute;
-  inset: 0;
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-}
-.side-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 18px 18px 6px;
-}
-/* A result of practice is taller than the canvas: the cell follows
-   its content. */
-.side-cell.is-free {
-  position: static;
-}
-.words-block {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.chip {
+.seg a:hover {
   color: var(--text);
-  font-weight: 500;
 }
-.send-bar {
-  flex: none;
-  max-height: 100%;
-  overflow-y: auto;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-}
-.send-bar-facts {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--text-2);
-  font-size: 14px;
-}
-.send-bar-note {
-  color: var(--text-3);
-  text-align: right;
-}
-
-/* — after the send — */
-.sent-summary {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.sent-thumb {
-  flex: none;
-  width: 96px;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-/* — results — */
-/* The photo and the sketch lead; the result card sits beside them. */
-.result-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-details.row-disclosure.fair-values > summary {
-  border-top: 1px solid var(--border);
-}
-.pictures {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-.picture {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.picture-frame {
-  aspect-ratio: 1 / 1;
-  width: 100%;
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--surface-2);
-}
-.picture-frame img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.big-number {
-  font-size: 64px;
-  line-height: 1;
+.seg a[aria-current="page"] {
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
 }
 
+/* — the chance meter — */
 .meter {
   position: relative;
-  height: 12px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  overflow: visible;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-3) 30%, transparent);
 }
 .meter-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: 999px;
+  border-radius: 3px;
   background: var(--accent);
 }
 .meter-chance {
   position: absolute;
   top: -5px;
   bottom: -5px;
-  width: 2px;
-  background: var(--chance);
   left: 50%;
-  transform: translateX(-1px);
+  width: 1px;
+  background: var(--text-2);
 }
 .meter-scale {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  color: var(--text-3);
+  margin-top: 2px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
-.bars {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 140px;
-  padding-left: 36px;
-}
-.bars-axis {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 32px;
-  font-size: 11px;
-  color: var(--text-3);
-}
-.bars-axis span {
-  position: absolute;
-  right: 4px;
-  transform: translateY(-50%);
-}
-.bars-chance {
-  position: absolute;
-  left: 36px;
-  right: 0;
-  border-top: 2px dashed var(--chance);
-}
-.bar {
-  flex: 1;
-  min-width: 6px;
-  max-width: 36px;
-  border-radius: 4px 4px 0 0;
-  background: var(--accent);
-}
-.bar-below {
-  background: color-mix(in srgb, var(--accent) 35%, var(--surface-2));
-}
-
-/* — your results: the summary card — */
-.skill-top {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 32px;
-  align-items: center;
-}
-.skill-scale {
-  max-width: 520px;
-}
-.skill-dot {
-  position: absolute;
-  top: 50%;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--surface);
-  transform: translate(-50%, -50%);
-}
-details.row-disclosure.skill-more > summary {
-  border-top: 1px solid var(--border);
-}
-.tile-unit {
-  display: block;
-  color: var(--text-3);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.4;
-}
-.nowrap {
-  white-space: nowrap;
-}
 /* A table in a scroll box keeps each cell on one line: a name or
    "5th of 120" does not break, and a narrow screen scrolls sideways. */
 .table-scroll {
@@ -834,104 +558,19 @@ details.row-disclosure.skill-more > summary {
   white-space: nowrap;
 }
 
-.two-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 24px;
-  align-items: start;
-}
-/* The landing page has its own grid, with the gate rules at the end
-   of this file (.welcome-grid). */
-
-/* — sign-in, sign-up, and the recovery code (spec A2) — */
-.password-row {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.password-row .input {
-  flex: 1;
-  min-width: 0;
-}
-.password-row .btn-icon {
-  min-height: 44px;
-  min-width: 44px;
-}
-/* The one helper line of a field's rules: the summary, the summary
-   with a green check when each rule is met, or the broken rules in
-   the error color. The icon keeps its place in each state, thus the
-   words do not move. */
-.rule-hint {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-  font-size: 14px;
-  color: var(--text-3);
-}
-.rule-hint svg {
-  flex: none;
-  margin-top: 3px;
-}
-.rule-hint-met svg {
-  color: var(--good);
-}
-.rule-hint-broken {
-  color: var(--bad);
-}
-.recovery-step {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.recovery-step h2:focus {
-  outline: none;
-}
-/* Six groups of four as two rows of three, in the middle of the box:
-   a shape the player can check against a written copy. */
-.recovery-code {
-  display: grid;
-  grid-template-columns: repeat(3, max-content);
-  justify-content: center;
-  gap: 10px 28px;
-  padding: 18px 16px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  user-select: all;
-}
-.recovery-input {
-  font-family: var(--mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.recovery-input::placeholder {
-  letter-spacing: 0;
-}
-#gate-heading:focus,
-#notice-heading:focus {
-  outline: none;
-}
-
 /* — the facts of the public database (spec R1 §3.1) — */
 .fact-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
   padding-left: 20px;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-2);
 }
 
 /* — the notice of an operator's recovery code (spec A2 §6.1) — */
 .operator-notice {
-  background: var(--warn-soft);
-  border-bottom: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   color: var(--text);
 }
 .operator-notice-body {
@@ -939,11 +578,10 @@ details.row-disclosure.skill-more > summary {
   align-items: center;
   gap: 12px 20px;
   flex-wrap: wrap;
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 12px 24px;
-  font-size: 15px;
+  margin: 0 var(--gutter);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 16px;
 }
 .operator-notice-body > svg {
   flex: none;
@@ -952,319 +590,6 @@ details.row-disclosure.skill-more > summary {
 .operator-notice-text {
   flex: 1;
   min-width: 240px;
-}
-
-/* — the phone pass — */
-@media (max-width: 760px) {
-  .topbar {
-    height: 56px;
-    padding: 0 16px;
-    gap: 12px;
-  }
-  .topnav,
-  .hide-narrow {
-    display: none;
-  }
-  .page {
-    padding: 20px 16px
-      calc(var(--tabbar-height) + 32px + env(safe-area-inset-bottom));
-  }
-  /* With a footer after it, the page ends at once and the footer
-     clears the tab bar in its place. The gate, the notice, and a
-     public page have no tab bar to clear. */
-  .page.page-has-footer {
-    padding-bottom: 28px;
-  }
-  .site-footer {
-    padding: 0 16px calc(20px + env(safe-area-inset-bottom));
-  }
-  .site-footer-tabbar {
-    padding-bottom: calc(
-      var(--tabbar-height) +
-      20px +
-      env(safe-area-inset-bottom)
-    );
-  }
-  /* The links first, where the thumb is, and the brand line after. */
-  .site-footer-inner {
-    flex-direction: column-reverse;
-    align-items: flex-start;
-    gap: 4px;
-  }
-  .site-footer-links a {
-    min-height: 44px;
-  }
-  .tabbar {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 20;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    height: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
-    padding-bottom: env(safe-area-inset-bottom);
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-  }
-  .tabbar a {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    color: var(--text-3);
-    font-size: 12px;
-    font-weight: 600;
-    text-decoration: none;
-  }
-  .tabbar a[aria-current="page"] {
-    color: var(--accent-text);
-  }
-  .result-hero,
-  .two-columns,
-  .skill-top {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .skill-top {
-    gap: 12px;
-  }
-  .operator-notice-body {
-    padding: 12px 16px;
-  }
-  .recovery-code {
-    font-size: 19px;
-  }
-  /* The workspace: one column, the canvas at full width, and the send
-     bar pinned over the tab bar. */
-  .workspace {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    /* Room for the pinned bar under the last part. */
-    padding-bottom: 84px;
-  }
-  .workspace-header,
-  .toolbar,
-  .canvas-holder,
-  .canvas-hint,
-  .side-cell {
-    grid-area: auto;
-  }
-  .workspace-header {
-    gap: 12px;
-    justify-content: space-between;
-    flex-wrap: nowrap;
-  }
-  .workspace-header-wide {
-    flex-wrap: wrap;
-  }
-  .workspace-header .code-cell {
-    width: 30px;
-    height: 38px;
-    font-size: 19px;
-    border-radius: 8px;
-  }
-  .workspace-header .code-cells {
-    gap: 4px;
-  }
-  .workspace-header-text {
-    text-align: right;
-  }
-  .toolbar {
-    gap: 2px;
-  }
-  .swatches {
-    gap: 4px;
-  }
-  .swatch {
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
-  }
-  .tool {
-    min-height: 34px;
-    min-width: 34px;
-  }
-  .side-cell {
-    position: static;
-  }
-  .side-panel {
-    position: static;
-    overflow: visible;
-  }
-  .side-scroll {
-    overflow: visible;
-    padding: 16px 16px 8px;
-  }
-  .send-bar {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
-    z-index: 19;
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    max-height: none;
-    padding: 10px 16px;
-    border-radius: 0;
-    background: var(--surface);
-  }
-  .send-bar-facts {
-    flex: 1;
-    flex-direction: column;
-    gap: 0;
-    min-width: 0;
-    font-size: 13px;
-  }
-  .send-bar-note {
-    text-align: left;
-  }
-  .send-bar .send-bar-buttons {
-    width: auto;
-    min-height: 44px;
-    padding: 8px 16px;
-    font-size: 16px;
-  }
-  .send-bar-hint {
-    display: none;
-  }
-  /* The review step: the bar opens upward into a sheet. */
-  .send-bar.is-reviewing {
-    flex-direction: column;
-    align-items: stretch;
-    max-height: 70dvh;
-    overflow-y: auto;
-    padding: 16px;
-    box-shadow: var(--shadow-md);
-  }
-  .send-bar.is-reviewing .send-bar-buttons {
-    width: 100%;
-  }
-  .send-bar.is-reviewing .send-bar-hint {
-    display: block;
-  }
-  .code-cell {
-    width: 40px;
-    height: 50px;
-    font-size: 24px;
-  }
-  .big-number {
-    font-size: 52px;
-  }
-  .card-hero {
-    padding: 20px;
-  }
-  h1 {
-    font-size: 24px;
-  }
-  .table-scroll {
-    overflow-x: auto;
-  }
-  .show-narrow {
-    display: inline;
-  }
-  /* A board on a phone: tighter cells and a shortened long name, so
-     the numbers of a row stay on the screen. */
-  .table-scroll .table th,
-  .table-scroll .table td {
-    padding-inline: 6px;
-  }
-  /* A two-word header breaks, so its column is as narrow as its
-     numbers. */
-  .table-scroll .table th {
-    white-space: normal;
-  }
-  .player-name {
-    display: inline-block;
-    max-width: 13ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    vertical-align: bottom;
-  }
-  /* Home: the wrapper lets go, the day keeps the card, and the
-     epigraph goes to the end of the page. */
-  .card.home-top {
-    display: contents;
-  }
-  .home-today {
-    padding: 20px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-  }
-  .home-title {
-    font-size: 21px;
-  }
-  .home-epigraph {
-    order: 99;
-    padding-left: 0;
-    border-left: 0;
-  }
-  .home-cta {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    text-align: center;
-  }
-  /* Home: each lower card is one row, and its link covers the row. */
-  .home-cards {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0;
-  }
-  .home-cards > .card,
-  .home-cards > .card.show-narrow {
-    position: relative;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    min-height: 52px;
-    padding: 10px 0;
-    background: none;
-    border: 0;
-    border-top: 1px solid var(--border);
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .home-cards > .card:last-child {
-    border-bottom: 1px solid var(--border);
-  }
-  .home-cards h3 {
-    flex: 1;
-    font-size: 16px;
-    font-weight: 500;
-  }
-  .home-cards .home-card-detail,
-  .home-cards .foot-arrow {
-    display: none;
-  }
-  .home-cards .home-card-number {
-    font-size: 16px;
-  }
-  .home-cards .card-foot {
-    margin: 0;
-  }
-  .home-cards .foot-link {
-    color: var(--text-3);
-  }
-  .home-cards .foot-link::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-  }
-  .home-cards .foot-text {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-  .home-cards .foot-caret {
-    display: block;
-  }
 }
 
 /* — the operator console's ranking table (spec S2 B6) — */
@@ -1281,36 +606,6 @@ details.row-disclosure.skill-more > summary {
 .dev-rankings .dev-target-row td {
   color: var(--accent-text);
   font-weight: 600;
-  background: var(--accent-soft);
-}
-
-/* — the share control of a result — */
-.share-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.share-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.share-status {
-  font-size: 13px;
-  color: var(--text-3);
-}
-.share-status:empty {
-  display: none;
-}
-.share-status-bad {
-  color: var(--bad, #b3261e);
-}
-.row-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
 }
 
 /*
@@ -1336,12 +631,7 @@ details.row-disclosure.skill-more > summary {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  /* The highlighted row of the board sets its own ground (theme.css
-     tr.is-you), and the gap must agree with it. */
-  background: var(--ring-gap-bg, var(--surface));
-}
-.table tr.is-you {
-  --ring-gap-bg: var(--accent-soft);
+  background: var(--bg);
 }
 .streak-ring[data-tier="2"] {
   background: linear-gradient(135deg, var(--streak-a), var(--streak-b));
@@ -1371,7 +661,7 @@ details.row-disclosure.skill-more > summary {
 /* Tier 1 marks the ring alone: its name stays plain (spec H1 §4). */
 .streak-name[data-tier="2"],
 .streak-name[data-tier="3"] {
-  font-weight: 650;
+  font-weight: 700;
 }
 .streak-name[data-tier="2"] {
   color: var(--streak-b);
@@ -1423,460 +713,126 @@ details.row-disclosure.skill-more > summary {
   }
 }
 
-/*
- * The resolve effect and the epigraph (spec H1 §5). The animation sits
- * behind no-preference: with reduced motion the letters show settled.
- */
-.resolve-word {
-  display: inline-block;
-  white-space: nowrap;
-}
-.resolve-letter {
-  display: inline-block;
-  white-space: pre;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .resolve-letter {
-    animation: resolve-in var(--resolve-ms) ease-out var(--resolve-delay) both;
-  }
-}
-@keyframes resolve-in {
-  from {
-    opacity: 0;
-    filter: blur(9px);
-    transform: translateY(var(--resolve-dy));
-  }
-  60% {
-    opacity: 0.75;
-    filter: blur(2px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: none;
-  }
-}
-.epigraph-frame {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
-  width: 100%;
-  max-width: 70ch;
-  color: var(--text-2);
-}
-/* The hidden copies and the figure share one cell: the cell is as
-   tall as the tallest epigraph, so a change does not move the page. */
-.epigraph-sizer,
-.epigraph {
-  grid-area: 1 / 1;
-  margin: 0;
-}
-.epigraph-sizer {
-  visibility: hidden;
-}
-.epigraph-sizer .resolve-letter {
-  animation: none;
-}
-/* The pause control sits on the citation line, at the right edge. */
-.epigraph-toggle {
-  flex: none;
-  min-height: 32px;
-  min-width: 32px;
-  padding: 4px;
-  margin: -4px 0;
-  color: var(--text-3);
-}
-.epigraph-text {
-  margin: 0;
-  font-size: 16px;
-  font-style: italic;
-  line-height: 1.5;
-}
-.epigraph-cite {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 24px;
-  margin-top: 6px;
-  font-size: 13px;
-  color: var(--text-3);
-}
-
-/* === sign-in and account creation (the gate screens) === */
-
-/* The landing page: the headline, sign-in, and how it works, in that
-   sequence in the source. One column stacks them, thus the form is
-   the first card on a phone. Two columns put sign-in on the right,
-   level with the headline, and how it works below the headline. */
-.welcome-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
-}
-.welcome-grid > .welcome-signin {
-  width: 100%;
-  max-width: 480px;
-}
-.welcome-hero {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.welcome-title {
-  font-size: 30px;
-  letter-spacing: -0.02em;
-  text-wrap: balance;
-}
-.welcome-pitch {
-  max-width: 34em;
-  font-size: 17px;
-}
-.welcome-season {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-}
-.welcome-how {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
-}
-@media (min-width: 900px) {
-  .welcome-grid {
-    grid-template-columns: minmax(0, 1fr) 440px;
-    /* The second row takes the height that sign-in has and the left
-       column does not, thus no space opens below the headline. */
-    grid-template-rows: auto 1fr;
-    gap: 28px 56px;
-    align-items: start;
-  }
-  .welcome-grid > .welcome-hero,
-  .welcome-grid > .welcome-how {
-    grid-column: 1;
-  }
-  .welcome-grid > .welcome-signin {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    max-width: none;
-  }
-  .welcome-title {
-    font-size: 40px;
-  }
-  .welcome-pitch {
-    font-size: 18px;
-  }
-  .welcome-how {
-    padding-top: 28px;
-  }
-}
-
-/* The gate card: one form, then the quieter ways in as rows. */
-.gate-card {
-  gap: 16px;
-}
-.gate-card .notice > svg {
-  flex: none;
-  margin-top: 1px;
-}
-/* A field with a small control at the right of its label. The control
-   comes after the field in the source and sits in the label row. */
-.field.field-with-action {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px 12px;
-}
-.field-with-action > .password-row {
-  grid-column: 1 / -1;
-  grid-row: 2;
-}
-.field-with-action > .field-action {
-  grid-column: 2;
-  grid-row: 1;
-}
-.text-button {
-  min-height: 24px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent-text);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.text-button:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-/* The rows end the card: the last closed row sits near its foot. */
-.gate-more {
-  margin: 4px 0 -12px;
-  border-top: 1px solid var(--border);
-}
-.gate-chevron {
-  flex: none;
-  color: var(--text-3);
-}
-.gate-row-title {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-}
-.gate-inline-form {
-  display: flex;
-  gap: 8px;
-}
-.gate-inline-form .input {
-  flex: 1;
-  min-width: 0;
-}
-.gate-code-input {
-  font-family: var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.gate-agreement {
-  text-align: center;
-}
-.gate-back {
-  display: flex;
-  justify-content: center;
-  margin-bottom: -8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-.recovery-copied {
-  min-height: 21px;
-  text-align: center;
-}
-
-/* The parts of a sign-up, as one line above the card. */
-.signup-progress {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  margin: 0;
-  padding: 0 4px;
-  list-style: none;
-  font-size: 13px;
-  font-weight: 500;
-}
-.signup-progress .step-item {
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.signup-progress .step-icon {
-  width: 22px;
-  height: 22px;
-  font-size: 12px;
-  font-weight: 700;
-}
-.signup-progress .step-item[aria-current="step"] {
-  font-weight: 600;
-}
-.signup-progress .step-item[aria-current="step"] .step-icon {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.signup-progress .step-item.is-pending {
-  color: var(--text-3);
-}
-@media (max-width: 480px) {
-  /* A narrow screen has room for one label: the current part keeps
-     its words, and the other parts keep their number or check. */
-  .signup-progress .step-item:not([aria-current]) .signup-progress-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-  }
-}
-/* === end sign-in and account creation === */
-
-/* === account screen: delete account === */
-/*
- * The account screen (spec A1 §3, spec MD1 §4.3). Each class here is
- * for that screen alone: the rows, the cards, and the buttons come from
- * the shared pieces above and from the theme.
- */
-
-/* The profile card: the picture in one column, and the name, the
-   badge, and the picture controls in a second column with one left
-   edge. */
-.account-profile {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: 20px;
-  align-items: start;
-}
-.account-profile-text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-.account-profile-controls {
-  margin-top: 4px;
-}
-
-/* The device table: the sign-out of a row is a quiet text button at
-   the right edge, thus `Add a device` is the one primary button. */
-.account-devices {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.account-devices > li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 12px;
-  padding: 8px 0;
-}
-.account-text-button {
-  min-height: 40px;
-  padding: 8px 0 8px 12px;
-  border: 0;
-  background: none;
-  color: var(--text-2);
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.account-text-button:hover:not(:disabled) {
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.account-text-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-/* The last card: a hint sits below its row and above the hairline of
-   the next row. */
-.account-row-hint {
-  margin: -6px 0 12px;
-  padding-right: 32px;
-}
-.account-row-note {
-  margin-bottom: 12px;
-}
-.account-closing-rows .row-link:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-.account-closing-rows .row-link[aria-expanded="true"] .row-meta svg {
-  transform: rotate(90deg);
-}
-
-/* `Delete my account`: the section that the `Delete account` row
-   opens. The red border says that this card is not like the others. */
-.account-delete {
-  gap: 16px;
-  border-color: color-mix(in srgb, var(--bad) 45%, var(--border));
-}
-/* Focus lands on the heading by script, not by Tab: no ring. */
-.account-delete h2:focus {
-  outline: none;
-}
-.account-delete-columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.account-delete-column {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  border-radius: var(--radius-md);
-}
-.account-delete-removed {
-  background: var(--bad-soft);
-}
-.account-delete-stays {
-  background: var(--surface-2);
-}
-.account-delete-column h3 {
-  font-size: 14px;
-  letter-spacing: 0;
-}
-.account-delete-removed h3 {
-  color: var(--bad);
-}
-.account-delete-column ul {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 14px;
-}
-.account-delete-column li {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-.account-delete-column svg {
-  flex: none;
-  margin-top: 3px;
-  color: var(--text-3);
-}
-.account-delete-removed svg {
-  color: var(--bad);
-}
-/* The two inputs share a bottom edge when one label goes to two lines. */
-.account-delete-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: end;
-}
-.account-delete-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 12px;
+/* — the phone pass — */
+.show-narrow {
+  display: none;
 }
 @media (max-width: 760px) {
-  .account-profile {
-    column-gap: 16px;
+  :root {
+    --gutter: 16px;
   }
-  .account-delete-columns,
-  .account-delete-fields {
+  .topbar {
+    min-height: 56px;
+    justify-content: space-between;
+  }
+  .brand {
+    margin-right: 0;
+    font-size: 17px;
+  }
+  .topnav,
+  .hide-narrow {
+    display: none;
+  }
+  .show-narrow {
+    display: inline;
+  }
+  .topbar-end {
+    gap: 14px;
+    font-size: 14px;
+  }
+  .topbar-end > * + *::before {
+    content: none;
+  }
+  .page {
+    padding: 26px var(--gutter)
+      calc(var(--tabbar-height) + 32px + env(safe-area-inset-bottom));
+  }
+  /* With a footer after it, the page ends at once and the footer
+     clears the tab bar in its place. The gate, the notice, and a
+     public page have no tab bar to clear. */
+  .page.page-has-footer {
+    padding-bottom: 28px;
+  }
+  .site-footer-inner {
+    padding: 20px 0 calc(20px + env(safe-area-inset-bottom));
+  }
+  .site-footer-tabbar .site-footer-inner {
+    padding-bottom: calc(
+      var(--tabbar-height) +
+      20px +
+      env(safe-area-inset-bottom)
+    );
+  }
+  /* The links first, where the thumb is, and the brand line after. */
+  .site-footer-inner {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .site-footer-links {
+    gap: 0 22px;
+  }
+  .site-footer-links a {
+    min-height: 44px;
+  }
+  .tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+  }
+  .tabbar a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--text-2);
+    font-size: 12.5px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .tabbar a[aria-current="page"] {
+    color: var(--accent-text);
+    font-weight: 700;
+  }
+  .columns {
     grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
-  .account-delete-actions > .btn {
-    flex: 1 1 auto;
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 24px;
   }
-}
-/* === end account screen === */
-
-/* The proof-of-work check on the sign-up form (spec PW1 §4). The
-   widget's own variables take the app's tokens, thus it follows the
-   light and dark themes. The box holds its height while the widget
-   loads, thus the form does not jump. */
-.proof-field {
-  min-height: 58px;
-  --altcha-color-base: var(--surface);
-  --altcha-color-base-content: var(--text);
-  --altcha-color-neutral: var(--border);
-  --altcha-color-neutral-content: var(--text-2);
-  --altcha-color-primary: var(--accent);
-  --altcha-color-success: var(--good);
-  --altcha-color-error: var(--bad);
-  --altcha-border-radius: var(--radius-md);
-  --altcha-max-width: 100%;
+  .tile-value {
+    font-size: 28px;
+  }
+  .seg {
+    display: flex;
+    width: 100%;
+  }
+  .seg a {
+    flex: 1;
+    padding: 0 12px;
+  }
+  /* A board on a phone: a shortened long name, so the numbers of a row
+     stay on the screen. A two-word header breaks, so its column is as
+     narrow as its numbers. */
+  .table-scroll .table th {
+    white-space: normal;
+  }
+  .player-name {
+    display: inline-block;
+    max-width: 13ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
 }

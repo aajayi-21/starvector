@@ -4,6 +4,7 @@
  * on their own.
  */
 
+import { WifiSlash } from "@phosphor-icons/react";
 import { useSyncExternalStore } from "react";
 
 function subscribe(onChange: () => void): () => void {
@@ -23,8 +24,11 @@ export function OfflineBanner(): React.JSX.Element | null {
     return null;
   }
   return (
-    <div role="status" className="season-note">
-      You're offline. You can keep sketching — sending needs a connection.
+    <div role="status" className="shell-note">
+      <WifiSlash size={18} aria-hidden="true" />
+      <span>
+        You're offline. You can keep sketching, but sending needs a connection.
+      </span>
     </div>
   );
 }

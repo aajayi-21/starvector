@@ -104,7 +104,8 @@ describe("the blocking notice screen (spec R1 §3.2, §3.3)", () => {
     expect(base.consents).toEqual([NOTICE_VERSION]);
     expect(meReads).toBeGreaterThan(readsBefore);
     expect(screen.queryByRole("heading", { name: HEADING })).toBeNull();
-    expect(screen.getAllByRole("navigation")).toHaveLength(2);
+    // The app's own chrome: the top bar and the tab bar.
+    expect(screen.getAllByRole("navigation", { name: "Main" })).toHaveLength(2);
     await waitFor(() => expect(base.count.starts).toBe(1));
   });
 

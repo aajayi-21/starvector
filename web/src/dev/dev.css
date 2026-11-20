@@ -1,19 +1,116 @@
 /*
  * The operator console's layout (spec BR1 §7). Since §7.6 the console
- * shares the player app's theme (theme.css): the same tokens, cards,
- * buttons, badges, notices, and tables, light by default and dark when
- * the device asks. It also loads app.css and builds from its shared
- * parts: the row that opens (.row-list, .row-disclosure), the step
- * list, and the tiles. This file holds only what the console has and
- * the player app does not — the tab bar, the locked card, the dense
- * tables, the day's track and next step, the confirmation box — all
- * built from the theme's tokens.
+ * shares the player app's theme (theme.css): the same tokens, buttons,
+ * badges, notices, and tables, in the one night-sky theme. It also
+ * loads app.css and builds from its shared parts: the row that opens
+ * (.row-list, .row-disclosure), the step list, and the tiles. This
+ * file holds only what the console has and the player app does not —
+ * the tab bar, the locked card, the dense tables, the day's track and
+ * next step, the confirmation box — all built from the theme's tokens.
+ *
+ * The console is a dense tool and not a player screen. In the theme a
+ * card is a plain group and the type is large, thus this file gives
+ * the console its own measures: a card keeps a hairline edge, since
+ * the console stacks many cards of rows and the edge tells them apart,
+ * and the type, the buttons, and the tiles keep the compact sizes.
  */
 
 .dev-shell {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  font-size: 16px;
+}
+
+/*
+ * — the console's measures on top of the theme —
+ * Each selector here has the weight of one class (the shell is in
+ * `:where`), thus a console rule later in this file still wins.
+ */
+:where(.dev-shell) h1 {
+  font-size: 24px;
+}
+:where(.dev-shell) h2 {
+  font-size: 20px;
+}
+:where(.dev-shell) h3 {
+  font-size: 17px;
+}
+:where(.dev-shell) .card {
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+:where(.dev-shell) .btn {
+  min-height: 42px;
+  padding: 8px 16px;
+  font-size: 15px;
+}
+:where(.dev-shell) .btn-ghost {
+  padding-inline: 10px;
+}
+:where(.dev-shell) .btn-icon {
+  min-height: 40px;
+  min-width: 40px;
+  padding: 8px;
+}
+:where(.dev-shell) .label,
+:where(.dev-shell) .hint,
+:where(.dev-shell) .notice {
+  font-size: 14px;
+}
+:where(.dev-shell) .small {
+  font-size: 14px;
+}
+:where(.dev-shell) .eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+:where(.dev-shell) .badge {
+  font-size: 13px;
+}
+:where(.dev-shell) .row-link,
+:where(.dev-shell) details.row-disclosure > summary {
+  min-height: 48px;
+  font-size: 15px;
+  font-weight: 500;
+}
+/* A table sits in a card or in a scroll box, thus a cell keeps space
+   on each side. */
+:where(.dev-shell) .table {
+  font-size: 15px;
+}
+:where(.dev-shell) .table th {
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+:where(.dev-shell) .table td {
+  padding: 10px;
+}
+:where(.dev-shell) .table th:last-child,
+:where(.dev-shell) .table td:last-child {
+  padding-right: 10px;
+}
+/* A tile holds one value of a day. The value can be a word or a time,
+   thus it keeps a size that fits one line. */
+:where(.dev-shell) .tiles {
+  gap: 12px;
+}
+:where(.dev-shell) .tile {
+  gap: 2px;
+  padding-top: 10px;
+}
+:where(.dev-shell) .tile-label {
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+:where(.dev-shell) .tile-value {
+  font-size: 22px;
+  line-height: 1.25;
 }
 
 /* — header and tabs — */
@@ -27,7 +124,7 @@
   flex-wrap: wrap;
   min-height: 60px;
   padding: 10px 24px;
-  background: var(--surface);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 /* The season line gives way first, so the connection keeps its row. */
@@ -83,7 +180,7 @@
   display: flex;
   gap: 4px;
   padding: 0 24px;
-  background: var(--surface);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
@@ -225,7 +322,6 @@
   background: var(--surface);
 }
 .badge-bad {
-  background: var(--bad-soft);
   color: var(--bad);
 }
 .dev-working {
@@ -330,7 +426,7 @@
 .dev-results th {
   position: sticky;
   top: 0;
-  background: var(--surface);
+  background: var(--bg);
 }
 .dev-results td {
   max-width: 360px;
@@ -359,6 +455,11 @@
  * The day's stages in one row, built from the step list of app.css:
  * a line joins each stage to the stage after it, done stages keep the
  * green check, and the stage the next move completes takes the accent.
+ *
+ * The step list of app.css is a line of stars on end, with no number
+ * and no check. A stage of a day needs its number and its check, thus
+ * the track puts back the round mark and takes away the star and the
+ * upright line.
  */
 .dev-track {
   flex-direction: row;
@@ -368,7 +469,33 @@
   flex: 1 1 0;
   min-width: 0;
   gap: 10px;
+  padding-bottom: 0;
 }
+.dev-track .step-item::before {
+  content: none;
+}
+.dev-track .step-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.dev-track .step-icon > * {
+  display: block;
+}
+.dev-track .step-icon::after {
+  content: none;
+}
+.dev-track .step-item.is-done .step-icon {
+  background: var(--good-soft);
+  color: var(--good);
+}
+.dev-track .step-item.is-pending .step-icon {
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
 .dev-track .step-item:last-child {
   flex: 0 1 auto;
 }
@@ -389,7 +516,9 @@
   font-weight: 700;
 }
 .dev-track .step-text {
+  gap: 2px;
   min-width: 0;
+  min-height: 28px;
 }
 .dev-track .dev-stage-current .step-icon {
   background: var(--accent);
@@ -553,7 +682,7 @@
 .dev-chip {
   font-size: 13px;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text-2);
 }

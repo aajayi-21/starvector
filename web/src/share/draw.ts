@@ -59,7 +59,8 @@ const COLOR = {
   ink: "#eceff4",
 } as const;
 
-const FONT = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif';
+const FONT =
+  '"Red Hat Text Variable", system-ui, -apple-system, "Segoe UI", sans-serif';
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const MARGIN = 72;
 const SKETCH_SIDE = 420;

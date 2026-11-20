@@ -226,7 +226,7 @@ describe("devices and sign-out (spec BR1 §4)", () => {
     expect(await screen.findByText(/runs without sign-in/)).toBeDefined();
     expect(screen.queryByText("Sign out of this device")).toBeNull();
     expect(screen.queryByRole("button", { name: "Add a device" })).toBeNull();
-    // The download needs no account: its row stays, alone in the card.
+    // The download needs no account: it stays, alone in its row.
     const download = screen.getByRole("link", { name: "Download my data" });
     const card = download.closest("section") as HTMLElement;
     expect(within(card).getByRole("heading").textContent).toBe("Your data");
@@ -239,14 +239,14 @@ describe("devices and sign-out (spec BR1 §4)", () => {
       name: "Download my data",
     })) as HTMLAnchorElement;
     expect(link.hasAttribute("download")).toBe(true);
-    // The row says what the file holds.
+    // The sentence beside the button says what the file holds.
     const hint = document.getElementById(
       link.getAttribute("aria-describedby") ?? "",
     );
-    expect(hint?.textContent).toMatch(/every sketch and set of words/);
+    expect(hint?.textContent).toMatch(/^Every sketch and set of words/);
   });
 
-  it("ends with one card of three rows, the deletion last", async () => {
+  it("ends with one row of three moves, the deletion last", async () => {
     renderAt("/account");
     const signOut = await screen.findByRole("button", {
       name: "Sign out of this device",
@@ -255,20 +255,25 @@ describe("devices and sign-out (spec BR1 §4)", () => {
     expect(within(card).getByRole("heading").textContent).toBe(
       "Your data and account",
     );
-    const rows = Array.from(card.querySelectorAll(".row-link")).map((row) =>
-      row.textContent?.trim(),
+    const moves = Array.from(card.querySelectorAll("a, button")).map((move) =>
+      move.textContent?.trim(),
     );
-    expect(rows).toEqual([
+    expect(moves).toEqual([
       "Download my data",
       "Sign out of this device",
       "Delete account",
     ]);
-    // The sign-out is a plain row: the red one is the deletion alone.
-    expect(signOut.className).not.toContain("danger");
-    expect(
-      within(card).getByRole("button", { name: "Delete account" }).className,
-    ).toContain("row-link-danger");
-    // No card comes after it until the deletion section opens.
+    // The download and the sign-out are quiet buttons with an edge. The
+    // deletion is red words with no edge: it opens a section, and the
+    // section holds the one filled red button.
+    const download = within(card).getByRole("link", {
+      name: "Download my data",
+    });
+    expect(download.className).toContain("btn-secondary");
+    expect(signOut.className).toContain("btn-secondary");
+    const opener = within(card).getByRole("button", { name: "Delete account" });
+    expect(opener.className).toBe("account-delete-link");
+    // No section comes after it until the deletion section opens.
     expect(card.nextElementSibling).toBeNull();
   });
 });
@@ -458,9 +463,11 @@ describe("the password and the recovery code (spec A2 §3.4)", () => {
       },
     };
     renderAt("/account", api);
+    // The section keeps one name, and the button says the move.
     expect(
-      await screen.findByRole("heading", { name: "Set a password" }),
+      await screen.findByRole("button", { name: "Set a password" }),
     ).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Password" })).toBeDefined();
     expect(
       screen.getByText(/has no password yet\. Set one, and/),
     ).toBeDefined();
@@ -487,7 +494,7 @@ describe("the password and the recovery code (spec A2 §3.4)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "I've saved my code" }));
     expect(
-      await screen.findByRole("heading", { name: "Change password" }),
+      await screen.findByRole("button", { name: "Change password" }),
     ).toBeDefined();
     expect(screen.queryByTestId("recovery-code")).toBeNull();
     expect(
@@ -570,6 +577,20 @@ describe("the password and the recovery code (spec A2 §3.4)", () => {
 });
 
 describe("Delete my account (spec MD1 §4.3)", () => {
+  /**
+   * The password field of the deletion, by its id: the `Password`
+   * section of the page has the same name as the field's label.
+   */
+  function deletePassword(): HTMLInputElement {
+    return document.getElementById("delete-password") as HTMLInputElement;
+  }
+
+  function typePassword(value: string): HTMLInputElement {
+    const field = deletePassword();
+    fireEvent.change(field, { target: { value } });
+    return field;
+  }
+
   function deleteRow(): HTMLButtonElement {
     return screen.getByRole("button", {
       name: "Delete account",
@@ -619,7 +640,7 @@ describe("Delete my account (spec MD1 §4.3)", () => {
     const card = heading.closest("section") as HTMLElement;
     expect(row.getAttribute("aria-controls")).toBe(card.id);
     expect(document.activeElement).toBe(heading);
-    // The section is the last thing on the page, after the row's card.
+    // The section is the last thing on the page, after the last row.
     expect(card.previousElementSibling).toBe(row.closest("section"));
     expect(card.nextElementSibling).toBeNull();
 
@@ -674,7 +695,7 @@ describe("Delete my account (spec MD1 §4.3)", () => {
     renderAt("/account", api);
     await openSection();
     typeInto("Type ade to confirm", "ade");
-    typeInto("Password", MOCK_PASSWORD);
+    typePassword(MOCK_PASSWORD);
     fireEvent.click(screen.getByRole("button", { name: "Keep my account" }));
     expect(
       screen.queryByRole("heading", { name: "Delete my account" }),
@@ -687,9 +708,7 @@ describe("Delete my account (spec MD1 §4.3)", () => {
     expect(
       (screen.getByLabelText("Type ade to confirm") as HTMLInputElement).value,
     ).toBe("");
-    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
-      "",
-    );
+    expect(deletePassword().value).toBe("");
     expect(deleteButton().disabled).toBe(true);
   });
 
@@ -707,7 +726,8 @@ describe("Delete my account (spec MD1 §4.3)", () => {
     await openSection();
     expect(deleteButton().disabled).toBe(true);
     // The ids stay: the browser specs and a password manager find them.
-    expect(typeInto("Password", MOCK_PASSWORD).id).toBe("delete-password");
+    const password = typePassword(MOCK_PASSWORD);
+    expect(password.labels?.[0]?.textContent).toBe("Password");
     expect(typeInto("Type ade to confirm", "Ade").id).toBe("delete-username");
     expect(deleteButton().disabled).toBe(true);
     typeInto("Type ade to confirm", "ade");
@@ -745,7 +765,7 @@ describe("Delete my account (spec MD1 §4.3)", () => {
     renderAt("/account", api);
     const card = await openSection();
     typeInto("Type ade to confirm", "ade");
-    typeInto("Password", "not the password");
+    typePassword("not the password");
     fireEvent.click(deleteButton());
     expect((await within(card).findByRole("alert")).textContent).toBe(
       "That isn't your current password.",
