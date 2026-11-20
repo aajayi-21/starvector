@@ -91,6 +91,11 @@ Make it with the command of section 10, and keep a copy away from the
 box: if it is gone, each stored password stops. The invite is gone from
 that date.
 
+*Note, 2026-11-19 (spec PW1 §3.4):* with sign-up open, the same file
+also holds `STARVECTOR_ALTCHA_KEY`. Make it with
+`python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. The
+server refuses to start with sign-up open and no key.
+
 Three rules:
 
 - Type secrets on the box. Do not paste them into a chat, a

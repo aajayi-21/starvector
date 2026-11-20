@@ -100,8 +100,8 @@ production pool wants the 4 GB plan and not a larger disk.
 
 ## 4. Keys and secrets
 
-There are five secrets in the app. No other credential is in the
-system. Your SSH key is a sixth, and it is yours and not the
+There are six secrets in the app. No other credential is in the
+system. Your SSH key is a seventh, and it is yours and not the
 deployment's.
 
 | secret | where it lives | who reads it | how you get it |
@@ -109,6 +109,7 @@ deployment's.
 | `OPENROUTER_API_KEY` | `/etc/starvector/env` (root, 0600) | systemd, as root, before privileges drop | make a key at openrouter.ai and set a spend cap of $5–10 |
 | `STARVECTOR_OPERATOR_TOKEN` | `/etc/starvector/env` | same | make one on the box (section 10) |
 | `STARVECTOR_PASSWORD_PEPPER` | `/etc/starvector/env` | same | make one on the box (section 10), and keep a copy away from the box |
+| `STARVECTOR_ALTCHA_KEY` | `/etc/starvector/env` | same | make one on the box (section 10). It needs no copy. |
 | restic repository password | `/etc/starvector/restic-env` (0600) | the backup units | make one on the box |
 | backup storage credential | `/etc/starvector/restic-env` | same | from your storage provider — use an append-only credential |
 
@@ -118,6 +119,12 @@ each invite prints one time.
 *Note, 2026-11-19 (spec A2):* the pepper row is new from 2026-11-13,
 and the invite is gone from that date. The store keeps a slow digest of
 each password, with the pepper mixed in.
+
+*Note, 2026-11-19 (spec PW1):* the ALTCHA key row is new. The server
+signs each sign-up challenge with it, and refuses to start with sign-up
+open and no key. Make it with
+`python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. A new
+key makes each open challenge refuse one time, thus it needs no copy.
 
 Three rules:
 
