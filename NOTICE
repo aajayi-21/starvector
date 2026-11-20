@@ -1,0 +1,45 @@
+Starvector
+Copyright (C) 2026 Adeolu Ajayi
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License, version 3, as
+published by the Free Software Foundation, together with the additional
+term below. The full license text is in the LICENSE file.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details.
+
+SPDX-License-Identifier: AGPL-3.0-only
+
+
+Additional term (GNU AGPL version 3, section 7(b))
+--------------------------------------------------
+
+Every copy of this program, every modified version of it, and every work
+based on it, including one that is only offered to users over a network,
+must preserve the following author attribution:
+
+    Based on Starvector by Adeolu Ajayi
+    https://github.com/aajayi-21/starvector
+
+The attribution must appear in at least one place where members of the
+public can reasonably find it, for example the project's README, an
+About page, or its user-facing documentation. It does not need to be
+prominent, repeated, or shown on every screen. It must not be removed,
+hidden, or reworded in a way that misrepresents who wrote the original
+program.
+
+This term asks only for credit. It does not let anyone imply that Adeolu
+Ajayi endorses, maintains, or is responsible for a modified version.
+
+
+Commercial licensing
+--------------------
+
+If you want to use Starvector on terms other than the GNU AGPL, for
+example in closed-source software or in a hosted service whose source
+you do not want to publish, contact the copyright holder through
+https://github.com/aajayi-21/starvector to ask about a commercial
+license.
