@@ -23,10 +23,11 @@ import altcha
 # the browser computes with its own cryptography.
 ALGORITHM = "PBKDF2/SHA-256"
 
-# Decision D3: the values of the example of the ALTCHA library.
+# Decision D3, ruled 2026-11-19: the cost of one try in the example of
+# the ALTCHA library, and a lighter counter range than that example.
 DEPLOYED_COST = 5_000
-DEPLOYED_COUNTER_LOW = 5_000
-DEPLOYED_COUNTER_HIGH = 10_000
+DEPLOYED_COUNTER_LOW = 1_000
+DEPLOYED_COUNTER_HIGH = 5_000
 
 # Decision D4: the life of one challenge.
 LIFETIME_SECONDS = 10 * 60

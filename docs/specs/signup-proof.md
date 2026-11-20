@@ -1,7 +1,7 @@
 # Spec PW1 — a proof of work at sign-up
 
-**Status:** built on branch `feat/altcha-signup`, 2026-11-19. Decision D1
-is the owner's. Decisions D2 to D12 are proposals that the build uses (§6).
+**Status:** built on branch `feat/altcha-signup`, 2026-11-19. The owner
+ruled each decision on 2026-11-19 (§6).
 **Phase:** before the first public day. Sign-up opens to each visitor at the
 production cutover (`docs/production-cutover.md`).
 **Architecture sections:** §22 (protocol integrity).
@@ -120,8 +120,10 @@ build. A signed-in player does not download it. The build is
 a `blob:` URL. Its stylesheet and its PBKDF2 worker are files of the site.
 The `Content-Security-Policy` of `deploy/Caddyfile` thus stays as it is.
 
-The widget collects no pointer or scroll data, and it shows no
-attribution to `altcha.org` (D9). Its colors come from the theme tokens of
+The widget records no pointer, scroll, or key timing, and it shows its
+small attribution to `altcha.org` (D9). The widget sends that data only
+when a server asks for it, and this server does not, thus the data has
+no use here. Its colors come from the theme tokens of
 the app, in light and dark.
 
 ### 4.3 The mock world
@@ -144,21 +146,21 @@ fixed text `mock-proof`. The mock `signUp` accepts it.
 | # | Decision | Value | Status |
 |---|---|---|---|
 | D1 | The tool | ALTCHA: the widget `altcha` 3.6.0 (npm, MIT) and the library `altcha` 2.4.0 (PyPI, MIT), with no new indirect Python package | the owner's, 2026-11-19 |
-| D2 | The algorithm | `PBKDF2/SHA-256`, the default of the widget, which the browser computes with its own cryptography | proposed |
-| D3 | The cost of one challenge | 5,000 PBKDF2 iterations for each try, and a counter from 5,000 to 9,999: the values of the example of the ALTCHA library | proposed |
-| D4 | The life of a challenge | 10 minutes, the value of the example of the library | proposed |
-| D5 | Spent proofs | One proof makes one account. A refused sign-up gives its proof back. | proposed |
-| D6 | The environment name | `STARVECTOR_ALTCHA_KEY`, with two keys made from it by HMAC | proposed |
-| D7 | No key | The server refuses to start with sign-up open | proposed |
-| D8 | A cap on the challenge path | None. One challenge costs the server 1.2 ms. | proposed |
-| D9 | Data of the widget | No pointer or scroll data (`humanInteractionSignature` off), and no attribution | proposed |
-| D10 | The length of a payload | 4,096 characters at most. A payload of this server is less than 1,000. | proposed |
-| D11 | When the widget starts | When the sign-up card opens | proposed |
-| D12 | Where the widget goes | Adjacent to `Create account`, after the notice that results are public | proposed |
+| D2 | The algorithm | `PBKDF2/SHA-256`, the default of the widget, which the browser computes with its own cryptography | ruled |
+| D3 | The cost of one challenge | 5,000 PBKDF2 iterations for each try, as in the example of the ALTCHA library, and a counter from 1,000 to 4,999: the owner chose a lighter range than that example | ruled |
+| D4 | The life of a challenge | 10 minutes, the value of the example of the library | ruled |
+| D5 | Spent proofs | One proof makes one account. A refused sign-up gives its proof back. | ruled |
+| D6 | The environment name | `STARVECTOR_ALTCHA_KEY`, with two keys made from it by HMAC | ruled |
+| D7 | No key | The server refuses to start with sign-up open | ruled |
+| D8 | A cap on the challenge path | None. One challenge costs the server 1.2 ms. | ruled |
+| D9 | Data of the widget | No pointer, scroll, or key timing (`humanInteractionSignature` off), and the attribution of the widget shows | ruled |
+| D10 | The length of a payload | 4,096 characters at most. A payload of this server is less than 1,000. | ruled |
+| D11 | When the widget starts | When the sign-up card opens | ruled |
+| D12 | Where the widget goes | Adjacent to `Create account`, after the notice that results are public | ruled |
 
 **The time on a phone is not measured (D3).** On the development machine,
-the Python library solves one challenge at counter 6,418 in 7.7 s on one
-processor. The widget uses the cryptography of the browser and more than
+the Python library solves one challenge at counter 3,000, the mean of the
+range, in 1.4 s on one processor. The widget uses the cryptography of the browser and more than
 one worker, thus it is faster. Measure the time on a phone after the
 deployment, with the card open and nothing typed. If it is more than the
 time to type a name and a password, make the counter range smaller.

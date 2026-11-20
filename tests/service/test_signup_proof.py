@@ -214,7 +214,7 @@ def test_the_keys_of_a_secret() -> None:
 def test_the_values_of_the_decisions() -> None:
     assert proofs.ALGORITHM == "PBKDF2/SHA-256"
     assert proofs.DEPLOYED == proofs.ProofSettings(
-        cost=5_000, counter_low=5_000, counter_high=10_000,
+        cost=5_000, counter_low=1_000, counter_high=5_000,
         lifetime_seconds=600)
     assert proofs.KEY_ENVIRONMENT_NAME == "STARVECTOR_ALTCHA_KEY"
     assert proofs.PAYLOAD_MAX_CHARS == 4_096

@@ -5,9 +5,10 @@
  * person types a name and a password. The form sends the payload with
  * them, and `Create account` stays disabled until the widget is done.
  *
- * The widget collects no pointer or scroll data and shows no link to
- * another site (spec PW1 decision D9). The mock world has no server to
- * sign a challenge, so it shows no widget and gives a fixed payload.
+ * The widget records no pointer, scroll, or key timing, and it shows
+ * its small attribution to altcha.org (spec PW1 decision D9). The mock
+ * world has no server to sign a challenge, so it shows no widget and
+ * gives a fixed payload.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -20,7 +21,6 @@ export const MOCK_PROOF = "mock-proof";
 
 const CONFIGURATION = JSON.stringify({
   humanInteractionSignature: false,
-  hideFooter: true,
 });
 
 type StateDetail = { state: string; payload?: string };
