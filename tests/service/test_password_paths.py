@@ -10,8 +10,9 @@ import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from svc_fixture import (FIXED_CLOCK, QuickDigester, build_service_fixture,
-                         plant_session)
+from svc_fixture import (FIXED_CLOCK, QUICK_PROOF, QUICK_PROOF_KEYS,
+                         QuickDigester, build_service_fixture, plant_session,
+                         solved_proof)
 
 from service import auth, limits, players, signin, store
 from service import server as server_module
@@ -29,7 +30,8 @@ def _world(tmp_path, signup: str = "open", digester=QuickDigester()):
     fixture = build_service_fixture(tmp_path)
     config = dataclasses.replace(fixture["service_config"], signup=signup)
     app = create_app(config, operator_token=OPERATOR_TOKEN,
-                     digester=digester, usual_passwords=USUAL)
+                     digester=digester, usual_passwords=USUAL,
+                     proof_keys=QUICK_PROOF_KEYS, proof_settings=QUICK_PROOF)
     return config, app
 
 
@@ -43,7 +45,7 @@ def _client(app, cookie: str | None = None) -> TestClient:
 def _sign_up(app, name="alice", password=GOOD) -> tuple[TestClient, dict]:
     client = _client(app)
     answer = client.post("/api/signup",
-                         json={"username": name, "password": password, "agrees_public": True})
+                         json={"proof": solved_proof(_client(app)), "username": name, "password": password, "agrees_public": True})
     assert answer.status_code == 201, answer.text
     return client, answer.json()
 
@@ -87,7 +89,7 @@ def test_an_answer_with_a_recovery_code_is_not_stored_by_a_cache(
     _config, app = _world(tmp_path)
     client = _client(app)
     made = client.post("/api/signup",
-                       json={"username": "alice", "password": GOOD, "agrees_public": True})
+                       json={"proof": solved_proof(_client(app)), "username": "alice", "password": GOOD, "agrees_public": True})
     assert made.headers["cache-control"] == "no-store"
     assert "HttpOnly" in made.headers["set-cookie"]
     assert "Secure" in made.headers["set-cookie"]
@@ -103,7 +105,7 @@ def test_sign_up_names_the_rule_that_refuses(tmp_path, name, password,
                                              status, cause) -> None:
     _config, app = _world(tmp_path)
     answer = _client(app).post(
-        "/api/signup", json={"username": name, "password": password, "agrees_public": True})
+        "/api/signup", json={"proof": solved_proof(_client(app)), "username": name, "password": password, "agrees_public": True})
     assert answer.status_code == status
     assert answer.json() == {"cause": cause}
     assert "set-cookie" not in answer.headers
@@ -113,7 +115,7 @@ def test_a_claimed_folded_shape_is_taken(tmp_path) -> None:
     _config, app = _world(tmp_path)
     _sign_up(app, name="no-one")
     answer = _client(app).post(
-        "/api/signup", json={"username": "n0one", "password": GOOD, "agrees_public": True})
+        "/api/signup", json={"proof": solved_proof(_client(app)), "username": "n0one", "password": GOOD, "agrees_public": True})
     assert answer.status_code == 409
     assert answer.json() == {"cause": "name-taken"}
 
@@ -352,13 +354,13 @@ def test_the_signup_cap_counts_the_accounts_made(tmp_path) -> None:
     client = _client(app)
     for number in range(limits.SIGNUP_CLIENT_CAP):
         # A refused sign-up is not an account made and does not count.
-        assert client.post("/api/signup", json={
+        assert client.post("/api/signup", json={"proof": solved_proof(_client(app)),
             "username": "al", "password": GOOD,
             "agrees_public": True}).status_code == 400
-        assert client.post("/api/signup", json={
+        assert client.post("/api/signup", json={"proof": solved_proof(_client(app)),
             "username": f"player-{number}", "password": GOOD,
             "agrees_public": True}).status_code == 201
-    assert client.post("/api/signup", json={
+    assert client.post("/api/signup", json={"proof": solved_proof(_client(app)),
         "username": "one-more", "password": GOOD,
         "agrees_public": True}).status_code == 429
     assert limits.SIGNUP_CLIENT_CAP == 10
@@ -380,16 +382,22 @@ def test_the_guards_of_an_open_signup(tmp_path) -> None:
         create_app(config, digester=QuickDigester(), usual_passwords=USUAL)
     with pytest.raises(ServiceConfigError, match="pepper"):
         create_app(config, operator_token=OPERATOR_TOKEN)
+    # Spec PW1 decision D7: open sign-up and no ALTCHA key is a stop.
+    with pytest.raises(ServiceConfigError, match="STARVECTOR_ALTCHA_KEY"):
+        create_app(config, operator_token=OPERATOR_TOKEN,
+                   digester=QuickDigester(), usual_passwords=USUAL)
     store.write_player_record(store_root(config), store.PlayerRecord(
         player="ade", display_name="Ade", token_hash="a" * 64,
         created_at=FIXED_CLOCK, status="active"))
     with pytest.raises(ServiceConfigError, match="claim-names"):
         create_app(config, operator_token=OPERATOR_TOKEN,
-                   digester=QuickDigester(), usual_passwords=USUAL)
+                   digester=QuickDigester(), usual_passwords=USUAL,
+                   proof_keys=QUICK_PROOF_KEYS)
     signin.claim_stored_names(store_root(config),
                               datetime.datetime.now(datetime.UTC))
     create_app(config, operator_token=OPERATOR_TOKEN,
-               digester=QuickDigester(), usual_passwords=USUAL)
+               digester=QuickDigester(), usual_passwords=USUAL,
+               proof_keys=QUICK_PROOF_KEYS)
 
 
 def test_the_start_refusals_of_spec_a2() -> None:

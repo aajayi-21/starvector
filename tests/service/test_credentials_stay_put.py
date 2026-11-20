@@ -13,8 +13,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from svc_fixture import (FIXED_CLOCK, QuickDigester, build_service_fixture,
-                         mixed_wire_record)
+from svc_fixture import (FIXED_CLOCK, QUICK_PROOF, QUICK_PROOF_KEYS,
+                         QuickDigester, build_service_fixture,
+                         mixed_wire_record, solved_proof)
 
 from service import auth, index, signin, store
 from service.day import close_day, open_day, reveal_day
@@ -34,7 +35,8 @@ def test_no_credential_is_in_the_output_an_answer_or_the_index(
     config = dataclasses.replace(fixture["service_config"], signup="open")
     root = Path(config.store_root)
     app = create_app(config, operator_token=TOKEN, digester=QuickDigester(),
-                     usual_passwords=frozenset())
+                     usual_passwords=frozenset(),
+                     proof_keys=QUICK_PROOF_KEYS, proof_settings=QUICK_PROOF)
     client = TestClient(app, base_url="https://testserver", headers=ORIGIN)
     bodies: list[tuple[str, str]] = []
 
@@ -44,7 +46,8 @@ def test_no_credential_is_in_the_output_an_answer_or_the_index(
         return answer
 
     with caplog.at_level(logging.DEBUG):
-        made = post("/api/signup", {"username": "marker-name",
+        made = post("/api/signup", {"proof": solved_proof(client),
+                                    "username": "marker-name",
                                     "password": FIRST_PASSWORD,
                                     "agrees_public": True})
         assert made.status_code == 201

@@ -79,6 +79,26 @@ describe("the credential calls of the live client (spec A2 §8)", () => {
     });
   });
 
+  it("sends the proof of the check with a sign-up (spec PW1 §3.2)", async () => {
+    const calls = answering(201, { recovery_code: CODE });
+    const api = makeRealApi();
+    expect(api.signupChallengeUrl()).toBe("/api/signup/challenge");
+    await api.signUp("nova", "a pass phrase", true, "c29sdmVk");
+    expect(calls.map(sent)).toEqual([
+      {
+        url: "/api/signup",
+        method: "POST",
+        mediaType: "application/json",
+        body: {
+          username: "nova",
+          password: "a pass phrase",
+          agrees_public: true,
+          proof: "c29sdmVk",
+        },
+      },
+    ]);
+  });
+
   it("posts each credential as JSON, with its media type, in the body", async () => {
     const calls = answering(200, {});
     const api = makeRealApi();

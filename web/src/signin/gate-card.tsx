@@ -12,6 +12,9 @@
  * A page with a notice version that is not the server's does not make
  * accounts.
  *
+ * The sign-up form also holds the proof-of-work check (spec PW1 §4).
+ * It runs while the person types, and `Create account` waits for it.
+ *
  * Each form is a real `<form>` with `autocomplete` tokens, thus a
  * password manager fills and saves it. A password and a recovery code
  * live in component state for the life of the form and go nowhere
@@ -28,6 +31,7 @@ import { PasswordField, RuleList } from "./fields";
 import { NOTICE_VERSION } from "./notice";
 import { NoticeText, OutOfDate } from "./notice-text";
 import { DeviceCodeRow, DoorRow } from "./other-ways";
+import { ProofField } from "./proof-field";
 import {
   allOk,
   isRecoveryCodeShape,
@@ -285,15 +289,27 @@ function SignUpForm(props: {
 }): React.JSX.Element {
   const api = useApi();
   const [password, setPassword] = useState("");
+  // The payload of the solved challenge (spec PW1 §3.2), and a count
+  // that gives the check a new widget when the server refuses one.
+  const [proof, setProof] = useState<string | undefined>(undefined);
+  const [proofRound, setProofRound] = useState(0);
   const signUp = useMutation({
     // The form shows the notice above its one control, thus a click on
     // that control is the agreement (spec R1 §3.2).
-    mutationFn: (word: string) => api.signUp(props.username, word, true),
+    mutationFn: (word: string) => api.signUp(props.username, word, true, proof),
     onSuccess: (answer) => props.onRecoveryCode(answer.recovery_code),
+    onError: (error) => {
+      // The server refused the payload: it ran out, or it is spent.
+      // A new widget reads a new challenge and starts again.
+      if (error instanceof ApiError && error.refusalCause === "proof") {
+        setProof(undefined);
+        setProofRound((round) => round + 1);
+      }
+    },
   });
   const nameChecks = usernameChecks(props.username);
   const wordChecks = passwordChecks(password, props.username);
-  const ready = allOk(nameChecks) && allOk(wordChecks);
+  const ready = allOk(nameChecks) && allOk(wordChecks) && proof !== undefined;
   return (
     <form
       className="stack"
@@ -348,6 +364,7 @@ function SignUpForm(props: {
         <Globe size={18} aria-hidden="true" />
         <NoticeText />
       </div>
+      <ProofField key={proofRound} onProof={setProof} />
       <div className="stack-sm">
         <button
           type="submit"

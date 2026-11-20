@@ -549,6 +549,10 @@ const CAUSE_COPY: Record<string, string> = {
   "password-usual":
     "That password is one many people use, so it is easy to guess. Choose a different one.",
   "sign-in": "The username or the password is wrong.",
+  // Spec PW1 §3.2: the proof-of-work payload ran out or was spent.
+  // The form starts a new check at the same time.
+  proof:
+    "The check that you're a person didn't go through. Wait for it to finish again, then try again.",
   recovery:
     "That didn't work. Check the username and the recovery code. A recovery code works one time, and a code from the operator works 24 hours after it was made.",
   password: "That isn't your current password.",

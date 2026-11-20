@@ -9,6 +9,7 @@ import {
   NOTICE_LEAD,
   NOTICE_VERSION,
 } from "../../src/signin/notice";
+import { MOCK_PROOF } from "../../src/signin/proof-field";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
 const GOOD = "four quiet amber lanterns";
@@ -760,6 +761,55 @@ describe("the notice on the sign-up card (spec R1 §3.1)", () => {
     fireEvent.click(button("Create account"));
     await screen.findByRole("heading", { name: "Save your recovery code" });
     expect(sent).toEqual([["nova", GOOD, true]]);
+  });
+
+  it("sends the proof of the check with the sign-up", async () => {
+    // Spec PW1 §4.3: the mock world has no server to sign a challenge,
+    // so the form shows no widget and sends the fixed payload.
+    const sent: Array<string | undefined> = [];
+    const base = signedOut();
+    await openSignUp(
+      signedOut({
+        ...base,
+        signUp: (username, password, agreesPublic, proof) => {
+          sent.push(proof);
+          return base.signUp(username, password, agreesPublic, proof);
+        },
+      }),
+    );
+    expect(document.querySelector("altcha-widget")).toBeNull();
+    type("Username", "nova");
+    type("Password", GOOD);
+    fireEvent.click(button("Create account"));
+    await screen.findByRole("heading", { name: "Save your recovery code" });
+    expect(sent).toEqual([MOCK_PROOF]);
+  });
+
+  it("starts a new check when the server refuses the proof", async () => {
+    let tries = 0;
+    const base = signedOut();
+    await openSignUp(
+      signedOut({
+        ...base,
+        signUp: (username, password, agreesPublic, proof) => {
+          tries += 1;
+          return tries === 1
+            ? Promise.reject(new ApiError(400, "proof"))
+            : base.signUp(username, password, agreesPublic, proof);
+        },
+      }),
+    );
+    type("Username", "nova");
+    type("Password", GOOD);
+    fireEvent.click(button("Create account"));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/check that you're a person/);
+    // The new check is done at once in the mock world, so the control
+    // works again.
+    await waitFor(() => expect(button("Create account").disabled).toBe(false));
+    fireEvent.click(button("Create account"));
+    await screen.findByRole("heading", { name: "Save your recovery code" });
+    expect(tries).toBe(2);
   });
 
   it("makes no account from a page with an earlier notice version", async () => {

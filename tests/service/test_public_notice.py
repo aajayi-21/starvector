@@ -11,8 +11,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from svc_fixture import (FIXED_CLOCK, QuickDigester, build_service_fixture,
-                         mixed_wire_record)
+from svc_fixture import (FIXED_CLOCK, QUICK_PROOF, QUICK_PROOF_KEYS,
+                         QuickDigester, build_service_fixture,
+                         mixed_wire_record, solved_proof)
 
 from service import auth, notice, players, signin, store
 from service.config import ServiceConfigError, parse_service_config
@@ -113,7 +114,8 @@ def _world(tmp_path, dev_only: bool):
     fixture = build_service_fixture(tmp_path, dev_only=dev_only)
     config = dataclasses.replace(fixture["service_config"], signup="open")
     app = create_app(config, operator_token=TOKEN, digester=QuickDigester(),
-                     usual_passwords=frozenset())
+                     usual_passwords=frozenset(),
+                     proof_keys=QUICK_PROOF_KEYS, proof_settings=QUICK_PROOF)
     return fixture, config, app
 
 
@@ -143,7 +145,8 @@ def test_the_web_app_holds_the_same_notice_version() -> None:
 def test_a_sign_up_with_no_agreement_makes_no_account(tmp_path,
                                                       agrees) -> None:
     fixture, _config, app = _world(tmp_path, dev_only=True)
-    body = {"username": "alice", "password": GOOD}
+    body = {"proof": solved_proof(_client(app)), "username": "alice",
+            "password": GOOD}
     if agrees is not None:
         body["agrees_public"] = agrees
     answer = _client(app).post("/api/signup", json=body)
@@ -157,7 +160,7 @@ def test_a_sign_up_writes_the_consent_record(tmp_path) -> None:
     fixture, _config, app = _world(tmp_path, dev_only=False)
     client = _client(app)
     assert client.post("/api/signup", json={
-        "username": "alice", "password": GOOD,
+        "proof": solved_proof(client), "username": "alice", "password": GOOD,
         "agrees_public": True}).status_code == 201
     record = store.read_consent_or_none(fixture["store"], "alice", 1)
     assert record["player"] == "alice" and record["notice"] == 1

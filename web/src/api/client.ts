@@ -120,13 +120,22 @@ export interface CredentialApi {
   /** 200 when the server makes accounts; the constant 404 when not. */
   getSignup(): Promise<SignupView>;
   /**
+   * Where the sign-up form reads its proof-of-work challenge (spec PW1
+   * §4), or `null` in a world with no server to sign one.
+   */
+  signupChallengeUrl(): string | null;
+  /**
    * `agreesPublic` is the agreement to the notice that results are
    * public (spec R1 §3.2). The server makes no account without it.
+   * `proof` is the payload of the solved challenge (spec PW1 §3.2):
+   * the server makes no account without one, and the mock world
+   * accepts each sign-up with or without it.
    */
   signUp(
     username: string,
     password: string,
     agreesPublic: boolean,
+    proof?: string,
   ): Promise<RecoveryAck>;
   signIn(username: string, password: string): Promise<SignInAck>;
   /** Replaces the password and answers with a new recovery code. */

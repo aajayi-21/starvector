@@ -17,7 +17,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from svc_fixture import (FIXED_CLOCK, QuickDigester, build_service_fixture,
+from svc_fixture import (FIXED_CLOCK, QUICK_PROOF, QUICK_PROOF_KEYS,
+                         QuickDigester, build_service_fixture,
                          mixed_wire_record)
 
 from service import rollover, schedule, store
@@ -60,7 +61,8 @@ def _world(tmp_path, monkeypatch, *, hour: str, start: str,
     # The stored timestamps of a day come from this clock too.
     monkeypatch.setattr(harness, "default_clock", clock.text)
     app = create_app(config, operator_token=TOKEN,
-                     digester=QuickDigester(), usual_passwords=frozenset())
+                     digester=QuickDigester(), usual_passwords=frozenset(),
+                     proof_keys=QUICK_PROOF_KEYS, proof_settings=QUICK_PROOF)
     client = TestClient(app, base_url="https://testserver")
 
     def post(path: str, _timeout: float) -> rollover.Answer:
@@ -237,7 +239,8 @@ def test_a_firing_with_no_operator_token_fails_and_says_why(
         tmp_path, monkeypatch, hour="09:00", start="2026-12-01T06:30:00",
         dev_only=False, signup="open")
     app = create_app(config, operator_token=TOKEN, digester=QuickDigester(),
-                     usual_passwords=frozenset())
+                     usual_passwords=frozenset(),
+                     proof_keys=QUICK_PROOF_KEYS, proof_settings=QUICK_PROOF)
     client = TestClient(app, base_url="https://testserver")
 
     def bare(path: str, _timeout: float) -> rollover.Answer:

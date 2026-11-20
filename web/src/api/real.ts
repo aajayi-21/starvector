@@ -205,15 +205,20 @@ export function makeRealApi(): Api {
     getSignup(): Promise<SignupView> {
       return request<SignupView>("/api/signup");
     },
+    signupChallengeUrl(): string | null {
+      return "/api/signup/challenge";
+    },
     signUp(
       username: string,
       password: string,
       agreesPublic: boolean,
+      proof?: string,
     ): Promise<RecoveryAck> {
       return postJson<RecoveryAck>("/api/signup", {
         username,
         password,
         agrees_public: agreesPublic,
+        ...(proof === undefined ? {} : { proof }),
       });
     },
     signIn(username: string, password: string): Promise<SignInAck> {

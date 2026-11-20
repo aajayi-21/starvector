@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { blockExternalHosts } from "./helpers";
+import { blockExternalHosts, solvedProof } from "./helpers";
 
 // Spec MD1 §4.3: a player deletes their own account from the account
 // page with the username typed again and the password. The cookie
@@ -21,7 +21,14 @@ test("a player deletes their own account", async ({ page }) => {
   const origin = new URL(page.url()).origin;
   const made = await page.request.post("/api/signup", {
     headers: { Origin: origin },
-    data: { username, password: PASSWORD, agrees_public: true },
+    data: {
+      username,
+      password: PASSWORD,
+      agrees_public: true,
+      // The direct POST carries a solved challenge, as the form does
+      // (spec PW1 §3.2).
+      proof: await solvedProof(page.request),
+    },
   });
   expect(made.status()).toBe(201);
 
@@ -63,7 +70,12 @@ test("a player deletes their own account", async ({ page }) => {
   // nobody in.
   const again = await page.request.post("/api/signup", {
     headers: { Origin: origin },
-    data: { username, password: PASSWORD, agrees_public: true },
+    data: {
+      username,
+      password: PASSWORD,
+      agrees_public: true,
+      proof: await solvedProof(page.request),
+    },
   });
   expect(again.status()).toBe(409);
   const signIn = await page.request.post("/api/signin", {
