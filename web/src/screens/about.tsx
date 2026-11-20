@@ -30,6 +30,12 @@ export function AboutScreen(): React.JSX.Element {
           </a>
           .
         </p>
+        {/* The author credit that the NOTICE file's section 7(b) term asks
+            each copy to keep somewhere public. */}
+        <p className="muted small">
+          Starvector by Adeolu Ajayi. Free software under the GNU AGPL,
+          version 3.
+        </p>
       </section>
     </div>
   );
