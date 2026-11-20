@@ -1863,3 +1863,20 @@ details.row-disclosure.skill-more > summary {
   }
 }
 /* === end account screen === */
+
+/* The proof-of-work check on the sign-up form (spec PW1 §4). The
+   widget's own variables take the app's tokens, thus it follows the
+   light and dark themes. The box holds its height while the widget
+   loads, thus the form does not jump. */
+.proof-field {
+  min-height: 58px;
+  --altcha-color-base: var(--surface);
+  --altcha-color-base-content: var(--text);
+  --altcha-color-neutral: var(--border);
+  --altcha-color-neutral-content: var(--text-2);
+  --altcha-color-primary: var(--accent);
+  --altcha-color-success: var(--good);
+  --altcha-color-error: var(--bad);
+  --altcha-border-radius: var(--radius-md);
+  --altcha-max-width: 100%;
+}

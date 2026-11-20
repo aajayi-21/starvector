@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 import { blockExternalHosts, SESSIONS, signIn } from "./helpers";
 
@@ -87,7 +87,11 @@ test("the home screen moves by itself when the close finishes", async ({
   await expect(page.getByText("You're in for today")).toBeVisible();
 });
 
-test("the built app obeys the Caddyfile's content policy", async ({ page }) => {
+/**
+ * Serves each page of the preview with the content policy of
+ * `deploy/Caddyfile`, and collects each violation the console reports.
+ */
+async function withCaddyPolicy(page: Page): Promise<string[]> {
   const caddyfile = readFileSync(
     path.resolve(here, "../../deploy/Caddyfile"),
     "utf-8",
@@ -97,8 +101,6 @@ test("the built app obeys the Caddyfile's content policy", async ({ page }) => {
     throw new Error("no Content-Security-Policy in the Caddyfile");
   }
   const policy = found[1];
-  await signIn(page);
-  await blockExternalHosts(page);
   await page.route(
     (url) => url.port === "4173" && !url.pathname.startsWith("/api"),
     async (route) => {
@@ -122,11 +124,32 @@ test("the built app obeys the Caddyfile's content policy", async ({ page }) => {
       violations.push(message.text());
     }
   });
+  return violations;
+}
+
+test("the built app obeys the Caddyfile's content policy", async ({ page }) => {
+  await signIn(page);
+  await blockExternalHosts(page);
+  const violations = await withCaddyPolicy(page);
   for (const screen of ["/", "/today", "/practice", "/history", "/how"]) {
     await page.goto(screen);
     await expect(page.locator("#root")).not.toBeEmpty();
   }
   await page.goto("/practice");
   await expect(page.getByTestId("sketch-canvas")).toBeVisible();
+  expect(violations).toEqual([]);
+});
+
+test("the sign-up check works with the Caddyfile's content policy", async ({
+  page,
+}) => {
+  // Spec PW1 §4.2: the widget's stylesheet and worker are files of the
+  // site, so the policy needs no change for them.
+  await blockExternalHosts(page);
+  const violations = await withCaddyPolicy(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create an account" }).click();
+  await expect(page.locator(".proof-field altcha-widget")).toBeVisible();
+  await expect(page.getByText("Verified")).toBeVisible();
   expect(violations).toEqual([]);
 });

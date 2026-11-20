@@ -55,6 +55,10 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
     exact: true,
   });
   await expect(make).toBeDisabled();
+  // The proof-of-work check (spec PW1 §4) is on the form and starts at
+  // once. It is done long before the person finishes typing.
+  await expect(page.locator(".proof-field altcha-widget")).toBeVisible();
+  await expect(page.getByText("Verified")).toBeVisible();
   // The notice that results are public shows before the account is
   // made, and the control that makes it is described by it (spec R1
   // §3.1).

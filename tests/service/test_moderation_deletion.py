@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from svc_fixture import (FIXED_CLOCK, QuickDigester, build_service_fixture,
-                         mint_player, mixed_wire_record, plant_session)
+from svc_fixture import (FIXED_CLOCK, QUICK_PROOF, QUICK_PROOF_KEYS,
+                         QuickDigester, build_service_fixture, mint_player,
+                         mixed_wire_record, plant_session, solved_proof)
 
 from service import auth, players, public, rollup, store
 from service.day import close_day, open_day, reveal_day
@@ -26,7 +27,8 @@ def _world(tmp_path):
     fixture = build_service_fixture(tmp_path)
     config = dataclasses.replace(fixture["service_config"], signup="open")
     app = create_app(config, dev_mode=True, operator_token=OPERATOR_TOKEN,
-                     digester=QuickDigester(), usual_passwords=frozenset())
+                     digester=QuickDigester(), usual_passwords=frozenset(),
+                     proof_keys=QUICK_PROOF_KEYS, proof_settings=QUICK_PROOF)
     return config, app
 
 
@@ -37,7 +39,8 @@ def _client(app, headers=ORIGIN) -> TestClient:
 def _sign_up(app, name="alice") -> TestClient:
     client = _client(app)
     answer = client.post("/api/signup", json={
-        "username": name, "password": GOOD, "agrees_public": True})
+        "proof": solved_proof(client), "username": name, "password": GOOD,
+        "agrees_public": True})
     assert answer.status_code == 201, answer.text
     return client
 
@@ -221,7 +224,8 @@ def test_a_deleted_name_cannot_sign_in_or_sign_up(tmp_path) -> None:
                          json={"username": "alice", "password": GOOD})
     assert signin.status_code == 401
     again = client.post("/api/signup", json={
-        "username": "Alice", "password": GOOD, "agrees_public": True})
+        "proof": solved_proof(client), "username": "Alice", "password": GOOD,
+        "agrees_public": True})
     assert again.status_code == 409
     with pytest.raises(store.StoreError, match="deleted account"):
         players.make_player(config, player="alice", clock=lambda: FIXED_CLOCK)
@@ -313,7 +317,8 @@ def played(tmp_path_factory):
     fixture = build_service_fixture(base, dev_only=False, with_credits=True)
     config = dataclasses.replace(fixture["service_config"], signup="open")
     app = create_app(config, dev_mode=True, operator_token=OPERATOR_TOKEN,
-                     digester=QuickDigester(), usual_passwords=frozenset())
+                     digester=QuickDigester(), usual_passwords=frozenset(),
+                     proof_keys=QUICK_PROOF_KEYS, proof_settings=QUICK_PROOF)
     alice, bob = _sign_up(app), _sign_up(app, "bob")
     alice.put("/api/account/avatar", content=PNG)
     root = _root(config)

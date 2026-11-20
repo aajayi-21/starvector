@@ -1,4 +1,6 @@
-import type { Page } from "@playwright/test";
+import { pbkdf2Sync } from "node:crypto";
+
+import type { APIRequestContext, Page } from "@playwright/test";
 
 /** Kept equal to serve_fixture.py by hand. */
 export const SERVER = "http://127.0.0.1:8199";
@@ -86,4 +88,39 @@ export async function canvasPoint(
     box.x + box.width * fraction[0],
     box.y + box.height * fraction[1],
   ] as const;
+}
+
+/**
+ * A payload that solves a new sign-up challenge of the fixture server
+ * (spec PW1 §3), for a spec that makes an account with a direct POST.
+ * The fixture signs cheap challenges, so the loop ends in a few tries.
+ * It derives keys as the widget does: PBKDF2-SHA-256 of the nonce and
+ * the counter as a big-endian 32-bit integer.
+ */
+export async function solvedProof(request: APIRequestContext): Promise<string> {
+  const answer = await request.get("/api/signup/challenge");
+  if (answer.status() !== 200) {
+    throw new Error(`no challenge: ${answer.status()}`);
+  }
+  const challenge = await answer.json();
+  const parameters = challenge.parameters;
+  const nonce = Buffer.from(parameters.nonce, "hex");
+  const salt = Buffer.from(parameters.salt, "hex");
+  for (let counter = 0; counter < 1_000_000; counter += 1) {
+    const password = Buffer.alloc(nonce.length + 4);
+    nonce.copy(password);
+    password.writeUInt32BE(counter, nonce.length);
+    const derivedKey = pbkdf2Sync(
+      password,
+      salt,
+      parameters.cost,
+      parameters.keyLength,
+      "sha256",
+    ).toString("hex");
+    if (derivedKey.startsWith(parameters.keyPrefix)) {
+      const payload = { challenge, solution: { counter, derivedKey } };
+      return Buffer.from(JSON.stringify(payload)).toString("base64");
+    }
+  }
+  throw new Error("the fixture challenge did not solve");
 }

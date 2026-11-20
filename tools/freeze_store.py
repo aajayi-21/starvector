@@ -110,11 +110,12 @@ def _send(root: Path, day: str, player: str, number: int,
 
 def _sign_up(app: object, name: str) -> object:
     from fastapi.testclient import TestClient
+    from svc_fixture import solved_proof
 
     client = TestClient(app, base_url="https://testserver", headers=ORIGIN)
     answer = client.post("/api/signup", json={
-        "username": name, "password": FIXTURE_PASSWORD,
-        "agrees_public": True})
+        "proof": solved_proof(client), "username": name,
+        "password": FIXTURE_PASSWORD, "agrees_public": True})
     if answer.status_code != 201:
         raise RuntimeError(f"sign-up of {name}: {answer.status_code} "
                            f"{answer.text}")
@@ -155,7 +156,8 @@ def _build_world() -> dict:
     """
     from fastapi.testclient import TestClient
     from frozen_fixture import sketch_key
-    from svc_fixture import build_service_fixture, make_vp1
+    from svc_fixture import (QUICK_PROOF, QUICK_PROOF_KEYS,
+                             build_service_fixture, make_vp1)
 
     from pipeline.config import load_scoring_config
     from service import digests, players, public, scoring, store
@@ -192,7 +194,8 @@ def _build_world() -> dict:
         base, dev_mode=True, operator_token=OPERATOR_TOKEN,
         digester=digests.Argon2Digester(
             pepper=FIXTURE_PEPPER.encode("utf-8")),
-        usual_passwords=frozenset())
+        usual_passwords=frozenset(), proof_keys=QUICK_PROOF_KEYS,
+        proof_settings=QUICK_PROOF)
     clients = {name: _sign_up(app, name)
                for name in ("ade", "bru", "cyd", "dee", "eve")}
     clients["ade"].put("/api/account",

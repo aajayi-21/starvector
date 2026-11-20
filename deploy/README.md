@@ -87,6 +87,10 @@ holds `"signup": "open"`, and the environment file holds the operator
 token and the password pepper. The server refuses to start when one of
 the two secrets has no value.
 
+*Note, 2026-11-19 (spec PW1 §3.4):* with sign-up open, the environment
+file also holds `STARVECTOR_ALTCHA_KEY`. The server signs each sign-up
+challenge with it, and refuses to start when it has no value.
+
 The daily rollover, after a week of days moved by hand:
 
 ```

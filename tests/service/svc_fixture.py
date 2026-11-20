@@ -20,10 +20,35 @@ from pipeline.config import (element_config, intake_gates, outline_config,
 from pipeline.context import load_pool_index
 from pipeline.score import Encoders
 from pool.artifacts import image_path, write_bytes_atomic
+from service import proofs
 from service.config import ServiceConfig
 from validation import harness
 
 FIXED_CLOCK = "2026-08-12T00:00:00+00:00"
+
+# The sign-up proof of the tests (spec PW1 section 7). The key is a
+# test value, and a challenge of these settings solves in eight tries
+# at most, at one PBKDF2 iteration each.
+QUICK_PROOF_KEYS = proofs.keys_from_secret("test-altcha-key")
+QUICK_PROOF = proofs.ProofSettings(cost=1, counter_low=0, counter_high=8,
+                                   lifetime_seconds=600)
+
+
+def solved_proof(client) -> str:
+    """A payload that solves a new challenge of the server of client.
+
+    client is a TestClient of an app with sign-up open. The helper
+    reads one challenge from the server and solves it as the widget
+    does.
+    """
+    import altcha
+
+    answer = client.get("/api/signup/challenge")
+    assert answer.status_code == 200, answer.text
+    challenge = altcha.Challenge.from_dict(answer.json())
+    solution = altcha.solve_challenge(challenge)
+    assert solution is not None
+    return altcha.Payload(challenge, solution).to_base64()
 
 
 def _png_bytes(seed: int) -> bytes:

@@ -103,6 +103,10 @@ In `/etc/starvector/env` (`sudo nano /etc/starvector/env`):
   `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`, and
   put a copy in your password manager. If the pepper is gone, each
   stored password stops.
+- `STARVECTOR_ALTCHA_KEY` has a value (spec PW1 §3.4). Make it with
+  `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. It
+  needs no copy: a new value makes each open sign-up challenge refuse
+  one time.
 - No value has quotation marks. systemd removes them, but `sv` reads
   each value as it is in the file, and the operator token then does not
   agree.
@@ -266,7 +270,7 @@ curl -s http://127.0.0.1:8000/api/about
 
 - The journal shows `Uvicorn running on http://127.0.0.1:8000` and no
   `refused:` line. An empty store with sign-up open starts when the
-  token and the pepper have a value.
+  token, the pepper, and the ALTCHA key have a value.
 - The journal holds no `warning: no pool release record` and no
   `warning: no release manifest`. With one of them, the reveal shows no
   credit line. Copy `data/curation/f655d713/d9c7558d` again.

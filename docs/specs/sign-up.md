@@ -398,6 +398,10 @@ the door for the players of today (§10.3).
 | get a code from the operator for the account of a different player | The hold and the notice of §6.1. |
 | use a cookie that a different site sends | `SameSite=Lax`, `HttpOnly`, and `Secure` on the session cookie (spec M1 §4), and the `Origin` check of §8. |
 
+*Note, 2026-11-19 (spec PW1):* each sign-up also holds a proof of work.
+The browser solves a challenge that the server signed, and one proof
+makes one account. The caps of §9.2 stay.
+
 ### 9.2 The caps
 
 `service/limits.py` has the window limiter of spec BR1 §4.2. This

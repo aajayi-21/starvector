@@ -51,8 +51,9 @@ import dataclasses  # noqa: E402
 import datetime  # noqa: E402
 
 import uvicorn  # noqa: E402
-from svc_fixture import (FIXED_CLOCK, build_service_fixture,  # noqa: E402
-                         make_vp1, mixed_wire_record)
+from svc_fixture import (FIXED_CLOCK, QUICK_PROOF,  # noqa: E402
+                         QUICK_PROOF_KEYS, build_service_fixture, make_vp1,
+                         mixed_wire_record)
 
 from service import access, players, schedule, signin, store  # noqa: E402
 from service.day import close_day, open_day, reveal_day  # noqa: E402
@@ -149,9 +150,13 @@ def main() -> None:
     # dev_mode: the throwaway world is what the owner's offline
     # runbook (spec S2 section 9 step 2) drives from the operator
     # console, and the console reads the dev surfaces.
+    # The browser solves the challenges of the sign-up card with the
+    # cheap settings of the tests (spec PW1 section 7).
     uvicorn.run(create_app(config, dev_mode=True, cookie_secure=False,
                            operator_token=OPERATOR_TOKEN,
-                           digester=Argon2Digester(pepper=PEPPER)),
+                           digester=Argon2Digester(pepper=PEPPER),
+                           proof_keys=QUICK_PROOF_KEYS,
+                           proof_settings=QUICK_PROOF),
                 host="127.0.0.1", port=port, log_level="warning")
 
 

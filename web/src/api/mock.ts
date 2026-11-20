@@ -986,6 +986,11 @@ export function makeMockApi(options: MockOptions = {}): Api {
       // The full-mock world makes accounts, thus the gate offers it.
       return Promise.resolve({ open: true, notice_version: noticeVersion });
     },
+    signupChallengeUrl(): string | null {
+      // No server signs a challenge here (spec PW1 §4.3): the form
+      // shows no widget and sends a fixed payload.
+      return null;
+    },
     signUp(
       username: string,
       password: string,

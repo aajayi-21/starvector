@@ -44,8 +44,8 @@ from pipeline.context import load_preparation_record
 from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
 from service import (access, auth, console, credits, digests, limits,
-                     notice, operator_plan, passwords, rollover, rollup,
-                     schedule, signin, store)
+                     notice, operator_plan, passwords, proofs, rollover,
+                     rollup, schedule, signin, store)
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from service.pulse import chain_named, pulse_time
@@ -128,6 +128,9 @@ _STARTED = b'{"ok":true}'
 _BAD_CONTENT_TYPE = b'{"cause":"content-type"}'
 # The practice limit (spec PL1 section 1).
 _PRACTICE_LIMIT = b'{"cause":"practice-limit"}'
+# The sign-up proof (spec PW1 section 3): one body for each payload
+# that does not agree, is spent, or is not there.
+_BAD_PROOF = b'{"cause":"proof"}'
 
 # The gated skill board (spec M1 section 8). Two properties, each
 # load-bearing. It carries each field the view declares, thus a
@@ -306,6 +309,8 @@ def create_app(service_config: ServiceConfig,
                practice_limiter: limits.WindowLimiter | None = None,
                digester: digests.PasswordDigester | None = None,
                usual_passwords: Container[str] | None = None,
+               proof_keys: proofs.ProofKeys | None = None,
+               proof_settings: proofs.ProofSettings = proofs.DEPLOYED,
                ) -> FastAPI:
     """The app factory - tests run it through TestClient.
 
@@ -336,11 +341,17 @@ def create_app(service_config: ServiceConfig,
     table of usual passwords, and the default reads the committed
     file.
 
+    proof_keys signs and checks the sign-up proofs (spec PW1). It
+    arrives as an argument, as the digester does.
+    proof_settings is an argument for the tests, and the default holds
+    the values of spec PW1 decision D3.
+
     Raises ServiceConfigError when the store holds player records
     and no operator token is set. A quiet hole is worse than a loud
     stop (spec M1 section 4). With sign-up open it also raises with no
-    operator token, with no digester, and with a stored player that
-    has no name claim (spec A2 section 10).
+    operator token, with no digester, with no proof keys (spec PW1
+    decision D7), and with a stored player that has no name claim
+    (spec A2 section 10).
     """
     signup_open = service_config.signup == "open"
     if (signup_open or store.any_player(Path(service_config.store_root))) \
@@ -354,6 +365,11 @@ def create_app(service_config: ServiceConfig,
             "sign-up is open and the password pepper is not set - put "
             f"{digests.PEPPER_ENVIRONMENT_NAME} in the deployment "
             "environment file")
+    if signup_open and proof_keys is None:
+        raise ServiceConfigError(
+            "sign-up is open and the ALTCHA key is not set - put "
+            f"{proofs.KEY_ENVIRONMENT_NAME} in the deployment environment "
+            "file")
     if signup_open:
         unclaimed = signin.unclaimed_players(Path(service_config.store_root))
         if unclaimed:
@@ -403,6 +419,7 @@ def create_app(service_config: ServiceConfig,
     address_failures = limits.WindowLimiter()
     name_failures = limits.name_failure_limiter()
     signup_counts = limits.signup_limiter()
+    spent_proofs = proofs.SpentProofs()
 
     def _access_on() -> bool:
         """Access control is on: a caller needs a session.
@@ -654,6 +671,19 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"open": True,
                              "notice_version": notice.NOTICE_VERSION})
 
+    @app.get("/api/signup/challenge")
+    def signup_challenge() -> Response:
+        """One signed challenge for the sign-up card (spec PW1 section
+        3.1). With sign-up closed the answer is the constant 404.
+
+        The answer is new at each read, thus no cache keeps it.
+        """
+        if not signup_open or proof_keys is None:
+            return _constant(_DEV_OFF, 404)
+        return JSONResponse(
+            proofs.make_challenge(proof_keys, proof_settings, utc_now()),
+            headers={"cache-control": "no-store"})
+
     @app.post("/api/signup")
     async def signup_make(request: Request) -> Response:
         """Make one account and sign this device in (spec A2 section
@@ -661,9 +691,12 @@ def create_app(service_config: ServiceConfig,
 
         The cap counts the accounts made, for the client address and
         for the process, and stands before the store is read. The
-        digest and the store writes are away from the loop thread.
+        proof comes after the cap (spec PW1 section 3.2): the sign-up
+        holds it before the store work, and gives it back when the
+        store refuses the account. The digest and the store writes are
+        away from the loop thread.
         """
-        if not signup_open:
+        if not signup_open or proof_keys is None:
             return _constant(_DEV_OFF, 404)
         body = await _credential_body(request)
         if isinstance(body, Response):
@@ -671,13 +704,18 @@ def create_app(service_config: ServiceConfig,
         address = _address_key(request)
         if not signup_counts.allowed(address):
             return _constant(_TOO_MANY, 429)
+        instant = utc_now()
+        proof = proofs.check_proof(body.get("proof"), proof_keys, instant)
+        if proof is None or not spent_proofs.hold(proof, instant):
+            return _constant(_BAD_PROOF, 400)
         try:
             name, code = await asyncio.to_thread(
                 signin.sign_up, root, username=body.get("username"),
                 password=body.get("password"),
                 agrees_public=body.get("agrees_public"), digester=digester,
-                usual=usual_passwords, instant=utc_now())
+                usual=usual_passwords, instant=instant)
         except signin.Refused as refused:
+            spent_proofs.give_back(proof)
             status = 409 if refused.cause == signin.NAME_TAKEN else 400
             return JSONResponse({"cause": refused.cause}, status_code=status)
         signup_counts.record(address)
@@ -2862,7 +2900,9 @@ def main(argv: list[str] | None = None) -> int:
             service_config, dev_mode=arguments.dev,
             cookie_secure=not arguments.cookie_insecure,
             operator_token=os.environ.get("STARVECTOR_OPERATOR_TOKEN"),
-            digester=digester)
+            digester=digester,
+            proof_keys=proofs.keys_from_secret(
+                os.environ.get(proofs.KEY_ENVIRONMENT_NAME)))
     except Exception as error:
         print(f"refused: {error}", file=sys.stderr)
         return 1

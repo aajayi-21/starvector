@@ -11,6 +11,15 @@ conflicts = [[
 ]]
 
 [[package]]
+name = "altcha"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/57/9c0d918044bfaac2c068fa373a06c27e45ccb09048c96d11ef1096758179/altcha-2.4.0.tar.gz", hash = "sha256:56cea48b2e1b438d8a1601017fad294361dca89b4a6ef80e18f8ccb8bc917733", size = 42636, upload-time = "2026-11-17T07:09:04.163Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/d1/54d8bb36687f1031e8c65e11783c3785e6cea9bb0a67752a3c084504619f/altcha-2.4.0-py3-none-any.whl", hash = "sha256:6eff40a521cfa92dd4f64463152beea9966b9bfd03ae28d86ce10dfd08e33498", size = 26906, upload-time = "2026-11-17T07:09:03.047Z" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1373,6 +1382,7 @@ name = "starvector"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "altcha" },
     { name = "argon2-cffi" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -1403,6 +1413,7 @@ local-xpu = [
 
 [package.metadata]
 requires-dist = [
+    { name = "altcha", specifier = ">=2.4.0" },
     { name = "argon2-cffi", specifier = ">=25.1.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx", specifier = ">=0.28.1" },
