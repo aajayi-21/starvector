@@ -5,6 +5,9 @@
  * opens the recovery form. Below the form, two rows open the ways in
  * with no password: a device code and, on a dev server, the open door.
  *
+ * The card has no box. It is one group on the ground: the fields and
+ * the buttons have the edges, and a hairline holds the rows.
+ *
  * The sign-up form shows the notice that results are public above the
  * control that makes the account (spec R1 §3.1). Publication is a
  * condition of the account, thus the form has no box to tick: the
@@ -21,7 +24,7 @@
  * else on this device.
  */
 
-import { Globe, Warning } from "@phosphor-icons/react";
+import { ArrowLeft, Globe, Warning } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
@@ -120,10 +123,7 @@ export function GateCard(props: {
   return (
     <>
       {mode === "signup" ? <SignupProgress current={1} /> : null}
-      <section
-        className="card card-hero gate-card"
-        aria-labelledby="gate-heading"
-      >
+      <section className="gate-card" aria-labelledby="gate-heading">
         <h2 id="gate-heading" ref={heading} tabIndex={-1}>
           {HEADINGS[mode]}
         </h2>
@@ -176,9 +176,10 @@ export function GateCard(props: {
             <div className="gate-back">
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="text-button"
                 onClick={() => go("signin")}
               >
+                <ArrowLeft size={18} aria-hidden="true" />
                 Back to sign in
               </button>
             </div>
@@ -272,7 +273,7 @@ function SignInForm(props: {
       />
       <button
         type="submit"
-        className="btn btn-primary btn-block"
+        className="btn btn-primary btn-large btn-block"
         disabled={!ready || signIn.isPending}
       >
         {signIn.isPending ? "Signing in…" : "Sign in"}
@@ -368,7 +369,7 @@ function SignUpForm(props: {
       <div className="stack-sm">
         <button
           type="submit"
-          className="btn btn-primary btn-block"
+          className="btn btn-primary btn-large btn-block"
           aria-describedby="signup-notice signup-agreement"
           disabled={!ready || signUp.isPending}
         >
@@ -458,7 +459,7 @@ function RecoverForm(props: {
       </div>
       <button
         type="submit"
-        className="btn btn-primary btn-block"
+        className="btn btn-primary btn-large btn-block"
         disabled={!ready || recover.isPending}
       >
         {recover.isPending ? "Working…" : "Set a new password"}

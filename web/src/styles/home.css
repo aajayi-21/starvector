@@ -1,0 +1,357 @@
+/*
+ * The home screen (screens/home.tsx). Two columns on a wide screen: the
+ * day on the left, and the sky — the player's results as stars, then
+ * the epigraph — on the right. One hairline, then three columns.
+ * Nothing has a box; the day's button is the one filled thing.
+ */
+
+.home {
+  display: flex;
+  flex-direction: column;
+}
+.home-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 40px 72px;
+  padding: 12px 0 52px;
+}
+.home-day {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.home-today {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.home-lead {
+  font-size: 19px;
+}
+.home-cta {
+  display: flex;
+  align-items: center;
+  gap: 16px 30px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.home-sky {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
+  min-width: 0;
+}
+
+/* — the day's code — */
+.day-code.is-large {
+  font-size: 48px;
+  line-height: 1.1;
+  letter-spacing: 0.32em;
+}
+
+/* — the constellation (ui/constellation.tsx) — */
+.constellation {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.constellation-field circle {
+  fill: var(--text);
+  opacity: 0.5;
+}
+/*
+ * The faint stars twinkle a little: each one fades and comes back at
+ * its own pace, so the sky does not pulse as one. The stars of the
+ * results hold still, because their size and height are data. With
+ * reduced motion the sky is still.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .constellation-field circle {
+    animation: twinkle 5.2s ease-in-out infinite;
+  }
+  .constellation-field circle:nth-child(3n + 1) {
+    animation-duration: 6.8s;
+  }
+  .constellation-field circle:nth-child(3n + 2) {
+    animation-duration: 3.9s;
+  }
+  .constellation-field circle:nth-child(7n) {
+    animation-duration: 8.3s;
+  }
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+.constellation-chance {
+  stroke: var(--chance);
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+  opacity: 0.7;
+}
+.constellation-scale {
+  fill: var(--text-2);
+  font-family: var(--font);
+  font-size: 13.5px;
+}
+.constellation-label {
+  fill: var(--text-3);
+  font-family: var(--atlas);
+  font-style: italic;
+}
+.constellation-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+.constellation-halo {
+  fill: var(--accent);
+  opacity: 0.2;
+}
+.constellation-star {
+  fill: var(--text);
+}
+
+/* — the epigraph (spec H1 §5) — */
+/*
+ * The resolve effect. The animation sits behind no-preference: with
+ * reduced motion the letters show settled.
+ */
+.resolve-word {
+  display: inline-block;
+  white-space: nowrap;
+}
+.resolve-letter {
+  display: inline-block;
+  white-space: pre;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .resolve-letter {
+    animation: resolve-in var(--resolve-ms) ease-out var(--resolve-delay) both;
+  }
+}
+@keyframes resolve-in {
+  from {
+    opacity: 0;
+    filter: blur(9px);
+    transform: translateY(var(--resolve-dy));
+  }
+  60% {
+    opacity: 0.75;
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+.epigraph-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  width: 100%;
+  max-width: 560px;
+}
+/* The hidden copies and the figure share one cell: the cell is as
+   tall as the tallest epigraph, so a change does not move the page. */
+.epigraph-sizer,
+.epigraph {
+  grid-area: 1 / 1;
+  margin: 0;
+}
+.epigraph-sizer {
+  visibility: hidden;
+}
+.epigraph-sizer .resolve-letter {
+  animation: none;
+}
+.epigraph-text {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--atlas);
+  font-size: 23px;
+  font-style: italic;
+  line-height: 1.4;
+}
+.epigraph-cite {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  margin-top: 10px;
+  font-size: 16px;
+  color: var(--text-2);
+}
+.epigraph-cite cite {
+  font-family: var(--atlas);
+  font-size: 18px;
+}
+/* Pause and next sit on the citation line, at the right edge. */
+.epigraph-controls {
+  flex: none;
+  display: inline-flex;
+}
+
+/* — a player's first visit — */
+.home-first {
+  padding: 36px 0 44px;
+  border-top: 1px solid var(--border);
+}
+
+/* — the three columns — */
+.home-cards {
+  padding: 36px 0 20px;
+  border-top: 1px solid var(--border);
+}
+.home-cards > .card {
+  min-height: 216px;
+}
+.home-card-value {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.home-card-number {
+  font-size: 46px;
+}
+.home-meter {
+  max-width: 430px;
+  margin-top: 4px;
+}
+.home-streak {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.week-dots {
+  display: flex;
+  gap: 12px;
+}
+.week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.week-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1px solid var(--text-3);
+}
+.week-day.is-on .week-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* The way to how it works: a phone has no room for it in the bar. */
+.home-how {
+  display: none;
+}
+
+/* A narrow window: the sky goes under the day, at the full width, so
+   the labels of the stars stay legible. */
+@media (max-width: 1000px) {
+  .home-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  /* One column. The wrappers let go, and each part takes its place by
+     its order: the day, the stars, the three sections, the way to how
+     it works, and the epigraph at the end of the page. */
+  .home-top,
+  .home-sky {
+    display: contents;
+  }
+  .home-day {
+    order: 1;
+    gap: 14px;
+    padding: 2px 0 26px;
+  }
+  .home-today {
+    gap: 14px;
+  }
+  .home-lead {
+    font-size: 17px;
+  }
+  .day-code.is-large {
+    font-size: 36px;
+    line-height: 1.2;
+    letter-spacing: 0.28em;
+  }
+  .home-cta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-top: 6px;
+    text-align: center;
+  }
+  .constellation {
+    order: 2;
+    margin-bottom: 26px;
+  }
+  .home-first {
+    order: 3;
+    padding: 24px 0 28px;
+  }
+  .home-cards {
+    order: 4;
+    padding: 0;
+    border-top: 0;
+  }
+  .home-cards > .card {
+    min-height: 0;
+    gap: 12px;
+    padding: 22px 0 24px;
+    border-top: 1px solid var(--border);
+  }
+  .home-card-number {
+    font-size: 44px;
+  }
+  /* The count on the left and the week on the right, on one row. */
+  .home-streak {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .week-dots {
+    gap: 10px;
+  }
+  .home-cards .foot-link {
+    min-height: 44px;
+  }
+  .home-how {
+    order: 5;
+    display: flex;
+    min-height: 56px;
+  }
+  .home-epigraph {
+    order: 6;
+    padding: 30px 0 8px;
+    border-top: 1px solid var(--border);
+  }
+  .epigraph-text {
+    font-size: 21px;
+  }
+  .epigraph-cite {
+    font-size: 15px;
+  }
+  .epigraph-cite cite {
+    font-size: 17px;
+  }
+}

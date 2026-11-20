@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { Api } from "../../src/api/client";
@@ -44,9 +44,11 @@ describe("a send the close could not score (spec CR1 §7)", () => {
       }),
     };
     renderAt("/history", api);
-    const table = (await screen.findByText("Every day")).closest(
+    const table = (await screen.findByText("Every day you've played")).closest(
       "section",
     ) as HTMLElement;
+    // The oldest day is past the first rows: one button shows each day.
+    fireEvent.click(within(table).getByRole("button", { name: /^Show all / }));
     const rows = within(table).getAllByTestId("not-scored-row");
     expect(rows).toHaveLength(2);
     expect(rows[rows.length - 1]?.textContent).toContain("OLD111");

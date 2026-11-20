@@ -57,7 +57,7 @@ export function OperatorCodeNotice(): React.JSX.Element | null {
           {stop.isPending ? "Stopping…" : "Stop this"}
         </button>
         {stop.isError ? (
-          <span className="small" style={{ color: "var(--bad)" }}>
+          <span className="notice notice-bad">
             {friendlyMessage(stop.error)}
           </span>
         ) : null}

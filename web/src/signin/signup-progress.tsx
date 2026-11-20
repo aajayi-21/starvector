@@ -1,12 +1,14 @@
 /**
- * The three parts of a sign-up (spec A2 §3.1) as one progress line
- * above the card: the name and the password, the recovery code, and
+ * The three parts of a sign-up (spec A2 §3.1) as one line of stars
+ * above the form: the name and the password, the recovery code, and
  * the first day. The sign-up form shows it at part 1, and the
  * recovery-code step that follows a sign-up shows it at part 2. Part 3
  * is the app itself, thus no screen shows the line at part 3.
+ *
+ * A done part is a bright star, the current part has a halo, and a part
+ * to come is a ring. The words say the state too: the current part has
+ * `aria-current`, and a done part says that it is done.
  */
-
-import { Check } from "@phosphor-icons/react";
 
 const PARTS: ReadonlyArray<string> = [
   "Name and password",
@@ -29,20 +31,15 @@ export function SignupProgress(props: {
             key={part}
             className={
               done
-                ? "step-item is-done"
+                ? "signup-part is-done"
                 : here
-                  ? "step-item"
-                  : "step-item is-pending"
+                  ? "signup-part"
+                  : "signup-part is-pending"
             }
             aria-current={here ? "step" : undefined}
           >
-            <span className="step-icon" aria-hidden="true">
-              {done ? <Check size={14} weight="bold" /> : number}
-            </span>
-            <span className="signup-progress-label">
-              {part}
-              {done ? <span className="visually-hidden"> (done)</span> : null}
-            </span>
+            {part}
+            {done ? <span className="visually-hidden"> (done)</span> : null}
           </li>
         );
       })}

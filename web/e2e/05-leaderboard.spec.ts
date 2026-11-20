@@ -108,7 +108,7 @@ test("a browser with no session meets the gate screen", async ({ browser }) => {
   await expect(page.getByLabel("Device code")).toBeVisible();
   await expect(page.getByText(/invite/i)).toHaveCount(0);
   // The landing replaces the app rather than sitting beside it.
-  await expect(page.getByRole("link", { name: "Today" })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Play" })).toBeHidden();
 
   // A pair that does not sign in gets one answer, and the page says
   // the pair is wrong without saying which half.
@@ -116,6 +116,6 @@ test("a browser with no session meets the gate screen", async ({ browser }) => {
   await page.getByLabel("Password", { exact: true }).fill("not the password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Today" })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Play" })).toBeHidden();
   await context.close();
 });

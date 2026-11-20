@@ -1,91 +1,70 @@
 /*
- * The player app's theme (spec BR1 §6): light by default, dark when
- * the device asks. Semantic tokens only — a component names a role
- * (surface, muted text, primary action), never a raw color, so the
- * two themes swap in one place. Each text color clears WCAG AA
- * (4.5:1) on each surface it sits on; the numbers are in the spec.
+ * The player app's theme: one night-sky theme, with no light variant
+ * (owner ruling 2026-11-20, which replaces the light-by-default theme
+ * of spec BR1 §6). Semantic tokens only — a component names a role
+ * (ground, muted text, primary action), never a raw color.
  *
- * The drawing surface stays dark in both themes: the stroke palette
- * (spec C1 §5) was chosen against a dark ground and the scorer reads
- * those exact colors, so the ground moves and the ink does not.
+ * The rule of the look: an edge or a fill means you can type in it or
+ * press it. Inputs, buttons, and the drawing surface have one. Each
+ * other thing sits on the ground, held by type, alignment, and
+ * hairlines. `.card` is thus a plain group, not a box.
+ *
+ * Each text color clears WCAG AA (4.5:1) on the ground and on the
+ * field fill: #99a2bb, the faintest, is 7.3:1 on #0a1023.
+ *
+ * The drawing surface keeps its own ground: the stroke palette (spec
+ * C1 §5) was chosen against it and the scorer reads those exact colors.
  *
  * The operator console uses this theme too (spec BR1 §7.6), with its
  * own layout in src/dev/dev.css.
  */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --surface-2: #eef1f6;
-  --border: #dbe1ea;
-  --border-strong: #c2cad7;
-  --text: #141a26;
-  --text-2: #475063;
-  --text-3: #5c6577;
-  --accent: #2856c7;
-  --accent-hover: #2149ad;
-  --accent-soft: #e8eefc;
-  --accent-text: #2451bd;
-  --streak-a: #2856c7;
-  --streak-b: #7c3aed;
-  --streak-c: #b4440a;
-  --on-accent: #ffffff;
-  --good: #17784a;
-  --good-soft: #e3f3ea;
-  --warn: #8a5800;
-  --warn-soft: #fbf0d9;
-  --bad: #b42318;
-  --bad-soft: #fce8e6;
-  --chance: #8a93a3;
+  --bg: #0a1023;
+  /* The fill of a field: the one surface the player app has. */
+  --surface: #121a38;
+  --surface-2: #18214a;
+  --border: rgba(165, 182, 230, 0.22);
+  --border-strong: rgba(165, 182, 230, 0.45);
+  --text: #f3f5fb;
+  --text-2: #c3cade;
+  --text-3: #99a2bb;
+  --accent: #8faeff;
+  --accent-hover: #a8c0ff;
+  --accent-soft: rgba(143, 174, 255, 0.16);
+  --accent-text: #8faeff;
+  --streak-a: #8faeff;
+  --streak-b: #b794ff;
+  --streak-c: #ffb36b;
+  --on-accent: #0a1023;
+  --good: #7fd6a8;
+  --good-soft: rgba(127, 214, 168, 0.14);
+  --warn: #f0c35a;
+  --warn-soft: rgba(240, 195, 90, 0.14);
+  --bad: #ff9a8f;
+  --bad-soft: rgba(255, 154, 143, 0.14);
+  --chance: #99a2bb;
 
   --canvas: #1f2430;
-  --canvas-border: #2e3544;
+  --canvas-border: #353d4d;
 
-  --shadow-sm:
-    0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.07);
-  --shadow-md:
-    0 6px 16px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.05);
+  /* One corner for each pressable thing. The three names stay, so a
+     component that names a size still resolves. */
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --tabbar-height: 64px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0e1116;
-    --surface: #161b23;
-    --surface-2: #1e2530;
-    --border: #29303c;
-    --border-strong: #3a4352;
-    --text: #e7eaf0;
-    --text-2: #b3bccb;
-    --text-3: #949eaf;
-    --accent: #7ba3ff;
-    --accent-hover: #93b4ff;
-    --accent-soft: #1b2944;
-    --accent-text: #93b4ff;
-    --streak-a: #7ba3ff;
-    --streak-b: #b794ff;
-    --streak-c: #ffb36b;
-    --on-accent: #0b1020;
-    --good: #56c795;
-    --good-soft: #13291e;
-    --warn: #e3b152;
-    --warn-soft: #2d2413;
-    --bad: #ff8f85;
-    --bad-soft: #331b19;
-    --chance: #6f788a;
-    --canvas: #1f2430;
-    --canvas-border: #353d4d;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
-  }
+  --font:
+    "Red Hat Text Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display:
+    "Red Hat Display Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:
+    "Red Hat Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* The italic serif of a star atlas: the epigraph and chart labels. */
+  --atlas: "Newsreader", Georgia, "Times New Roman", serif;
+  --tabbar-height: 60px;
 }
 
 *,
@@ -103,7 +82,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -113,25 +92,39 @@ h2,
 h3,
 h4 {
   margin: 0;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  font-weight: 650;
+  font-family: var(--display);
 }
 h1 {
-  font-size: 28px;
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
 }
 h2 {
-  font-size: 20px;
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 h3 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+h4 {
   font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 p {
   margin: 0;
 }
 a {
   color: var(--accent-text);
-  text-underline-offset: 3px;
+  text-decoration: none;
+  text-underline-offset: 4px;
+}
+a:hover {
+  text-decoration: underline;
 }
 img {
   display: block;
@@ -148,15 +141,20 @@ textarea {
   outline: none;
 }
 :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 ::selection {
-  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 /* — text roles — */
+.h-display {
+  font-size: 54px;
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+}
 .muted {
   color: var(--text-2);
 }
@@ -164,19 +162,37 @@ textarea {
   color: var(--text-3);
 }
 .small {
-  font-size: 14px;
+  font-size: 15px;
 }
 .tiny {
-  font-size: 13px;
+  font-size: 13.5px;
 }
 .eyebrow {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-3);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-2);
 }
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+/* A number that stands by itself: a score, a count, a place. */
+.figure {
+  font-family: var(--display);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.atlas {
+  font-family: var(--atlas);
+  font-style: italic;
+}
+/* The day's code: plain spaced type, thus it does not look like six
+   fields to type in. */
+.code {
+  font-family: var(--mono);
+  font-weight: 500;
+  letter-spacing: 0.2em;
 }
 .visually-hidden {
   position: absolute;
@@ -187,29 +203,20 @@ textarea {
   white-space: nowrap;
 }
 
-/* — surfaces — */
+/* — groups — */
+/* A card is a group of related things on the ground: no fill, no edge.
+   A screen separates its groups with space or one hairline. */
 .card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-.card-quiet {
-  box-shadow: none;
-}
-.card-hero {
-  padding: 28px;
-  box-shadow: var(--shadow-md);
+  gap: 14px;
+  min-width: 0;
 }
 .divider {
   height: 1px;
   background: var(--border);
   border: 0;
-  margin: 4px 0;
+  margin: 0;
 }
 
 /* — buttons — */
@@ -217,18 +224,22 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 24px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
   line-height: 1.2;
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
+}
+a.btn:hover {
+  text-decoration: none;
 }
 @media (prefers-reduced-motion: no-preference) {
   .btn {
@@ -250,27 +261,25 @@ textarea {
   background: var(--accent-hover);
 }
 .btn-secondary {
-  background: var(--surface);
   border-color: var(--border-strong);
   color: var(--text);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: var(--surface-2);
+  border-color: var(--text-2);
 }
 .btn-ghost {
   color: var(--accent-text);
-  padding-inline: 10px;
+  padding-inline: 12px;
 }
 .btn-ghost:hover:not(:disabled) {
   background: var(--accent-soft);
 }
 .btn-danger {
-  background: var(--surface);
-  border-color: color-mix(in srgb, var(--bad) 45%, var(--border));
+  border-color: color-mix(in srgb, var(--bad) 55%, transparent);
   color: var(--bad);
 }
 .btn-danger:hover:not(:disabled) {
-  background: var(--bad-soft);
+  border-color: var(--bad);
 }
 /* The one button that cannot be undone: the console's confirmations
    and the player's account deletion (spec MD1). */
@@ -279,21 +288,25 @@ textarea {
   color: var(--on-accent);
 }
 .btn-danger-solid:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bad) 85%, black);
+  background: color-mix(in srgb, var(--bad) 85%, white);
 }
 .btn-large {
-  min-height: 52px;
-  padding: 12px 22px;
-  font-size: 17px;
-  border-radius: 12px;
+  min-height: 58px;
+  padding: 14px 32px;
+  font-size: 20px;
 }
 .btn-block {
   width: 100%;
 }
 .btn-icon {
-  min-height: 40px;
-  min-width: 40px;
+  min-height: 44px;
+  min-width: 44px;
   padding: 8px;
+  color: var(--text-2);
+}
+.btn-icon:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text-3) 14%, transparent);
 }
 
 /* — forms — */
@@ -303,23 +316,23 @@ textarea {
   gap: 6px;
 }
 .label {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
 }
 .hint {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-3);
 }
 .input {
   width: 100%;
-  min-height: 44px;
+  min-height: 46px;
   padding: 10px 12px;
   font-size: 16px;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 .input::placeholder {
   color: var(--text-3);
@@ -329,7 +342,7 @@ textarea {
 }
 .input:focus-visible {
   border-color: var(--accent);
-  outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline: 2px solid var(--accent);
   outline-offset: 0;
 }
 .input:disabled {
@@ -344,83 +357,83 @@ select.input {
 }
 
 /* — badges — */
+/* A badge states a fact and cannot be pressed: colored words, no pill. */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  background: var(--surface-2);
   color: var(--text-2);
   white-space: nowrap;
 }
 .badge-accent {
-  background: var(--accent-soft);
   color: var(--accent-text);
 }
 .badge-good {
-  background: var(--good-soft);
   color: var(--good);
 }
 .badge-warn {
-  background: var(--warn-soft);
   color: var(--warn);
 }
 
 /* — notices — */
+/* A notice is a sentence in the color of its kind, with no box. */
 .notice {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
   color: var(--text-2);
-  font-size: 14px;
+  font-size: 15px;
+}
+.notice > svg {
+  flex: none;
+  margin-top: 3px;
 }
 .notice-bad {
-  background: var(--bad-soft);
   color: var(--bad);
 }
 .notice-good {
-  background: var(--good-soft);
   color: var(--good);
 }
 .notice-warn {
-  background: var(--warn-soft);
+  color: var(--text-2);
+}
+.notice-warn > svg {
   color: var(--warn);
 }
 
 /* — tables — */
+/* Rows on hairlines, with no surface. */
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 16px;
 }
 .table th {
   text-align: left;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-3);
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
+  padding: 0 12px 10px 0;
+  border-bottom: 1px solid var(--border-strong);
 }
 .table td {
-  padding: 10px;
+  padding: 11px 12px 11px 0;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
-.table tbody tr:last-child td {
-  border-bottom: none;
+.table th:last-child,
+.table td:last-child {
+  padding-right: 0;
 }
 .table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .table tr.is-you td {
-  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
 }
 
 /* — disclosure — */
@@ -431,7 +444,7 @@ details.disclosure > summary {
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text);
   min-height: 32px;
 }
@@ -456,4 +469,16 @@ details.disclosure > .disclosure-body {
   flex-direction: column;
   gap: 12px;
   padding-top: 12px;
+}
+
+@media (max-width: 760px) {
+  .h-display {
+    font-size: 34px;
+  }
+  h1 {
+    font-size: 28px;
+  }
+  h2 {
+    font-size: 21px;
+  }
 }

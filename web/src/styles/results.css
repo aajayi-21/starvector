@@ -1,0 +1,610 @@
+/*
+ * The result of one day (screens/reveal.tsx) and Your results
+ * (screens/history.tsx). The rule of the look is in theme.css: an edge
+ * or a fill means you can type in it or press it. The photo and the
+ * sketch are pictures, and they are the one fill on the result screen.
+ * Each other part sits on the ground, held by columns and hairlines.
+ */
+
+/* — one day's result — */
+.result {
+  display: flex;
+  flex-direction: column;
+}
+.result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 32px;
+  padding-bottom: 30px;
+}
+.result-title {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.result-code {
+  margin-left: 14px;
+  color: var(--text-2);
+  font-size: 16px;
+}
+.result-nav {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  padding-bottom: 8px;
+}
+.result-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+/* The photo and the sketch lead; the result stands beside them. */
+.result-top {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 36px 64px;
+  align-items: start;
+  padding-bottom: 52px;
+}
+.pictures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.picture {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+}
+.picture figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.picture-name {
+  font-weight: 600;
+}
+/* A picture: square, with no frame around it. Practice uses it too. */
+.picture-frame {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.picture-frame.is-sketch {
+  background: var(--canvas);
+}
+.picture-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.picture-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--text-2);
+}
+.result-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.result-lead {
+  font-family: var(--display);
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.result-lead strong {
+  font-weight: 700;
+}
+.result-share {
+  margin-top: 6px;
+}
+
+/* Three columns under one hairline: the words, the day's board, and
+   the fairness check. */
+.result-more {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 44px 64px;
+  align-items: start;
+  padding: 40px 0 16px;
+  border-top: 1px solid var(--border);
+}
+.result-more h2 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+/* The words: two columns of text, and one thin line for each pair. */
+.word-heads,
+.word-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.word-heads {
+  margin-top: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 500;
+}
+.word-list {
+  display: flex;
+  flex-direction: column;
+  margin: -14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.word-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.word-meter {
+  height: 3px;
+}
+
+/* The steps of the fairness check: a number, a moment, and what held. */
+.fair-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: fair-step;
+}
+.fair-steps li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 32px;
+  counter-increment: fair-step;
+}
+.fair-steps li::before {
+  content: counter(fair-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--text-3);
+  font-family: var(--display);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+details.row-disclosure.fair-values {
+  border-bottom: 1px solid var(--border);
+}
+.raw-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.raw-value code {
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  word-break: break-all;
+}
+.fair-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+/* — the share control of a result — */
+.share-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+.share-status {
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+.share-status:empty {
+  display: none;
+}
+.share-status-bad {
+  color: var(--bad);
+}
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* — your results — */
+.results .page-header {
+  margin-bottom: 36px;
+}
+.results-lead {
+  font-size: 19px;
+}
+/* Two columns: the skill number and its single numbers, then the days. */
+.results-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 48px 80px;
+  align-items: start;
+}
+.results-grid h2 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+.skill {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.skill > p {
+  max-width: 480px;
+}
+.skill-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skill-number {
+  font-size: 84px;
+}
+.skill-scale {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 460px;
+}
+.skill-dot {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent);
+  transform: translate(-50%, -50%);
+}
+.skill-early {
+  align-self: flex-start;
+  white-space: normal;
+}
+/* Four single numbers, two by two, each in its own cell of hairlines. */
+.skill-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 480px;
+  margin: 12px 0 0;
+  border-top: 1px solid var(--border);
+}
+.skill-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 20px 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+.skill-figure:nth-child(even) {
+  padding: 20px 0 20px 24px;
+  border-left: 1px solid var(--border);
+}
+.skill-figure dt,
+.skill-figure-unit {
+  color: var(--text-2);
+  font-size: 15px;
+}
+.skill-figure dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0;
+}
+.skill-figure .figure {
+  font-size: 34px;
+}
+/* The row follows the last hairline of the numbers. */
+details.row-disclosure.skill-more {
+  max-width: 480px;
+  margin-top: -20px;
+}
+details.row-disclosure.skill-more > summary {
+  border-top: 0;
+}
+
+.days {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* — the chart of the days (ui/results-chart.tsx) — */
+.results-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 6px;
+}
+.results-chart-scale text {
+  fill: var(--text-2);
+  font-family: var(--font);
+  font-size: 13.5px;
+}
+.results-chart-edge {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.results-chart-chance {
+  stroke: var(--chance);
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+  opacity: 0.8;
+}
+.results-chart-label,
+.results-chart-label text {
+  fill: var(--text-3);
+  font-family: var(--atlas);
+  font-size: 15px;
+  font-style: italic;
+}
+.results-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.results-chart-halo {
+  fill: var(--accent);
+  opacity: 0.2;
+}
+.results-chart-star {
+  fill: var(--text);
+}
+
+.days-table {
+  margin-top: 22px;
+}
+.results-code {
+  font-family: var(--mono);
+  font-size: 15px;
+}
+/* The share control of a row is small, thus the row keeps the height
+   of its text. */
+.days-table .btn-icon {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+}
+.days-more {
+  margin-top: 10px;
+}
+
+/* The days on a phone: each row is a link to the day's results. */
+.day-list {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--border-strong);
+  list-style: none;
+}
+.day-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+.day-row:hover {
+  text-decoration: none;
+}
+.day-row > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.day-row-when,
+.day-row-result {
+  display: flex;
+  flex-direction: column;
+}
+.day-row-when {
+  flex: 1;
+  min-width: 0;
+}
+.day-row-when .results-code {
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+.day-row-result {
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.day-row-result strong {
+  font-weight: 600;
+}
+.day-row-result .muted {
+  font-size: 13.5px;
+}
+
+@media (max-width: 760px) {
+  .result-head {
+    padding-bottom: 14px;
+  }
+  .result-code {
+    margin-left: 10px;
+    font-size: 14px;
+  }
+  .result-nav {
+    gap: 22px;
+    padding-bottom: 0;
+    font-size: 15px;
+  }
+  .result-top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding-bottom: 18px;
+  }
+  /* The two pictures share a row, each name under its picture, and
+     the credit of the photo runs under the two of them. The figures
+     let go of their boxes, thus each part is a cell of one grid. */
+  .pictures {
+    gap: 8px 10px;
+  }
+  .picture,
+  .picture figcaption {
+    display: contents;
+  }
+  .picture:first-child .picture-frame {
+    grid-area: 1 / 1;
+  }
+  .picture:last-child .picture-frame {
+    grid-area: 1 / 2;
+  }
+  .picture:first-child .picture-name {
+    grid-area: 2 / 1;
+  }
+  .picture:last-child .picture-name {
+    grid-area: 2 / 2;
+  }
+  .picture-name {
+    font-size: 15px;
+  }
+  .picture figcaption > .subtle {
+    grid-area: 3 / 1 / 4 / 3;
+    margin-top: 4px;
+  }
+  .result-summary {
+    gap: 14px;
+  }
+  .result-lead {
+    font-size: 20px;
+  }
+  .result-summary > .muted {
+    font-size: 15px;
+  }
+  .result-share {
+    margin-top: 0;
+  }
+  .result-share .share-control,
+  .result-share .share-button {
+    width: 100%;
+  }
+  /* One column: the words stay open, and the board and the fairness
+     check are rows that open. */
+  .result-more {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 24px 0 0;
+  }
+  .result-words {
+    gap: 12px;
+    padding-bottom: 20px;
+  }
+  .word-heads {
+    display: none;
+  }
+  .word-list {
+    gap: 16px;
+    margin: 4px 0 0;
+  }
+  .word-row {
+    padding: 0;
+    border-bottom: 0;
+  }
+  .word-pair {
+    display: flex;
+    justify-content: space-between;
+  }
+  .word-detail {
+    color: var(--text-2);
+    text-align: right;
+  }
+  details.row-disclosure.result-fold > summary h2 {
+    font: inherit;
+  }
+  details.row-disclosure.result-fold:last-child {
+    border-bottom: 1px solid var(--border);
+  }
+  /* The row of the values ends the last part: one hairline is enough. */
+  details.row-disclosure.fair-values {
+    border-bottom: 0;
+  }
+
+  .results .page-header {
+    margin-bottom: 26px;
+  }
+  .results-lead {
+    font-size: 17px;
+  }
+  .results-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 26px;
+  }
+  .skill {
+    gap: 16px;
+  }
+  /* The name on the left and the number on the right, on one row. */
+  .skill-top {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .skill-number {
+    font-size: 60px;
+  }
+  .skill-scale,
+  .skill-figures,
+  details.row-disclosure.skill-more {
+    max-width: none;
+  }
+  .skill-figures {
+    margin-top: 6px;
+  }
+  .skill-figure {
+    gap: 6px;
+    padding: 16px 12px 16px 0;
+  }
+  .skill-figure:nth-child(even) {
+    padding: 16px 0 16px 16px;
+  }
+  .skill-figure .figure {
+    font-size: 30px;
+  }
+  .skill-figure-unit {
+    font-size: 13.5px;
+  }
+  details.row-disclosure.skill-more {
+    margin-top: -16px;
+  }
+  .days {
+    gap: 10px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+  .days-more .btn {
+    width: 100%;
+  }
+}

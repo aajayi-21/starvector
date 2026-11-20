@@ -15,19 +15,13 @@ function refusing(error: ApiError): Api {
 }
 
 describe("the shell", () => {
-  it("renders the five places, the streak, and the account link", async () => {
+  it("renders the four places, the streak, and the account link", async () => {
     renderAt("/");
     const nav = await screen.findAllByRole("navigation", { name: "Main" });
-    // The top bar and the phone tab bar hold the same five places.
+    // The top bar and the phone tab bar hold the same four places.
     expect(nav).toHaveLength(2);
     const top = nav[0] as HTMLElement;
-    for (const name of [
-      "Home",
-      "Today",
-      "Practice",
-      "Your results",
-      "Leaderboard",
-    ]) {
+    for (const name of ["Home", "Play", "Your results", "Leaderboard"]) {
       expect(within(top).getByRole("link", { name })).toBeDefined();
     }
     // The top bar's badge, and the greeting row that holds the streak
@@ -41,7 +35,7 @@ describe("the shell", () => {
     const paths: Array<[string, RegExp]> = [
       ["/", /Today's photo is hidden behind this code/],
       ["/today", /Review and send/],
-      ["/practice", /Replay a past day's photo/],
+      ["/practice", /Nothing here is saved or counted/],
       ["/history", /Each day you've played/],
       ["/leaderboard", /The latest day's results/],
       ["/reveal", /You beat \d+% of the photos/],

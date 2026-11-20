@@ -6,6 +6,9 @@
  *
  * The code is held in component state alone. It does not go to
  * localStorage, to a URL, or to the query cache.
+ *
+ * The code is a thing to read and to copy, not a field: plain spaced
+ * type between two hairlines, with no fill.
  */
 
 import { Copy } from "@phosphor-icons/react";

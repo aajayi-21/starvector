@@ -30,11 +30,9 @@ export function DeviceCodeRow(props: {
     <details className="row-disclosure">
       <summary>
         <span>Use a code from another device</span>
-        <CaretRight
-          className="row-chevron gate-chevron"
-          size={16}
-          aria-hidden="true"
-        />
+        <span className="row-meta">
+          <CaretRight className="row-chevron" size={16} aria-hidden="true" />
+        </span>
       </summary>
       <form
         className="row-body"
@@ -108,15 +106,11 @@ export function DoorRow(): React.JSX.Element {
   return (
     <details className="row-disclosure">
       <summary>
-        <span className="gate-row-title">
-          <span>Operator sign-in</span>
+        <span>Operator sign-in</span>
+        <span className="row-meta">
           <span className="badge badge-warn">Test server</span>
+          <CaretRight className="row-chevron" size={16} aria-hidden="true" />
         </span>
-        <CaretRight
-          className="row-chevron gate-chevron"
-          size={16}
-          aria-hidden="true"
-        />
       </summary>
       <form
         className="row-body"

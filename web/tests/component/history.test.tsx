@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { Api } from "../../src/api/client";
@@ -62,9 +62,15 @@ describe("the Your results screen", () => {
   it("lists each day with a link to its results", async () => {
     const view = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
     renderAt("/history");
-    const table = (await screen.findByText("Every day")).closest(
+    const table = (await screen.findByText("Every day you've played")).closest(
       "section",
     ) as HTMLElement;
+    // The list starts with the latest days, and one button shows the rest.
+    fireEvent.click(
+      within(table).getByRole("button", {
+        name: `Show all ${view.days.length} days`,
+      }),
+    );
     const links = within(table).getAllByRole("link", { name: "Details" });
     expect(links).toHaveLength(view.days.length);
     expect((links[0] as HTMLAnchorElement).href).toContain(
@@ -142,10 +148,16 @@ describe("the Your results screen", () => {
 
   it("draws the chance line on the chart", async () => {
     renderAt("/history");
+    const view = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
     const chart = await screen.findByRole("img", {
-      name: /Results for the last/,
+      name: /results from .* as a line of stars/,
     });
-    expect(chart.querySelector(".bars-chance")).not.toBeNull();
+    expect(chart.querySelector(".results-chart-chance")).not.toBeNull();
+    // One star for each day, and the halo of the best one.
+    expect(chart.querySelectorAll(".results-chart-star")).toHaveLength(
+      view.days.length,
+    );
+    expect(chart.querySelectorAll(".results-chart-halo")).toHaveLength(1);
     expect(screen.getByText(/dashed line is 50%/)).toBeDefined();
   });
 

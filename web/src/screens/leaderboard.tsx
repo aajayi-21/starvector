@@ -1,7 +1,12 @@
 /**
  * The leaderboard screen (spec M1 §9): the day's board and the
  * skill board, with the funnel chart as the skill board's primary
- * shape.
+ * shape. The chart is a star chart: each player is a star, on the
+ * band where players with no skill land.
+ *
+ * Two columns share the width: the chart and the caller's own
+ * evidence, then the latest day and the facts of all players. The
+ * ranked table follows at the full width. Nothing here has a box.
  *
  * Copy rules this screen is held to, each of them a decision and
  * none of them styling:
@@ -27,7 +32,9 @@
  * the operator reads the fourth in the board artifact.
  */
 
+import { CaretRight } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { useApi } from "../api/client";
 import type {
@@ -40,6 +47,7 @@ import type {
 } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
 import {
+  type AxisTick,
   boardSlice,
   floorSentence,
   funnelGeometry,
@@ -51,34 +59,35 @@ import { useNarrow } from "../ui/narrow";
 import { PrivateRowBadge } from "../ui/private-row-badge";
 import { StreakName } from "../ui/streak-name";
 
-/** How many ranked rows the table shows before the caller's own. */
-const TABLE_LIMIT = 25;
+/**
+ * How many ranked rows the table shows before the caller's own, and
+ * how many more each press of the button adds. Layout limits only.
+ */
+const TABLE_LIMIT = 12;
+const TABLE_STEP = 25;
 
 /**
  * The plot box, in viewBox units. Not pixels: the SVG scales to
  * its column, and its type scales with it. The narrow box keeps
  * that scale factor near 1 on a phone, where the wide box would
- * render its 11-unit labels at about 6 px.
+ * render its labels at about 6 px.
  */
 const WIDE_PLOT = {
-  width: 640,
-  height: 340,
-  left: 48,
-  top: 16,
-  right: 18,
-  bottom: 46,
+  width: 800,
+  height: 394,
+  left: 60,
+  top: 20,
+  right: 30,
+  bottom: 54,
 };
 const NARROW_PLOT = {
-  width: 360,
-  height: 300,
+  width: 358,
+  height: 262,
   left: 40,
-  top: 14,
-  right: 14,
+  top: 16,
+  right: 10,
   bottom: 46,
 };
-
-const YOU = "var(--accent)";
-const OTHERS = "var(--text-3)";
 
 export function LeaderboardScreen(): React.JSX.Element {
   const api = useApi();
@@ -93,15 +102,18 @@ export function LeaderboardScreen(): React.JSX.Element {
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
   const self = me.data?.player ?? "";
   return (
-    <div className="stack-lg">
-      <div className="page-header" style={{ marginBottom: 0 }}>
-        <h1>Leaderboard</h1>
-        <p className="muted">
+    <div className="board">
+      <header className="page-header">
+        <h1 className="h-display">Leaderboard</h1>
+        <p className="muted board-lead">
           The latest day's results, and the skill ranking across many days.
         </p>
-      </div>
-      <div className="two-columns">
-        <div className="stack-lg">
+      </header>
+      {/* Two columns on a wide screen. On a phone the two wrappers let
+          go, and each section takes its place by its order
+          (styles/board.css): the latest day leads. */}
+      <div className="board-grid">
+        <div className="board-main">
           {skill.isPending ? (
             <p className="subtle">Loading…</p>
           ) : skill.isError || skill.data === undefined ? (
@@ -112,7 +124,7 @@ export function LeaderboardScreen(): React.JSX.Element {
             <SkillBoard view={skill.data} self={self} />
           )}
         </div>
-        <div className="stack-lg">
+        <div className="board-side">
           <DailyBoard
             view={daily.data}
             self={self}
@@ -128,6 +140,9 @@ export function LeaderboardScreen(): React.JSX.Element {
           )}
         </div>
       </div>
+      {skill.data === undefined || !skill.data.active ? null : (
+        <RankedPlayers view={skill.data} self={self} />
+      )}
     </div>
   );
 }
@@ -141,12 +156,17 @@ function DailyBoard(props: {
   const { view, self, pending, error } = props;
   // The caller's own row while it is below the floor of spec A2 §9.5.
   const hidden = view === undefined ? null : privateOwnRow(view.rows, self);
+  // The photos of one day are one set, so the count stands one time
+  // under the table. Rows that disagree keep their own count.
+  const totals = new Set(view?.rows.map((row) => row.decoy_count + 1) ?? []);
+  const [total] = totals;
+  const shared = totals.size === 1 && total !== undefined ? total : null;
   return (
-    <section className="card" aria-labelledby="daily-heading">
-      <div className="stack-sm">
+    <section className="card board-daily" aria-labelledby="daily-heading">
+      <div className="board-heading">
         <h2 id="daily-heading">Latest day</h2>
         {view === undefined ? null : (
-          <span className="subtle small">{formatDay(view.day)}</span>
+          <span className="muted">{formatDay(view.day)}</span>
         )}
       </div>
       {pending ? (
@@ -167,10 +187,16 @@ function DailyBoard(props: {
           <table className="table">
             <thead>
               <tr>
-                <th>Player</th>
-                <th className="num">Result</th>
-                <th className="num">Place</th>
-                <th className="num">Streak</th>
+                <th scope="col">Player</th>
+                <th scope="col" className="num">
+                  Result
+                </th>
+                <th scope="col" className="num">
+                  Place
+                </th>
+                <th scope="col" className="num">
+                  Streak
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -189,15 +215,20 @@ function DailyBoard(props: {
                     {row === hidden ? <PrivateRowBadge /> : null}
                   </td>
                   <td className="num">{percentBeaten(row.p)}%</td>
-                  <td className="num">
-                    {ordinal(row.target_rank)} of {row.decoy_count + 1}
+                  <td className="num muted">
+                    {shared === null
+                      ? `${ordinal(row.target_rank)} of ${row.decoy_count + 1}`
+                      : ordinal(row.target_rank)}
                   </td>
-                  <td className="num">{row.streak}</td>
+                  <td className="num muted">{row.streak}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {shared === null ? null : (
+        <p className="subtle tiny">Place is out of {shared} photos.</p>
       )}
       {view === undefined || hidden === null ? null : (
         <p className="hint" data-testid="board-floor">
@@ -220,23 +251,23 @@ function PlayerCell(props: {
   /** Absent on the skill board: its rows hold no streak (spec H1 §10). */
   streak?: number;
   self: string;
+  /**
+   * True where the row has no room for the circle: the ranked table on
+   * a phone, where the name, the range, and two numbers need the width.
+   */
+  bare?: boolean;
 }): React.JSX.Element {
   const { player, avatarHash, streak = 0, self } = props;
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        fontWeight: player === self ? 650 : 400,
-      }}
-    >
-      <AvatarCircle
-        player={player}
-        avatarHash={avatarHash}
-        size={24}
-        streak={streak}
-      />
+    <span className="board-player">
+      {props.bare === true ? null : (
+        <AvatarCircle
+          player={player}
+          avatarHash={avatarHash}
+          size={28}
+          streak={streak}
+        />
+      )}
       {/* The full name stays for a pointer and for assistive technology:
           on a phone the cell shortens a long name so the numbers of the
           row stay on the screen. */}
@@ -260,18 +291,15 @@ function SkillBoard(props: {
   if (!view.active) {
     return <GatedBoard view={view} />;
   }
-  const slice = boardSlice(view.rows, self, TABLE_LIMIT);
   const own = view.rows.find((row) => row.player === self) ?? null;
   return (
     <>
-      <section className="card" aria-labelledby="skill-heading">
-        <div className="stack-sm">
-          <h2 id="skill-heading">Skill ranking</h2>
-          <p className="hint">
-            Each dot is a player: their skill number against how many results
-            they've sent.
-          </p>
-        </div>
+      <section className="card board-skill" aria-labelledby="skill-heading">
+        <h2 id="skill-heading">Skill ranking</h2>
+        <p className="muted small">
+          Each star is a player: their skill number against how many results
+          they've sent.
+        </p>
         {view.provisional ? <Provisional view={view} /> : null}
         <Funnel view={view} self={self} />
         <Legend />
@@ -280,24 +308,63 @@ function SkillBoard(props: {
         <NotYetRanked row={own} floor={view.eligibility_floor} />
       ) : null}
       {own?.eligible ? <OwnEvidence row={own} /> : null}
-      <section className="card" aria-labelledby="ranked-heading">
-        <h2 id="ranked-heading">Ranked players</h2>
-        <RankedTable slice={slice} self={self} />
-      </section>
     </>
+  );
+}
+
+/** The ranked table, at the full width of the page. */
+function RankedPlayers(props: {
+  view: SkillBoardView;
+  self: string;
+}): React.JSX.Element {
+  const [limit, setLimit] = useState(TABLE_LIMIT);
+  const slice = boardSlice(props.view.rows, props.self, limit);
+  const more = slice.total > slice.shown.length;
+  return (
+    <section className="card board-ranked" aria-labelledby="ranked-heading">
+      <div className="board-heading">
+        <h2 id="ranked-heading">Ranked players</h2>
+        {more ? (
+          <span>
+            Showing {slice.shown.length} of {slice.total.toLocaleString()}{" "}
+            ranked players.
+          </span>
+        ) : null}
+      </div>
+      <RankedTable slice={slice} self={props.self} />
+      <div className="board-ranked-foot">
+        {more ? (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setLimit((old) => old + TABLE_STEP)}
+          >
+            Show more players
+          </button>
+        ) : null}
+        <p className="hint">
+          Place is an estimate, so it can be a fraction, and the likely range is
+          where a player's true place probably falls. Steadied skill stays near
+          the middle until enough results back it, so it can differ from the
+          plain number on your results page. The hit number is shown and not
+          ranked: it rewards occasional strong hits, where the skill number
+          rewards a steady edge.
+        </p>
+      </div>
+    </section>
   );
 }
 
 function GatedBoard(props: { view: SkillBoardView }): React.JSX.Element {
   const { view } = props;
   return (
-    <section className="card card-hero" aria-labelledby="skill-heading">
+    <section className="card board-skill" aria-labelledby="skill-heading">
       <h2 id="skill-heading">Skill ranking</h2>
-      <p>
+      <p className="board-claim">
         The skill ranking starts once a player has sent {view.eligibility_floor}{" "}
         results. Nobody has yet.
       </p>
-      <p className="muted small">
+      <p className="muted">
         A ranking needs that many results behind each number to mean anything.
         Until then, each day's results are on the right. After {view.fit_floor}{" "}
         players reach {view.eligibility_floor} results, the ranking stops being
@@ -310,42 +377,84 @@ function GatedBoard(props: { view: SkillBoardView }): React.JSX.Element {
 function Provisional(props: { view: SkillBoardView }): React.JSX.Element {
   const { view } = props;
   return (
-    <div className="notice" role="note">
+    <p className="muted small" role="note">
       Provisional — fewer than {view.fit_floor} players have{" "}
       {view.eligibility_floor} results ({view.eligible_count} so far), so the
       ranking assumes a typical spread between players instead of measuring it.
-    </div>
+    </p>
   );
 }
 
+/**
+ * The least distance between two labels of the skill scale, in viewBox
+ * units: a label nearer than this to a kept label would cover it.
+ */
+const LABEL_GAP = 16;
+
+/**
+ * The labels of the skill scale that have room. The label of chance
+ * comes first, then each other label from the nearest to chance to the
+ * farthest, and a label that would cover a kept one is left out. The
+ * stars and the band do not move: this drops words, not data.
+ */
+function spacedTicks(
+  ticks: ReadonlyArray<AxisTick>,
+  at: (position: number) => number,
+): AxisTick[] {
+  const kept: AxisTick[] = [];
+  const byChance = [...ticks].sort(
+    (a, b) => Math.abs(Math.log(a.value)) - Math.abs(Math.log(b.value)),
+  );
+  for (const tick of byChance) {
+    const y = at(tick.position);
+    if (kept.every((other) => Math.abs(at(other.position) - y) >= LABEL_GAP)) {
+      kept.push(tick);
+    }
+  }
+  return kept;
+}
+
+/**
+ * The star chart. Each player is a star: a ring before the ranking
+ * floor, a bright star after it, and the caller's own star in the
+ * accent color with a halo. The band is one filled shape with no
+ * edge line, and the line of chance is the one dashed line: a dashed
+ * edge on the band reads as a threshold, and there is no threshold
+ * anywhere on this chart.
+ */
 function Funnel(props: {
   view: SkillBoardView;
   self: string;
 }): React.JSX.Element {
   const { view, self } = props;
-  const plot = useNarrow() ? NARROW_PLOT : WIDE_PLOT;
+  const narrow = useNarrow();
+  const plot = narrow ? NARROW_PLOT : WIDE_PLOT;
   const geometry = funnelGeometry(view.rows, view.baseline_band, self);
   if (geometry.empty) {
     return <p className="muted">No players to draw yet.</p>;
   }
   const width = plot.width - plot.left - plot.right;
   const height = plot.height - plot.top - plot.bottom;
+  const base = plot.top + height;
   const px = (x: number): number => plot.left + x * width;
   const py = (y: number): number => plot.top + y * height;
   // The band as one closed shape: along the top edge, back along
-  // the bottom. Solid edges — a dashed one reads as a threshold,
-  // and there is no threshold anywhere on this chart.
+  // the bottom.
   const outline = [
     ...geometry.band.map((edge) => `${px(edge.x)},${py(edge.top)}`),
     ...[...geometry.band]
       .reverse()
       .map((edge) => `${px(edge.x)},${py(edge.bottom)}`),
   ].join(" ");
+  const chance = geometry.skillTicks.find((tick) => tick.value === 1);
+  const own = geometry.points.find((point) => point.self);
+  // The caller's name sits after the star, or before it near the
+  // right edge.
+  const ownBefore = own !== undefined && px(own.x) > plot.width - 70;
   return (
-    <figure style={{ margin: 0 }}>
+    <figure className="board-chart">
       <svg
         viewBox={`0 0 ${plot.width} ${plot.height}`}
-        style={{ width: "100%", height: "auto" }}
         role="img"
         aria-label={
           `Skill number against results sent for ${geometry.points.length} ` +
@@ -353,57 +462,73 @@ function Funnel(props: {
         }
       >
         <title>Skill number against results sent</title>
-        {geometry.skillTicks.map((tick) => (
-          <g key={`skill-${tick.value}`}>
-            <line
-              x1={plot.left}
-              x2={plot.left + width}
-              y1={py(tick.position)}
-              y2={py(tick.position)}
-              stroke={tick.value === 1 ? "var(--chance)" : "var(--border)"}
-              strokeWidth={tick.value === 1 ? 2 : 1}
-            />
+        {geometry.band.length > 1 ? (
+          <polygon className="board-chart-band" points={outline} />
+        ) : null}
+        <g className="board-chart-scale">
+          {spacedTicks(geometry.skillTicks, py).map((tick) => (
+            <text key={`skill-${tick.value}`} x={0} y={py(tick.position) + 4}>
+              {tick.label}
+            </text>
+          ))}
+          {geometry.trialTicks.map((tick) => (
             <text
-              x={plot.left - 8}
-              y={py(tick.position) + 4}
-              textAnchor="end"
-              fontSize={11}
-              fill="var(--text-3)"
+              key={`trials-${tick.value}`}
+              x={px(tick.position)}
+              y={base + 22}
+              textAnchor="middle"
             >
               {tick.label}
             </text>
-          </g>
-        ))}
-        {geometry.trialTicks.map((tick) => (
-          <text
-            key={`trials-${tick.value}`}
-            x={px(tick.position)}
-            y={plot.height - 26}
-            textAnchor="middle"
-            fontSize={11}
-            fill="var(--text-3)"
-          >
-            {tick.label}
-          </text>
-        ))}
-        {geometry.band.length > 1 ? (
-          <polygon
-            points={outline}
-            fill="var(--surface-2)"
-            fillOpacity={0.9}
-            stroke="var(--border-strong)"
-            strokeWidth={1}
+          ))}
+        </g>
+        <line
+          className="board-chart-base"
+          x1={plot.left - 16}
+          x2={plot.width}
+          y1={base}
+          y2={base}
+        />
+        {chance === undefined ? null : (
+          <line
+            className="board-chart-chance"
+            x1={plot.left - 16}
+            x2={plot.width}
+            y1={py(chance.position)}
+            y2={py(chance.position)}
           />
-        ) : null}
+        )}
+        <g className="board-chart-label">
+          <text x={plot.width} y={plot.height - 4} textAnchor="end">
+            results sent
+          </text>
+          {narrow || chance === undefined ? null : (
+            <text x={plot.width} y={py(chance.position) + 18} textAnchor="end">
+              chance
+            </text>
+          )}
+        </g>
+        {own === undefined ? null : (
+          <circle
+            className="board-chart-halo"
+            cx={px(own.x)}
+            cy={py(own.y)}
+            r={narrow ? 10 : 12}
+          />
+        )}
         {geometry.points.map((point) => (
           <circle
             key={point.player}
+            className={
+              point.self
+                ? "board-star is-you"
+                : point.eligible
+                  ? "board-star"
+                  : "board-star is-unranked"
+            }
             cx={px(point.x)}
             cy={py(point.y)}
-            r={point.self ? 6 : 4}
-            fill={point.self ? YOU : point.eligible ? OTHERS : "transparent"}
-            stroke={point.self ? YOU : OTHERS}
-            strokeWidth={point.eligible ? 0 : 1.5}
+            r={point.self ? 5 : point.eligible ? 3 : 2.6}
           >
             {/* An SVG title is an element. The HTML title attribute
                 does not carry over. */}
@@ -415,15 +540,16 @@ function Funnel(props: {
             </title>
           </circle>
         ))}
-        <text
-          x={plot.left + width / 2}
-          y={plot.height - 6}
-          textAnchor="middle"
-          fontSize={11}
-          fill="var(--text-3)"
-        >
-          results sent
-        </text>
+        {own === undefined ? null : (
+          <text
+            className="board-chart-you"
+            x={ownBefore ? px(own.x) - 16 : px(own.x) + 16}
+            y={py(own.y) - 4}
+            textAnchor={ownBefore ? "end" : "start"}
+          >
+            You
+          </text>
+        )}
       </svg>
     </figure>
   );
@@ -431,50 +557,28 @@ function Funnel(props: {
 
 function Legend(): React.JSX.Element {
   return (
-    <div className="stack-sm">
-      <div className="row" style={{ gap: 16 }}>
-        <Swatch fill={YOU} stroke={YOU}>
+    <>
+      <ul className="board-key" aria-label="Key">
+        <li>
+          <span className="board-key-mark is-you" aria-hidden="true" />
           You
-        </Swatch>
-        <Swatch fill={OTHERS} stroke={OTHERS}>
+        </li>
+        <li>
+          <span className="board-key-mark" aria-hidden="true" />
           Ranked
-        </Swatch>
-        <Swatch fill="transparent" stroke={OTHERS}>
+        </li>
+        <li>
+          <span className="board-key-mark is-unranked" aria-hidden="true" />
           Not ranked yet
-        </Swatch>
-      </div>
-      <p className="hint">
-        The line at 1.00 is chance, the same thing as averaging 50%. Dots show
+        </li>
+      </ul>
+      <p className="muted small board-key-note">
+        The line at 1.00 is chance, the same thing as averaging 50%. Stars show
         the plain skill number. The shaded band is where players with no skill
         land. It narrows to the right because more results pin a number down —
-        so a high dot on the left means less than a high dot on the right.
+        so a high star on the left means less than a high star on the right.
       </p>
-    </div>
-  );
-}
-
-function Swatch(props: {
-  fill: string;
-  stroke: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <span
-      className="small"
-      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-    >
-      <svg width={14} height={14} aria-hidden="true">
-        <circle
-          cx={7}
-          cy={7}
-          r={5}
-          fill={props.fill}
-          stroke={props.stroke}
-          strokeWidth={1.5}
-        />
-      </svg>
-      {props.children}
-    </span>
+    </>
   );
 }
 
@@ -491,10 +595,12 @@ function Swatch(props: {
 function OwnEvidence(props: { row: SkillBoardRow }): React.JSX.Element {
   const { row } = props;
   return (
-    <section className="card" aria-labelledby="evidence-heading">
+    <section className="card board-own" aria-labelledby="evidence-heading">
       <h2 id="evidence-heading">How unusual your results are</h2>
-      <p>{evidenceSentence(row.anytime_significance)}</p>
-      <p className="hint">
+      <p className="board-claim">
+        {evidenceSentence(row.anytime_significance)}
+      </p>
+      <p className="muted">
         This holds however often you check and whenever you stop. Put another
         way: a fair bet against pure luck would have turned 1 point into{" "}
         {evidenceE(row)} points.
@@ -526,13 +632,13 @@ function NotYetRanked(props: {
 }): React.JSX.Element {
   const { row, floor } = props;
   return (
-    <section className="card" aria-labelledby="standing-heading">
+    <section className="card board-own" aria-labelledby="standing-heading">
       <h2 id="standing-heading">Where you stand</h2>
-      <p>
+      <p className="board-claim">
         You've sent {row.n} of the {floor} results a ranking needs.
       </p>
-      <p className="hint">
-        Your dot is on the chart already. Until {floor} results, the range
+      <p className="muted">
+        Your star is on the chart already. Until {floor} results, the range
         around it is too wide for a place on the board to mean much.
       </p>
     </section>
@@ -544,61 +650,116 @@ function RankedTable(props: {
   self: string;
 }): React.JSX.Element {
   const { slice, self } = props;
+  const narrow = useNarrow();
+  // A phone has room for four columns: the range and the result count
+  // go under the name, at the size and the color of the name.
+  const columns = narrow ? 4 : 6;
   return (
-    <>
-      <div className="table-scroll">
-        <table className="table" data-testid="ranked-table">
-          <thead>
-            <tr>
-              <th className="num">Place</th>
-              <th>Player</th>
-              <th className="num">Steadied skill</th>
-              <th className="num">Hit number</th>
-              <th className="num">Likely range</th>
-              <th className="num">Results</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slice.shown.map((row) => (
-              <RankedRow key={row.player} row={row} self={self} />
-            ))}
-            {slice.pinned === null ? null : (
+    <div className="table-scroll">
+      <table className="table board-table" data-testid="ranked-table">
+        <thead>
+          <tr>
+            <th scope="col" className="num">
+              Place
+            </th>
+            <th scope="col">{narrow ? "Player and likely range" : "Player"}</th>
+            <th scope="col" className="num">
+              Steadied skill
+            </th>
+            <th scope="col" className="num">
+              Hit number
+            </th>
+            {narrow ? null : (
               <>
-                <tr>
-                  <td colSpan={6} style={{ padding: 0 }}>
-                    <hr className="divider" />
-                  </td>
-                </tr>
-                <RankedRow row={slice.pinned} self={self} />
+                <th scope="col" className="board-range-head">
+                  Likely range of place, 1 to {slice.total.toLocaleString()}
+                </th>
+                <th scope="col" className="num">
+                  Results
+                </th>
               </>
             )}
-          </tbody>
-        </table>
-      </div>
-      <p className="hint">
-        Place is an estimate, so it can be a fraction, and the likely range is
-        where a player's true place probably falls. Steadied skill stays near
-        the middle until enough results back it, so it can differ from the plain
-        number on your results page. The hit number is shown and not ranked: it
-        rewards occasional strong hits, where the skill number rewards a steady
-        edge.
-      </p>
-      {slice.total > slice.shown.length ? (
-        <p className="hint">
-          Showing {slice.shown.length} of {slice.total.toLocaleString()} ranked
-          players.
-        </p>
-      ) : null}
-    </>
+          </tr>
+        </thead>
+        <tbody>
+          {slice.shown.map((row) => (
+            <RankedRow
+              key={row.player}
+              row={row}
+              self={self}
+              total={slice.total}
+              narrow={narrow}
+            />
+          ))}
+          {slice.pinned === null ? null : (
+            <>
+              <tr className="board-gap">
+                <td colSpan={columns} />
+              </tr>
+              <RankedRow
+                row={slice.pinned}
+                self={self}
+                total={slice.total}
+                narrow={narrow}
+              />
+            </>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Where a place sits on the line from 1 to the count, in percent. */
+function placeAt(place: number, total: number): number {
+  return total <= 1
+    ? 0
+    : Math.max(0, Math.min(100, ((place - 1) / (total - 1)) * 100));
+}
+
+/**
+ * The likely range of a place as a drawing: the line is each place
+ * from 1 to the count of ranked players, the bar is the range, and
+ * the star is the place. It draws the three numbers of the row and
+ * adds none.
+ */
+function RangeBar(props: {
+  row: SkillBoardRow;
+  total: number;
+}): React.JSX.Element | null {
+  const { row, total } = props;
+  if (
+    row.rank_low === null ||
+    row.rank_high === null ||
+    row.expected_rank === null
+  ) {
+    return null;
+  }
+  const low = placeAt(row.rank_low, total);
+  const high = placeAt(row.rank_high, total);
+  return (
+    <span className="board-range-bar" aria-hidden="true">
+      <span
+        className="board-range-span"
+        style={{ left: `${low}%`, width: `${high - low}%` }}
+      />
+      <span
+        className="board-range-star"
+        style={{ left: `${placeAt(row.expected_rank, total)}%` }}
+      />
+    </span>
   );
 }
 
 function RankedRow(props: {
   row: SkillBoardRow;
   self: string;
+  total: number;
+  narrow: boolean;
 }): React.JSX.Element {
-  const { row, self } = props;
+  const { row, self, total, narrow } = props;
   const mine = row.player === self;
+  const range = `${row.rank_low ?? "—"} to ${row.rank_high ?? "—"}`;
   // The rank, the range, and the result count carry equal weight
   // (spec M1 §9): no muted colour and no smaller size on any of them.
   return (
@@ -610,16 +771,29 @@ function RankedRow(props: {
           player={row.player}
           avatarHash={row.avatar_hash}
           self={self}
+          bare={narrow}
         />
+        {narrow ? (
+          <span className="board-under">
+            {range}, from {row.n} {row.n === 1 ? "result" : "results"}
+          </span>
+        ) : null}
       </td>
       <td className="num">
         {row.shrunk === null ? "—" : Math.exp(row.shrunk).toFixed(2)}
       </td>
       <td className="num">{row.hit_number.toFixed(2)}</td>
-      <td className="num">
-        {row.rank_low ?? "—"} to {row.rank_high ?? "—"}
-      </td>
-      <td className="num">{row.n}</td>
+      {narrow ? null : (
+        <>
+          <td>
+            <span className="board-range">
+              <span className="board-range-text">{range}</span>
+              <RangeBar row={row} total={total} />
+            </span>
+          </td>
+          <td className="num">{row.n}</td>
+        </>
+      )}
     </tr>
   );
 }
@@ -634,7 +808,7 @@ function Population(props: {
     return null;
   }
   return (
-    <section className="card" aria-labelledby="population-heading">
+    <section className="card board-all" aria-labelledby="population-heading">
       <h2 id="population-heading">All players</h2>
       {population.tau === 0 ? (
         <p>
@@ -652,16 +826,25 @@ function Population(props: {
         </p>
       )}
       {discovery === null ? null : (
-        <p>
+        <p className="muted">
           {discovery.flagged} of {discovery.tested} players stand out above
           chance. About {discovery.expected_by_luck.toFixed(1)} of those would
           stand out by luck alone.
         </p>
       )}
       {variation === null ? null : (
-        <details className="disclosure">
-          <summary>The numbers</summary>
-          <div className="disclosure-body">
+        <details className="row-disclosure board-numbers">
+          <summary>
+            The numbers
+            <span className="row-meta">
+              <CaretRight
+                size={16}
+                aria-hidden="true"
+                className="row-chevron"
+              />
+            </span>
+          </summary>
+          <div className="row-body">
             <table className="table">
               <tbody>
                 <tr>

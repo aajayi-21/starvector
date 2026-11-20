@@ -1,0 +1,350 @@
+/*
+ * The gate screens: the landing page with sign-in, sign-up, and
+ * recovery (screens/welcome.tsx, signin/), and the recovery-code step.
+ * The account screen shows the password field, the rule line, and the
+ * recovery-code step too, thus those rules are not scoped to the gate.
+ *
+ * Nothing here has a box. The form is one group on the ground, behind
+ * one upright hairline on a wide screen: the fields and the buttons
+ * have the edges.
+ */
+
+/* — the landing page — */
+/*
+ * The headline, sign-in, and how it works, in that sequence in the
+ * source. One column stacks them, thus the form follows the headline on
+ * a phone. Two columns put sign-in on the right, level with the
+ * headline, and how it works below the headline.
+ */
+.welcome-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 28px;
+}
+.welcome-title {
+  font-size: 38px;
+  text-wrap: balance;
+}
+.welcome-pitch {
+  max-width: 620px;
+}
+.welcome-season {
+  color: var(--warn);
+  font-size: 15px;
+}
+.welcome-season .badge {
+  font-size: inherit;
+}
+.welcome-signin {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 480px;
+  padding-top: 26px;
+  border-top: 1px solid var(--border);
+}
+.welcome-how {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+  margin-top: 34px;
+}
+.welcome-how > h2 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+.welcome-how > p {
+  color: var(--text-2);
+}
+.welcome-how .how-steps {
+  margin-top: 12px;
+}
+@media (max-width: 760px) {
+  .welcome-signin {
+    max-width: none;
+  }
+}
+@media (min-width: 900px) {
+  .welcome-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 524px);
+    /* The second row takes the height that sign-in has and the left
+       column does not, thus no space opens below the headline. */
+    grid-template-rows: auto 1fr;
+    column-gap: 72px;
+    align-items: start;
+    padding: 20px 0 24px;
+  }
+  .welcome-grid > .welcome-hero,
+  .welcome-grid > .welcome-how {
+    grid-column: 1;
+  }
+  .welcome-hero {
+    gap: 22px;
+    padding-bottom: 0;
+  }
+  .welcome-title {
+    font-size: 66px;
+  }
+  .welcome-pitch {
+    font-size: 20px;
+  }
+  /* The one upright hairline of the page: the form stands behind it. */
+  .welcome-grid > .welcome-signin {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    max-width: none;
+    padding: 0 0 0 64px;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+  .welcome-how {
+    padding-top: 34px;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* — the password field and the rule line (spec A2 §5.1) — */
+.password-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.password-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.password-row .btn-icon {
+  min-height: 46px;
+  min-width: 46px;
+}
+/* The one helper line of a field's rules: the summary, the summary
+   with a green check when each rule is met, or the broken rules in
+   the error color. The icon keeps its place in each state, thus the
+   words do not move. */
+.rule-hint {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+.rule-hint svg {
+  flex: none;
+  margin-top: 2px;
+}
+.rule-hint-met svg {
+  color: var(--good);
+}
+.rule-hint-broken {
+  color: var(--bad);
+}
+/* A second helper line starts where the words of the rule line start,
+   after the icon. */
+.rule-hint + .hint {
+  padding-left: 22px;
+  font-size: 13.5px;
+}
+
+/* — the gate card: one form, then the quieter ways in as rows — */
+.gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+/* The heading of the form is the size of a page heading here: the form
+   is the one thing to do on the page. */
+.welcome-signin h2 {
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+}
+/* Focus lands on these headings by script, not by Tab: no ring. */
+#gate-heading:focus,
+#notice-heading:focus,
+.recovery-step h2:focus {
+  outline: none;
+}
+.gate-card form.stack {
+  gap: 20px;
+}
+/* A field with a small control at the right of its label. The control
+   comes after the field in the source and sits in the label row. */
+.field.field-with-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 6px 16px;
+}
+.field-with-action > .password-row {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.field-with-action > .field-action {
+  grid-column: 2;
+  grid-row: 1;
+}
+/* The rows end the card, between two hairlines. */
+.gate-more {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.gate-inline-form {
+  display: flex;
+  gap: 8px;
+}
+.gate-inline-form .input {
+  flex: 1;
+  min-width: 0;
+}
+.gate-code-input {
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.gate-code-input::placeholder {
+  letter-spacing: 0.04em;
+}
+.gate-agreement {
+  font-size: 13.5px;
+}
+.gate-back .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 17px;
+  font-weight: 500;
+}
+/* The lead of a notice is the sentence a player must not miss. */
+.gate-card .notice strong {
+  color: var(--text);
+}
+
+/* — the parts of a sign-up, as a line of stars above the form — */
+/*
+ * Each part hangs from one level line, and its star sits on the line
+ * at the part's left edge. The line ends at the last star.
+ */
+.signup-progress {
+  display: flex;
+  margin: 7px 0 4px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.signup-part {
+  position: relative;
+  flex: 1;
+  padding: 16px 10px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--text);
+}
+.signup-part:last-child {
+  flex: 0 1 auto;
+  padding-right: 0;
+  border-top-color: transparent;
+}
+.signup-part::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -6px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.signup-part[aria-current="step"] {
+  font-weight: 700;
+}
+.signup-part[aria-current="step"]::before {
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+.signup-part.is-pending {
+  color: var(--text-2);
+}
+.signup-part.is-pending::before {
+  background: var(--bg);
+  border: 1.5px solid var(--text-3);
+}
+
+/* — the recovery code (spec A2 §6) — */
+.recovery-step {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* Six groups of four as two rows of three, in plain spaced type
+   between two hairlines: a shape the player can check against a
+   written copy, and not a field. */
+.recovery-code {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  justify-content: start;
+  gap: 10px 28px;
+  padding: 20px 0;
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  user-select: all;
+}
+.recovery-input {
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.recovery-input::placeholder {
+  letter-spacing: 0;
+}
+.recovery-copied {
+  min-height: 22px;
+}
+@media (max-width: 760px) {
+  .welcome-signin h2 {
+    font-size: 28px;
+  }
+  .recovery-code {
+    gap: 8px 20px;
+    font-size: 20px;
+  }
+}
+
+/* The proof-of-work check on the sign-up form (spec PW1 §4). The
+   widget's own variables take the app's tokens. It is a thing to
+   press, thus it keeps one edge, on the ground. The holder keeps its
+   height while the widget loads, thus the form does not jump. */
+.proof-field {
+  min-height: 58px;
+  --altcha-color-base: var(--bg);
+  --altcha-color-base-content: var(--text);
+  --altcha-color-neutral: var(--border-strong);
+  --altcha-color-neutral-content: var(--text-2);
+  --altcha-color-primary: var(--accent);
+  --altcha-color-primary-content: var(--on-accent);
+  --altcha-color-success: var(--good);
+  --altcha-color-success-content: var(--on-accent);
+  --altcha-color-error: var(--bad);
+  --altcha-color-error-content: var(--on-accent);
+  --altcha-checkbox-border-color: var(--border-strong);
+  --altcha-checkbox-outline-color: var(--accent);
+  --altcha-border-radius: var(--radius-sm);
+  --altcha-checkbox-border-radius: var(--radius-sm);
+  --altcha-input-border-radius: var(--radius-sm);
+  --altcha-shadow: none;
+  --altcha-max-width: 100%;
+}

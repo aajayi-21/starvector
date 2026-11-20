@@ -7,12 +7,12 @@
 
 export function ReleasesScreen(): React.JSX.Element {
   return (
-    <div className="page-narrow stack-lg" style={{ margin: "0 auto" }}>
+    <div className="page-narrow text-page">
       <div className="page-header">
         <h1>Releases</h1>
         <p className="muted">Downloads of Starvector, newest first.</p>
       </div>
-      <section className="card">
+      <section>
         <p className="muted">No releases to download yet.</p>
       </section>
     </div>

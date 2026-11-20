@@ -1,0 +1,607 @@
+/*
+ * The Play place (screens/today.tsx, screens/practice.tsx): one screen
+ * with two views, under a switch at the top center. Three columns share
+ * the width of the page: the day, the canvas, and the words. The fields,
+ * the buttons, and the canvas have an edge; nothing else has.
+ */
+
+.play {
+  display: flex;
+  flex-direction: column;
+  /* The switch sits near the bar: the page's own top space is for
+     screens that start with a heading. */
+  margin-top: -20px;
+}
+.play-switch {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 20px;
+}
+.play-switch .seg {
+  grid-column: 2;
+}
+.play-how {
+  grid-column: 3;
+  justify-self: end;
+  font-size: 15px;
+}
+
+/* A view that holds a message and no canvas. */
+.play-message {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+  padding: 28px 0 12px;
+}
+
+/* — the three columns — */
+/*
+ * The square canvas fits the window height on a laptop: the bar, the
+ * switch, the tools, and the page's foot take about 260 px.
+ */
+.workspace {
+  --canvas-max: min(600px, max(320px, calc(100dvh - 260px)));
+  /* The height of the row of tools over the canvas, with its gap: the
+     day and the words start level with the canvas, not with the tools. */
+  --tools-row: 56px;
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 250px) minmax(0, var(--canvas-max))
+    minmax(300px, 1fr);
+  column-gap: 48px;
+  row-gap: 32px;
+  align-items: stretch;
+}
+/* After a check of practice the photo stands beside the sketch, at the
+   same size. */
+.workspace.has-result {
+  grid-template-columns: minmax(180px, 250px) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* — the day, in the first column — */
+.play-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: var(--tools-row);
+}
+.day-code {
+  margin: 0;
+  font-size: 38px;
+  line-height: 1.2;
+}
+.play-brief-date {
+  margin-top: 16px;
+  font-weight: 600;
+}
+.play-brief-rule {
+  margin: 16px 0 10px;
+}
+.play-brief-count,
+.play-brief-note {
+  margin-top: 8px;
+}
+.practice-day {
+  margin-top: 16px;
+}
+.practice-surprise {
+  align-self: flex-start;
+  min-height: 46px;
+  margin-top: 4px;
+  padding: 8px 18px;
+  font-size: 16px;
+}
+
+/* A sketch that stayed from a day that closed: the player says what to
+   do with it, over the three columns. */
+.workspace-notice {
+  grid-column: 1 / -1;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 17px;
+}
+
+/* — the canvas, in the middle column — */
+.canvas-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "swatches tools"
+    "canvas canvas"
+    "hint hint";
+  column-gap: 8px;
+  row-gap: 12px;
+  align-items: center;
+  align-content: start;
+  min-width: 0;
+}
+.toolbar {
+  grid-area: swatches;
+  min-width: 0;
+}
+.tools {
+  grid-area: tools;
+  display: flex;
+}
+.canvas-holder {
+  grid-area: canvas;
+  position: relative;
+  min-width: 0;
+  max-width: var(--canvas-max);
+}
+/* Where to draw, in the canvas itself, until the first line. */
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 22px;
+  pointer-events: none;
+}
+.canvas-hint {
+  grid-area: hint;
+  margin-top: -4px;
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.swatch {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.swatch[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.tool {
+  flex: none;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* — the words, in the third column — */
+.side-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: var(--tools-row);
+}
+.side-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.side-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.words-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.words-entry {
+  display: flex;
+  gap: 8px;
+}
+.words-entry .input {
+  flex: 1;
+  min-width: 0;
+}
+.words-entry .btn {
+  min-height: 46px;
+  padding: 8px 18px;
+  font-size: 16px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* A word the player can take away: it has an edge, for its button. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+}
+.chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.chip button:hover {
+  color: var(--text);
+}
+/* The rows that open: a hairline over each, and one under the last. */
+.side-rows {
+  margin-top: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.side-rows > details.row-disclosure:first-child > summary {
+  border-top: 1px solid var(--border);
+}
+
+/* The one action ends the column, level with the foot of the canvas. */
+.send-bar {
+  margin-top: auto;
+  gap: 12px;
+  padding-top: 28px;
+  border-top: 0;
+}
+.send-bar-facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 16px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+/* — the result of practice, in the third column — */
+.practice-result {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.practice-photo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: var(--canvas-max);
+}
+.practice-score {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: var(--canvas-max);
+}
+.practice-score-label {
+  font-size: 20px;
+}
+.practice-number {
+  font-size: 64px;
+}
+/* What connected, under the sketch and the photo. */
+.workspace-wide {
+  grid-column: 2 / -1;
+  padding-top: 32px;
+  border-top: 1px solid var(--border);
+}
+
+/* — after the send — */
+.sent {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 250px) minmax(0, 1.3fr)
+    minmax(0, 420px);
+  column-gap: 48px;
+  row-gap: 32px;
+  padding-top: 28px;
+}
+.sent .play-brief {
+  padding-top: 6px;
+}
+.sent-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.sent-lead {
+  font-size: 19px;
+}
+.sent-steps {
+  max-width: 520px;
+  margin-top: 22px;
+  font-weight: 600;
+}
+.sent-steps .step-item {
+  padding-bottom: 28px;
+}
+.sent-steps .step-item:last-child {
+  padding-bottom: 0;
+}
+.sent-steps .step-text .small {
+  font-weight: 400;
+}
+.sent-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 30px;
+  margin-top: 30px;
+}
+.sent-record {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding-top: 6px;
+}
+.sent-record h2 {
+  font-size: 20px;
+}
+.sent-words {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sent-words li {
+  display: inline;
+}
+.sent-words li + li::before {
+  content: ", ";
+}
+
+/* — a narrow window: the day goes over the other two columns — */
+@media (max-width: 1100px) {
+  .workspace,
+  .workspace.has-result {
+    --tools-row: 0px;
+    grid-template-columns: minmax(0, var(--canvas-max)) minmax(280px, 1fr);
+    column-gap: 32px;
+    row-gap: 20px;
+  }
+  .workspace-wide {
+    grid-column: 1 / -1;
+  }
+  .side-cell {
+    padding-top: 56px;
+  }
+  /* The code and the close share one line; the label, the date, the
+     hairline, and the count give way. */
+  .play-brief {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 6px 16px;
+  }
+  .play-brief-label,
+  .play-brief-date,
+  .play-brief-rule,
+  .play-brief-count {
+    display: none;
+  }
+  .day-code {
+    font-size: 24px;
+  }
+  .play-brief-close {
+    justify-self: end;
+    font-size: 15px;
+    text-align: right;
+  }
+  .play-brief-lead,
+  .play-brief-note,
+  .practice-day {
+    grid-column: 1 / -1;
+  }
+  .play-brief-lead {
+    font-size: 15px;
+  }
+  /* The label and the list of days share one row. */
+  .practice-day {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .practice-day .label {
+    flex: none;
+  }
+  .play-brief .day-code {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .practice-surprise {
+    grid-row: 1;
+    grid-column: 2;
+    justify-self: end;
+    align-self: center;
+    margin-top: 0;
+  }
+  .sent {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    column-gap: 32px;
+  }
+}
+
+/* — the phone pass — */
+@media (max-width: 760px) {
+  .play {
+    margin-top: -12px;
+  }
+  .play-switch {
+    display: flex;
+    padding-bottom: 14px;
+  }
+  /* The home screen holds the way to how it works on a phone. */
+  .play-how {
+    display: none;
+  }
+  .play-message {
+    padding-top: 16px;
+  }
+  /* One column, the canvas at full width, and the send bar pinned over
+     the tab bar. */
+  .workspace,
+  .workspace.has-result {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 14px;
+    /* Room for the pinned bar under the last part. */
+    padding-bottom: 84px;
+  }
+  .workspace.has-result {
+    padding-bottom: 0;
+  }
+  /* The tools go under the canvas: eight colors and three tools do not
+     fit one row at a size a thumb can press. */
+  .canvas-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "swatches"
+      "canvas"
+      "tools"
+      "hint";
+  }
+  .swatches {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .swatch {
+    width: 34px;
+    height: 34px;
+  }
+  .tools {
+    margin: -6px 0 -6px -10px;
+  }
+  .side-cell {
+    padding-top: 0;
+  }
+  .send-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+    z-index: 19;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin-top: 0;
+    padding: 10px 16px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+  }
+  .send-bar-facts {
+    flex: 1;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0;
+    min-width: 0;
+    font-size: 13.5px;
+  }
+  .send-bar .send-bar-buttons {
+    width: auto;
+    min-height: 48px;
+    padding: 8px 18px;
+    font-size: 17px;
+  }
+  /* With no line of facts beside it, the button takes the bar. */
+  .send-bar > .send-bar-buttons:first-child {
+    flex: 1;
+  }
+  .send-bar-hint {
+    display: none;
+  }
+  /* The review step: the bar opens upward into a sheet. */
+  .send-bar.is-reviewing {
+    flex-direction: column;
+    align-items: stretch;
+    max-height: 70dvh;
+    overflow-y: auto;
+    padding: 16px;
+    border-top-color: var(--border-strong);
+  }
+  .send-bar.is-reviewing .send-bar-buttons {
+    width: 100%;
+  }
+  .send-bar.is-reviewing .send-bar-hint {
+    display: block;
+  }
+  .practice-number {
+    font-size: 52px;
+  }
+  /* After the send: the heading, what was sent as one row, the steps,
+     and the ways on. The day's column gives way: the row names what
+     was sent. */
+  .sent {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-top: 16px;
+  }
+  .sent .play-brief {
+    display: none;
+  }
+  .sent-main {
+    display: contents;
+  }
+  .sent-main > h1 {
+    order: 1;
+  }
+  .sent-lead {
+    order: 2;
+    font-size: 17px;
+  }
+  .sent-record {
+    order: 3;
+    display: grid;
+    grid-template-columns: 124px minmax(0, 1fr);
+    align-content: start;
+    gap: 6px 16px;
+    margin-top: 8px;
+    padding: 18px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .sent-record h2 {
+    grid-column: 2;
+    font-size: 17px;
+  }
+  .sent-sketch {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .sent-record > div:not(.sent-sketch) {
+    grid-column: 2;
+  }
+  .sent-steps {
+    order: 4;
+    margin-top: 14px;
+  }
+  .sent-steps .step-item {
+    padding-bottom: 24px;
+  }
+  .sent-next {
+    order: 5;
+    margin-top: 20px;
+  }
+}

@@ -35,7 +35,8 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   );
   await start.click();
   await expect(page).toHaveURL(/\/today$/);
-  await expect(page.locator(".code-cell")).toHaveCount(6);
+  // The code is plain type, read as one image with its six characters.
+  await expect(page.getByRole("img", { name: /^Code( \S){6}$/ })).toBeVisible();
   // The drawing screen reports the start, with no body, and the
   // answer is the one constant body.
   const started = await startPost;
@@ -53,12 +54,12 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   // Two strokes: a vertical mast and a second line beside it.
   await drawStroke(page, [0.2, 0.7], [0.25, 0.2]);
   await drawStroke(page, [0.35, 0.7], [0.33, 0.25]);
-  await expect(page.getByText("0 words · 2 lines")).toBeVisible();
+  await expect(page.getByText("0 words, 2 lines")).toBeVisible();
 
   const word = page.getByLabel("Add a word");
   await word.fill("tall vertical structure");
   await word.press("Enter");
-  await expect(page.getByText("1 word · 2 lines")).toBeVisible();
+  await expect(page.getByText("1 word, 2 lines")).toBeVisible();
 
   // Label the first stroke as a part of the sketch.
   await page.getByText("Label parts of your sketch").click();

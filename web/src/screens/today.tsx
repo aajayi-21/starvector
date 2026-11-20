@@ -1,14 +1,17 @@
 /**
  * Today's sketch (mock 1a, spec W1 B6; layout and copy per spec
- * BR1 §6). The eye goes to two places: the canvas, and the one Send
- * button. Words sit beside the canvas; labeling parts and notes are
- * optional and fold away. Views: no day, open, sent, closing or
- * closed, and revealed (hand-off to the results screen).
+ * BR1 §6): the Today view of the Play place, under the switch it
+ * shares with practice (ui/play-switch.tsx). The eye goes to two
+ * places: the canvas, and the one Send button. Views: no day, open,
+ * sent, closing or closed, and revealed (hand-off to the results
+ * screen).
  *
- * One grid holds the header, the toolbar, the canvas, and the side
- * panel, so they share edges. The send bar ends the side panel on a
- * wide screen and is pinned over the tab bar on a phone, so the one
- * action is always in reach.
+ * The open view has three columns that share the width of the page:
+ * the day (its code, its close, and the one instruction), the canvas,
+ * and the words. Labeling parts and notes are optional rows that open.
+ * The send bar ends the words column on a wide screen and is pinned
+ * over the tab bar on a phone, so the one action is always in reach.
+ * Nothing but the fields, the buttons, and the canvas has an edge.
  *
  * The send is a mutation with an in-flight lock, behind a review step
  * (spec PL1 §8); drafts stay in localStorage as disposable caches (W1
@@ -21,14 +24,7 @@
  * screen (spec R1 §3.3).
  */
 
-import {
-  CaretRight,
-  Check,
-  CheckCircle,
-  Image as ImageIcon,
-  Lock,
-  Shuffle,
-} from "@phosphor-icons/react";
+import { CaretRight } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -72,15 +68,17 @@ import {
   serialize,
   undo,
 } from "../sketch/core";
-import { CodeCells } from "../ui/code-cells";
+import { DayCode } from "../ui/code-cells";
 import { useRemaining } from "../ui/countdown";
 import {
   formatCloseMoment,
   formatDay,
   formatLocalClock,
   formatRemaining,
+  sendCountText,
 } from "../ui/format";
 import { isPostClose } from "../ui/pick-copy";
+import { PlayFrame, PlayMessage } from "../ui/play-switch";
 
 const DRAFT_DEBOUNCE_MS = 500;
 
@@ -111,21 +109,15 @@ function sendMessage(error: unknown): string {
     : friendlyMessage(error);
 }
 
-function MessageCard(props: {
-  title: string;
-  children?: React.ReactNode;
-}): React.JSX.Element {
+export function TodayScreen(): React.JSX.Element {
   return (
-    <div className="page-narrow" style={{ margin: "0 auto" }}>
-      <section className="card card-hero">
-        <h2>{props.title}</h2>
-        {props.children}
-      </section>
-    </div>
+    <PlayFrame>
+      <TodayView />
+    </PlayFrame>
   );
 }
 
-export function TodayScreen(): React.JSX.Element {
+function TodayView(): React.JSX.Element {
   const day = useDayQuery();
 
   if (day.isPending) {
@@ -138,24 +130,24 @@ export function TodayScreen(): React.JSX.Element {
   if (day.isError || day.data === undefined) {
     if (!isRefusal(day.error)) {
       return (
-        <MessageCard title="Today">
+        <PlayMessage title="Today">
           <div className="notice notice-bad" role="alert">
             {friendlyMessage(day.error)}
           </div>
-        </MessageCard>
+        </PlayMessage>
       );
     }
     return (
-      <MessageCard title="No day is open right now">
+      <PlayMessage title="No day is open right now">
         <p className="muted">
           The next day starts soon. Meanwhile, you can practice on a past photo.
         </p>
         <div>
           <Link to="/practice" className="btn btn-secondary">
-            Practice
+            Practice now
           </Link>
         </div>
-      </MessageCard>
+      </PlayMessage>
     );
   }
   const view = day.data;
@@ -168,7 +160,7 @@ export function TodayScreen(): React.JSX.Element {
   if (view.status === "closing" || view.status === "closed") {
     const unsent = readDraft(view.day);
     return (
-      <MessageCard title="Today has closed">
+      <PlayMessage title="Today has closed">
         <p className="muted">
           Results are being worked out. The photo appears here in a few minutes,
           and this page updates by itself.
@@ -179,24 +171,52 @@ export function TodayScreen(): React.JSX.Element {
             can use it for the next day.
           </p>
         ) : null}
-      </MessageCard>
+      </PlayMessage>
     );
   }
   return <OpenWorkspace view={view} />;
 }
 
 /**
- * The line of a day: its date, and the countdown to the close while
- * the close time is known.
+ * When the day closes, in the reader's zone: the clock time and the
+ * countdown while the close is ahead, the close moment when it is not,
+ * and nothing when the day carries no close time.
  */
-function dayLine(day: DayView, remaining: number | null): string {
+function closeLine(day: DayView, remaining: number | null): string | null {
   if (remaining !== null && typeof day.closes_at === "string") {
-    return `${formatDay(day.day)} · closes in ${formatRemaining(remaining)} (${formatLocalClock(day.closes_at)})`;
+    return `Closes at ${formatLocalClock(day.closes_at)}, in ${formatRemaining(remaining)}`;
   }
   const close = formatCloseMoment(day.closes_at);
-  return close === null
-    ? formatDay(day.day)
-    : `${formatDay(day.day)} · ${close}`;
+  return close === null ? null : `C${close.slice(1)}`;
+}
+
+/**
+ * The day, in the first column: its code as plain type, its date, its
+ * close, and what the player adds below them. On a phone the code and
+ * the close share one line, and the label and the date give way.
+ */
+function DayBrief(props: {
+  view: DayView;
+  children?: React.ReactNode;
+}): React.JSX.Element {
+  const { view } = props;
+  const remaining = useRemaining(view.closes_at);
+  const close = closeLine(view, remaining);
+  return (
+    <section className="play-brief" aria-label="Today">
+      <p className="subtle small play-brief-label">Today's code</p>
+      <DayCode code={view.trial_code} />
+      <p className="play-brief-date">{formatDay(view.day)}</p>
+      {close === null ? null : (
+        <p className="muted play-brief-close">{close}</p>
+      )}
+      <hr className="divider play-brief-rule" />
+      {props.children}
+      <p className="muted small play-brief-count">
+        {sendCountText(view.sends, view.status === "open")}
+      </p>
+    </section>
+  );
 }
 
 /**
@@ -209,99 +229,83 @@ function SentView(props: { view: DayView }): React.JSX.Element {
   const remaining = useRemaining(view.closes_at);
   const [record] = useState(() => readSent(view.day));
   const postClose = isPostClose(view.protocol);
+  const closes =
+    typeof view.closes_at === "string"
+      ? formatLocalClock(view.closes_at)
+      : null;
   return (
-    <div className="page-narrow" style={{ margin: "0 auto" }}>
-      <section className="card card-hero" aria-labelledby="sent-heading">
-        <div className="row" style={{ color: "var(--good)" }}>
-          <CheckCircle size={32} weight="fill" aria-hidden="true" />
-          <h2 id="sent-heading" style={{ color: "var(--text)" }}>
-            Sent. You're in for today
-          </h2>
-        </div>
+    <div className="sent">
+      <DayBrief view={view} />
 
-        {record === null ? null : (
-          <div className="sent-summary">
-            {record.canvas_strokes.length === 0 ? null : (
-              <div className="sent-thumb" aria-hidden="true">
-                <ReplayCanvas strokes={record.canvas_strokes} />
-              </div>
-            )}
-            <div className="stack-sm">
-              <span className="subtle small">
-                What you sent for {view.trial_code}
-              </span>
-              {record.impressions.length === 0 ? null : (
-                <ul className="chips" aria-label="Your words">
-                  {record.impressions.map((word, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
-                    <li key={`${word}-${index}`} className="badge chip">
-                      {word}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
+      <section className="sent-main" aria-labelledby="sent-heading">
+        <h1 id="sent-heading">Sent. You're in for today</h1>
+        <p className="sent-lead">
+          {remaining === null || closes === null
+            ? "The photo is revealed when the day closes."
+            : `The photo is revealed at ${closes}, in ${formatRemaining(remaining)}.`}
+        </p>
 
-        {remaining === null || typeof view.closes_at !== "string" ? (
-          <p className="muted">The photo is revealed when the day closes.</p>
-        ) : (
-          <div className="tile">
-            <span className="tile-label">The photo is revealed at</span>
-            <span className="tile-value">
-              {formatLocalClock(view.closes_at)}{" "}
-              <span className="subtle small" style={{ fontWeight: 400 }}>
-                in {formatRemaining(remaining)}
-              </span>
-            </span>
-          </div>
-        )}
-
-        <ol className="step-list" aria-label="What happens next">
-          <li className="step-item is-done">
-            <span className="step-icon">
-              <Check size={16} weight="bold" aria-hidden="true" />
-            </span>
+        <ol className="step-list sent-steps" aria-label="What happens next">
+          <li className="step-item is-current">
+            <span className="step-icon" aria-hidden="true" />
             <span className="step-text">
               Your sketch is locked in for {formatDay(view.day)}
             </span>
           </li>
           <li className="step-item is-pending">
-            <span className="step-icon">
-              <Lock size={16} aria-hidden="true" />
+            <span className="step-icon" aria-hidden="true" />
+            <span className="step-text">
+              The day closes for everyone
+              {closes === null ? null : (
+                <span className="muted small">{closes}</span>
+              )}
             </span>
-            <span className="step-text">The day closes for everyone</span>
           </li>
           {/* Only a day with the pick after the close has this step: on
               an earlier day the photo was picked before the day opened. */}
           {postClose ? (
             <li className="step-item is-pending">
-              <span className="step-icon">
-                <Shuffle size={16} aria-hidden="true" />
-              </span>
+              <span className="step-icon" aria-hidden="true" />
               <span className="step-text">
                 A public random number picks the photo
               </span>
             </li>
           ) : null}
           <li className="step-item is-pending">
-            <span className="step-icon">
-              <ImageIcon size={16} aria-hidden="true" />
-            </span>
+            <span className="step-icon" aria-hidden="true" />
             <span className="step-text">You see the photo and your result</span>
           </li>
         </ol>
 
-        <div className="row">
+        <div className="sent-next">
           <Link to="/practice" className="btn btn-secondary">
             Practice while you wait
           </Link>
-          <Link to="/" className="btn btn-ghost">
-            Back to home
-          </Link>
+          <Link to="/">Back to home</Link>
         </div>
       </section>
+
+      {record === null ? null : (
+        <section className="sent-record" aria-labelledby="sent-what">
+          <h2 id="sent-what">What you sent</h2>
+          {record.canvas_strokes.length === 0 ? null : (
+            <div className="sent-sketch" aria-hidden="true">
+              <ReplayCanvas strokes={record.canvas_strokes} />
+            </div>
+          )}
+          {record.impressions.length === 0 ? null : (
+            <div>
+              <span className="subtle small">Words</span>
+              <ul className="sent-words" aria-label="Your words">
+                {record.impressions.map((word, index) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: duplicates allowed
+                  <li key={`${word}-${index}`}>{word}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -584,14 +588,15 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
     ...(pastedText.trim() !== "" ? ["notes"] : []),
   ];
 
+  // The hint line speaks only while the player picks lines: the day's
+  // column holds the one instruction, and an empty canvas says where to
+  // draw.
   const sketchHint =
     mode === "select"
       ? selection.size > 0
-        ? `${plural(selection.size, "line", "lines")} picked — name them under “Label parts of your sketch”.`
+        ? `${plural(selection.size, "line", "lines")} picked. Name them under “Label parts of your sketch”.`
         : "Tap the lines that belong together."
-      : doc.strokes.length === 0
-        ? "Draw whatever comes to mind."
-        : "Keep going, or add some words.";
+      : "";
 
   // The second line of the send bar: why Send is off, or that the
   // draft is safe.
@@ -603,19 +608,14 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
 
   return (
     <div className="workspace">
-      <header className="workspace-header">
-        <CodeCells code={view.trial_code} />
-        <div className="workspace-header-text">
-          <DayLine view={view} />
-          <p className="muted small hide-narrow">
-            {isPostClose(view.protocol)
-              ? "The photo for this code is picked when the day closes."
-              : "A photo is hidden behind this code."}{" "}
-            Sketch and describe whatever comes to mind.{" "}
-            <Link to="/how">How it works</Link>
-          </p>
-        </div>
-      </header>
+      <DayBrief view={view}>
+        <p className="play-brief-lead">
+          {isPostClose(view.protocol)
+            ? "The photo for this code is picked when the day closes."
+            : "A photo is hidden behind this code."}{" "}
+          Sketch and describe whatever comes to mind.
+        </p>
+      </DayBrief>
 
       {dayMoved && !empty ? (
         <section
@@ -677,7 +677,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
       />
 
       <aside className="side-cell" aria-label="Your answer">
-        <div className="card side-panel">
+        <div className="side-panel">
           <div className="side-scroll">
             <ImpressionsCard
               impressions={impressions}
@@ -834,10 +834,10 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
             }
             aria-label="Send"
           >
-            <div className="send-bar-facts">
-              <span>{summaryParts.join(" · ")}</span>
+            <p className="send-bar-facts">
+              <span>{summaryParts.join(", ")}</span>
               <span className="send-bar-note">{barNote}</span>
-            </div>
+            </p>
             {reviewing ? (
               <ReviewPanel
                 words={impressions}
@@ -891,7 +891,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
                 Review and send
               </button>
             )}
-            <p className="hint send-bar-hint">
+            <p className="subtle tiny send-bar-hint">
               You get one send, and you can't change it after.
             </p>
             {send.isError && !sent ? (
@@ -914,12 +914,6 @@ function OptionalMark(): React.JSX.Element {
       <CaretRight size={16} aria-hidden="true" className="row-chevron" />
     </span>
   );
-}
-
-/** The day's date and the countdown to the close, over the canvas. */
-function DayLine(props: { view: DayView }): React.JSX.Element {
-  const remaining = useRemaining(props.view.closes_at);
-  return <div className="eyebrow">{dayLine(props.view, remaining)}</div>;
 }
 
 /** What this send holds, in the player's words (spec PL1 §8). */

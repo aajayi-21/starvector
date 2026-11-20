@@ -1,7 +1,6 @@
-import "@fontsource/inter/400.css";
-import "@fontsource/inter/500.css";
-import "@fontsource/inter/600.css";
-import "@fontsource/inter/700.css";
+import "@fontsource-variable/red-hat-display/wght.css";
+import "@fontsource-variable/red-hat-text/wght.css";
+import "@fontsource-variable/red-hat-mono/wght.css";
 import "../theme.css";
 import "../app.css";
 import "./dev.css";

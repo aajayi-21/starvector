@@ -47,7 +47,9 @@ test("typed words score without strokes", async ({ page }) => {
   await check.click();
   await expect(page.getByText(RESULT)).toBeVisible({ timeout: 60_000 });
   const report = page.locator("section").filter({ hasText: "What connected" });
-  await expect(report.getByText("“tall vertical structure”")).toBeVisible();
+  await expect(
+    report.getByText("tall vertical structure", { exact: true }),
+  ).toBeVisible();
 });
 
 test("labeled strokes ride the practice record", async ({ page }) => {

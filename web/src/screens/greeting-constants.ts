@@ -4,4 +4,4 @@
 export const RESOLVE_MS = 1400;
 
 /** How long one epigraph stays before the next one resolves. */
-export const EPIGRAPH_MS = 12_000;
+export const EPIGRAPH_MS = 8_000;

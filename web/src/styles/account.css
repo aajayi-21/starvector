@@ -1,0 +1,307 @@
+/*
+ * The account screen (screens/account.tsx; spec A1 §3, spec MD1 §4.3).
+ * A list of rows on hairlines, at the full width of the page: the name
+ * of a section on the left, and its controls on the right. On a phone
+ * the two parts stack. No row has a box: a field or a button is the
+ * only thing with an edge, and each button but one is the quiet kind.
+ * The red button of the deletion is the one filled thing.
+ */
+
+.account {
+  display: flex;
+  flex-direction: column;
+}
+
+/* — the head: the picture, the username, and the picture controls — */
+.account-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px 28px;
+  padding: 4px 0 40px;
+}
+.account-head-text {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.account-head-text h2 {
+  overflow-wrap: anywhere;
+}
+.account-head-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.account-head-error {
+  flex: 1 1 100%;
+}
+/* The top bar shows the streak on a wide screen. */
+.account-streak {
+  display: none;
+}
+
+/* — a row: the name on the left, the controls on the right — */
+.account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 600px);
+  gap: 16px 64px;
+  padding: 34px 0;
+  border-top: 1px solid var(--border);
+}
+.account-row-title {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/* The name of a row is a section heading at the size of a label for a
+   group, not at the size of a page title. */
+.account-row-title h2 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+.account-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.account-row-body form {
+  gap: 16px;
+}
+.account-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* — the devices: one line for each, on hairlines — */
+.account-devices {
+  display: flex;
+  flex-direction: column;
+  margin: -8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.account-devices > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 20px;
+  min-height: 60px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.account-device {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.account-device-name {
+  font-weight: 600;
+}
+.account-device-out {
+  min-height: 44px;
+  padding: 6px 16px;
+  font-size: 15px;
+}
+/* The one-time code for a new device: the code as large spaced type
+   under a hairline, with no fill. */
+.account-code {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.account-code-value {
+  font-size: 34px;
+  line-height: 1.2;
+}
+
+/* — the facts of the public database — */
+.account-facts {
+  gap: 10px;
+  color: var(--text);
+  font-size: 17px;
+}
+.account-facts li::marker {
+  color: var(--text-3);
+}
+
+/* — the closing moves: a sentence, then its button — */
+.account-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.account-action > p {
+  flex: 1 1 260px;
+}
+.account-action > .btn {
+  flex: none;
+}
+/* `Delete account`: quiet red words. The edge and the fill wait for the
+   button that does the deletion. */
+.account-delete-link {
+  min-height: 44px;
+  margin-top: -8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bad);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.account-delete-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* — `Delete my account`: the section that the red words open — */
+/* Focus lands on the heading by script, not by Tab: no ring. */
+.account-delete h2:focus {
+  outline: none;
+}
+.account-delete .account-row-title h2 {
+  color: var(--bad);
+}
+.account-delete-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 32px;
+}
+.account-delete-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.account-delete-column h3 {
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.account-delete-removed h3 {
+  color: var(--bad);
+}
+.account-delete-column ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+.account-delete-column li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.account-delete-column svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--text-3);
+}
+.account-delete-removed svg {
+  color: var(--bad);
+}
+/* The two inputs share a bottom edge when one label goes to two lines. */
+.account-delete-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+.account-delete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  /* The picture beside the username and the streak, then the
+     sentence and the picture controls at the full width. The text
+     wrapper lets go, thus its parts are cells of this grid. */
+  .account-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 2px 16px;
+    padding: 0 0 26px;
+  }
+  .account-head > :first-child {
+    grid-row: 1 / span 2;
+  }
+  .account-head-text {
+    display: contents;
+  }
+  .account-head-text > h2 {
+    grid-column: 2;
+    align-self: end;
+  }
+  .account-streak {
+    display: inline-flex;
+    grid-column: 2;
+    align-self: start;
+  }
+  .account-head-text > p {
+    grid-column: 1 / -1;
+    margin-top: 12px;
+    font-size: 15px;
+  }
+  .account-head-controls,
+  .account-head-error {
+    grid-column: 1 / -1;
+    margin-top: 12px;
+  }
+  .account-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 24px 0;
+  }
+  .account-row-body {
+    gap: 14px;
+  }
+  /* A button of a row takes the width of the column, where the thumb
+     reaches it. The small controls keep their size: the control that
+     shows a password, and the sign-out of one device. */
+  .account-row-body .btn:not(.btn-icon, .account-device-out) {
+    width: 100%;
+  }
+  .account-buttons {
+    flex-direction: column;
+  }
+  .account-action {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .account-action > p {
+    flex: none;
+  }
+  .account-delete-link {
+    min-height: 48px;
+    margin-top: -4px;
+  }
+  .account-delete-columns,
+  .account-delete-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .account-delete-actions {
+    flex-direction: column;
+  }
+}

@@ -1,11 +1,13 @@
 /**
- * The drawing panel shared by today and practice: the color row,
- * undo, redo, clear, the canvas sized to the window, and one hint
- * line. The screens own the document; this panel draws the controls.
+ * The drawing panel shared by today and practice: the color row, the
+ * canvas sized to the window, undo, redo, and clear, and one line for a
+ * hint that carries information. The screens own the document; this
+ * panel draws the controls.
  *
- * The panel has no box of its own. Its three parts sit in the
- * workspace grid, so the toolbar and the canvas share their left and
- * right edges and the side panel lines up with the canvas.
+ * The panel has no box of its own. On a wide screen the tools sit over
+ * the canvas, at its right edge; on a phone they sit under it, where
+ * the colors would not leave them room (styles/play.css). An empty
+ * canvas says where to draw, in the canvas itself.
  */
 
 import {
@@ -38,37 +40,6 @@ export function CanvasPanel(props: {
     <section className="canvas-panel" aria-label="Sketch">
       <div className="toolbar">
         <PaletteRow colorIndex={props.colorIndex} onPick={props.onPickColor} />
-        <span className="spacer" />
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon tool"
-          disabled={!props.canUndo}
-          onClick={props.onUndo}
-          aria-label="Undo"
-          title="Undo"
-        >
-          <ArrowCounterClockwise size={20} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon tool"
-          disabled={!props.canRedo}
-          onClick={props.onRedo}
-          aria-label="Redo"
-          title="Redo"
-        >
-          <ArrowClockwise size={20} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon tool"
-          disabled={props.doc.strokes.length === 0}
-          onClick={props.onClear}
-          aria-label="Clear the sketch"
-          title="Clear the sketch"
-        >
-          <Trash size={20} aria-hidden="true" />
-        </button>
       </div>
       <div className="canvas-holder">
         <SketchCanvas
@@ -80,6 +51,43 @@ export function CanvasPanel(props: {
           onPickStroke={props.onPickStroke}
           disabled={props.disabled}
         />
+        {props.doc.strokes.length === 0 && !props.disabled ? (
+          <p className="canvas-empty atlas" aria-hidden="true">
+            Draw here
+          </p>
+        ) : null}
+      </div>
+      <div className="tools">
+        <button
+          type="button"
+          className="btn btn-icon tool"
+          disabled={!props.canUndo}
+          onClick={props.onUndo}
+          aria-label="Undo"
+          title="Undo"
+        >
+          <ArrowCounterClockwise size={20} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="btn btn-icon tool"
+          disabled={!props.canRedo}
+          onClick={props.onRedo}
+          aria-label="Redo"
+          title="Redo"
+        >
+          <ArrowClockwise size={20} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="btn btn-icon tool"
+          disabled={props.doc.strokes.length === 0}
+          onClick={props.onClear}
+          aria-label="Clear the sketch"
+          title="Clear the sketch"
+        >
+          <Trash size={20} aria-hidden="true" />
+        </button>
       </div>
       <p className="hint canvas-hint" aria-live="polite">
         {props.hint}

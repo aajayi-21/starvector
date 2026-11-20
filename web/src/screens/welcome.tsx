@@ -85,37 +85,36 @@ export function WelcomeScreen(): React.JSX.Element {
       <main className="page page-has-footer">
         {/* Three parts in the page flow: the headline, sign-in, and how
             it works. On a phone they stack in that sequence, thus the
-            form is the first card and a home-screen app that opens
-            signed out meets it at once. On a wide screen the grid puts
-            sign-in in the right column, level with the headline, and
-            how it works below the headline (app.css .welcome-grid). */}
+            form comes first and a home-screen app that opens signed
+            out meets it at once. On a wide screen the grid puts sign-in
+            in the right column behind one upright hairline, level with
+            the headline, and how it works below the headline
+            (styles/gate.css .welcome-grid). */}
         <div className="welcome-grid">
           <div className="welcome-hero">
-            <h1 className="welcome-title">
+            <h1 className="h-display welcome-title">
               {postClose
                 ? "A new photo every day."
                 : "A new hidden photo every day."}
             </h1>
-            {about.data?.test_season === true ? (
-              <p className="welcome-season" role="note">
-                <span className="badge badge-warn">Test season</span>
-                <span className="hint">
-                  Results won't carry over to the public launch.
-                </span>
-              </p>
-            ) : null}
             <p className="welcome-pitch muted">
               {postClose
                 ? "Each day a photo is picked at random after the day closes, and nobody knows it while you play."
                 : "Each day a photo is hidden behind a short code."}{" "}
               You sketch and describe whatever comes to mind, and when the day
-              closes you see the photo — and how close you came
+              closes you see the photo, and how close you came
               {photoCount === undefined
                 ? "."
                 : `, measured against ${photoCount} photos.`}
             </p>
+            {about.data?.test_season === true ? (
+              <p className="welcome-season" role="note">
+                <span className="badge badge-warn">Test season</span>. Results
+                won't carry over to the public launch.
+              </p>
+            ) : null}
           </div>
-          <div className="stack welcome-signin">
+          <div className="welcome-signin">
             {shown === null ? (
               <GateCard
                 signupOpen={signup.data?.open === true}
@@ -132,7 +131,7 @@ export function WelcomeScreen(): React.JSX.Element {
                 {/* A sign-up is at its second part; a recovery has no
                     parts to show. */}
                 {shown.replaces ? null : <SignupProgress current={2} />}
-                <div className="card card-hero">
+                <div className="gate-card">
                   <RecoveryCodeStep
                     code={shown.code}
                     replaces={shown.replaces}

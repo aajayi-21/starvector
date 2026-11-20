@@ -33,8 +33,8 @@ test("a player deletes their own account", async ({ page }) => {
   expect(made.status()).toBe(201);
 
   await page.goto("/account");
-  // The section is closed at first: the `Delete account` row, the last
-  // row of the page, opens it.
+  // The section is closed at first: the red words `Delete account`,
+  // the last control of the page, open it.
   const heading = page.getByRole("heading", { name: "Delete my account" });
   const row = page.getByRole("button", { name: "Delete account", exact: true });
   await expect(row).toHaveAttribute("aria-expanded", "false");
@@ -43,7 +43,7 @@ test("a player deletes their own account", async ({ page }) => {
   await expect(heading).toBeFocused();
   await expect(page.getByText("This can't be reversed.")).toBeVisible();
 
-  // `Keep my account` closes the section and goes back to the row.
+  // `Keep my account` closes the section and goes back to those words.
   await page.getByRole("button", { name: "Keep my account" }).click();
   await expect(heading).toHaveCount(0);
   await expect(row).toBeFocused();

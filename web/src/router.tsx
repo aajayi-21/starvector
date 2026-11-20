@@ -60,9 +60,7 @@ function PublicShell(props: { signedOut: boolean }): React.JSX.Element {
         </Link>
         {props.signedOut ? (
           <div className="topbar-end">
-            <Link to="/" className="btn btn-secondary">
-              Sign in
-            </Link>
+            <Link to="/">Sign in</Link>
           </div>
         ) : null}
       </header>

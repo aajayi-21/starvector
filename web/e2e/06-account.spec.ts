@@ -19,8 +19,13 @@ test("the account page edits the description and the picture", async ({
   await page.goto("/");
   await page.getByLabel("Your account").click();
   await expect(page).toHaveURL(/\/account$/);
+  // The username is the visible title of the page. The page's own
+  // name is there for a screen reader.
   await expect(
     page.getByRole("heading", { name: "Your account" }),
+  ).toBeAttached();
+  await expect(
+    page.getByRole("heading", { name: "ade", exact: true }),
   ).toBeVisible();
 
   // The description round-trips through PUT /api/account.
