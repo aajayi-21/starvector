@@ -8,6 +8,10 @@ about a second player's play. I7 forbids score information before
 the window closes, and a count of who has sent is score-adjacent:
 it says who is in contention. The one difference allowed is the
 anonymous total of the day view (spec H1 section 9, D5), with no name.
+Spec SS1 gives the sends of a day to a caller with their own send of
+that day in the store. The caller of this test has no send, thus the
+rule holds for that caller with no change, on the path of that spec
+too. The tests of spec SS1 hold the caller with a send.
 
 **No answer length follows the target.** Section 22 asks for this
 and no test performed it. Length is the weaker property than
@@ -80,7 +84,12 @@ _OPEN_DAY_PATHS = ("/", "/api/day", "/api/me", "/api/history",
                    f"/api/leaderboard?day={DAY}",
                    f"/api/submission?day={DAY}",
                    "/api/leaderboard/skill", "/api/practice",
-                   "/api/avatar/alice", "/api/avatar/bru")
+                   "/api/avatar/alice", "/api/avatar/bru",
+                   # The sends of the day (spec SS1 section 7): one
+                   # constant refusal for a caller with no send.
+                   "/api/sends", f"/api/sends?day={DAY}",
+                   f"/api/sends?day={DAY}&before=0",
+                   f"/api/sends?day={DAY}&before=1")
 
 
 def test_no_open_day_answer_follows_the_other_players_sends(
@@ -88,9 +97,10 @@ def test_no_open_day_answer_follows_the_other_players_sends(
     """I7: alice cannot read if bru has sent.
 
     Two worlds equal in each fact but one - bru has sent in the
-    first and has not in the second. Alice's bodies must agree
-    byte for byte. Which players have sent is not a function that
-    one open-day byte depends on.
+    first and has not in the second. Alice has no send in the two.
+    Alice's bodies must agree byte for byte. Which players have sent
+    is not a function that one open-day byte depends on, for a caller
+    with no send of the day (spec SS1 section 4).
 
     One field is the narrow difference allowed: `sends` of the day view is
     the anonymous total of the day (spec H1 section 9, D5, the
@@ -164,6 +174,9 @@ def _length_walk(fixture, seed: str, tmp_path: Path,
              f"/api/submission?day={DAY}", "/api/history", "/api/me",
              "/api/practice", "/api/leaderboard/skill",
              "/api/avatar/ade",
+             # The caller of this walk has a send, thus this is the
+             # answer with the sketches (spec SS1 section 7).
+             "/api/sends", f"/api/sends?day={DAY}",
              f"/image/{fixture['image_ids'][0]}",
              "/join/not-a-token", f"/join/ade.{'s' * 43}")
     return ({path: len(client.get(path).content) for path in paths},
@@ -220,7 +233,8 @@ def test_no_answer_length_follows_the_target_after_the_close(
                                    f"/api/leaderboard?day={DAY}",
                                    f"/api/submission?day={DAY}",
                                    "/api/history", "/api/me",
-                                   "/api/leaderboard/skill")})
+                                   "/api/leaderboard/skill",
+                                   f"/api/sends?day={DAY}")})
     assert len(targets) >= 2
     for path in walks[0]:
         sizes = {walk[path] for walk in walks}
