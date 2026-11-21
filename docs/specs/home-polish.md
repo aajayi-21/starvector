@@ -241,6 +241,10 @@ Each item is one commit, green and Vale-clean on the touched prose.
   bytes. It also checks that the total is one more in the first world.
   The paragraph of spec A1 §7 has the same change. No name, no sequence of
   names, and no other field follows the sends.
+  *Note, 2026-11-20 (spec SS1 §4 and §7):* the last sentence holds for a
+  caller with no send of the day in the store. A caller with a send in the
+  store gets the sends of the day from `GET /api/sends`: the label of each
+  player and the sketch. The count text is the control that opens them.
 - **D4 — the timing numbers.** The 1.4 second effect and the 12 second
   change of epigraph are cosmetic values that this spec proposes. They are
   in one file of constants, so a change is one edit. The owner changed the

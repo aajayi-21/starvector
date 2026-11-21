@@ -356,6 +356,11 @@ the browser can share a file, and each other browser saves it.
   alone.
 - The code is in `web/src/share/` and `web/src/ui/share-button.tsx`.
 
+*Note, 2026-11-20 (spec SS1 §6):* the sent view has a second share
+control. It makes a JPEG of the player's own sketch before the reveal.
+The image holds no result, because no result is there before the
+reveal, and it uses no new server path.
+
 ### 6.3 Two server additions
 
 - `GET /api/about`, with no session: `test_season` (the preparation

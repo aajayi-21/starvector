@@ -456,6 +456,9 @@ days.
   not move.
 - The players of today have their history, thus the floor counts
   their earlier days.
+- *Note, 2026-11-20 (spec SS1 §7.2):* the sends of the day are not a
+  board. They hold each send and no rank, and the floor does not
+  apply to them.
 
 ---
 

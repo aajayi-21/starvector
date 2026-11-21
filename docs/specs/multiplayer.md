@@ -196,6 +196,12 @@ how many players have sent, or which. The leaderboard keeps its
 constant refusal until the day is revealed. This joins the R3
 walk.
 
+*Note, 2026-11-20 (spec SS1 §4):* the owner ruled that a player with
+their own send of a day in the store sees the sketches of that day.
+The rule of this paragraph holds for each caller with no send of the
+day in the store, and for each reader with no session. Spec H1 §9 D5
+gave such a caller one total, and it stays the one difference.
+
 ## 6. Layer 9 — completing the aggregation
 
 Layer 9 sits in the no-change tier: an edit here invalidates
