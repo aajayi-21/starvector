@@ -526,6 +526,15 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
     );
   };
 
+  // One erase gesture is one step of the history. The eraser's pieces
+  // took new identifiers, so the counter moves past them and no
+  // identifier is used twice, also after an undo.
+  const onCommitErase = (next: SketchDoc, nextId: number) => {
+    nextStrokeId.current = Math.max(nextStrokeId.current, nextId);
+    commit(next);
+    setSelection(new Set());
+  };
+
   const onPickStroke = (strokeId: number | null) => {
     if (strokeId === null) {
       return;
@@ -656,6 +665,8 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
         colorIndex={colorIndex}
         onPickColor={setColorIndex}
         onCommitStroke={onCommitStroke}
+        onCommitErase={onCommitErase}
+        nextStrokeId={() => nextStrokeId.current}
         onPickStroke={onPickStroke}
         canUndo={canUndo(history)}
         canRedo={canRedo(history)}

@@ -56,6 +56,18 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await drawStroke(page, [0.35, 0.7], [0.33, 0.25]);
   await expect(page.getByText("0 words, 2 lines")).toBeVisible();
 
+  // The eraser cuts the first stroke where it passes: one line is two,
+  // and one undo puts the line back. The send below is the two strokes.
+  const eraser = page.getByRole("button", { name: "Eraser" });
+  await eraser.click();
+  await expect(eraser).toHaveAttribute("aria-pressed", "true");
+  await drawStroke(page, [0.1, 0.45], [0.3, 0.45]);
+  await expect(page.getByText("0 words, 3 lines")).toBeVisible();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByText("0 words, 2 lines")).toBeVisible();
+  await eraser.click();
+  await expect(eraser).toHaveAttribute("aria-pressed", "false");
+
   const word = page.getByLabel("Add a word");
   await word.fill("tall vertical structure");
   await word.press("Enter");

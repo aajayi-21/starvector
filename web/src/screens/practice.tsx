@@ -145,6 +145,14 @@ function PracticeWorkspace(props: {
     );
   };
 
+  // One erase gesture is one step of the history, and the counter
+  // moves past the identifiers of the eraser's pieces.
+  const onCommitErase = (next: SketchDoc, nextId: number) => {
+    nextStrokeId.current = Math.max(nextStrokeId.current, nextId);
+    commit(next);
+    setSelection(new Set());
+  };
+
   const onPickStroke = (strokeId: number | null) => {
     if (strokeId === null) {
       return;
@@ -267,6 +275,8 @@ function PracticeWorkspace(props: {
         colorIndex={colorIndex}
         onPickColor={setColorIndex}
         onCommitStroke={onCommitStroke}
+        onCommitErase={onCommitErase}
+        nextStrokeId={() => nextStrokeId.current}
         onPickStroke={onPickStroke}
         canUndo={canUndo(history)}
         canRedo={canRedo(history)}

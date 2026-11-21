@@ -444,6 +444,54 @@ rule limits the damage). Coalesced-point density differs between
 drift). A small device matrix belongs to B11: desktop Chrome,
 Android touch, iPad pencil.
 
+*Note, 2026-11-20 — the eraser (owner instruction).* The canvas has
+an eraser. The sketch is strokes and not a bitmap, and the record of
+§6 does not change. The eraser is thus geometry in the client: it
+cuts each stroke at the edge of the eraser.
+
+- **The core.** `eraseAlong` is a pure reducer. The eraser is a disc
+  that moves along the pointer path. Between two samples of the path
+  it covers a capsule, thus a fast pointer erases the marks between
+  the samples. The reducer clips each stroke segment against the
+  capsule. The cut is at the edge of the eraser and not at a point of
+  the stroke.
+- **The pieces.** A stroke that the eraser touches gives its position
+  in the drawing sequence to its remaining pieces. Each piece is a
+  stroke with a new identifier, the color of its stroke, and the group
+  of its stroke. A stroke that the eraser does not touch keeps its
+  object. A group can have no stroke after an erase, as it can after
+  `ungroup`.
+- **The history.** An erase that touches nothing gives back the same
+  document, and the history records no step. A gesture that cuts is
+  one step.
+- **The adapter.** `erase` is a third mode of the canvas. During a
+  gesture the adapter holds a provisional document in a ref and
+  redraws the committed layer from it, thus the player sees the cut.
+  At the end of the gesture the screen gets one document. A document
+  that changes during a gesture ends that gesture with no cut.
+- **The stylus.** The eraser end of a stylus (bit 32 of `buttons`)
+  erases while the pen is the tool. No device of the B11 matrix has an
+  eraser end, thus no test on a device covers this.
+- **The control.** One control before `Undo`, with `aria-pressed`. It
+  is off while the sketch is empty and while the group card picks
+  lines. A color gives the pen back. Practice has the same control,
+  because the two screens share the panel.
+- **The server.** Nothing changes. A piece is an ordinary stroke of
+  the record. Each cut adds one stroke, and the stroke cap of
+  `service/limits.py` is 2,000.
+
+The constants of the eraser. The two radius values are cosmetic
+values that the owner accepted on 2026-11-20.
+
+| Constant | Value |
+| --- | --- |
+| eraser radius, mouse/pen | 8 CSS px, the value of the select tolerance |
+| eraser radius, touch | 12 CSS px, the value of the select tolerance |
+| cut radius | the eraser radius plus half of the stroke width, thus no circular end of a cut stroke is in the ring |
+| smallest piece | 2 points and 0.5 CSS px of length, the minimum point distance |
+| numeric floor of a cut | 1e-9: a shorter erased part is a tangent touch and erases nothing |
+| stroke width | 3 CSS px. The code has had this value since B3, and the table above did not record it |
+
 ## 10. Build items
 
 Each item lands green (`tsc --noEmit`, `biome ci`, `vitest`) and

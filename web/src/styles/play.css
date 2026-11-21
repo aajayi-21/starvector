@@ -178,6 +178,15 @@
   min-height: 44px;
   min-width: 44px;
 }
+/* The eraser is a tool that stays on: a fill says so, as on each thing
+   that is pressed. A gap sets it off from the three one-press tools. */
+.tool-eraser {
+  margin-right: 8px;
+}
+.tool-eraser[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
 
 /* — the words, in the third column — */
 .side-cell {
