@@ -104,6 +104,8 @@ journal (spec OC1 §13).
 - **The private store and the results index** keep the raw records with
   the username, because I4 forbids an edit of them. No player surface
   reads the username of a deleted player.
+- *Note, 2026-11-20 (spec SS1 §9):* the sends of the day and the player
+  page follow the first rule: the anonymous identifier and no avatar.
 
 ### 4.3 The player's deletion
 

@@ -315,6 +315,9 @@ practice. The server accepts them today, thus each piece is in
   walk with constant refusals. (Amended 2026-11-13: the day view
   holds one anonymous total of the day, `sends`, by spec H1 §9
   ruling D5. No other answer holds a count.)
+  (Amended 2026-11-20: spec SS1 §7 adds `GET /api/sends`. A caller
+  with their own send of a day in the store gets the sketches of
+  that day. A caller with no such send gets a constant refusal.)
 - **R4.** Account reads and writes cannot change with the open
   day's target. The two-world compare grows the new surfaces.
 - **The store snapshot.** Read paths keep the store byte-equal.
@@ -425,6 +428,9 @@ land as proposed. D5 turned around — the boards hold avatars.
 - **Account pages of other players.** The account page is the
   caller's own. A public page for other players is a decision
   for the owner, and it waits.
+  *Note, 2026-11-20 (spec SS1 §8):* the owner ruled that each
+  player has a public page. Spec SS1 §8 has its contract, and the
+  build waits for the owner's decision on the gallery.
 - **The reminder toggle.** It stays inert, as spec W1 §7
   recorded.
 

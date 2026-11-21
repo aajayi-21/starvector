@@ -154,6 +154,11 @@ function PublicDataCard(): React.JSX.Element {
       note="Your results are published in an open database after each day closes."
     >
       <ul className="fact-list account-facts">
+        {/* Spec SS1 §10: the fact of notice version 2. */}
+        <li>
+          After you send, every player who has sent that day can see your
+          sketch. They see the sketch alone, not your words.
+        </li>
         <li>
           The database holds your username, every score, the words you typed,
           and every sketch.

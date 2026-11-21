@@ -12,7 +12,7 @@ from svc_fixture import (FIXED_CLOCK, QUICK_PROOF, QUICK_PROOF_KEYS,
                          QuickDigester, build_service_fixture, mint_player,
                          mixed_wire_record, plant_session, solved_proof)
 
-from service import auth, players, public, rollup, store
+from service import auth, notice, players, public, rollup, store
 from service.day import close_day, open_day, reveal_day
 from service.server import create_app
 
@@ -195,7 +195,8 @@ def _assert_deleted(config, deleted_by: str) -> str:
     # The raw records, the consent, and the claim stay.
     assert store.submission_path(root, "2026-08-12", "alice").is_file()
     assert store.trial_row_path(root, "2026-08-12", "alice").is_file()
-    assert store.read_consent_or_none(root, "alice", 1) is not None
+    assert store.read_consent_or_none(
+        root, "alice", notice.NOTICE_VERSION) is not None
     assert store.read_claim_or_none(root, "alice") is not None
     assert store.read_identifier_or_none(root, "alice") \
         == deletion.identifier

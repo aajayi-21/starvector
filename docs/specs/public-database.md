@@ -74,6 +74,10 @@ text (D1):
 > sketches are published in an open database after each day closes.
 > Do not type anything private.
 
+*Note, 2026-11-20 (spec SS1 §10):* the notice is at version 2. Its
+text also says that each player who sent on a day can see the sketch
+after the send, and it names the public page of a player.
+
 The notice is short by the owner's ruling, thus it does not say each
 fact. The account screen has a section, `Public data`, that says the
 remaining facts in plain words:
@@ -255,6 +259,11 @@ Each row is a fence, and a test pins each one (§13).
 | the text and the sketch of a withheld response | §9. |
 | a trial row that is not pinned | §5. |
 
+*Note, 2026-11-20 (spec SS1 §4):* each rule of this table stands for
+the file. Spec SS1 gives a sketch of a day in play to a player with
+their own send of that day in the store. That sketch comes from the
+server, and no snapshot holds it before the reveal.
+
 ---
 
 ## 8. A player with no name
@@ -305,6 +314,9 @@ note          1 to 200 characters: the cause, for the operator
 - The operator writes it with `python -m service.public withhold <day>
   <player> --note <text>`, and removes it with `release`. The store's
   response does not change (I4).
+- *Note, 2026-11-20 (spec SS1 §9):* the same record also takes the
+  sketch off the sends of the day and off the player page, on an open
+  day too.
 - In the public database, the `submissions` row of a withheld response
   has `withheld` 1 and NULL in `record_json`. It has no row in
   `impressions`, `strokes`, `groups`, or `relations`, and its

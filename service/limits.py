@@ -47,6 +47,13 @@ BODY_READ_SECONDS = 30.0
 STROKE_CAP = 2_000
 POINT_CAP = 20_000
 
+# One page of the sends of a day (spec SS1 section 7.2). A page holds
+# no more points than one send can, thus its answer is about the
+# dimension of one body at the cap. A send with no stroke has no
+# point, thus the page also has a count of entries (spec SS1 section
+# 15, D2).
+PAGE_ENTRY_CAP = 24
+
 # The password counters (spec A2 section 9.2). Failures for a client
 # address and for the process use the window and the two caps at the
 # top of this module. A username has its own cap (decision D10), and

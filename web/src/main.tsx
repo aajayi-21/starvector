@@ -11,6 +11,7 @@ import "./styles/board.css";
 import "./styles/account.css";
 import "./styles/gate.css";
 import "./styles/pages.css";
+import "./styles/sends.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

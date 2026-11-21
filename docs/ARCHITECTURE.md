@@ -1115,6 +1115,8 @@ Failures here invalidate results no matter how good the scoring is.
 
 **No feedback before the window closes.** If any endpoint returns score information before reveal, players will iterate against it and optimize their way into the target. One submission per trial, scoring on the server, nothing returned until the window closes. As §18 notes, this constraint is also what frees your latency budget.
 
+**Note, 2026-11-20 — a sketch is not score information.** The rule above is about scores and the target. Spec SS1 (`docs/specs/send-then-see.md`) lets a player with a send of a day see the other sketches of that day before its reveal, and lets a player share their own sketch. The two paths give no score. With the pick after the close, no target exists for a sketch to follow. The rule of one submission for each trial stays, so a player who sees a sketch has no send to change. The spec gives up independence between players and not the blindness of a trial. It records the remaining risk: a second account that looks first.
+
 **Stroke coordinates only.** Covered in §8. Removes the adversarial-image class rather than requiring detection.
 
 **Identifier hygiene.** The trial identifier must be a fresh random value with no derivation from image content, filename, pool index, or timestamp. Do not send the image to the client before reveal. Do not use guessable content addresses. Check that response size and timing do not correlate with properties of the target.

@@ -45,7 +45,7 @@ from pool.artifacts import load_image_bytes
 from pool.preparation.config import load_preparation_config
 from service import (access, auth, console, credits, digests, limits,
                      notice, operator_plan, passwords, proofs, rollover,
-                     rollup, schedule, signin, store)
+                     rollup, schedule, signin, sketches, store)
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from service.pulse import chain_named, pulse_time
@@ -99,6 +99,15 @@ _NOT_REVEALED = b'{"detail":"not revealed"}'
 _NO_DAY = b'{"detail":"no day open"}'
 _UNAUTHORIZED = b'{"detail":"unauthorized"}'
 _NO_SUBMISSION = b'{"detail":"no submission"}'
+# One body for each refusal of the sends of a day (spec SS1 section
+# 7.1): a day that is not in the store, and a caller with no send of a
+# day that is not revealed. The refusal reads no send of a second
+# player, thus it says nothing of the sends.
+_SENDS_NOT_SHOWN = b'{"detail":"sends not shown"}'
+_BAD_CURSOR = b'{"cause":"bad-cursor"}'
+# The sends of a day are for one caller at one time: no cache keeps
+# an answer or a refusal.
+_NO_STORE = {"cache-control": "private, no-store"}
 _DEV_OFF = b'{"detail":"not found"}'
 _NO_PRACTICE = b'{"detail":"no revealed day"}'
 _NOT_PRACTICE = b'{"detail":"not a practice day"}'
@@ -2402,6 +2411,121 @@ def create_app(service_config: ServiceConfig,
                             media_type="application/json")
         return JSONResponse({"trial_id": stored["trial_id"],
                              "record": stored["record"]})
+
+    # The send sequence of each day that a caller read (spec SS1
+    # section 7.2): the receive time, the trial identifier, and the
+    # store key of each send, from the first send to the last. A send
+    # does not change and does not go, thus the sequence is a cache of
+    # stored sends, and one answer reads the new files alone.
+    sends_cache: dict[str, list[tuple[str, str, str]]] = {}
+    sends_lock = threading.Lock()
+
+    def _stored_send(day: str, name: str) -> dict:
+        """One stored send. A send that the day's folder names and
+        that has no record is damage, and the answer stops."""
+        stored = store.read_json_or_none(
+            store.submission_path(root, day, name))
+        if stored is None:
+            raise store.StoreError(
+                f"the send of {name!r} on {day} has no record")
+        return stored
+
+    def _sends_sequence(day: str) -> list[tuple[str, str, str]]:
+        names = store.list_submissions(root, day)
+        with sends_lock:
+            known = sends_cache.setdefault(day, [])
+            if len(known) != len(names):
+                held = {row[2] for row in known}
+                for name in names:
+                    if name not in held:
+                        stored = _stored_send(day, name)
+                        known.append((stored["received_at"],
+                                      stored["trial_id"], name))
+                known.sort()
+            return list(known)
+
+    def _shows_before_reveal(name: str) -> bool:
+        """The sketch of this player can go to a second player before
+        the reveal of its day (spec SS1 section 10). On a server that
+        publishes, the player agreed to the notice with that sentence.
+        A server that does not publish has no notice."""
+        return (not (publishes and _access_on())
+                or notice.agreed_to_showing(root, name))
+
+    def _send_entry(day: str, name: str, revealed: bool) -> dict:
+        """One entry of the sends of a day: the label, the avatar
+        digest, and the sketch alone (spec SS1 sections 5 and 7.2)."""
+        sketch = sketches.sketch_of(_stored_send(day, name)["record"])
+        state = sketches.entry_state(
+            has_strokes=bool(sketch),
+            withheld=store.read_withheld_or_none(root, day, name)
+            is not None,
+            shows=revealed or _shows_before_reveal(name))
+        label = _label_of(name)
+        return {"player": label,
+                # An anonymous identifier is not a username.
+                "named": label == name,
+                "avatar_hash": _avatar_of(name),
+                "state": state,
+                "strokes": sketch if state == sketches.SKETCH else []}
+
+    @app.get("/api/sends")
+    def sends_view(request: Request, day: str | None = None,
+                   before: str | None = None) -> Response:
+        """The sends of one day, the newest first, as sketches alone
+        (spec SS1 section 7).
+
+        Send, then see: a day that is not revealed shows its sends to
+        a caller with their own send of that day in the store. The
+        checks before the refusal read the session, the day record,
+        and the caller's own file. They read no file of a second
+        player, and the refusal is one constant body, thus a caller
+        with no send learns nothing of the sends (I7, R3).
+        """
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        if day is None:
+            day = store.latest_day(root)
+        # The day membership check keeps the query string out of the
+        # path arithmetic.
+        if day is None or day not in store.list_days(root):
+            return _sends_refusal()
+        revealed = store.read_day_record(root, day).status == "revealed"
+        if (not revealed
+                and not store.submission_path(root, day, caller).is_file()):
+            return _sends_refusal()
+        sequence = _sends_sequence(day)
+        position = len(sequence)
+        if before is not None:
+            if (not before.isascii() or not before.isdigit()
+                    or int(before) > len(sequence)):
+                return Response(content=_BAD_CURSOR, status_code=400,
+                                media_type="application/json",
+                                headers=_NO_STORE)
+            position = int(before)
+        entries: list[dict] = []
+        points = 0
+        while position > 0:
+            entry = _send_entry(day, sequence[position - 1][2], revealed)
+            more = sketches.point_count(entry["strokes"])
+            if not sketches.page_has_room(
+                    taken=len(entries), points=points, more=more,
+                    entry_cap=limits.PAGE_ENTRY_CAP,
+                    point_cap=limits.POINT_CAP):
+                break
+            entries.append(entry)
+            points += more
+            position -= 1
+        return JSONResponse(
+            {"day": day, "total": len(sequence),
+             "next_before": position if position > 0 else None,
+             "entries": entries},
+            headers=_NO_STORE)
+
+    def _sends_refusal() -> Response:
+        return Response(content=_SENDS_NOT_SHOWN, status_code=404,
+                        media_type="application/json", headers=_NO_STORE)
 
     def _label_of(name: str) -> str:
         """The board label for one store key: the key itself.

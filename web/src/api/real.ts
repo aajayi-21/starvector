@@ -26,6 +26,7 @@ import type {
   RecoveryCodeAck,
   RefusalBody,
   RevealView,
+  SendsPage,
   SessionsView,
   SignInAck,
   SignupView,
@@ -116,6 +117,12 @@ export function makeRealApi(): Api {
     getSubmission(day: string): Promise<StoredSubmission> {
       return request<StoredSubmission>(
         `/api/submission?day=${encodeURIComponent(day)}`,
+      );
+    },
+    getSends(day: string, before?: number): Promise<SendsPage> {
+      const cursor = before === undefined ? "" : `&before=${before}`;
+      return request<SendsPage>(
+        `/api/sends?day=${encodeURIComponent(day)}${cursor}`,
       );
     },
     getMe(): Promise<MeView> {

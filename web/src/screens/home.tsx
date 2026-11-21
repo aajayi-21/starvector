@@ -31,11 +31,12 @@ import {
   formatCloseMoment,
   formatRemaining,
   percentBeaten,
-  sendCountText,
 } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
 import { isPostClose } from "../ui/pick-copy";
 import { ResolveText } from "../ui/resolve-text";
+import { SendCount } from "../ui/send-count";
+import { ShareSketchButton } from "../ui/share-button";
 import { EpigraphFigure } from "./epigraph-figure";
 import { EPIGRAPHS } from "./epigraphs";
 import { pickGreeting } from "./greeting";
@@ -148,15 +149,6 @@ function CardFoot(props: {
   );
 }
 
-/** The day's send count, in each hero state (spec H1 §3). */
-function SendCount(props: { day: DayView }): React.JSX.Element {
-  return (
-    <p className="muted" data-testid="send-count">
-      {sendCountText(props.day.sends, props.day.status === "open")}
-    </p>
-  );
-}
-
 /**
  * The line under the greeting. The day in play has no calendar date: it
  * is "today", with the countdown and the close in the reader's zone
@@ -231,7 +223,7 @@ function TodayCard(props: {
           <Link to="/reveal" className="btn btn-primary btn-large">
             {day.submitted ? "See your result" : "See the photo"}
           </Link>
-          <SendCount day={day} />
+          <SendCount day={day} className="muted" testId="send-count" />
         </div>
       </section>
     );
@@ -246,7 +238,7 @@ function TodayCard(props: {
             ? "Your sketch is in. Results are being worked out, and this page updates by itself."
             : "Results are being worked out, and this page updates by itself."}
         </p>
-        <SendCount day={day} />
+        <SendCount day={day} className="muted" testId="send-count" />
       </section>
     );
   }
@@ -262,7 +254,11 @@ function TodayCard(props: {
           <Link to="/practice" className="btn btn-secondary">
             Practice while you wait
           </Link>
-          <SendCount day={day} />
+          <ShareSketchButton
+            day={day.day}
+            postClose={isPostClose(day.protocol)}
+          />
+          <SendCount day={day} className="muted" testId="send-count" />
         </div>
       </section>
     );
@@ -283,7 +279,7 @@ function TodayCard(props: {
         <Link to="/today" className="btn btn-primary btn-large">
           Start today's sketch
         </Link>
-        <SendCount day={day} />
+        <SendCount day={day} className="muted" testId="send-count" />
       </div>
     </section>
   );

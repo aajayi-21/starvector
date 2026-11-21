@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { CARD_HEIGHT, CARD_WIDTH, shareCard } from "../../src/share/card";
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  shareCard,
+  sketchCard,
+} from "../../src/share/card";
 import type { CardContext, CardStroke } from "../../src/share/draw";
-import { drawShareCard } from "../../src/share/draw";
+import { drawShareCard, drawSketchCard } from "../../src/share/draw";
 
 const RESULT = {
   day: "2026-12-01",
@@ -188,5 +193,103 @@ describe("the drawing of the share card", () => {
     const empty = recorder();
     drawShareCard(empty.context, card, [{ points: [] }]);
     expect(place(empty.seen)?.align).toBe("center");
+  });
+});
+
+describe("the card of a sketch, before the reveal (spec SS1 §6)", () => {
+  const SHARE = {
+    day: "2026-12-01",
+    dateLine: "Mon, Nov 30",
+    player: "night-owl",
+    host: "starvector.example",
+    postClose: true,
+  };
+  const strokes: CardStroke[] = [
+    {
+      points: [
+        [0.1, 0.1],
+        [0.5, 0.5],
+        [0.9, 0.2],
+      ],
+    },
+    { points: [[0.3, 0.8]], color: "#bf616a" },
+  ];
+
+  it("names the day, the player, and when the photo comes", () => {
+    const card = sketchCard(SHARE);
+    // A JPEG, with the day label in its name.
+    expect(card.fileName).toBe("starvector-sketch-2026-12-01.jpg");
+    expect(card.dateLine).toBe("Mon, Nov 30");
+    expect(card.noteLine).toBe("The photo is picked after the day closes.");
+    expect(card.byLine).toBe("night-owl");
+    expect(card.siteLine).toBe("starvector.example");
+    expect(card.shareText).toBe(
+      "My sketch for Starvector, Mon, Nov 30. The photo is picked after the day closes.",
+    );
+    expect(card.altText).toBe(
+      "A sketch by night-owl for Starvector, Mon, Nov 30. The photo is picked after the day closes.",
+    );
+  });
+
+  it("says the photo is revealed on a day with the pick at the open", () => {
+    const card = sketchCard({ ...SHARE, postClose: false });
+    expect(card.noteLine).toBe("The photo is revealed when the day closes.");
+  });
+
+  it("holds no result: no percent, no code, and no rank", () => {
+    for (const postClose of [true, false]) {
+      const card = sketchCard({ ...SHARE, postClose, player: null });
+      expect(card.byLine).toBeNull();
+      const words = Object.values(card).join(" ");
+      expect(words).not.toMatch(/%|\bCode\b|closest|beat|guessing/i);
+      expect(Object.keys(card).sort()).toEqual([
+        "altText",
+        "byLine",
+        "dateLine",
+        "fileName",
+        "noteLine",
+        "shareText",
+        "siteLine",
+      ]);
+    }
+  });
+
+  it("draws the ground first, then the brand, the sketch, and the lines", () => {
+    const card = sketchCard(SHARE);
+    const { context, seen } = recorder();
+    drawSketchCard(context, card, strokes);
+    // A JPEG has no clear pixel: the ground covers the full image.
+    expect(seen.rects[0]).toEqual({
+      x: 0,
+      y: 0,
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+    });
+    const texts = seen.texts.map((entry) => entry.text);
+    expect(texts).toEqual([
+      "Starvector",
+      "Mon, Nov 30",
+      "The photo is picked after the day closes.",
+      "night-owl",
+      "starvector.example",
+    ]);
+    // The sketch, with the color of each stroke.
+    expect(seen.strokeColors).toContain("#bf616a");
+    expect(seen.strokeColors).toContain("#eceff4");
+    const plain = recorder();
+    drawSketchCard(plain.context, card, []);
+    expect(seen.lineTos).toBeGreaterThan(plain.seen.lineTos);
+  });
+
+  it("leaves the result card as it was", () => {
+    // The two cards share the frame and the last line: the result card
+    // keeps each of its lines.
+    const card = shareCard(RESULT);
+    const { context, seen } = recorder();
+    drawShareCard(context, card, strokes);
+    const texts = seen.texts.map((entry) => entry.text);
+    expect(texts[0]).toBe("Starvector");
+    expect(texts).toContain("Code DCAAYC");
+    expect(texts[texts.length - 1]).toBe("starvector.example");
   });
 });

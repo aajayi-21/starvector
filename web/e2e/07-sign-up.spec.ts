@@ -23,7 +23,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   );
   // The server names the notice version this build holds (spec R1
   // §3.2): with a different number the gate offers no account.
-  expect((await probe.json()).notice_version).toBe(1);
+  expect((await probe.json()).notice_version).toBe(2);
   // One name for each run of this spec: a claimed name stays claimed.
   const username = `e2e-${Date.now().toString(36)}`;
 
@@ -62,16 +62,20 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   // The notice that results are public shows before the account is
   // made, and the control that makes it is described by it (spec R1
   // §3.1).
-  await expect(page.getByText("Your results are public.")).toBeVisible();
+  await expect(
+    page.getByText("Your sketches and results are public."),
+  ).toBeVisible();
   await expect(
     page.getByText(
-      /Your username, score, words and sketches are published in an open database after each day closes\. Do not type anything private\./,
+      /After you send, each player who sent that day can see your sketch\. After each day closes, each person can see your username, score and sketches on your public page, and your words in an open database\. Do not sketch or type anything private\./,
     ),
   ).toBeVisible();
   await expect(
     page.getByText("By creating an account, you agree to this."),
   ).toBeVisible();
-  await expect(make).toHaveAccessibleDescription(/Your results are public\./);
+  await expect(make).toHaveAccessibleDescription(
+    /Your sketches and results are public\./,
+  );
   await expect(make).toHaveAccessibleDescription(
     /By creating an account, you agree to this\./,
   );
@@ -123,7 +127,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   expect(me.operator_code).toBeNull();
   // The sign-up wrote the agreement to the current notice with the
   // account, thus no notice screen came before the app.
-  expect(me.notice.version).toBe(1);
+  expect(me.notice.version).toBe(2);
   expect(me.notice.agreed).toBe(true);
 
   // Sign out, then sign in with the pair.

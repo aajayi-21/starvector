@@ -1,6 +1,31 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import { blockExternalHosts, canvasPoint, drawStroke, signIn } from "./helpers";
+
+/**
+ * The width and the height of a JPEG, from its start-of-frame segment.
+ * The file starts with the JPEG marker, and each segment before the
+ * frame gives its own length.
+ */
+function jpegSize(bytes: Buffer): { width: number; height: number } {
+  expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+  let at = 2;
+  while (at + 9 < bytes.length) {
+    const marker = bytes[at + 1] as number;
+    const length = bytes.readUInt16BE(at + 2);
+    // SOF0 to SOF3: the frame header holds the height, then the width.
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return {
+        height: bytes.readUInt16BE(at + 5),
+        width: bytes.readUInt16BE(at + 7),
+      };
+    }
+    at += 2 + length;
+  }
+  throw new Error("the file has no JPEG frame");
+}
 
 test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await signIn(page);
@@ -51,6 +76,14 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   ).json();
   expect(dayView.closes_at).toBe(`${dayView.day}T22:00:00+00:00`);
 
+  // Send, then see (spec SS1 §4): the second player of the fixture has
+  // sent, and this player has not. The server refuses the sketches of
+  // the day with its one constant body.
+  const sendsUrl = `http://127.0.0.1:8199/api/sends?day=${dayView.day}`;
+  const refused = await page.request.get(sendsUrl);
+  expect(refused.status()).toBe(404);
+  expect(await refused.text()).toBe('{"detail":"sends not shown"}');
+
   // Two strokes: a vertical mast and a second line beside it.
   await drawStroke(page, [0.2, 0.7], [0.25, 0.2]);
   await drawStroke(page, [0.35, 0.7], [0.33, 0.25]);
@@ -94,6 +127,29 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
     timeout: 30_000,
   });
 
+  // The player's own sketch saves as a JPEG before the reveal (spec SS1
+  // §6). Chromium on this box has no share sheet for files, so the
+  // control saves the file, and the spec reads the saved bytes.
+  const shareSketch = page.getByRole("button", {
+    name: "Share your sketch as an image",
+  });
+  await expect(shareSketch).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    shareSketch.click(),
+  ]);
+  expect(download.suggestedFilename()).toBe(
+    `starvector-sketch-${dayView.day}.jpg`,
+  );
+  const image = await readFile((await download.path()) as string);
+  expect(jpegSize(image)).toEqual({ width: 1080, height: 1350 });
+  // A card with a sketch and its lines is not an empty canvas.
+  expect(image.length).toBeGreaterThan(20_000);
+  await expect(page.getByText("Image saved.")).toBeVisible();
+  if (process.env.SV_SHARE_OUT) {
+    await download.saveAs(`${process.env.SV_SHARE_OUT}/sketch.jpg`);
+  }
+
   // Server truth survives a reload, and home agrees.
   await page.reload();
   await expect(page.getByText("Sent. You're in for today")).toBeVisible();
@@ -103,4 +159,37 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   // One start for the open day: the sent view after the reload sends
   // no second one.
   expect(starts).toBe(1);
+
+  // The send opens the sketches of the day to this player: the two
+  // sends, the newest first, each as the sketch alone (spec SS1 §5).
+  const sends = await (await page.request.get(sendsUrl)).json();
+  expect(sends.total).toBe(2);
+  expect(
+    sends.entries.map((entry: { player: string }) => entry.player),
+  ).toEqual(["ade", "bru"]);
+  for (const entry of sends.entries) {
+    expect(Object.keys(entry).sort()).toEqual([
+      "avatar_hash",
+      "named",
+      "player",
+      "state",
+      "strokes",
+    ]);
+    expect(entry.state).toBe("sketch");
+  }
+  // No word, label, or note of a send is in the answer.
+  const sendsText = JSON.stringify(sends);
+  for (const text of ["tall vertical", "cold and bright", "tower", "group"]) {
+    expect(sendsText).not.toContain(text);
+  }
+  // The count on the home screen is the control that opens them.
+  await page.getByTestId("send-count").getByRole("link").click();
+  await expect(page).toHaveURL(/\/sends\?day=/);
+  await expect(
+    page.getByRole("heading", { name: "Today's sketches" }),
+  ).toBeVisible();
+  const tiles = page.getByRole("list", { name: "Sketches" });
+  await expect(tiles.getByRole("listitem")).toHaveCount(2);
+  await expect(page.getByRole("img", { name: "Your sketch" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Sketch by bru" })).toBeVisible();
 });

@@ -9,7 +9,7 @@
  * the reader's theme.
  */
 
-import type { ShareCard } from "./card";
+import type { ShareCard, SketchCard } from "./card";
 import { CARD_HEIGHT, CARD_WIDTH } from "./card";
 
 export interface CardStroke {
@@ -64,6 +64,10 @@ const FONT =
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const MARGIN = 72;
 const SKETCH_SIDE = 420;
+/** The line width of the sketch at SKETCH_SIDE. */
+const SKETCH_LINE = 5;
+/** The line width of the sketch that fills the card of a sketch. */
+const BIG_SKETCH_LINE = 6;
 
 function font(weight: number, size: number, family: string = FONT): string {
   return `${weight} ${size}px ${family}`;
@@ -176,6 +180,7 @@ function drawSketch(
   x: number,
   y: number,
   side: number,
+  lineWidth: number = SKETCH_LINE,
 ): void {
   context.fillStyle = COLOR.canvas;
   roundedRect(context, x, y, side, side, 24);
@@ -187,7 +192,7 @@ function drawSketch(
   context.save();
   roundedRect(context, x, y, side, side, 24);
   context.clip();
-  context.lineWidth = 5;
+  context.lineWidth = lineWidth;
   context.lineCap = "round";
   context.lineJoin = "round";
   for (const stroke of strokes) {
@@ -236,16 +241,17 @@ function drawPlace(
 }
 
 /**
- * Draw the card on a context of CARD_WIDTH by CARD_HEIGHT pixels.
- * With no stroke the card has no sketch panel, and the place of the
- * hidden photo sits in the middle.
+ * The ground of a card, its panel, the brand, and the day. The ground
+ * covers the full image first: a JPEG has no clear pixel. `dateY` is
+ * the middle of the date line: beside the brand on a card with no
+ * code, and over the code on a card with one.
  */
-export function drawShareCard(
+function drawFrame(
   context: CardContext,
-  card: ShareCard,
-  strokes: ReadonlyArray<CardStroke>,
+  dateLine: string,
+  codeLine: string | null,
+  dateY: number,
 ): void {
-  const inner = CARD_WIDTH - 2 * MARGIN;
   context.fillStyle = COLOR.ground;
   context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
   context.fillStyle = COLOR.panel;
@@ -266,12 +272,66 @@ export function drawShareCard(
   context.textAlign = "right";
   context.fillStyle = COLOR.muted;
   context.font = font(500, 34);
-  context.fillText(card.dateLine, CARD_WIDTH - MARGIN, 104);
-  if (card.codeLine !== null) {
+  context.fillText(dateLine, CARD_WIDTH - MARGIN, dateY);
+  if (codeLine !== null) {
     context.fillStyle = COLOR.quiet;
     context.font = font(600, 28, MONO);
-    context.fillText(card.codeLine, CARD_WIDTH - MARGIN, 146);
+    context.fillText(codeLine, CARD_WIDTH - MARGIN, 146);
   }
+}
+
+/** Who made the card and where: the last line of each card. */
+function drawFoot(
+  context: CardContext,
+  byLine: string | null,
+  siteLine: string,
+): void {
+  context.textBaseline = "alphabetic";
+  context.font = font(600, 30);
+  if (byLine !== null) {
+    context.textAlign = "left";
+    context.fillStyle = COLOR.text;
+    context.fillText(byLine, MARGIN, CARD_HEIGHT - 84);
+  }
+  context.textAlign = "right";
+  context.fillStyle = COLOR.accent;
+  context.fillText(siteLine, CARD_WIDTH - MARGIN, CARD_HEIGHT - 84);
+}
+
+/**
+ * Draw the card of a sketch (spec SS1 §6) on a context of CARD_WIDTH by
+ * CARD_HEIGHT pixels: the brand, the day, the sketch at the width of
+ * the card, one sentence on the photo, the player, and the site. No
+ * score and no word of the send is on it.
+ */
+export function drawSketchCard(
+  context: CardContext,
+  card: SketchCard,
+  strokes: ReadonlyArray<CardStroke>,
+): void {
+  const inner = CARD_WIDTH - 2 * MARGIN;
+  drawFrame(context, card.dateLine, null, 120);
+  drawSketch(context, strokes, MARGIN, 200, inner, BIG_SKETCH_LINE);
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
+  context.fillStyle = COLOR.muted;
+  context.font = font(500, 34);
+  context.fillText(card.noteLine, MARGIN, 200 + inner + 62);
+  drawFoot(context, card.byLine, card.siteLine);
+}
+
+/**
+ * Draw the card of a result on a context of CARD_WIDTH by CARD_HEIGHT
+ * pixels. With no stroke the card has no sketch panel, and the place
+ * of the hidden photo sits in the middle.
+ */
+export function drawShareCard(
+  context: CardContext,
+  card: ShareCard,
+  strokes: ReadonlyArray<CardStroke>,
+): void {
+  const inner = CARD_WIDTH - 2 * MARGIN;
+  drawFrame(context, card.dateLine, card.codeLine, 104);
 
   // The result against chance.
   context.textAlign = "left";
@@ -295,15 +355,5 @@ export function drawShareCard(
     drawPlace(context, card, CARD_WIDTH / 2, blockCenter, "center");
   }
 
-  // Who and where.
-  context.textBaseline = "alphabetic";
-  context.font = font(600, 30);
-  if (card.byLine !== null) {
-    context.textAlign = "left";
-    context.fillStyle = COLOR.text;
-    context.fillText(card.byLine, MARGIN, CARD_HEIGHT - 84);
-  }
-  context.textAlign = "right";
-  context.fillStyle = COLOR.accent;
-  context.fillText(card.siteLine, CARD_WIDTH - MARGIN, CARD_HEIGHT - 84);
+  drawFoot(context, card.byLine, card.siteLine);
 }

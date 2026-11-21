@@ -24,7 +24,8 @@ from frozen_fixture import (MANIFEST_NAME, READERS, enumerated, frozen_stores,
                             read_walk, replay_providers)
 
 from pipeline.config import load_scoring_config
-from service import digests, index, public, rollup, scoring, store
+from service import (digests, index, public, rollup, scoring, sketches,
+                     store)
 from service.config import ServiceConfig
 from service.day import build_day_scores, rescore_days
 
@@ -145,6 +146,24 @@ def test_no_stored_file_changes(world) -> None:
                  snapshot_date=NOW.date().isoformat(),
                  built_at=NOW.isoformat(), version="frozen-store-test")
     assert public.check(world.out / "public") == []
+    assert manifest_of(world.root) == before
+
+
+def test_each_stored_send_gives_its_sketch(world) -> None:
+    """Spec SS1 section 5: the sketch reader of today reads each send
+    of a frozen store, gives the strokes alone, and writes no file."""
+    before = manifest_of(world.root)
+    count = 0
+    for day in store.list_days(world.root):
+        for name in store.list_submissions(world.root, day):
+            stored = store.read_json_or_none(
+                store.submission_path(world.root, day, name))
+            sketch = sketches.sketch_of(stored["record"])
+            assert len(sketch) == len(stored["record"]["canvas_strokes"])
+            assert {key for stroke in sketch for key in stroke} \
+                <= {"points", "color"}
+            count += 1
+    assert count > 0
     assert manifest_of(world.root) == before
 
 

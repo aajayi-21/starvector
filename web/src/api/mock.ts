@@ -41,10 +41,13 @@ import type {
   RecoveryCodeAck,
   ReportRow,
   RevealView,
+  SendEntry,
+  SendsPage,
   SessionRow,
   SessionsView,
   SignInAck,
   SignupView,
+  SketchStroke,
   SkillBoardRow,
   SkillBoardView,
   StoredSubmission,
@@ -66,6 +69,22 @@ const CAST = [
   "iris-v",
   "tallgrass",
 ];
+/**
+ * The other players of a day's sends (spec SS1 §7): the cast, and one
+ * deleted account that shows by its anonymous identifier.
+ */
+const SENDS_CAST: ReadonlyArray<string> = [
+  ...CAST,
+  "anon-3f9c2b7a1d4e5f60",
+  "nightjar",
+  "osprey-k",
+  "fen",
+  "calder",
+  "mossback",
+];
+/** Small, so a screen with a dozen sends has a second page. */
+const MOCK_SENDS_PAGE = 5;
+
 const ATOM_BANK: ReadonlyArray<readonly [string, string | null]> = [
   ["tall vertical structure", "lighthouse tower"],
   ["water nearby", "sea"],
@@ -181,6 +200,8 @@ export interface MockOptions {
    * day view then holds no close time.
    */
   serveClose?: boolean;
+  /** True: the mock player has sent the open day at the start. */
+  submittedToday?: boolean;
 }
 
 /**
@@ -576,8 +597,109 @@ export function makeMockApi(options: MockOptions = {}): Api {
     };
   }
 
-  // Full-mock in-memory day state (offline UI work only).
-  let submittedToday = false;
+  // Full-mock in-memory day state (offline UI work only). The record
+  // of the send stays, as on the server: the caller reads it back, and
+  // the sends of the day show its sketch.
+  let submittedToday = options.submittedToday === true;
+  let sentRecord: WireRecord | null = null;
+
+  /** Three short lines from a seed: a stand-in for a stored sketch. */
+  function seededStrokes(seed: string): WireStroke[] {
+    const strokes: WireStroke[] = [];
+    for (let strokeIndex = 0; strokeIndex < 3; strokeIndex += 1) {
+      const x0 = 0.15 + 0.6 * draw(`${seed}:x:${strokeIndex}`);
+      const y0 = 0.15 + 0.6 * draw(`${seed}:y:${strokeIndex}`);
+      const angle = 2 * Math.PI * draw(`${seed}:a:${strokeIndex}`);
+      const points: [number, number][] = [];
+      for (let step = 0; step < 8; step += 1) {
+        const reach = 0.02 * step;
+        points.push([
+          round4(Math.min(1, Math.max(0, x0 + reach * Math.cos(angle)))),
+          round4(Math.min(1, Math.max(0, y0 + reach * Math.sin(angle)))),
+        ]);
+      }
+      const stroke: WireStroke = {
+        points,
+        group_id: strokeIndex === 0 ? "g1" : null,
+      };
+      if (strokeIndex === 1) {
+        stroke.color = "#81a1c1";
+      }
+      strokes.push(stroke);
+    }
+    return strokes;
+  }
+
+  /** The record of the caller's own send of a day, or null. */
+  function ownRecord(day: string): WireRecord | null {
+    if (day === today) {
+      if (!submittedToday) {
+        return null;
+      }
+      return (
+        sentRecord ?? {
+          impressions: ["tall vertical structure"],
+          canvas_strokes: seededStrokes(`sub:${day}`),
+          groups: [{ id: "g1", label: "tower" }],
+          relations: [],
+          pasted_text: null,
+        }
+      );
+    }
+    if (!playedSet.has(day)) {
+      return null;
+    }
+    return {
+      impressions: ["tall vertical structure", "water nearby"],
+      canvas_strokes: seededStrokes(`sub:${day}`),
+      groups: [{ id: "g1", label: "tower" }],
+      relations: [],
+      pasted_text: null,
+    };
+  }
+
+  /** The sketch of a record as a second person gets it: no text. */
+  function sketchOf(strokes: ReadonlyArray<WireStroke>): SketchStroke[] {
+    return strokes.map((stroke) =>
+      stroke.color === undefined
+        ? { points: stroke.points }
+        : { points: stroke.points, color: stroke.color },
+    );
+  }
+
+  /**
+   * The sends of a day from the first to the last (spec SS1 §7.2): the
+   * other players, then the caller's own send as the newest. One entry
+   * has no sketch, one is withheld, and one is a deleted account.
+   */
+  function sendsOf(day: string): SendEntry[] {
+    const entries: SendEntry[] = SENDS_CAST.map((name, index) => {
+      const named = !name.startsWith("anon-");
+      const state =
+        index === 2 ? "words-only" : index === 4 ? "withheld" : "sketch";
+      return {
+        player: name,
+        named,
+        avatar_hash: null,
+        state,
+        strokes:
+          state === "sketch"
+            ? sketchOf(seededStrokes(`sends:${day}:${name}`))
+            : [],
+      };
+    });
+    const own = ownRecord(day);
+    if (own !== null) {
+      entries.push({
+        player,
+        named: true,
+        avatar_hash: avatarHash,
+        state: own.canvas_strokes.length > 0 ? "sketch" : "words-only",
+        strokes: sketchOf(own.canvas_strokes),
+      });
+    }
+    return entries;
+  }
 
   // Full-mock account state (spec A1): the description and the
   // avatar digest, kept in memory for the session. The digest
@@ -630,7 +752,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         commitment: seededHex(`commitment:${today}`, 64),
         player,
         submitted: submittedToday,
-        sends: 12 + (submittedToday ? 1 : 0),
+        sends: SENDS_CAST.length + (submittedToday ? 1 : 0),
         relation_vocabulary: ["left-of", "right-of", "above", "below"],
         canvas_px: 512,
         min_strokes: 2,
@@ -649,6 +771,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         return Promise.reject(new ApiError(409, "already-submitted"));
       }
       submittedToday = true;
+      sentRecord = record;
       const labeled = record.groups.filter((g) => g.label !== "").length;
       const atomCount =
         record.impressions.length +
@@ -823,41 +946,35 @@ export function makeMockApi(options: MockOptions = {}): Api {
       });
     },
     getSubmission(day: string): Promise<StoredSubmission> {
-      if (!playedSet.has(day)) {
+      // The caller's own record, on the open day too, as the server
+      // gives it (spec W1 §6).
+      const record = ownRecord(day);
+      if (record === null) {
         return Promise.reject(new ApiError(404, undefined, "no submission"));
       }
-      const seed = `sub:${day}`;
-      const strokes: WireStroke[] = [];
-      for (let strokeIndex = 0; strokeIndex < 3; strokeIndex += 1) {
-        const x0 = 0.15 + 0.6 * draw(`${seed}:x:${strokeIndex}`);
-        const y0 = 0.15 + 0.6 * draw(`${seed}:y:${strokeIndex}`);
-        const angle = 2 * Math.PI * draw(`${seed}:a:${strokeIndex}`);
-        const points: [number, number][] = [];
-        for (let step = 0; step < 8; step += 1) {
-          const reach = 0.02 * step;
-          points.push([
-            round4(Math.min(1, Math.max(0, x0 + reach * Math.cos(angle)))),
-            round4(Math.min(1, Math.max(0, y0 + reach * Math.sin(angle)))),
-          ]);
-        }
-        const stroke: WireStroke = {
-          points,
-          group_id: strokeIndex === 0 ? "g1" : null,
-        };
-        if (strokeIndex === 1) {
-          stroke.color = "#81a1c1";
-        }
-        strokes.push(stroke);
-      }
       return Promise.resolve({
-        trial_id: seededHex(`${seed}:trial`, 32),
-        record: {
-          impressions: ["tall vertical structure", "water nearby"],
-          canvas_strokes: strokes,
-          groups: [{ id: "g1", label: "tower" }],
-          relations: [],
-          pasted_text: null,
-        },
+        trial_id: seededHex(`sub:${day}:trial`, 32),
+        record,
+      });
+    },
+    getSends(day: string, before?: number): Promise<SendsPage> {
+      // Send, then see (spec SS1 §4): the open day answers after the
+      // caller's own send. An earlier day of the mock is revealed.
+      if (day === today && !submittedToday) {
+        return Promise.reject(new ApiError(404, undefined, "sends not shown"));
+      }
+      const sequence = sendsOf(day);
+      const start = before ?? sequence.length;
+      if (!Number.isInteger(start) || start < 0 || start > sequence.length) {
+        return Promise.reject(new ApiError(400, "bad-cursor"));
+      }
+      const from = Math.max(0, start - MOCK_SENDS_PAGE);
+      return Promise.resolve({
+        day,
+        total: sequence.length,
+        next_before: from > 0 ? from : null,
+        // The newest send comes first.
+        entries: sequence.slice(from, start).reverse(),
       });
     },
     getSkillLeaderboard(): Promise<SkillBoardView> {
