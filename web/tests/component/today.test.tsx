@@ -355,6 +355,104 @@ function drawOneStroke(live: HTMLCanvasElement, y: number): void {
   firePointer(live, "pointerup", 150, y);
 }
 
+describe("the eraser", () => {
+  it("is off until there is a line to erase", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    const eraser = screen.getByRole("button", { name: "Eraser" });
+    expect((eraser as HTMLButtonElement).disabled).toBe(true);
+    drawTwoStrokes(view.container);
+    await screen.findByText(/2 lines/);
+    expect((eraser as HTMLButtonElement).disabled).toBe(false);
+    expect(eraser.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("cuts a line in one step, and one undo puts it back", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    const live = stubCanvasBox(view.container);
+    drawOneStroke(live, 30);
+    drawOneStroke(live, 120);
+    await screen.findByText(/2 lines/);
+
+    const eraser = screen.getByRole("button", { name: "Eraser" });
+    fireEvent.click(eraser);
+    expect(eraser.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/^Erasing\./)).toBeDefined();
+
+    // Down across the first line, in two moves: one gesture.
+    firePointer(live, "pointerdown", 100, 10);
+    firePointer(live, "pointermove", 100, 30);
+    firePointer(live, "pointermove", 100, 50);
+    firePointer(live, "pointerup", 100, 50);
+    // The cut line is two lines: the sketch holds three.
+    await screen.findByText(/3 lines/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await screen.findByText(/2 lines/);
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await screen.findByText(/3 lines/);
+  });
+
+  it("gives the pen back when a color is picked", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    drawTwoStrokes(view.container);
+    await screen.findByText(/2 lines/);
+    const eraser = screen.getByRole("button", { name: "Eraser" });
+    fireEvent.click(eraser);
+    expect(eraser.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "red ink" }));
+    expect(eraser.getAttribute("aria-pressed")).toBe("false");
+    // The pen draws again: a third line.
+    drawOneStroke(stubCanvasBox(view.container), 200);
+    await screen.findByText(/3 lines/);
+  });
+
+  it("gives the pen back when the sketch is cleared", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    drawTwoStrokes(view.container);
+    await screen.findByText(/2 lines/);
+    const eraser = screen.getByRole("button", { name: "Eraser" });
+    fireEvent.click(eraser);
+    fireEvent.click(screen.getByRole("button", { name: "Clear the sketch" }));
+    await waitFor(() => {
+      expect(eraser.getAttribute("aria-pressed")).toBe("false");
+    });
+    expect((eraser as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("saves the cut lines in the draft, with identifiers that are not used twice", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    const live = stubCanvasBox(view.container);
+    drawOneStroke(live, 30);
+    drawOneStroke(live, 120);
+    await screen.findByText(/2 lines/);
+    fireEvent.click(screen.getByRole("button", { name: "Eraser" }));
+    firePointer(live, "pointerdown", 100, 20);
+    firePointer(live, "pointermove", 100, 40);
+    firePointer(live, "pointerup", 100, 40);
+    await screen.findByText(/3 lines/);
+    await waitFor(
+      () => {
+        const raw = window.localStorage.getItem(`sv:draft:${HARNESS_TODAY}`);
+        expect(raw).not.toBeNull();
+        const draft = JSON.parse(raw as string) as {
+          doc: { strokes: { id: number }[] };
+          nextStrokeId: number;
+        };
+        const ids = draft.doc.strokes.map((stroke) => stroke.id);
+        expect(ids).toHaveLength(3);
+        expect(new Set(ids).size).toBe(3);
+        expect(draft.nextStrokeId).toBeGreaterThan(Math.max(...ids));
+      },
+      { timeout: 3000 },
+    );
+  });
+});
+
 describe("the review step", () => {
   it("sends nothing until the second button", async () => {
     let calls = 0;
