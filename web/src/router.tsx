@@ -43,7 +43,7 @@ import { LogoMark } from "./ui/logo";
 import { TabBar, TopBar } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
 import { OperatorCodeNotice } from "./ui/operator-code-notice";
-import { NO_FOOTER_PATHS, PUBLIC_PATHS } from "./ui/site-links";
+import { BLEED_PATHS, NO_FOOTER_PATHS, PUBLIC_PATHS } from "./ui/site-links";
 
 /**
  * The chrome of a public path for a browser that is not in the app: a
@@ -98,6 +98,13 @@ function Shell(): React.JSX.Element {
     return <NoticeScreen notice={me.data.notice} />;
   }
   const footer = !NO_FOOTER_PATHS.has(pathname);
+  const pageClass = [
+    "page",
+    footer ? "page-has-footer" : "",
+    BLEED_PATHS.has(pathname) ? "page-bleed" : "",
+  ]
+    .filter((name) => name !== "")
+    .join(" ");
   return (
     <>
       <TopBar />
@@ -106,7 +113,7 @@ function Shell(): React.JSX.Element {
       <OperatorCodeNotice />
       <OfflineBanner />
       <InstallHint />
-      <main className={footer ? "page page-has-footer" : "page"}>
+      <main className={pageClass}>
         {/* No screen before me answers: a player who must agree to
             the notice does not get the drawing screen for a moment,
             and no start is sent for that player (spec R1 §4). */}

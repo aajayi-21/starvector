@@ -1,9 +1,10 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { Api } from "../../src/api/client";
 import { makeMockApi } from "../../src/api/mock";
 import { luckSentence } from "../../src/screens/history";
+import { SKY_DAYS } from "../../src/sky/core";
 import { makeDayNames } from "../../src/ui/day-names";
 import { median } from "../../src/ui/format";
 import { HARNESS_TODAY, renderAt } from "./harness";
@@ -164,19 +165,141 @@ describe("the Your results screen", () => {
     expect(pct(0.9911)).toBe("99%");
   });
 
-  it("draws the chance line on the chart", async () => {
-    renderAt("/history");
+  it("opens as a sky with one star for each day", async () => {
+    const page = renderAt("/history");
     const view = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
-    const chart = await screen.findByRole("img", {
-      name: /results from .* as a line of stars/,
+    const sky = await screen.findByRole("region", {
+      name: "Your results as a sky of your sketches",
     });
-    expect(chart.querySelector(".results-chart-chance")).not.toBeNull();
+    const stars = within(
+      within(sky).getByRole("group", { name: "Your days, the oldest first" }),
+    ).getAllByRole("button");
     // One star for each day, and the halo of the best one.
-    expect(chart.querySelectorAll(".results-chart-star")).toHaveLength(
-      view.days.length,
+    expect(stars).toHaveLength(Math.min(view.days.length, SKY_DAYS));
+    expect(sky.querySelectorAll(".sky-star.is-best")).toHaveLength(1);
+    // The oldest day is the first star, as the chart runs.
+    const oldest = view.days[Math.min(view.days.length, SKY_DAYS) - 1];
+    expect(stars[0]?.getAttribute("aria-label")).toBe(
+      `${makeDayNames("22:00").long(oldest?.day as string)}: ${Math.floor((oldest?.p as number) * 100 + 1e-9)} percent`,
     );
-    expect(chart.querySelectorAll(".results-chart-halo")).toHaveLength(1);
+    // The chart that the sky settles into keeps the line of chance.
+    expect(sky.querySelector('[data-sky="chance-line"]')).not.toBeNull();
     expect(screen.getByText(/dashed line is 50%/)).toBeDefined();
+    // The title stands on the sky, one time.
+    expect(
+      within(sky).getByRole("heading", { name: "Your results" }),
+    ).toBeDefined();
+    expect(page.container.querySelectorAll("h1")).toHaveLength(1);
+  });
+
+  it("draws each day's sketch as a constellation", async () => {
+    const view = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
+    const page = renderAt("/history");
+    await screen.findByText("Skill number");
+    // A sketch arrives after the history: each day's own stored send.
+    await waitFor(() =>
+      expect(page.container.querySelectorAll("[data-sky-fig]")).toHaveLength(
+        Math.min(view.days.length, SKY_DAYS),
+      ),
+    );
+    const figure = page.container.querySelector("[data-sky-fig]");
+    expect(figure?.querySelectorAll("polyline").length).toBeGreaterThan(0);
+    // The drawings are pictures of the stars, which hold the names.
+    expect(figure?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("keeps a day's star when the day has no stored sketch", async () => {
+    const base = makeMockApi({ today: HARNESS_TODAY });
+    const view = await base.getHistory();
+    const asked: string[] = [];
+    const api: Api = {
+      ...base,
+      getSubmission: (day: string) => {
+        asked.push(day);
+        return Promise.reject(new Error("no stored send"));
+      },
+    };
+    const page = renderAt("/history", api);
+    const sky = await screen.findByRole("region", {
+      name: "Your results as a sky of your sketches",
+    });
+    const count = Math.min(view.days.length, SKY_DAYS);
+    const stars = within(
+      within(sky).getByRole("group", { name: "Your days, the oldest first" }),
+    ).getAllByRole("button");
+    expect(stars).toHaveLength(count);
+    // One read for each day of the sky, and no more.
+    await waitFor(() => expect(asked).toHaveLength(count));
+    // The day opens with its number, and says that it has no sketch.
+    fireEvent.click(stars[0] as HTMLElement);
+    expect(await within(sky).findByText("No sketch this day.")).toBeDefined();
+    expect(page.container.querySelectorAll("[data-sky-fig]")).toHaveLength(0);
+  });
+
+  it("opens a day from its star, and steps through the days", async () => {
+    const view = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
+    renderAt("/history");
+    const sky = await screen.findByRole("region", {
+      name: "Your results as a sky of your sketches",
+    });
+    const stars = within(
+      within(sky).getByRole("group", { name: "Your days, the oldest first" }),
+    ).getAllByRole("button");
+    const newest = view.days[0];
+    const before = view.days[1];
+    if (newest === undefined || before === undefined) {
+      throw new Error("the mock history has fewer than two days");
+    }
+    const plate = within(sky).getByRole("complementary", {
+      name: "The chosen day",
+    });
+    expect(plate.textContent).toBe("");
+    fireEvent.click(stars[stars.length - 1] as HTMLElement);
+    // The words state the number against the 50% mark, and no verdict.
+    expect(
+      within(plate).getByText(
+        (_, node) =>
+          node?.tagName === "P" &&
+          node.textContent === `You beat ${pct(newest.p)} of the photos`,
+      ),
+    ).toBeDefined();
+    expect(
+      within(plate).getByRole("img", {
+        name: /Guessing averages 50%/,
+      }),
+    ).toBeDefined();
+    expect(
+      (
+        within(plate).getByRole("link", {
+          name: "Photo and details",
+        }) as HTMLAnchorElement
+      ).href,
+    ).toContain(`/reveal?day=${newest.day}`);
+    expect(stars[stars.length - 1]?.getAttribute("aria-pressed")).toBe("true");
+    // The newest day has no day after it.
+    expect(
+      (
+        within(plate).getByRole("button", {
+          name: "The day after",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    fireEvent.click(
+      within(plate).getByRole("button", { name: "The day before" }),
+    );
+    expect(
+      within(plate).getByText(
+        (_, node) =>
+          node?.tagName === "P" &&
+          node.textContent === `You beat ${pct(before.p)} of the photos`,
+      ),
+    ).toBeDefined();
+    // The arrow keys step as the buttons do, and Escape lets the day go.
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(stars[stars.length - 1]?.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(plate.textContent).toBe("");
+    expect(screen.queryByText(/good|bad|well done/i)).toBeNull();
   });
 
   it("sends a player with no result to today", async () => {

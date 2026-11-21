@@ -7,6 +7,7 @@ import "./app.css";
 import "./styles/home.css";
 import "./styles/play.css";
 import "./styles/results.css";
+import "./styles/sky.css";
 import "./styles/board.css";
 import "./styles/account.css";
 import "./styles/gate.css";

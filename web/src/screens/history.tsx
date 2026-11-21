@@ -4,13 +4,18 @@
  * best and the typical result, each day as a star against the 50%
  * guessing line, and each day with a link to its results.
  *
- * Two columns share the width. The first leads with the skill number
- * on a scale whose middle is chance, and one line of what it stands
- * for; four single numbers follow on hairlines. The longer
+ * The screen opens as a sky (ui/results-sky.tsx, owner request of
+ * 2026-11-21): each revealed day is its own sketch, drawn as a
+ * constellation and sized by its result. A scroll down leaves the sky:
+ * the stars settle into the chart of the days, and the numbers follow.
+ *
+ * Under the sky two columns share the width. The first leads with the
+ * skill number on a scale whose middle is chance, and one line of what
+ * it stands for; four single numbers follow on hairlines. The longer
  * explanations fold behind one row with their words unchanged: each
  * sentence is a claim about the scoring. The column states numbers and
- * no verdict. The second column holds the chart of the days and the
- * table of the days. Nothing here has a box.
+ * no verdict. The second column holds the table of the days. Nothing
+ * here has a box.
  *
  * The two repairs of docs/final-push.md §7.2: the best result is the
  * best share beaten — ranks from pools of different sizes do not
@@ -19,7 +24,7 @@
  */
 
 import { CaretRight } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -31,11 +36,12 @@ import type {
   NotScoredRow,
 } from "../api/types";
 import { friendlyMessage } from "../api/types";
+import { SKY_DAYS } from "../sky/core";
 import type { DayNames } from "../ui/day-names";
 import { useDayNames } from "../ui/day-names";
 import { median, ordinal, percentBeaten, skillAsPercent } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
-import { CHART_DAYS, ResultsChart } from "../ui/results-chart";
+import { type DaySketch, ResultsSky } from "../ui/results-sky";
 import { ShareResultButton } from "../ui/share-button";
 
 /**
@@ -59,8 +65,16 @@ export function HistoryScreen(): React.JSX.Element {
   });
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
 
+  // With a result, the sky is the head of the screen and holds the title.
+  if (history.data !== undefined && history.data.days.length > 0) {
+    return (
+      <div className="results">
+        <HistoryBody view={history.data} me={me.data ?? null} />
+      </div>
+    );
+  }
   return (
-    <div className="results">
+    <div className="results results-plain">
       <header className="page-header">
         <h1 className="h-display">Your results</h1>
         <p className="muted results-lead">
@@ -75,7 +89,7 @@ export function HistoryScreen(): React.JSX.Element {
         <div className="notice notice-bad" role="alert">
           {friendlyMessage(history.error)}
         </div>
-      ) : history.data.days.length === 0 ? (
+      ) : (
         <section className="card page-narrow">
           <h2>No results yet</h2>
           <p className="muted">
@@ -96,8 +110,6 @@ export function HistoryScreen(): React.JSX.Element {
             </Link>
           </div>
         </section>
-      ) : (
-        <HistoryBody view={history.data} me={me.data ?? null} />
       )}
     </div>
   );
@@ -133,9 +145,30 @@ function HistoryBody(props: {
   me: MeView | null;
 }): React.JSX.Element {
   const { view } = props;
+  const api = useApi();
   const names = useDayNames();
   const narrow = useNarrow();
   const [all, setAll] = useState(false);
+  // The sketch of each day in the sky: the player's own stored send.
+  // A stored send does not change, so one read serves the visit, and
+  // the result screen of a day shares the same cache entry.
+  const skyDays = view.days.slice(0, SKY_DAYS).map((row) => row.day);
+  const sends = useQueries({
+    queries: skyDays.map((day) => ({
+      queryKey: ["submission", day],
+      queryFn: () => api.getSubmission(day),
+      staleTime: Number.POSITIVE_INFINITY,
+      retry: false,
+    })),
+  });
+  const sketchOf = (day: string): DaySketch => {
+    const send = sends[skyDays.indexOf(day)];
+    if (send?.data !== undefined) {
+      return send.data.record.canvas_strokes;
+    }
+    // No stored send to read: the day keeps its star and has no drawing.
+    return send?.isError === true ? null : undefined;
+  };
   const streak = props.me?.streak ?? 0;
   const best = bestOf(view.days);
   const typical = median(view.days.map((row) => row.p));
@@ -143,153 +176,153 @@ function HistoryBody(props: {
   const listed = all ? entries : entries.slice(0, LIST_DAYS);
 
   return (
-    <div className="results-grid">
-      <section className="skill" aria-labelledby="skill-heading">
-        {view.skill === null ? (
-          <>
-            <h2 id="skill-heading">Skill number</h2>
-            <p className="muted">
-              Your skill number appears after your first result.
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="skill-top">
+    <>
+      <ResultsSky
+        days={view.days}
+        sketchOf={sketchOf}
+        player={props.me?.player ?? ""}
+      />
+      <div className="results-grid results-numbers">
+        <section className="skill" aria-labelledby="skill-heading">
+          {view.skill === null ? (
+            <>
               <h2 id="skill-heading">Skill number</h2>
-              <div className="figure skill-number">
-                {view.skill.theta.toFixed(2)}
+              <p className="muted">
+                Your skill number appears after your first result.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="skill-top">
+                <h2 id="skill-heading">Skill number</h2>
+                <div className="figure skill-number">
+                  {view.skill.theta.toFixed(2)}
+                </div>
               </div>
-            </div>
-            <SkillScale theta={view.skill.theta} />
-            <p>
-              1.00 is chance, the same thing as averaging 50%. Yours is the same
-              as averaging {skillAsPercent(view.skill.theta)}%. Based on{" "}
-              {view.skill.n} {view.skill.n === 1 ? "result" : "results"}.
-            </p>
-            <p className="muted">{luckSentence(view.skill.evidence_p)}</p>
-            {view.skill.n < EARLY_RESULTS ? (
-              <p className="badge badge-warn skill-early">
-                Early estimate — it swings a lot until you have more days
+              <SkillScale theta={view.skill.theta} />
+              <p>
+                1.00 is chance, the same thing as averaging 50%. Yours is the
+                same as averaging {skillAsPercent(view.skill.theta)}%. Based on{" "}
+                {view.skill.n} {view.skill.n === 1 ? "result" : "results"}.
               </p>
-            ) : null}
-          </>
-        )}
-        <dl className="skill-figures">
-          {view.skill === null ? null : (
-            <Figure label="Hit number">
-              <span data-testid="hit-number">
-                {view.skill.hit_number.toFixed(2)}
-              </span>
-            </Figure>
+              <p className="muted">{luckSentence(view.skill.evidence_p)}</p>
+              {view.skill.n < EARLY_RESULTS ? (
+                <p className="badge badge-warn skill-early">
+                  Early estimate — it swings a lot until you have more days
+                </p>
+              ) : null}
+            </>
           )}
-          <Figure
-            label="Best result"
-            unit={best === undefined ? "" : names.short(best.day)}
-          >
-            {best === undefined ? "—" : `${percentBeaten(best.p)}%`}
-          </Figure>
-          <Figure label="Typical result" unit="the middle of your results">
-            {typical === undefined ? "—" : `${percentBeaten(typical)}%`}
-          </Figure>
-          <Figure label="Streak" unit={streak === 1 ? "day" : "days"}>
-            {streak}
-          </Figure>
-        </dl>
-        {view.skill === null ? null : (
-          <details className="row-disclosure skill-more">
-            <summary>
-              What these numbers mean
-              <span className="row-meta">
-                <CaretRight
-                  size={16}
-                  aria-hidden="true"
-                  className="row-chevron"
-                />
-              </span>
-            </summary>
-            <div className="row-body">
-              <p className="muted small">
-                The leaderboard shows a steadied version of the skill number,
-                which stays near the middle until enough results back it. The
-                two can differ.
-              </p>
-              <p className="muted small">
-                For the hit number, chance is 1.00 as well. Higher means more of
-                your results land near the very top. The skill number rewards a
-                steady edge, and the hit number rewards occasional strong hits.
-              </p>
-            </div>
-          </details>
-        )}
-      </section>
-
-      <section className="days" aria-labelledby="days-heading">
-        <h2 id="days-heading">Every day you've played</h2>
-        <p className="muted small">
-          {view.days.length > CHART_DAYS
-            ? `Each star is one of your latest ${CHART_DAYS} days, newest on the right.`
-            : "Each star is one day, newest on the right."}{" "}
-          A higher star is a better result. The dashed line is 50% — what
-          guessing averages.
-        </p>
-        <ResultsChart days={view.days} narrow={narrow} />
-        {narrow ? (
-          <ul className="day-list" aria-label="Each day">
-            {listed.map((entry) => (
-              <DayRow key={entry.row.day} entry={entry} names={names} />
-            ))}
-          </ul>
-        ) : (
-          <div className="table-scroll days-table">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Date</th>
-                  <th scope="col">Code</th>
-                  <th scope="col" className="num">
-                    Result
-                  </th>
-                  <th scope="col" className="num">
-                    Place
-                  </th>
-                  <th scope="col">
-                    <span className="visually-hidden">Details and share</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {listed.map((entry) =>
-                  entry.kind === "not-scored" ? (
-                    <NotScoredLine
-                      key={entry.row.day}
-                      row={entry.row}
-                      names={names}
-                    />
-                  ) : (
-                    <ScoredLine
-                      key={entry.row.day}
-                      row={entry.row}
-                      names={names}
-                    />
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {entries.length > LIST_DAYS && !all ? (
-          <div className="days-more">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setAll(true)}
+          <dl className="skill-figures">
+            {view.skill === null ? null : (
+              <Figure label="Hit number">
+                <span data-testid="hit-number">
+                  {view.skill.hit_number.toFixed(2)}
+                </span>
+              </Figure>
+            )}
+            <Figure
+              label="Best result"
+              unit={best === undefined ? "" : names.short(best.day)}
             >
-              Show all {entries.length} days
-            </button>
-          </div>
-        ) : null}
-      </section>
-    </div>
+              {best === undefined ? "—" : `${percentBeaten(best.p)}%`}
+            </Figure>
+            <Figure label="Typical result" unit="the middle of your results">
+              {typical === undefined ? "—" : `${percentBeaten(typical)}%`}
+            </Figure>
+            <Figure label="Streak" unit={streak === 1 ? "day" : "days"}>
+              {streak}
+            </Figure>
+          </dl>
+          {view.skill === null ? null : (
+            <details className="row-disclosure skill-more">
+              <summary>
+                What these numbers mean
+                <span className="row-meta">
+                  <CaretRight
+                    size={16}
+                    aria-hidden="true"
+                    className="row-chevron"
+                  />
+                </span>
+              </summary>
+              <div className="row-body">
+                <p className="muted small">
+                  The leaderboard shows a steadied version of the skill number,
+                  which stays near the middle until enough results back it. The
+                  two can differ.
+                </p>
+                <p className="muted small">
+                  For the hit number, chance is 1.00 as well. Higher means more
+                  of your results land near the very top. The skill number
+                  rewards a steady edge, and the hit number rewards occasional
+                  strong hits.
+                </p>
+              </div>
+            </details>
+          )}
+        </section>
+
+        <section className="days" aria-labelledby="days-heading">
+          <h2 id="days-heading">Every day you've played</h2>
+          {narrow ? (
+            <ul className="day-list" aria-label="Each day">
+              {listed.map((entry) => (
+                <DayRow key={entry.row.day} entry={entry} names={names} />
+              ))}
+            </ul>
+          ) : (
+            <div className="table-scroll days-table">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Code</th>
+                    <th scope="col" className="num">
+                      Result
+                    </th>
+                    <th scope="col" className="num">
+                      Place
+                    </th>
+                    <th scope="col">
+                      <span className="visually-hidden">Details and share</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listed.map((entry) =>
+                    entry.kind === "not-scored" ? (
+                      <NotScoredLine
+                        key={entry.row.day}
+                        row={entry.row}
+                        names={names}
+                      />
+                    ) : (
+                      <ScoredLine
+                        key={entry.row.day}
+                        row={entry.row}
+                        names={names}
+                      />
+                    ),
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {entries.length > LIST_DAYS && !all ? (
+            <div className="days-more">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAll(true)}
+              >
+                Show all {entries.length} days
+              </button>
+            </div>
+          ) : null}
+        </section>
+      </div>
+    </>
   );
 }
 

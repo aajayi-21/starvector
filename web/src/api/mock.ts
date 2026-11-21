@@ -114,6 +114,179 @@ function round4(value: number): number {
   return Math.round(value * 1e4) / 1e4;
 }
 
+type MockLine = Array<[number, number]>;
+type MockShape = () => MockLine[];
+
+/** A part of an oval, as the points of one stroke. */
+function mockArc(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  from: number,
+  to: number,
+  steps: number,
+): MockLine {
+  return Array.from({ length: steps + 1 }, (_, step) => {
+    const angle = from + ((to - from) * step) / steps;
+    return [cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)];
+  });
+}
+
+function mockWave(y: number): MockLine {
+  return Array.from({ length: 25 }, (_, step) => [
+    0.2 + 0.025 * step,
+    y + 0.04 * Math.sin(step * 0.78),
+  ]);
+}
+
+/**
+ * The shapes of the mock's own sketches, in a square from 0 to 1: a
+ * clock, hills and a sun, a house, a spiral, waves, a tree, a boat, a
+ * lighthouse, an umbrella, and stairs. Stand-ins only (offline UI work).
+ */
+const MOCK_SHAPES: ReadonlyArray<MockShape> = [
+  () => [
+    mockArc(0.5, 0.5, 0.3, 0.3, 0, 6.4, 28),
+    [
+      [0.5, 0.5],
+      [0.5, 0.28],
+    ],
+    [
+      [0.5, 0.5],
+      [0.66, 0.58],
+    ],
+  ],
+  () => [
+    [
+      [0.2, 0.75],
+      [0.38, 0.4],
+      [0.5, 0.6],
+      [0.66, 0.3],
+      [0.82, 0.75],
+    ],
+    [
+      [0.15, 0.76],
+      [0.86, 0.77],
+    ],
+    mockArc(0.78, 0.25, 0.07, 0.07, 0, 6.4, 14),
+  ],
+  () => [
+    [
+      [0.3, 0.8],
+      [0.3, 0.45],
+      [0.7, 0.45],
+      [0.7, 0.8],
+      [0.3, 0.8],
+    ],
+    [
+      [0.24, 0.47],
+      [0.5, 0.22],
+      [0.76, 0.47],
+    ],
+    [
+      [0.46, 0.8],
+      [0.46, 0.62],
+      [0.56, 0.62],
+      [0.56, 0.8],
+    ],
+  ],
+  () => [
+    Array.from({ length: 60 }, (_, step) => {
+      const reach = 0.03 + (0.27 * step) / 60;
+      return [
+        0.5 + reach * Math.cos(step * 0.42),
+        0.5 + reach * Math.sin(step * 0.42),
+      ];
+    }),
+  ],
+  () => [mockWave(0.3), mockWave(0.5), mockWave(0.7)],
+  () => [
+    [
+      [0.47, 0.85],
+      [0.48, 0.55],
+    ],
+    [
+      [0.55, 0.85],
+      [0.54, 0.55],
+    ],
+    mockArc(0.5, 0.4, 0.22, 0.18, 0, 6.4, 24),
+  ],
+  () => [
+    [
+      [0.2, 0.65],
+      [0.5, 0.75],
+      [0.8, 0.65],
+      [0.72, 0.8],
+      [0.28, 0.8],
+      [0.2, 0.65],
+    ],
+    [
+      [0.5, 0.72],
+      [0.5, 0.2],
+    ],
+    [
+      [0.5, 0.24],
+      [0.74, 0.6],
+      [0.52, 0.62],
+    ],
+  ],
+  () => [
+    [
+      [0.42, 0.85],
+      [0.45, 0.35],
+      [0.56, 0.35],
+      [0.6, 0.85],
+      [0.42, 0.85],
+    ],
+    [
+      [0.43, 0.35],
+      [0.5, 0.24],
+      [0.58, 0.35],
+    ],
+    [
+      [0.6, 0.3],
+      [0.8, 0.24],
+    ],
+    [
+      [0.4, 0.3],
+      [0.2, 0.24],
+    ],
+    mockWave(0.92),
+  ],
+  () => [
+    mockArc(0.5, 0.55, 0.3, 0.28, Math.PI, 2 * Math.PI, 20),
+    [
+      [0.2, 0.55],
+      [0.8, 0.55],
+    ],
+    [
+      [0.5, 0.55],
+      [0.5, 0.82],
+      [0.42, 0.86],
+    ],
+  ],
+  () => [
+    [
+      [0.25, 0.8],
+      [0.25, 0.6],
+      [0.4, 0.6],
+      [0.4, 0.45],
+      [0.55, 0.45],
+      [0.55, 0.3],
+      [0.72, 0.3],
+      [0.72, 0.8],
+    ],
+    [
+      [0.2, 0.8],
+      [0.8, 0.8],
+    ],
+  ],
+];
+
+/** Palette colors of the drawing screen, for one stroke of a mock sketch. */
+const MOCK_COLORS = ["#81a1c1", "#ebcb8b", "#a3be8c", "#bf616a"] as const;
+
 function fromAlphabet(key: string, alphabet: string, length: number): string {
   let out = "";
   for (let index = 0; index < length; index += 1) {
@@ -630,6 +803,40 @@ export function makeMockApi(options: MockOptions = {}): Api {
     return strokes;
   }
 
+  /**
+   * A small drawing from a seed: a stand-in for the caller's own sketch
+   * of an earlier day, so the results sky has drawings to show. One of
+   * a few shapes, with its own size, place, and a little wobble.
+   */
+  function seededSketch(seed: string): WireStroke[] {
+    const shape = MOCK_SHAPES[
+      Math.floor(draw(`${seed}:shape`) * MOCK_SHAPES.length)
+    ] as MockShape;
+    const scale = 0.55 + 0.4 * draw(`${seed}:scale`);
+    const shiftX = (1 - scale) * draw(`${seed}:x`);
+    const shiftY = (1 - scale) * draw(`${seed}:y`);
+    const colored = Math.floor(draw(`${seed}:colored`) * 4);
+    const color = MOCK_COLORS[
+      Math.floor(draw(`${seed}:color`) * MOCK_COLORS.length)
+    ] as string;
+    return shape().map((line, lineIndex) => {
+      const stroke: WireStroke = {
+        points: line.map(([x, y], pointIndex) => {
+          const key = `${seed}:${lineIndex}:${pointIndex}`;
+          return [
+            round4(shiftX + scale * (x + 0.012 * (draw(`${key}:x`) - 0.5))),
+            round4(shiftY + scale * (y + 0.012 * (draw(`${key}:y`) - 0.5))),
+          ];
+        }),
+        group_id: lineIndex === 0 ? "g1" : null,
+      };
+      if (lineIndex > 0 && lineIndex === colored) {
+        stroke.color = color;
+      }
+      return stroke;
+    });
+  }
+
   /** The record of the caller's own send of a day, or null. */
   function ownRecord(day: string): WireRecord | null {
     if (day === today) {
@@ -651,7 +858,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
     }
     return {
       impressions: ["tall vertical structure", "water nearby"],
-      canvas_strokes: seededStrokes(`sub:${day}`),
+      canvas_strokes: seededSketch(`sub:${day}`),
       groups: [{ id: "g1", label: "tower" }],
       relations: [],
       pasted_text: null,
