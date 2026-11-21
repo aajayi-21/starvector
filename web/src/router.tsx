@@ -34,6 +34,7 @@ import { NoticeScreen, needsAgreement } from "./screens/notice";
 import { PracticeScreen } from "./screens/practice";
 import { ReleasesScreen } from "./screens/releases";
 import { RevealScreen } from "./screens/reveal";
+import { SendsScreen } from "./screens/sends";
 import { TodayScreen } from "./screens/today";
 import { WelcomeScreen } from "./screens/welcome";
 import { SiteFooter } from "./ui/footer";
@@ -183,6 +184,20 @@ export interface RevealSearch {
   day?: string;
 }
 
+/** The sketches of one day (spec SS1 §7.3). No day: the latest one. */
+export interface SendsSearch {
+  day?: string;
+}
+
+const sendsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sends",
+  component: SendsScreen,
+  validateSearch: (search: Record<string, unknown>): SendsSearch => {
+    return typeof search.day === "string" ? { day: search.day } : {};
+  },
+});
+
 const revealRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/reveal",
@@ -201,6 +216,7 @@ const routeTree = rootRoute.addChildren([
   accountRoute,
   howRoute,
   revealRoute,
+  sendsRoute,
   aboutRoute,
   releasesRoute,
 ]);

@@ -53,6 +53,8 @@ const RESULT_QUERIES = [
   "skill-board",
   "practice-days",
   "reveal",
+  // The sketches of a day open to each player at its reveal (spec SS1).
+  "day-sends",
 ];
 
 export function useDayQuery(): UseQueryResult<DayView> {

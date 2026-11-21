@@ -25,6 +25,7 @@ import type {
   RecoveryAck,
   RecoveryCodeAck,
   RevealView,
+  SendsPage,
   SessionsView,
   SignInAck,
   SignupView,
@@ -66,6 +67,16 @@ export interface LeaderboardApi {
 
 export interface ArchiveApi {
   getSubmission(day: string): Promise<StoredSubmission>;
+}
+
+/**
+ * The sends of a day, as sketches alone (spec SS1 §7). Send, then see:
+ * a day that is not revealed answers a caller whose own send of that
+ * day is stored, and the constant 404 for each other caller.
+ */
+export interface SendsApi {
+  /** `before` is the cursor of an earlier page's `next_before`. */
+  getSends(day: string, before?: number): Promise<SendsPage>;
 }
 
 export interface AccountApi {
@@ -164,6 +175,7 @@ export type Api = DayApi &
   HistoryApi &
   LeaderboardApi &
   ArchiveApi &
+  SendsApi &
   AccountApi &
   DoorApi &
   AboutApi &

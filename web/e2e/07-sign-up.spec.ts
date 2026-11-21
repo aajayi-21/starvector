@@ -127,7 +127,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   expect(me.operator_code).toBeNull();
   // The sign-up wrote the agreement to the current notice with the
   // account, thus no notice screen came before the app.
-  expect(me.notice.version).toBe(1);
+  expect(me.notice.version).toBe(2);
   expect(me.notice.agreed).toBe(true);
 
   // Sign out, then sign in with the pair.

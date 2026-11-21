@@ -1,0 +1,103 @@
+/*
+ * The sketches of a day (spec SS1 §7.3), and the send count that opens
+ * them. A plain grid: each sketch on the drawing ground, with the
+ * player under it. No box around a tile: a sketch is a thing to look
+ * at, not a thing to press.
+ */
+
+/* The send count as a control: words and a caret, in the line's own
+   color until the pointer is on it. */
+.count-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.count-link:hover {
+  color: var(--accent-text);
+  text-decoration-color: currentColor;
+}
+
+.sends-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 24px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.send-tile {
+  min-width: 0;
+  /* A long day has many tiles: the browser draws the ones in view. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+.send-sketch {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  background: var(--canvas, #1f2430);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.sketch-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.send-mark {
+  margin: 0;
+  padding: 0 12px;
+  color: var(--text-3);
+  font-size: 14px;
+  text-align: center;
+}
+.send-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 8px;
+}
+.send-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.sends-more {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 28px;
+}
+.sends-more p {
+  margin: 0;
+}
+.sends-locked {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+}
+.sends-locked p {
+  margin: 0;
+}
+.sends-back {
+  margin: 32px 0 0;
+}
+
+@media (max-width: 720px) {
+  .sends-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 20px 12px;
+  }
+  .count-link {
+    min-height: 44px;
+  }
+}

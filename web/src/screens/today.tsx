@@ -76,10 +76,10 @@ import {
   formatCloseClock,
   formatCloseMoment,
   formatRemaining,
-  sendCountText,
 } from "../ui/format";
 import { isPostClose } from "../ui/pick-copy";
 import { PlayFrame, PlayMessage } from "../ui/play-switch";
+import { SendCount } from "../ui/send-count";
 
 const DRAFT_DEBOUNCE_MS = 500;
 
@@ -219,9 +219,11 @@ function DayBrief(props: {
       )}
       <hr className="divider play-brief-rule" />
       {props.children}
-      <p className="muted small play-brief-count">
-        {sendCountText(view.sends, view.status === "open")}
-      </p>
+      <SendCount
+        day={view}
+        className="muted small play-brief-count"
+        testId="play-brief-count"
+      />
     </section>
   );
 }
@@ -403,8 +405,10 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
       removeStorage(draftKey(draftDay));
       removeEarlierDrafts(day);
       forgetDraft();
-      // The day now reads "sent" on each screen that shows it.
+      // The day now reads "sent" on each screen that shows it, and
+      // the sketches of the day are open to this player (spec SS1 §4).
       void queryClient.invalidateQueries({ queryKey: ["day"] });
+      void queryClient.invalidateQueries({ queryKey: ["day-sends"] });
     },
     onError: (error, { day }) => {
       if (!(error instanceof ApiError)) {

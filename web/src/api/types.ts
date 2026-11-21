@@ -81,6 +81,44 @@ export interface WireRecord {
   pasted_text: string | null;
 }
 
+// ── spec SS1: the sends of a day, as sketches alone ────────────
+
+/** One stroke of a sketch: the points and the color, and no text. */
+export interface SketchStroke {
+  points: WirePoint[];
+  /** Present only when the stroke has a palette color; ink omits it. */
+  color?: string;
+}
+
+/**
+ * What an entry shows (spec SS1 §7.2): its sketch, a mark for a send
+ * with no sketch, a mark for a send that the operator withheld, or a
+ * mark for a send that waits for the reveal of its day.
+ */
+export type SendState = "sketch" | "words-only" | "withheld" | "after-reveal";
+
+/** One send of a day, as a second person gets it: the sketch alone. */
+export interface SendEntry {
+  /** The board label: the username, or an anonymous identifier. */
+  player: string;
+  /** False for an anonymous identifier (a deleted account). */
+  named: boolean;
+  avatar_hash: string | null;
+  state: SendState;
+  /** Empty when the state is not "sketch". */
+  strokes: SketchStroke[];
+}
+
+/** GET /api/sends: one page of the sends of a day, the newest first. */
+export interface SendsPage {
+  day: string;
+  /** The number of sends of the day. */
+  total: number;
+  /** The cursor of the page after this one, or null at the end. */
+  next_before: number | null;
+  entries: SendEntry[];
+}
+
 export interface SubmissionAck {
   trial_id: string;
   /** The day the send landed on (spec PL1 §2). */

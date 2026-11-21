@@ -51,6 +51,14 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   ).json();
   expect(dayView.closes_at).toBe(`${dayView.day}T22:00:00+00:00`);
 
+  // Send, then see (spec SS1 §4): the second player of the fixture has
+  // sent, and this player has not. The server refuses the sketches of
+  // the day with its one constant body.
+  const sendsUrl = `http://127.0.0.1:8199/api/sends?day=${dayView.day}`;
+  const refused = await page.request.get(sendsUrl);
+  expect(refused.status()).toBe(404);
+  expect(await refused.text()).toBe('{"detail":"sends not shown"}');
+
   // Two strokes: a vertical mast and a second line beside it.
   await drawStroke(page, [0.2, 0.7], [0.25, 0.2]);
   await drawStroke(page, [0.35, 0.7], [0.33, 0.25]);
@@ -91,4 +99,37 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   // One start for the open day: the sent view after the reload sends
   // no second one.
   expect(starts).toBe(1);
+
+  // The send opens the sketches of the day to this player: the two
+  // sends, the newest first, each as the sketch alone (spec SS1 §5).
+  const sends = await (await page.request.get(sendsUrl)).json();
+  expect(sends.total).toBe(2);
+  expect(
+    sends.entries.map((entry: { player: string }) => entry.player),
+  ).toEqual(["ade", "bru"]);
+  for (const entry of sends.entries) {
+    expect(Object.keys(entry).sort()).toEqual([
+      "avatar_hash",
+      "named",
+      "player",
+      "state",
+      "strokes",
+    ]);
+    expect(entry.state).toBe("sketch");
+  }
+  // No word, label, or note of a send is in the answer.
+  const sendsText = JSON.stringify(sends);
+  for (const text of ["tall vertical", "cold and bright", "tower", "group"]) {
+    expect(sendsText).not.toContain(text);
+  }
+  // The count on the home screen is the control that opens them.
+  await page.getByTestId("send-count").getByRole("link").click();
+  await expect(page).toHaveURL(/\/sends\?day=/);
+  await expect(
+    page.getByRole("heading", { name: "Today's sketches" }),
+  ).toBeVisible();
+  const tiles = page.getByRole("list", { name: "Sketches" });
+  await expect(tiles.getByRole("listitem")).toHaveCount(2);
+  await expect(page.getByRole("img", { name: "Your sketch" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Sketch by bru" })).toBeVisible();
 });
