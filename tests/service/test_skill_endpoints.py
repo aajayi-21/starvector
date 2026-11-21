@@ -13,7 +13,7 @@ from svc_fixture import (FIXED_CLOCK, build_service_fixture,
                          plant_session)
 
 from core import aggregate
-from service import auth, players, rollup, store
+from service import auth, notice, players, rollup, store
 from service.day import close_day, open_day, reveal_day
 from service.server import create_app
 
@@ -300,8 +300,8 @@ def test_the_me_surface_holds_no_flag_that_cannot_vary(tmp_path) -> None:
                          "operator_code", "notice"}
     # The pool of this world is a development pool, thus no send needs
     # the agreement (spec R1 section 3.3).
-    assert body["notice"] == {"version": 1, "agreed": False,
-                              "required": False}
+    assert body["notice"] == {"version": notice.NOTICE_VERSION,
+                              "agreed": False, "required": False}
     # A player of before spec A2 has no password and no operator's code.
     assert body["has_password"] is False
     assert body["operator_code"] is None

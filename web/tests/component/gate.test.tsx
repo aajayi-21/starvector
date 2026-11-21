@@ -703,12 +703,14 @@ describe("the notice on the sign-up card (spec R1 §3.1)", () => {
     await screen.findByRole("heading", { name: "Create an account" });
   }
 
-  it("holds the ruled text, version 1", () => {
-    expect(NOTICE_VERSION).toBe(1);
+  it("holds the ruled text, version 2 (spec SS1 §10)", () => {
+    expect(NOTICE_VERSION).toBe(2);
     expect(`${NOTICE_LEAD} ${NOTICE_BODY}`).toBe(
-      "Your results are public. Your username, score, words and sketches " +
-        "are published in an open database after each day closes. Do not " +
-        "type anything private.",
+      "Your sketches and results are public. After you send, each player " +
+        "who sent that day can see your sketch. After each day closes, " +
+        "each person can see your username, score and sketches on your " +
+        "public page, and your words in an open database. Do not sketch " +
+        "or type anything private.",
     );
   });
 

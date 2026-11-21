@@ -162,10 +162,13 @@ def test_a_sign_up_writes_the_consent_record(tmp_path) -> None:
     assert client.post("/api/signup", json={
         "proof": solved_proof(client), "username": "alice", "password": GOOD,
         "agrees_public": True}).status_code == 201
-    record = store.read_consent_or_none(fixture["store"], "alice", 1)
-    assert record["player"] == "alice" and record["notice"] == 1
+    record = store.read_consent_or_none(fixture["store"], "alice",
+                                        notice.NOTICE_VERSION)
+    assert record["player"] == "alice"
+    assert record["notice"] == notice.NOTICE_VERSION
     assert client.get("/api/me").json()["notice"] \
-        == {"version": 1, "agreed": True, "required": True}
+        == {"version": notice.NOTICE_VERSION, "agreed": True,
+            "required": True}
 
 
 def _player_with_session(fixture, config, app, name="bru") -> TestClient:
@@ -187,7 +190,8 @@ def test_a_send_with_no_agreement_writes_nothing(tmp_path) -> None:
     open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
              pick_seed="a" * 32, secret="b" * 64)
     assert client.get("/api/me").json()["notice"] \
-        == {"version": 1, "agreed": False, "required": True}
+        == {"version": notice.NOTICE_VERSION, "agreed": False,
+            "required": True}
     refused = client.post(f"/api/submission?day={DAY}",
                           json=mixed_wire_record())
     assert refused.status_code == 409
@@ -197,13 +201,52 @@ def test_a_send_with_no_agreement_writes_nothing(tmp_path) -> None:
     stale = client.post("/api/account/consent", json={"notice": 7})
     assert stale.status_code == 409
     assert stale.content == b'{"cause":"notice-version"}'
-    agreed = client.post("/api/account/consent", json={"notice": 1})
-    assert agreed.json() == {"agreed": True, "notice": 1}
+    current = {"notice": notice.NOTICE_VERSION}
+    # The version before this one is not the text on the screen.
+    earlier = client.post("/api/account/consent",
+                          json={"notice": notice.NOTICE_VERSION - 1})
+    assert earlier.status_code == 409
+    assert earlier.content == b'{"cause":"notice-version"}'
+    agreed = client.post("/api/account/consent", json=current)
+    assert agreed.json() == {"agreed": True, **current}
     assert client.post("/api/account/consent",
-                       json={"notice": 1}).status_code == 200
+                       json=current).status_code == 200
     assert client.post(f"/api/submission?day={DAY}",
                        json=mixed_wire_record()).status_code == 200
     assert store.list_submissions(fixture["store"], DAY) == ("bru",)
+
+
+def test_an_agreement_to_an_earlier_version_is_not_sufficient(
+        tmp_path) -> None:
+    """Spec SS1 section 10: version 2 has a new sentence, thus a player
+    with version 1 alone gets the notice again and agrees before a send.
+    The file of version 1 stays, and it is not an agreement to the
+    sentence on the sketch after the send."""
+    fixture, config, app = _world(tmp_path, dev_only=False)
+    client = _player_with_session(fixture, config, app)
+    assert notice.NOTICE_VERSION >= notice.SHOWING_VERSION == 2
+    store.write_consent(fixture["store"], "bru", 1, "t1")
+    open_day(config, date=DAY, clock=lambda: FIXED_CLOCK,
+             pick_seed="a" * 32, secret="b" * 64)
+    assert client.get("/api/me").json()["notice"] \
+        == {"version": notice.NOTICE_VERSION, "agreed": False,
+            "required": True}
+    assert not notice.agreed(fixture["store"], "bru")
+    assert not notice.agreed_to_showing(fixture["store"], "bru")
+    refused = client.post(f"/api/submission?day={DAY}",
+                          json=mixed_wire_record())
+    assert refused.content == b'{"cause":"notice"}'
+    assert client.post(
+        "/api/account/consent",
+        json={"notice": notice.NOTICE_VERSION}).status_code == 200
+    assert notice.agreed_to_showing(fixture["store"], "bru")
+    # The two files stay: the store says which text was in force.
+    assert store.read_consent_or_none(fixture["store"], "bru", 1) \
+        is not None
+    assert store.read_consent_or_none(
+        fixture["store"], "bru", notice.NOTICE_VERSION) is not None
+    assert client.post(f"/api/submission?day={DAY}",
+                       json=mixed_wire_record()).status_code == 200
 
 
 def test_the_refusal_is_one_body_across_four_targets(tmp_path) -> None:
@@ -235,14 +278,15 @@ def test_a_development_pool_needs_no_agreement_for_a_send(tmp_path) -> None:
 
 def test_the_consent_path_wants_a_session_and_the_origin(tmp_path) -> None:
     fixture, config, app = _world(tmp_path, dev_only=False)
+    current = {"notice": notice.NOTICE_VERSION}
     assert _client(app).post("/api/account/consent",
-                             json={"notice": 1}).status_code == 401
+                             json=current).status_code == 401
     client = _player_with_session(fixture, config, app)
     bare = TestClient(app, base_url="https://testserver")
     bare.cookies.set(auth.SESSION_COOKIE,
                      client.cookies.get(auth.SESSION_COOKIE))
     assert bare.post("/api/account/consent",
-                     json={"notice": 1}).status_code == 403
+                     json=current).status_code == 403
     assert not notice.agreed(fixture["store"], "bru")
 
 

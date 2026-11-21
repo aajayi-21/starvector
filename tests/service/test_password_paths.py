@@ -14,7 +14,7 @@ from svc_fixture import (FIXED_CLOCK, QUICK_PROOF, QUICK_PROOF_KEYS,
                          QuickDigester, build_service_fixture, plant_session,
                          solved_proof)
 
-from service import auth, limits, players, signin, store
+from service import auth, limits, notice, players, signin, store
 from service import server as server_module
 from service.config import ServiceConfigError
 from service.server import (create_app, open_world_refusal, pepper_refusal)
@@ -53,7 +53,7 @@ def _sign_up(app, name="alice", password=GOOD) -> tuple[TestClient, dict]:
 def test_the_signup_probe_follows_the_switch(tmp_path) -> None:
     _config, app = _world(tmp_path)
     assert _client(app).get("/api/signup").json() \
-        == {"open": True, "notice_version": 1}
+        == {"open": True, "notice_version": notice.NOTICE_VERSION}
     _config, closed = _world(tmp_path / "closed", signup="closed")
     probe = _client(closed).get("/api/signup")
     assert probe.status_code == 404
