@@ -15,7 +15,9 @@
  */
 
 import type { HistoryDayRow } from "../api/types";
-import { formatShortDay, percentBeaten } from "./format";
+import type { DayNames } from "./day-names";
+import { useDayNames } from "./day-names";
+import { percentBeaten } from "./format";
 
 /**
  * How many of the latest days the chart draws at most. A layout limit
@@ -109,7 +111,11 @@ export function chartStars(
   }));
 }
 
-function describe(stars: ReadonlyArray<ChartStar>, total: number): string {
+function describe(
+  stars: ReadonlyArray<ChartStar>,
+  total: number,
+  names: DayNames,
+): string {
   const first = stars[0];
   const last = stars[stars.length - 1];
   const best = stars.find((star) => star.best);
@@ -118,15 +124,16 @@ function describe(stars: ReadonlyArray<ChartStar>, total: number): string {
   }
   const count =
     stars.length === 1
-      ? `Your result of ${formatShortDay(first.day)} as a star.`
-      : `Your ${stars.length < total ? "latest " : ""}${stars.length} results from ${formatShortDay(first.day)} to ${formatShortDay(last.day)} as a line of stars.`;
-  return `${count} A higher star is a better result. The best is ${formatShortDay(best.day)} at ${percentBeaten(best.p)} percent.`;
+      ? `Your result of ${names.short(first.day)} as a star.`
+      : `Your ${stars.length < total ? "latest " : ""}${stars.length} results from ${names.short(first.day)} to ${names.short(last.day)} as a line of stars.`;
+  return `${count} A higher star is a better result. The best is ${names.short(best.day)} at ${percentBeaten(best.p)} percent.`;
 }
 
 export function ResultsChart(props: {
   days: ReadonlyArray<Pick<HistoryDayRow, "day" | "p">>;
   narrow: boolean;
 }): React.JSX.Element {
+  const names = useDayNames();
   const box = props.narrow ? NARROW : WIDE;
   const stars = chartStars(props.days, box);
   const chanceY = (box.top + box.bottom) / 2;
@@ -145,7 +152,7 @@ export function ResultsChart(props: {
       className="results-chart"
       viewBox={`0 0 ${box.width} ${box.height}`}
       role="img"
-      aria-label={describe(stars, props.days.length)}
+      aria-label={describe(stars, props.days.length, names)}
     >
       <g className="results-chart-scale">
         <text x={0} y={box.top + 4}>
@@ -219,18 +226,18 @@ export function ResultsChart(props: {
             y={box.height - 6}
             textAnchor={stars.length === 1 ? "middle" : "start"}
           >
-            {formatShortDay(first.day)}
+            {names.short(first.day)}
           </text>
         )}
         {/* The middle date needs room between the two end dates. */}
         {middle === undefined || stars.length < 9 || props.narrow ? null : (
           <text x={middle.x} y={box.height - 6} textAnchor="middle">
-            {formatShortDay(middle.day)}
+            {names.short(middle.day)}
           </text>
         )}
         {last === undefined || stars.length < 2 ? null : (
           <text x={last.x} y={box.height - 6} textAnchor="end">
-            {formatShortDay(last.day)}
+            {names.short(last.day)}
           </text>
         )}
         {best === undefined || stars.length < 2 ? null : (
@@ -239,7 +246,7 @@ export function ResultsChart(props: {
             y={best.y + 5}
             textAnchor={bestBefore ? "end" : "start"}
           >
-            {formatShortDay(best.day)}, {percentBeaten(best.p)}%
+            {names.short(best.day)}, {percentBeaten(best.p)}%
           </text>
         )}
       </g>

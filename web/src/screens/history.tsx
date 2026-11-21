@@ -31,14 +31,9 @@ import type {
   NotScoredRow,
 } from "../api/types";
 import { friendlyMessage } from "../api/types";
-import {
-  formatDay,
-  formatShortDay,
-  median,
-  ordinal,
-  percentBeaten,
-  skillAsPercent,
-} from "../ui/format";
+import type { DayNames } from "../ui/day-names";
+import { useDayNames } from "../ui/day-names";
+import { median, ordinal, percentBeaten, skillAsPercent } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
 import { CHART_DAYS, ResultsChart } from "../ui/results-chart";
 import { ShareResultButton } from "../ui/share-button";
@@ -57,6 +52,7 @@ const EARLY_RESULTS = 5;
 
 export function HistoryScreen(): React.JSX.Element {
   const api = useApi();
+  const names = useDayNames();
   const history = useQuery({
     queryKey: ["history"],
     queryFn: () => api.getHistory(),
@@ -89,7 +85,7 @@ export function HistoryScreen(): React.JSX.Element {
             <p className="muted small" data-testid="not-scored-note">
               We couldn't score your send of{" "}
               {history.data.not_scored
-                .map((row) => formatShortDay(row.day))
+                .map((row) => names.short(row.day))
                 .join(", ")}
               . It doesn't count toward your results.
             </p>
@@ -137,6 +133,7 @@ function HistoryBody(props: {
   me: MeView | null;
 }): React.JSX.Element {
   const { view } = props;
+  const names = useDayNames();
   const narrow = useNarrow();
   const [all, setAll] = useState(false);
   const streak = props.me?.streak ?? 0;
@@ -187,7 +184,7 @@ function HistoryBody(props: {
           )}
           <Figure
             label="Best result"
-            unit={best === undefined ? "" : formatShortDay(best.day)}
+            unit={best === undefined ? "" : names.short(best.day)}
           >
             {best === undefined ? "—" : `${percentBeaten(best.p)}%`}
           </Figure>
@@ -239,7 +236,7 @@ function HistoryBody(props: {
         {narrow ? (
           <ul className="day-list" aria-label="Each day">
             {listed.map((entry) => (
-              <DayRow key={entry.row.day} entry={entry} />
+              <DayRow key={entry.row.day} entry={entry} names={names} />
             ))}
           </ul>
         ) : (
@@ -263,9 +260,17 @@ function HistoryBody(props: {
               <tbody>
                 {listed.map((entry) =>
                   entry.kind === "not-scored" ? (
-                    <NotScoredLine key={entry.row.day} row={entry.row} />
+                    <NotScoredLine
+                      key={entry.row.day}
+                      row={entry.row}
+                      names={names}
+                    />
                   ) : (
-                    <ScoredLine key={entry.row.day} row={entry.row} />
+                    <ScoredLine
+                      key={entry.row.day}
+                      row={entry.row}
+                      names={names}
+                    />
                   ),
                 )}
               </tbody>
@@ -353,11 +358,16 @@ function dayEntries(view: HistoryView): DayEntry[] {
   return entries.sort((a, b) => (a.row.day < b.row.day ? 1 : -1));
 }
 
-function ScoredLine(props: { row: HistoryDayRow }): React.JSX.Element {
+function ScoredLine(props: {
+  row: HistoryDayRow;
+  names: DayNames;
+}): React.JSX.Element {
   const { row } = props;
   return (
     <tr>
-      <td>{formatDay(row.day)}</td>
+      <td>
+        <time dateTime={row.day}>{props.names.long(row.day)}</time>
+      </td>
       <td className="results-code">{row.trial_code}</td>
       <td className="num">{percentBeaten(row.p)}%</td>
       <td className="num nowrap muted">
@@ -380,11 +390,16 @@ function ScoredLine(props: { row: HistoryDayRow }): React.JSX.Element {
   );
 }
 
-function NotScoredLine(props: { row: NotScoredRow }): React.JSX.Element {
+function NotScoredLine(props: {
+  row: NotScoredRow;
+  names: DayNames;
+}): React.JSX.Element {
   const { row } = props;
   return (
     <tr data-testid="not-scored-row">
-      <td>{formatDay(row.day)}</td>
+      <td>
+        <time dateTime={row.day}>{props.names.long(row.day)}</time>
+      </td>
       <td className="results-code">{row.trial_code}</td>
       <td className="num muted" colSpan={2}>
         Not scored
@@ -404,7 +419,10 @@ function NotScoredLine(props: { row: NotScoredRow }): React.JSX.Element {
  * One day on a phone: the whole row is the link to the day's results.
  * The share control is on that screen.
  */
-function DayRow(props: { entry: DayEntry }): React.JSX.Element {
+function DayRow(props: {
+  entry: DayEntry;
+  names: DayNames;
+}): React.JSX.Element {
   const { entry } = props;
   return (
     <li
@@ -414,7 +432,9 @@ function DayRow(props: { entry: DayEntry }): React.JSX.Element {
     >
       <Link to="/reveal" search={{ day: entry.row.day }} className="day-row">
         <span className="day-row-when">
-          <span>{formatDay(entry.row.day)}</span>
+          <time dateTime={entry.row.day}>
+            {props.names.long(entry.row.day)}
+          </time>
           <span className="results-code">{entry.row.trial_code}</span>
         </span>
         {entry.kind === "not-scored" ? (

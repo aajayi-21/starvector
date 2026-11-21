@@ -46,7 +46,8 @@ import {
 } from "../sketch/core";
 import { ChanceMeter } from "../ui/chance-meter";
 import { DayCode } from "../ui/code-cells";
-import { formatDay, ordinal, percentBeaten } from "../ui/format";
+import { useDayNames } from "../ui/day-names";
+import { ordinal, percentBeaten } from "../ui/format";
 import { PlayFrame, PlayMessage } from "../ui/play-switch";
 import { Credit, WordMatches } from "./reveal";
 
@@ -101,6 +102,7 @@ function PracticeWorkspace(props: {
   minStrokes: number;
 }): React.JSX.Element {
   const api = useApi();
+  const names = useDayNames();
   const [restored] = useState(() => readPracticeDraft());
   const [day, setDay] = useState(() =>
     restored !== null && props.days.some((row) => row.day === restored.day)
@@ -238,7 +240,7 @@ function PracticeWorkspace(props: {
           >
             {props.days.map((row) => (
               <option key={row.day} value={row.day}>
-                {formatDay(row.day)}
+                {names.long(row.day)}
               </option>
             ))}
           </select>
@@ -398,6 +400,7 @@ function PracticeResult(props: {
   onStartOver: () => void;
 }): React.JSX.Element {
   const api = useApi();
+  const names = useDayNames();
   const { result } = props;
   const trial = result.trial;
   return (
@@ -408,7 +411,7 @@ function PracticeResult(props: {
             src={api.imageUrl(result.target_id)}
             alt={
               result.credit?.title ??
-              `Hidden target of ${formatDay(result.day)}`
+              `Hidden target of ${names.long(result.day)}`
             }
           />
         </div>

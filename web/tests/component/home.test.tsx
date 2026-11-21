@@ -5,6 +5,7 @@ import type { Api } from "../../src/api/client";
 import { makeMockApi } from "../../src/api/mock";
 import type { DayStatus } from "../../src/api/types";
 import { ApiError } from "../../src/api/types";
+import { makeDayNames } from "../../src/ui/day-names";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
 beforeEach(() => {
@@ -162,6 +163,25 @@ describe("the home screen (spec BR1 §6)", () => {
     expect(
       await screen.findByText(/Today closes in \d+ h .*\(.*\d:\d\d.*\)/),
     ).toBeDefined();
+  });
+
+  it("gives the day in play no calendar date", async () => {
+    const view = renderAt("/");
+    await screen.findByRole("link", { name: "Start today's sketch" });
+    expect(view.container.querySelector(".eyebrow")?.textContent).toBe("Today");
+  });
+
+  it("names a day that is not open for the local date it started on", async () => {
+    // The mock server's rollover hour is 22:00 UTC. The name is the one
+    // that the rule gives in the zone of this machine.
+    const name = makeDayNames("22:00").long(HARNESS_TODAY);
+    const view = renderAt(
+      "/",
+      withDay({ status: "revealed", submitted: true }),
+    );
+    await screen.findByRole("link", { name: "See your result" });
+    await screen.findByText(name, { selector: ".eyebrow" });
+    expect(view.container.querySelector(".eyebrow")?.textContent).toBe(name);
   });
 
   it("explains the game to a player with no result yet", async () => {

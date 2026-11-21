@@ -1,10 +1,11 @@
 /**
- * Plain-language formatting (spec BR1 §6). Day labels are UTC dates
- * (spec BR1 §3), so a label formats in UTC and keeps its one name. A
- * label is an identifier and not the reader's calendar: a day that
- * closes at 22:00 UTC starts its label's run on the evening before, in
- * the Americas. So a screen about the day in play names its close in the
- * reader's zone (formatCloseMoment), and a past day keeps its label.
+ * Plain-language formatting (spec BR1 §6). A day label is a UTC date
+ * (spec BR1 §3) and an identifier, not the reader's calendar. A screen
+ * names a day through ui/day-names.ts, which gives the local date on
+ * which the day started, and names the close of the day in play in the
+ * reader's zone (formatCloseClock, formatCloseMoment). formatDay and
+ * formatShortDay give the UTC date of a label: the name where the
+ * rollover hour is not known.
  */
 
 const DAY_FORMAT = new Intl.DateTimeFormat(undefined, {
@@ -125,6 +126,63 @@ export function formatCloseMoment(
 export function formatLocalClock(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : CLOCK_FORMAT.format(date);
+}
+
+const WEEKDAY_FORMAT = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+});
+
+function sameLocalDate(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/**
+ * The local calendar day of an instant against the reader's clock:
+ * null for today, "tomorrow", or the weekday ("Sat").
+ */
+function dayWord(date: Date, now: number): string | null {
+  const today = new Date(now);
+  if (sameLocalDate(date, today)) {
+    return null;
+  }
+  const tomorrow = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() + 1,
+  );
+  return sameLocalDate(date, tomorrow)
+    ? "tomorrow"
+    : WEEKDAY_FORMAT.format(date);
+}
+
+/**
+ * The close of the day in play, in the reader's zone: "6:00 PM" when it
+ * is today, "tomorrow 6:00 PM", or "Sat 6:00 PM". The day in play has
+ * no calendar date on a screen, so the close says which day it is on.
+ */
+export function formatCloseClock(iso: string, now: number): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  const word = dayWord(date, now);
+  const clock = CLOCK_FORMAT.format(date);
+  return word === null ? clock : `${word} ${clock}`;
+}
+
+/** The same close inside a sentence: "at 6:00 PM", "tomorrow at 6:00 PM". */
+export function formatCloseAt(iso: string, now: number): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return `at ${iso}`;
+  }
+  const word = dayWord(date, now);
+  const clock = CLOCK_FORMAT.format(date);
+  return word === null ? `at ${clock}` : `${word} at ${clock}`;
 }
 
 /**

@@ -24,12 +24,12 @@ import { ChanceMeter } from "../ui/chance-meter";
 import { DayCode } from "../ui/code-cells";
 import { Constellation } from "../ui/constellation";
 import { useRemaining } from "../ui/countdown";
+import type { DayNames } from "../ui/day-names";
+import { useDayNames } from "../ui/day-names";
 import {
+  formatCloseClock,
   formatCloseMoment,
-  formatDay,
-  formatLocalClock,
   formatRemaining,
-  formatShortDay,
   percentBeaten,
   sendCountText,
 } from "../ui/format";
@@ -158,18 +158,32 @@ function SendCount(props: { day: DayView }): React.JSX.Element {
 }
 
 /**
- * The line under the greeting. While the day is open and the close time
- * is known, it counts down; otherwise it says the close moment or the
- * date.
+ * The line under the greeting. The day in play has no calendar date: it
+ * is "today", with the countdown and the close in the reader's zone
+ * while the close time is known. A day that is not open reads as the
+ * local date on which it started (ui/day-names.ts).
  */
+function eyebrowText(
+  day: DayView,
+  remaining: number | null,
+  names: DayNames,
+): string {
+  if (day.status !== "open") {
+    return names.long(day.day);
+  }
+  if (remaining !== null && typeof day.closes_at === "string") {
+    const now = Date.parse(day.closes_at) - remaining;
+    return `Today closes in ${formatRemaining(remaining)} (${formatCloseClock(day.closes_at, now)})`;
+  }
+  const close = formatCloseMoment(day.closes_at);
+  return close === null ? "Today" : `Today, ${close}`;
+}
+
 function DayEyebrow(props: { day: DayView }): React.JSX.Element {
   const { day } = props;
   const remaining = useRemaining(day.closes_at);
-  const text =
-    day.status === "open" && remaining !== null
-      ? `Today closes in ${formatRemaining(remaining)} (${formatLocalClock(day.closes_at as string)})`
-      : `Today, ${formatCloseMoment(day.closes_at) ?? formatDay(day.day)}`;
-  return <p className="eyebrow">{text}</p>;
+  const names = useDayNames();
+  return <p className="eyebrow">{eyebrowText(day, remaining, names)}</p>;
 }
 
 function TodayCard(props: {
@@ -278,6 +292,7 @@ function TodayCard(props: {
 function LastResultCard(props: {
   history: HistoryView | undefined;
 }): React.JSX.Element {
+  const names = useDayNames();
   const latest = props.history?.days[0];
   return (
     <section className="card" aria-labelledby="last-result">
@@ -294,7 +309,7 @@ function LastResultCard(props: {
             <span className="home-card-number figure">
               {percentBeaten(latest.p)}%
             </span>
-            <span className="muted">{formatShortDay(latest.day)}</span>
+            <span className="muted">{names.short(latest.day)}</span>
           </div>
           <div className="home-meter">
             <ChanceMeter p={latest.p} />
@@ -316,13 +331,8 @@ function shiftDay(day: string, by: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-const WEEKDAY_LETTER = new Intl.DateTimeFormat(undefined, {
-  weekday: "narrow",
-  timeZone: "UTC",
-});
-
 interface WeekDay {
-  /** The first letter of the weekday of the day's label. */
+  /** The first letter of the weekday on which the day started. */
   letter: string;
   on: boolean;
 }
@@ -332,12 +342,16 @@ interface WeekDay {
  * revealed result. The row reads the history alone, which holds
  * revealed days only, so it says nothing of the open day (I7).
  */
-function weekOf(history: HistoryView, today: string): WeekDay[] {
+function weekOf(
+  history: HistoryView,
+  today: string,
+  names: DayNames,
+): WeekDay[] {
   const played = new Set(history.days.map((row) => row.day));
   return Array.from({ length: WEEK_DAYS }, (_, index) => {
     const day = shiftDay(today, index - WEEK_DAYS);
     return {
-      letter: WEEKDAY_LETTER.format(new Date(`${day}T12:00:00Z`)),
+      letter: names.weekdayLetter(day),
       on: played.has(day),
     };
   });
@@ -349,10 +363,11 @@ function StreakCard(props: {
   today: string | undefined;
 }): React.JSX.Element {
   const { streak, history, today } = props;
+  const names = useDayNames();
   const week =
     history === undefined || today === undefined
       ? null
-      : weekOf(history, today);
+      : weekOf(history, today, names);
   return (
     <section className="card" aria-labelledby="streak-card">
       <h3 id="streak-card">Streak</h3>

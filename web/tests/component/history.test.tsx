@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "../../src/api/client";
 import { makeMockApi } from "../../src/api/mock";
 import { luckSentence } from "../../src/screens/history";
+import { makeDayNames } from "../../src/ui/day-names";
 import { median } from "../../src/ui/format";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
@@ -25,6 +26,23 @@ describe("the Your results screen", () => {
     expect(screen.queryByText(/shrunk/)).toBeNull();
     expect(screen.queryByText(/evidence/i)).toBeNull();
     expect(screen.queryByText(/not wired/)).toBeNull();
+  });
+
+  it("names each day for the local date it started on, and keeps the label", async () => {
+    const view = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
+    const row = view.days[0];
+    if (row === undefined) {
+      throw new Error("the mock history has no day");
+    }
+    // The mock server's rollover hour is 22:00 UTC. The name is the one
+    // that the rule gives in the zone of this machine, and the label
+    // stays in the page as the identifier.
+    const name = makeDayNames("22:00").long(row.day);
+    const page = renderAt("/history");
+    await screen.findByText("Skill number");
+    await screen.findAllByText(name);
+    const time = page.container.querySelector(`time[datetime="${row.day}"]`);
+    expect(time?.textContent).toBe(name);
   });
 
   it("folds the longer explanations behind one row, words unchanged", async () => {
