@@ -54,7 +54,8 @@ import {
   privateOwnRow,
 } from "../board/core";
 import { AvatarCircle } from "../ui/avatar";
-import { formatDay, ordinal, percentBeaten } from "../ui/format";
+import { useDayNames } from "../ui/day-names";
+import { ordinal, percentBeaten } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
 import { PrivateRowBadge } from "../ui/private-row-badge";
 import { StreakName } from "../ui/streak-name";
@@ -154,6 +155,7 @@ function DailyBoard(props: {
   error: unknown;
 }): React.JSX.Element {
   const { view, self, pending, error } = props;
+  const names = useDayNames();
   // The caller's own row while it is below the floor of spec A2 §9.5.
   const hidden = view === undefined ? null : privateOwnRow(view.rows, self);
   // The photos of one day are one set, so the count stands one time
@@ -166,7 +168,9 @@ function DailyBoard(props: {
       <div className="board-heading">
         <h2 id="daily-heading">Latest day</h2>
         {view === undefined ? null : (
-          <span className="muted">{formatDay(view.day)}</span>
+          <time className="muted" dateTime={view.day}>
+            {names.long(view.day)}
+          </time>
         )}
       </div>
       {pending ? (

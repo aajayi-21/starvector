@@ -18,6 +18,7 @@ import {
   RECOVERY_CODE_LENGTH,
   usernameChecks,
 } from "../signin/rules";
+import { dayClose } from "../ui/day-calendar";
 import type { Api } from "./client";
 import type {
   AboutView,
@@ -172,6 +173,14 @@ export interface MockOptions {
   noticeVersion?: number;
   /** Where the mock's published snapshots are, or null for none. */
   publicDataUrl?: string | null;
+  /** The mock server's rollover hour, "HH:MM" UTC. The default is 22:00. */
+  closesAtUtc?: string;
+  /**
+   * True: the day view holds the close instant of the open day, as a
+   * server with a rollover hour does. The default is false, and the
+   * day view then holds no close time.
+   */
+  serveClose?: boolean;
 }
 
 /**
@@ -463,6 +472,14 @@ export function makeMockApi(options: MockOptions = {}): Api {
   let operatorCode = options.operatorCode ?? null;
   const noticeRequired = options.noticeRequired ?? false;
   const noticeVersion = options.noticeVersion ?? NOTICE_VERSION;
+  const closesAtUtc = options.closesAtUtc ?? "22:00";
+  // The wire shape of the close instant: "YYYY-MM-DDTHH:MM:00+00:00".
+  const closeOfToday =
+    options.serveClose === true
+      ? (dayClose(today, closesAtUtc)
+          ?.toISOString()
+          .replace(/\.\d{3}Z$/, "+00:00") ?? null)
+      : null;
 
   // Full-mock accounts (spec A2): in memory for the session.
   const accounts = new Map<string, MockAccount>([
@@ -617,7 +634,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         relation_vocabulary: ["left-of", "right-of", "above", "below"],
         canvas_px: 512,
         min_strokes: 2,
-        closes_at: null,
+        closes_at: closeOfToday,
       });
     },
     submit(day: string, record: WireRecord): Promise<SubmissionAck> {
@@ -911,7 +928,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       return Promise.resolve({
         test_season: true,
         photo_count: DECOY_COUNT + 1,
-        closes_at_utc: "22:00",
+        closes_at_utc: closesAtUtc,
         public_data_url: options.publicDataUrl ?? null,
         pick_protocol: "commit-v1",
       });

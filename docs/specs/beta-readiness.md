@@ -106,6 +106,33 @@ no `H` configured, the label is the UTC date of the open, and the
 development flow keeps its back-to-back days. With an `H`, an open
 refuses a label more than one day after the current one.
 
+*Note, 2026-11-20 — the name of a day on a screen (owner ruling).* The
+label stays the identifier of a day in each address, each API answer,
+each file name, and the public database. A player screen does not
+print the label as a date. A reader in the Americas saw the date of
+tomorrow on the day in play from the afternoon. The owner ruled the
+two rules that follow.
+
+- The day in play has no calendar date on a screen. The screens say
+  `Today` and give the close in the zone of the reader. The close has
+  `tomorrow` or the weekday before the clock when it is not on the
+  date of the reader.
+- An earlier day reads as the calendar date, in the zone of the
+  reader, of the instant at which the day started. In Los Angeles, with
+  `H` = 00:00, a day runs from 16:00 on a Friday to 16:00 on the
+  Saturday. It reads as that Friday.
+
+The rule has two known limits. With `H` = 00:00, a player in the
+Americas who plays in the daytime sees that result with the date of
+the evening before. The rule also uses the `H` of today for each
+earlier day. A day that ran with a different `H` can thus read one
+date off.
+
+`web/src/ui/day-calendar.ts` mirrors `service/schedule.py`, and
+`web/src/ui/day-names.ts` holds the naming rule in one function. With
+no `H`, a name is the UTC date of the label. The operator console
+keeps UTC.
+
 ### 3.4 The rollover
 
 `python -m service.rollover` moves the latest day as far as the

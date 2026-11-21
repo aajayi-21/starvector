@@ -39,12 +39,8 @@ import { floorSentence, privateOwnRow } from "../board/core";
 import { ReplayCanvas } from "../sketch/canvas";
 import { AvatarCircle } from "../ui/avatar";
 import { ChanceMeter } from "../ui/chance-meter";
-import {
-  formatDay,
-  formatShortDay,
-  ordinal,
-  percentBeaten,
-} from "../ui/format";
+import { useDayNames } from "../ui/day-names";
+import { ordinal, percentBeaten } from "../ui/format";
 import { useNarrow } from "../ui/narrow";
 import { isPostClose, photoNoun } from "../ui/pick-copy";
 import { PrivateRowBadge } from "../ui/private-row-badge";
@@ -121,6 +117,7 @@ function placeInHistory(
 
 function RevealBody(props: { view: RevealView }): React.JSX.Element {
   const api = useApi();
+  const names = useDayNames();
   const { view } = props;
   const narrow = useNarrow();
   const leaderboard = useQuery({
@@ -149,7 +146,7 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
       <header className="result-head">
         <div className="result-title">
           <p className="muted">
-            {formatDay(view.day)}
+            <time dateTime={view.day}>{names.long(view.day)}</time>
             {place.code === null ? null : (
               <span className="code result-code">{place.code}</span>
             )}
@@ -167,7 +164,7 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
             <Link to="/reveal" search={{ day: place.older }}>
               <ArrowLeft size={18} aria-hidden="true" />
               <span className="visually-hidden">The day before: </span>
-              {formatShortDay(place.older)}
+              {names.short(place.older)}
             </Link>
           )}
           <Link to="/history">All your results</Link>
@@ -182,7 +179,7 @@ function RevealBody(props: { view: RevealView }): React.JSX.Element {
                 src={api.imageUrl(view.target_id)}
                 alt={
                   view.credit?.title ??
-                  `${isPostClose(view.protocol) ? "The photo" : "Hidden target"} of ${formatDay(view.day)}`
+                  `${isPostClose(view.protocol) ? "The photo" : "Hidden target"} of ${names.long(view.day)}`
                 }
               />
             </div>

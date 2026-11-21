@@ -6,6 +6,7 @@ import { drawShareCard } from "../../src/share/draw";
 
 const RESULT = {
   day: "2026-12-01",
+  dateLine: "Mon, Nov 30",
   trialCode: "DCAAYC",
   p: 0.8765,
   targetRank: 172,
@@ -17,7 +18,11 @@ const RESULT = {
 describe("the share card of a result", () => {
   it("states the result against chance in the player's words", () => {
     const card = shareCard(RESULT);
+    // The file name holds the day label, and the card the day's name in
+    // the player's own zone, which the caller gives.
     expect(card.fileName).toBe("starvector-2026-12-01.png");
+    expect(card.dateLine).toBe("Mon, Nov 30");
+    expect(card.shareText).toContain("Mon, Nov 30");
     expect(card.percentText).toBe("87%");
     expect(card.captionLine).toBe("of the other photos beaten");
     expect(card.placeValue).toBe("172nd");

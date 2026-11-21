@@ -303,7 +303,29 @@ describe("the countdown", () => {
       }),
     };
     renderAt("/today", api);
-    expect(await screen.findByText(/Closes at .*, in \d+ h/)).toBeDefined();
+    // A close that is not today names its day before the clock.
+    expect(await screen.findByText(/Closes \w+ at .*, in \d+ h/)).toBeDefined();
+  });
+
+  it("shows no calendar date for the day in play", async () => {
+    const base = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...base,
+      getDay: async () => ({
+        ...(await base.getDay()),
+        closes_at: "2099-01-01T22:00:00+00:00",
+      }),
+    };
+    const view = renderAt("/today", api);
+    await screen.findByText(/Closes \w+ at .*, in \d+ h/);
+    expect(view.container.querySelector(".play-brief-date")).toBeNull();
+  });
+
+  it("shows the date of the label when the day has no close time", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    expect(view.container.querySelector(".play-brief-date")).not.toBeNull();
+    expect(view.container.querySelector(".play-brief-close")).toBeNull();
   });
 
   it("stays absent when closes_at is null or past", async () => {
@@ -317,7 +339,7 @@ describe("the countdown", () => {
     };
     renderAt("/today", api);
     await screen.findByText(REVIEW);
-    expect(screen.queryByText(/Closes at/)).toBeNull();
+    expect(screen.queryByText(/Closes .*at/)).toBeNull();
   });
 });
 
@@ -608,8 +630,9 @@ describe("the stale tab and the rollover", () => {
       }),
     };
     renderAt("/today", api);
-    const line = await screen.findByText(/Closes at .*, in \d+ h/);
-    expect(line.textContent).toMatch(/Closes at \d+:\d\d/);
+    const line = await screen.findByText(/Closes \w+ at .*, in \d+ h/);
+    expect(line.textContent).toMatch(/Closes \w+ at \d+:\d\d/);
+    expect(line.textContent).not.toMatch(/UTC/);
   });
 
   it("names no side of the screen in the hints", async () => {

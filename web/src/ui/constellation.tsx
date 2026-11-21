@@ -15,7 +15,9 @@
  */
 
 import type { HistoryDayRow } from "../api/types";
-import { formatShortDay, percentBeaten } from "./format";
+import type { DayNames } from "./day-names";
+import { useDayNames } from "./day-names";
+import { percentBeaten } from "./format";
 
 /** How many of the latest results the row shows. */
 export const CONSTELLATION_DAYS = 7;
@@ -145,7 +147,7 @@ export function starsOf(
   });
 }
 
-function describe(stars: ReadonlyArray<Star>): string {
+function describe(stars: ReadonlyArray<Star>, names: DayNames): string {
   const best = stars.find((star) => star.best);
   if (best === undefined) {
     return "Your results appear here as stars after your first day closes.";
@@ -154,13 +156,14 @@ function describe(stars: ReadonlyArray<Star>): string {
     stars.length === 1
       ? "Your last result as a star."
       : `Your last ${stars.length} results as a line of stars.`;
-  return `${count} A higher star is a better result. ${formatShortDay(best.day)} is the highest at ${percentBeaten(best.p)} percent.`;
+  return `${count} A higher star is a better result. ${names.short(best.day)} is the highest at ${percentBeaten(best.p)} percent.`;
 }
 
 export function Constellation(props: {
   days: ReadonlyArray<Pick<HistoryDayRow, "day" | "p">>;
   narrow: boolean;
 }): React.JSX.Element {
+  const names = useDayNames();
   const box = props.narrow ? NARROW : WIDE;
   const stars = starsOf(props.days, box);
   const chanceY = (box.top + box.bottom) / 2;
@@ -169,7 +172,7 @@ export function Constellation(props: {
       className="constellation"
       viewBox={`0 0 ${box.width} ${box.height}`}
       role="img"
-      aria-label={describe(stars)}
+      aria-label={describe(stars, names)}
     >
       <g className="constellation-field">
         {FIELD.map(([fx, fy, r], index) => (
@@ -239,7 +242,7 @@ export function Constellation(props: {
             fontSize={box.labelSize}
             textAnchor="middle"
           >
-            {formatShortDay(star.day)}
+            {names.short(star.day)}
           </text>
         </g>
       ))}

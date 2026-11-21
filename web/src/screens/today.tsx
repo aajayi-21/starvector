@@ -70,10 +70,11 @@ import {
 } from "../sketch/core";
 import { DayCode } from "../ui/code-cells";
 import { useRemaining } from "../ui/countdown";
+import { useDayNames } from "../ui/day-names";
 import {
+  formatCloseAt,
+  formatCloseClock,
   formatCloseMoment,
-  formatDay,
-  formatLocalClock,
   formatRemaining,
   sendCountText,
 } from "../ui/format";
@@ -179,21 +180,25 @@ function TodayView(): React.JSX.Element {
 
 /**
  * When the day closes, in the reader's zone: the clock time and the
- * countdown while the close is ahead, the close moment when it is not,
- * and nothing when the day carries no close time.
+ * countdown while the close is ahead ("Closes tomorrow at 4:00 PM, in
+ * 23 h"), the close moment when it is not, and nothing when the day
+ * carries no close time.
  */
 function closeLine(day: DayView, remaining: number | null): string | null {
   if (remaining !== null && typeof day.closes_at === "string") {
-    return `Closes at ${formatLocalClock(day.closes_at)}, in ${formatRemaining(remaining)}`;
+    const now = Date.parse(day.closes_at) - remaining;
+    return `Closes ${formatCloseAt(day.closes_at, now)}, in ${formatRemaining(remaining)}`;
   }
   const close = formatCloseMoment(day.closes_at);
   return close === null ? null : `C${close.slice(1)}`;
 }
 
 /**
- * The day, in the first column: its code as plain type, its date, its
- * close, and what the player adds below them. On a phone the code and
- * the close share one line, and the label and the date give way.
+ * The day, in the first column: its code as plain type, its close, and
+ * what the player adds below them. The day in play has no calendar
+ * date (ui/day-names.ts): the close says when it ends. A day with no
+ * close time shows the date of its label. On a phone the code and the
+ * close share one line, and the label and the date give way.
  */
 function DayBrief(props: {
   view: DayView;
@@ -201,13 +206,15 @@ function DayBrief(props: {
 }): React.JSX.Element {
   const { view } = props;
   const remaining = useRemaining(view.closes_at);
+  const names = useDayNames();
   const close = closeLine(view, remaining);
   return (
     <section className="play-brief" aria-label="Today">
       <p className="subtle small play-brief-label">Today's code</p>
       <DayCode code={view.trial_code} />
-      <p className="play-brief-date">{formatDay(view.day)}</p>
-      {close === null ? null : (
+      {close === null ? (
+        <p className="play-brief-date">{names.long(view.day)}</p>
+      ) : (
         <p className="muted play-brief-close">{close}</p>
       )}
       <hr className="divider play-brief-rule" />
@@ -229,10 +236,15 @@ function SentView(props: { view: DayView }): React.JSX.Element {
   const remaining = useRemaining(view.closes_at);
   const [record] = useState(() => readSent(view.day));
   const postClose = isPostClose(view.protocol);
+  // The close against the reader's clock: "4:00 PM", "tomorrow 4:00 PM".
+  const now =
+    remaining === null || typeof view.closes_at !== "string"
+      ? null
+      : Date.parse(view.closes_at) - remaining;
   const closes =
-    typeof view.closes_at === "string"
-      ? formatLocalClock(view.closes_at)
-      : null;
+    now === null ? null : formatCloseClock(view.closes_at as string, now);
+  const closesAt =
+    now === null ? null : formatCloseAt(view.closes_at as string, now);
   return (
     <div className="sent">
       <DayBrief view={view} />
@@ -240,16 +252,16 @@ function SentView(props: { view: DayView }): React.JSX.Element {
       <section className="sent-main" aria-labelledby="sent-heading">
         <h1 id="sent-heading">Sent. You're in for today</h1>
         <p className="sent-lead">
-          {remaining === null || closes === null
+          {remaining === null || closesAt === null
             ? "The photo is revealed when the day closes."
-            : `The photo is revealed at ${closes}, in ${formatRemaining(remaining)}.`}
+            : `The photo is revealed ${closesAt}, in ${formatRemaining(remaining)}.`}
         </p>
 
         <ol className="step-list sent-steps" aria-label="What happens next">
           <li className="step-item is-current">
             <span className="step-icon" aria-hidden="true" />
             <span className="step-text">
-              Your sketch is locked in for {formatDay(view.day)}
+              Your sketch is locked in for today
             </span>
           </li>
           <li className="step-item is-pending">
@@ -313,6 +325,7 @@ function SentView(props: { view: DayView }): React.JSX.Element {
 function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const api = useApi();
   const queryClient = useQueryClient();
+  const names = useDayNames();
   const { view } = props;
 
   // The drawing screen shows the open day: tell the server one time
@@ -624,7 +637,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
           aria-label="Your earlier sketch"
         >
           <p>
-            You started this sketch for {formatDay(draftDay)}, and that day has
+            You started this sketch for {names.long(draftDay)}, and that day has
             closed, so it wasn't scored.{" "}
             {isPostClose(view.protocol)
               ? "A new day has started with a new code."

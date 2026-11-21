@@ -16,7 +16,7 @@ import type { HistoryView, MeView, StoredSubmission } from "../api/types";
 import { shareCard } from "../share/card";
 import type { CardStroke } from "../share/draw";
 import { deliverShareImage, renderShareImage } from "../share/share";
-import { formatShortDay } from "./format";
+import { useDayNames } from "./day-names";
 
 export interface SharedTrial {
   p: number;
@@ -65,6 +65,7 @@ export function ShareResultButton(props: {
 }): React.JSX.Element {
   const api = useApi();
   const queryClient = useQueryClient();
+  const names = useDayNames();
   const [status, setStatus] = useState<Status>("idle");
   const variant = props.variant ?? "button";
 
@@ -121,6 +122,7 @@ export function ShareResultButton(props: {
       ]);
       const card = shareCard({
         day: props.day,
+        dateLine: names.long(props.day),
         trialCode,
         p: props.trial.p,
         targetRank: props.trial.target_rank,
@@ -136,7 +138,7 @@ export function ShareResultButton(props: {
     }
   }
 
-  const label = `Share the result of ${formatShortDay(props.day)} as an image`;
+  const label = `Share the result of ${names.short(props.day)} as an image`;
   return (
     <span className="share-control">
       <button

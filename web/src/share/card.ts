@@ -11,13 +11,16 @@
  * has its own author and license.
  */
 
-import { formatDay, ordinal, percentBeaten } from "../ui/format";
+import { ordinal, percentBeaten } from "../ui/format";
 
 export const CARD_WIDTH = 1080;
 export const CARD_HEIGHT = 1350;
 
 export interface ShareResult {
+  /** The day label: the identifier, and the date in the file name. */
   day: string;
+  /** The name of the day in the player's own zone (ui/day-names.ts). */
+  dateLine: string;
   /** The day's code, when the caller has it. */
   trialCode: string | null;
   p: number;
@@ -55,7 +58,7 @@ export function shareCard(result: ShareResult): ShareCard {
   const percent = percentBeaten(result.p);
   const total = result.decoyCount + 1;
   const place = ordinal(result.targetRank);
-  const dateLine = formatDay(result.day);
+  const dateLine = result.dateLine;
   const totalText = COUNT_FORMAT.format(total);
   const sentence =
     `I beat ${percent}% of the photos on Starvector, ${dateLine}. ` +
