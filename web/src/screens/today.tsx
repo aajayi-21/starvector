@@ -80,6 +80,7 @@ import {
 import { isPostClose } from "../ui/pick-copy";
 import { PlayFrame, PlayMessage } from "../ui/play-switch";
 import { SendCount } from "../ui/send-count";
+import { ShareSketchButton } from "../ui/share-button";
 
 const DRAFT_DEBOUNCE_MS = 500;
 
@@ -295,6 +296,9 @@ function SentView(props: { view: DayView }): React.JSX.Element {
           <Link to="/practice" className="btn btn-secondary">
             Practice while you wait
           </Link>
+          {/* The player's own sketch, as an image for friends, before
+              the reveal (spec SS1 §6). */}
+          <ShareSketchButton day={view.day} postClose={postClose} />
           <Link to="/">Back to home</Link>
         </div>
       </section>

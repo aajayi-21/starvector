@@ -83,3 +83,54 @@ export function shareCard(result: ShareResult): ShareCard {
       `of ${totalText}. Guessing averages 50%.`,
   };
 }
+
+// ── The card of a sketch, before the reveal (spec SS1 §6) ────────
+
+export interface SketchShare {
+  /** The day label: the date in the file name. */
+  day: string;
+  /** The name of the day in the player's own zone (ui/day-names.ts). */
+  dateLine: string;
+  /** The player's username, when the caller has it. */
+  player: string | null;
+  /** The site's host, for the last line of the card. */
+  host: string;
+  /** True when the photo is picked after the day closes (spec VP1). */
+  postClose: boolean;
+}
+
+/**
+ * The words of the image that a player shares after the send. The type
+ * has no slot for a score, a code, a word of the send, or a target: no
+ * result is there before the reveal, and a second person gets the
+ * sketch alone.
+ */
+export interface SketchCard {
+  fileName: string;
+  dateLine: string;
+  /** One sentence that says when the photo comes. */
+  noteLine: string;
+  byLine: string | null;
+  siteLine: string;
+  /** The words that go with the image when the device shares it. */
+  shareText: string;
+  /** What the image shows, for a reader who cannot see it. */
+  altText: string;
+}
+
+/** The card of one sketch, with no result in it. */
+export function sketchCard(share: SketchShare): SketchCard {
+  const noteLine = share.postClose
+    ? "The photo is picked after the day closes."
+    : "The photo is revealed when the day closes.";
+  const by = share.player === null ? "" : ` by ${share.player}`;
+  return {
+    fileName: `starvector-sketch-${share.day}.jpg`,
+    dateLine: share.dateLine,
+    noteLine,
+    byLine: share.player,
+    siteLine: share.host,
+    shareText: `My sketch for Starvector, ${share.dateLine}. ${noteLine}`,
+    altText: `A sketch${by} for Starvector, ${share.dateLine}. ${noteLine}`,
+  };
+}

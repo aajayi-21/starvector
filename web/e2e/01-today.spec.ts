@@ -1,6 +1,31 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import { blockExternalHosts, canvasPoint, drawStroke, signIn } from "./helpers";
+
+/**
+ * The width and the height of a JPEG, from its start-of-frame segment.
+ * The file starts with the JPEG marker, and each segment before the
+ * frame gives its own length.
+ */
+function jpegSize(bytes: Buffer): { width: number; height: number } {
+  expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+  let at = 2;
+  while (at + 9 < bytes.length) {
+    const marker = bytes[at + 1] as number;
+    const length = bytes.readUInt16BE(at + 2);
+    // SOF0 to SOF3: the frame header holds the height, then the width.
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return {
+        height: bytes.readUInt16BE(at + 5),
+        width: bytes.readUInt16BE(at + 7),
+      };
+    }
+    at += 2 + length;
+  }
+  throw new Error("the file has no JPEG frame");
+}
 
 test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await signIn(page);
@@ -89,6 +114,29 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await expect(page.getByText("Sent. You're in for today")).toBeVisible({
     timeout: 30_000,
   });
+
+  // The player's own sketch saves as a JPEG before the reveal (spec SS1
+  // §6). Chromium on this box has no share sheet for files, so the
+  // control saves the file, and the spec reads the saved bytes.
+  const shareSketch = page.getByRole("button", {
+    name: "Share your sketch as an image",
+  });
+  await expect(shareSketch).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    shareSketch.click(),
+  ]);
+  expect(download.suggestedFilename()).toBe(
+    `starvector-sketch-${dayView.day}.jpg`,
+  );
+  const image = await readFile((await download.path()) as string);
+  expect(jpegSize(image)).toEqual({ width: 1080, height: 1350 });
+  // A card with a sketch and its lines is not an empty canvas.
+  expect(image.length).toBeGreaterThan(20_000);
+  await expect(page.getByText("Image saved.")).toBeVisible();
+  if (process.env.SV_SHARE_OUT) {
+    await download.saveAs(`${process.env.SV_SHARE_OUT}/sketch.jpg`);
+  }
 
   // Server truth survives a reload, and home agrees.
   await page.reload();

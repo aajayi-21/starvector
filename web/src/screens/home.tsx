@@ -36,6 +36,7 @@ import { useNarrow } from "../ui/narrow";
 import { isPostClose } from "../ui/pick-copy";
 import { ResolveText } from "../ui/resolve-text";
 import { SendCount } from "../ui/send-count";
+import { ShareSketchButton } from "../ui/share-button";
 import { EpigraphFigure } from "./epigraph-figure";
 import { EPIGRAPHS } from "./epigraphs";
 import { pickGreeting } from "./greeting";
@@ -253,6 +254,10 @@ function TodayCard(props: {
           <Link to="/practice" className="btn btn-secondary">
             Practice while you wait
           </Link>
+          <ShareSketchButton
+            day={day.day}
+            postClose={isPostClose(day.protocol)}
+          />
           <SendCount day={day} className="muted" testId="send-count" />
         </div>
       </section>

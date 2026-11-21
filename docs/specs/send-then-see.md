@@ -333,7 +333,9 @@ The owner accepted each proposal with the plan of this phase.
 - **D5 — a withheld send.** A mark and no strokes, as spec R1 §9 does.
 - **D6 — a revoked player.** The board label.
 - **D7 — the image.** 1080 by 1350 pixels, as the result image, and a
-  JPEG quality of 0.92 in `web/src/share/share.ts`.
+  JPEG quality of 0.92 in `web/src/share/share.ts`. The sketch is as
+  wide as the card, with a line of 6 pixels (`web/src/share/draw.ts`).
+  The two cards share one frame and one last line.
 - **D8 — the word `profile`.** The prose says `player page`. The code
   paths of §8 keep the word.
 - **D9 — architecture §22.** One dated note, §11.
