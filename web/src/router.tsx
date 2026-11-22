@@ -145,10 +145,18 @@ const todayRoute = createRoute({
   component: TodayScreen,
 });
 
+/** The day that practice replays; with none, the screen picks one. */
+interface PracticeSearch {
+  day?: string;
+}
+
 const practiceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/practice",
   component: PracticeScreen,
+  validateSearch: (search: Record<string, unknown>): PracticeSearch => {
+    return typeof search.day === "string" ? { day: search.day } : {};
+  },
 });
 
 const historyRoute = createRoute({

@@ -57,7 +57,12 @@ export function ImpressionsCard(props: {
           Add
         </button>
       </div>
-      <p className="subtle tiny" id="words-hint">
+      {/* The advice is for the first word: after that the words on the
+          screen say it, and the line stays for a reader of the page. */}
+      <p
+        className={impressions.length === 0 ? "subtle tiny" : "visually-hidden"}
+        id="words-hint"
+      >
         One word or short phrase at a time.
       </p>
       {impressions.length === 0 ? null : (

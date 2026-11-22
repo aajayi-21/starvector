@@ -1,19 +1,20 @@
 /**
- * Practice (mock 1e, spec W1 B7, grown by spec A1 §6; layout and
- * copy per spec BR1 §6): the Practice view of the Play place, under
- * the switch it shares with today's sketch (ui/play-switch.tsx).
- * Replay a revealed day with its own sketch — nothing is shared with
- * today's draft and nothing is stored. The same three columns, canvas,
- * and word inputs as today; the first column holds the day's code and
- * the day picker. After a check, the photo and the result take the
- * third column, level with the sketch; the player goes back to edit or
+ * Practice (mock 1e, spec W1 B7, grown by spec A1 §6; copy per spec
+ * BR1 §6; the Studio design of 2026-11-21): the Practice view of the
+ * Play place. A step back from today in the row of days
+ * (ui/day-stepper.tsx) is practice on that day's photo, and the path
+ * holds the day: `/practice?day=…`. Replay a revealed day with its own
+ * sketch — nothing is shared with today's draft and nothing is stored.
+ * The same canvas and word inputs as today; the head of the side holds
+ * the days and the day's code. After a check, the photo and the result
+ * take the side, beside the sketch; the player goes back to edit or
  * starts over. The draft saves on this device with its own key (spec
  * PL1 §8), and a word typed and not added goes in with the check.
  */
 
-import { CaretRight } from "@phosphor-icons/react";
+import { Plus } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
@@ -47,8 +48,9 @@ import {
 import { ChanceMeter } from "../ui/chance-meter";
 import { DayCode } from "../ui/code-cells";
 import { useDayNames } from "../ui/day-names";
+import { DayStepper } from "../ui/day-stepper";
 import { ordinal, percentBeaten } from "../ui/format";
-import { PlayFrame, PlayMessage } from "../ui/play-switch";
+import { PlayFrame, PlayHow, PlayMessage } from "../ui/play-switch";
 import { Credit, WordMatches } from "./reveal";
 
 export function PracticeScreen(): React.JSX.Element {
@@ -75,7 +77,7 @@ function PracticeView(): React.JSX.Element {
   }
   if (days.isError || days.data === undefined) {
     return (
-      <PlayMessage title="Practice">
+      <PlayMessage title="Practice" view="practice">
         {isRefusal(days.error) ? (
           <p className="muted">
             Practice uses photos from days that are over. The first one appears
@@ -102,13 +104,19 @@ function PracticeWorkspace(props: {
   minStrokes: number;
 }): React.JSX.Element {
   const api = useApi();
-  const names = useDayNames();
+  const navigate = useNavigate();
+  const search = useSearch({ from: "/practice" });
   const [restored] = useState(() => readPracticeDraft());
-  const [day, setDay] = useState(() =>
-    restored !== null && props.days.some((row) => row.day === restored.day)
+  // The day is the one in the path. With none there, or one that is not
+  // a practice day, it is the day of the draft on this device, and then
+  // the newest day.
+  const has = (label: string | undefined): label is string =>
+    label !== undefined && props.days.some((row) => row.day === label);
+  const day = has(search.day)
+    ? search.day
+    : has(restored?.day)
       ? restored.day
-      : (props.days[0]?.day ?? ""),
-  );
+      : (props.days[0]?.day ?? "");
   const [history, setHistory] = useState<DocHistory>(() =>
     historyOf(restored?.doc ?? EMPTY_DOC),
   );
@@ -206,17 +214,31 @@ function PracticeWorkspace(props: {
   );
   const scoreable = block === null;
 
-  const pickDay = (next: string) => {
-    setDay(next);
-    setResult(null);
-  };
-
-  const surprise = () => {
-    const index = Math.floor(Math.random() * props.days.length);
-    const picked = props.days[index];
-    if (picked !== undefined) {
-      pickDay(picked.day);
+  // A result is the result of one day: a new day clears it. The sketch
+  // stays, as it did when the day came from a list.
+  const shownDay = useRef(day);
+  useEffect(() => {
+    if (shownDay.current !== day) {
+      shownDay.current = day;
+      setResult(null);
     }
+  }, [day]);
+
+  // The path names the day, so a reload and the row of days agree.
+  useEffect(() => {
+    if (day !== "" && search.day !== day) {
+      void navigate({ to: "/practice", search: { day }, replace: true });
+    }
+  }, [day, search.day, navigate]);
+
+  // Closing the part while lines are picked gives the pen back.
+  const [labelOpen, setLabelOpen] = useState(false);
+  const toggleLabel = (): void => {
+    if (labelOpen && mode === "select") {
+      setMode("draw");
+      setSelection(new Set());
+    }
+    setLabelOpen((old) => !old);
   };
 
   const startOver = () => {
@@ -231,43 +253,16 @@ function PracticeWorkspace(props: {
 
   return (
     <div className={result === null ? "workspace" : "workspace has-result"}>
-      <section className="play-brief" aria-label="Practice day">
-        <p className="subtle small play-brief-label">This day's code</p>
+      <section className="play-day" aria-label="Practice day">
+        <DayStepper view="practice" day={day === "" ? null : day} />
         <DayCode
           code={props.days.find((row) => row.day === day)?.trial_code ?? ""}
         />
-        <div className="field practice-day">
-          <label className="label" htmlFor="practice-day">
-            Photo from
-          </label>
-          <select
-            id="practice-day"
-            className="input"
-            value={day}
-            onChange={(event) => pickDay(event.target.value)}
-          >
-            {props.days.map((row) => (
-              <option key={row.day} value={row.day}>
-                {names.long(row.day)}
-              </option>
-            ))}
-          </select>
+        <div className="play-day-meta">
+          <p className="muted">
+            This day is over. Nothing here is saved or counted.
+          </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary practice-surprise"
-          onClick={surprise}
-        >
-          Surprise me
-        </button>
-        <hr className="divider play-brief-rule" />
-        <p className="play-brief-lead">
-          This day is over. Sketch and describe what comes to mind for its code,
-          then see the photo.
-        </p>
-        <p className="muted small play-brief-note">
-          Nothing here is saved or counted.
-        </p>
       </section>
 
       <CanvasPanel
@@ -303,6 +298,7 @@ function PracticeWorkspace(props: {
               ? "Tap the lines that belong together."
               : ""
         }
+        emptyNote="Sketch and describe what comes to mind for this code, then see the photo."
       />
 
       <aside className="side-cell" aria-label="Practice">
@@ -318,35 +314,39 @@ function PracticeWorkspace(props: {
                   setImpressions((rows) => rows.filter((_, at) => at !== index))
                 }
               />
-              <div className="row-list side-rows">
-                <details className="row-disclosure">
-                  <summary>
-                    Label parts of your sketch
-                    <span className="row-meta">
-                      Optional
-                      <CaretRight
-                        size={16}
-                        aria-hidden="true"
-                        className="row-chevron"
-                      />
-                    </span>
-                  </summary>
-                  <div className="row-body">
-                    <GroupControls
-                      doc={doc}
-                      mode={mode}
-                      selectionSize={selection.size}
-                      onToggleSelect={() => {
-                        setMode((old) =>
-                          old === "select" ? "draw" : "select",
-                        );
-                        setSelection(new Set());
-                      }}
-                      onMakeGroup={makeGroupWith}
-                    />
-                  </div>
-                </details>
+              <div className="side-opts">
+                <span className="subtle tiny">Optional</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost side-opt"
+                  aria-expanded={labelOpen}
+                  aria-controls="label-parts"
+                  onClick={toggleLabel}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  {doc.groups.length > 0
+                    ? `Label parts (${doc.groups.length})`
+                    : "Label parts"}
+                </button>
               </div>
+              {labelOpen ? (
+                <section
+                  id="label-parts"
+                  className="side-part"
+                  aria-label="Label parts of your sketch"
+                >
+                  <GroupControls
+                    doc={doc}
+                    mode={mode}
+                    selectionSize={selection.size}
+                    onToggleSelect={() => {
+                      setMode((old) => (old === "select" ? "draw" : "select"));
+                      setSelection(new Set());
+                    }}
+                    onMakeGroup={makeGroupWith}
+                  />
+                </section>
+              ) : null}
             </div>
             <section className="action-bar send-bar" aria-label="Check">
               {scoreable ? null : (
@@ -376,15 +376,18 @@ function PracticeWorkspace(props: {
               >
                 {score.isPending ? "Checking…" : "Check my practice"}
               </button>
-              <p className="subtle tiny send-bar-hint">
-                See the photo and how close you came. You can try many times, up
-                to an hourly limit. Your draft is saved on this device.
-              </p>
-              {score.isError ? (
-                <div className="notice notice-bad" role="alert">
-                  {friendlyMessage(score.error)}
-                </div>
-              ) : null}
+              <div className="send-bar-after">
+                <p className="subtle tiny send-bar-hint">
+                  See the photo and how close you came. You can try many times,
+                  up to an hourly limit. Your draft is saved on this device.
+                </p>
+                <PlayHow />
+                {score.isError ? (
+                  <div className="notice notice-bad" role="alert">
+                    {friendlyMessage(score.error)}
+                  </div>
+                ) : null}
+              </div>
             </section>
           </div>
         ) : (

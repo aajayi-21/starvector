@@ -24,8 +24,20 @@ export function selectTolerance(strokeWidthPx: number): number {
 export const ERASER_RADIUS_PX = 8;
 export const ERASER_RADIUS_TOUCH_PX = 12;
 
-export function eraserRadius(pointerType: string): number {
-  return pointerType === "touch" ? ERASER_RADIUS_TOUCH_PX : ERASER_RADIUS_PX;
+/**
+ * The eraser's three sizes, as multiples of its radius: small, middle,
+ * and large. The middle one is the size the eraser had before it had
+ * sizes. A display choice of the drawing tool: the stored strokes are
+ * the same whichever size cut them.
+ */
+export const ERASER_SCALES = [0.6, 1, 2] as const;
+/** The size the eraser starts with: the middle one. */
+export const ERASER_SCALE_START = 1;
+
+export function eraserRadius(pointerType: string, scale = 1): number {
+  const base =
+    pointerType === "touch" ? ERASER_RADIUS_TOUCH_PX : ERASER_RADIUS_PX;
+  return base * scale;
 }
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));

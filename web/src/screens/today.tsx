@@ -24,7 +24,7 @@
  * screen (spec R1 §3.3).
  */
 
-import { CaretRight } from "@phosphor-icons/react";
+import { Plus } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -71,6 +71,7 @@ import {
 import { DayCode } from "../ui/code-cells";
 import { useRemaining } from "../ui/countdown";
 import { useDayNames } from "../ui/day-names";
+import { DayStepper } from "../ui/day-stepper";
 import {
   formatCloseAt,
   formatCloseClock,
@@ -78,7 +79,7 @@ import {
   formatRemaining,
 } from "../ui/format";
 import { isPostClose } from "../ui/pick-copy";
-import { PlayFrame, PlayMessage } from "../ui/play-switch";
+import { PlayFrame, PlayHow, PlayMessage } from "../ui/play-switch";
 import { SendCount } from "../ui/send-count";
 import { ShareSketchButton } from "../ui/share-button";
 
@@ -132,7 +133,7 @@ function TodayView(): React.JSX.Element {
   if (day.isError || day.data === undefined) {
     if (!isRefusal(day.error)) {
       return (
-        <PlayMessage title="Today">
+        <PlayMessage title="Today" view="today">
           <div className="notice notice-bad" role="alert">
             {friendlyMessage(day.error)}
           </div>
@@ -140,7 +141,7 @@ function TodayView(): React.JSX.Element {
       );
     }
     return (
-      <PlayMessage title="No day is open right now">
+      <PlayMessage title="No day is open right now" view="today">
         <p className="muted">
           The next day starts soon. Meanwhile, you can practice on a past photo.
         </p>
@@ -162,7 +163,7 @@ function TodayView(): React.JSX.Element {
   if (view.status === "closing" || view.status === "closed") {
     const unsent = readDraft(view.day);
     return (
-      <PlayMessage title="Today has closed">
+      <PlayMessage title="Today has closed" view="today">
         <p className="muted">
           Results are being worked out. The photo appears here in a few minutes,
           and this page updates by itself.
@@ -195,23 +196,50 @@ function closeLine(day: DayView, remaining: number | null): string | null {
 }
 
 /**
- * The day, in the first column: its code as plain type, its close, and
- * what the player adds below them. The day in play has no calendar
- * date (ui/day-names.ts): the close says when it ends. A day with no
- * close time shows the date of its label. On a phone the code and the
- * close share one line, and the label and the date give way.
+ * The day of the open view, at the head of the side: the days to step
+ * through, the code as large type, the close, and the count of sends.
+ * The day in play has no calendar date (ui/day-names.ts): the close
+ * says when it ends. A day with no close time shows the date of its
+ * label.
  */
-function DayBrief(props: {
-  view: DayView;
-  children?: React.ReactNode;
-}): React.JSX.Element {
+function PlayDay(props: { view: DayView }): React.JSX.Element {
+  const { view } = props;
+  const remaining = useRemaining(view.closes_at);
+  const names = useDayNames();
+  const close = closeLine(view, remaining);
+  return (
+    <section className="play-day" aria-label="Today">
+      <DayStepper view="today" day={null} />
+      <DayCode code={view.trial_code} />
+      <div className="play-day-meta">
+        {close === null ? (
+          <p className="play-brief-date">{names.long(view.day)}</p>
+        ) : (
+          <p className="muted play-brief-close">{close}</p>
+        )}
+        <SendCount
+          day={view}
+          className="muted small play-brief-count"
+          testId="play-brief-count"
+        />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The day after the send, in the first column: the days to step
+ * through, the code, its close, and the count of sends. On a phone the
+ * column gives way: the row of what was sent names the day.
+ */
+function DayBrief(props: { view: DayView }): React.JSX.Element {
   const { view } = props;
   const remaining = useRemaining(view.closes_at);
   const names = useDayNames();
   const close = closeLine(view, remaining);
   return (
     <section className="play-brief" aria-label="Today">
-      <p className="subtle small play-brief-label">Today's code</p>
+      <DayStepper view="today" day={null} />
       <DayCode code={view.trial_code} />
       {close === null ? (
         <p className="play-brief-date">{names.long(view.day)}</p>
@@ -219,7 +247,6 @@ function DayBrief(props: {
         <p className="muted play-brief-close">{close}</p>
       )}
       <hr className="divider play-brief-rule" />
-      {props.children}
       <SendCount
         day={view}
         className="muted small play-brief-count"
@@ -369,6 +396,9 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
     () => restoredDraft?.typedWord ?? "",
   );
   const [reviewing, setReviewing] = useState(false);
+  // The two parts a player can skip: each opens from its own button.
+  const [labelOpen, setLabelOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [includeTyped, setIncludeTyped] = useState(true);
   const [relationFirst, setRelationFirst] = useState("");
   const [relationName, setRelationName] = useState(
@@ -624,7 +654,7 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
   const sketchHint =
     mode === "select"
       ? selection.size > 0
-        ? `${plural(selection.size, "line", "lines")} picked. Name them under “Label parts of your sketch”.`
+        ? `${plural(selection.size, "line", "lines")} picked. Name them under “Label parts”.`
         : "Tap the lines that belong together."
       : "";
 
@@ -636,17 +666,25 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
       : ""
     : sendBlockHint(block, view.min_strokes);
 
-  return (
-    <div className="workspace">
-      <DayBrief view={view}>
-        <p className="play-brief-lead">
-          {isPostClose(view.protocol)
-            ? "The photo for this code is picked when the day closes."
-            : "A photo is hidden behind this code."}{" "}
-          Sketch and describe whatever comes to mind.
-        </p>
-      </DayBrief>
+  // What to draw, said in the empty canvas: it goes when the first line
+  // is on the canvas, and the side keeps to the words and the button.
+  const brief = `${
+    isPostClose(view.protocol)
+      ? "The photo for this code is picked when the day closes."
+      : "A photo is hidden behind this code."
+  } Sketch and describe whatever comes to mind.`;
 
+  // Closing the part while lines are picked gives the pen back.
+  const toggleLabel = (): void => {
+    if (labelOpen && mode === "select") {
+      setMode("draw");
+      setSelection(new Set());
+    }
+    setLabelOpen((old) => !old);
+  };
+
+  return (
+    <>
       {dayMoved && !empty ? (
         <section
           className="notice workspace-notice"
@@ -678,56 +716,80 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
           </div>
         </section>
       ) : null}
+      <div className="workspace">
+        <PlayDay view={view} />
+        <CanvasPanel
+          doc={doc}
+          selection={selection}
+          mode={mode}
+          colorIndex={colorIndex}
+          onPickColor={setColorIndex}
+          onCommitStroke={onCommitStroke}
+          onCommitErase={onCommitErase}
+          nextStrokeId={() => nextStrokeId.current}
+          onPickStroke={onPickStroke}
+          canUndo={canUndo(history)}
+          canRedo={canRedo(history)}
+          onUndo={() => {
+            setHistory((h) => undo(h));
+            resetPicks();
+          }}
+          onRedo={() => {
+            setHistory((h) => redo(h));
+            resetPicks();
+          }}
+          onClear={() => {
+            commit(clearSketch(doc));
+            resetPicks();
+            setMode("draw");
+          }}
+          disabled={send.isPending || dayMoved}
+          hint={sketchHint}
+          emptyNote={brief}
+        />
 
-      <CanvasPanel
-        doc={doc}
-        selection={selection}
-        mode={mode}
-        colorIndex={colorIndex}
-        onPickColor={setColorIndex}
-        onCommitStroke={onCommitStroke}
-        onCommitErase={onCommitErase}
-        nextStrokeId={() => nextStrokeId.current}
-        onPickStroke={onPickStroke}
-        canUndo={canUndo(history)}
-        canRedo={canRedo(history)}
-        onUndo={() => {
-          setHistory((h) => undo(h));
-          resetPicks();
-        }}
-        onRedo={() => {
-          setHistory((h) => redo(h));
-          resetPicks();
-        }}
-        onClear={() => {
-          commit(clearSketch(doc));
-          resetPicks();
-          setMode("draw");
-        }}
-        disabled={send.isPending || dayMoved}
-        hint={sketchHint}
-      />
+        <aside className="side-cell" aria-label="Your answer">
+          <div className="side-panel">
+            <div className="side-scroll">
+              <ImpressionsCard
+                impressions={impressions}
+                input={typedWord}
+                onInputChange={setTypedWord}
+                onAdd={(text) => setImpressions((rows) => [...rows, text])}
+                onRemoveAt={(index) =>
+                  setImpressions((rows) => rows.filter((_, at) => at !== index))
+                }
+              />
 
-      <aside className="side-cell" aria-label="Your answer">
-        <div className="side-panel">
-          <div className="side-scroll">
-            <ImpressionsCard
-              impressions={impressions}
-              input={typedWord}
-              onInputChange={setTypedWord}
-              onAdd={(text) => setImpressions((rows) => [...rows, text])}
-              onRemoveAt={(index) =>
-                setImpressions((rows) => rows.filter((_, at) => at !== index))
-              }
-            />
-
-            <div className="row-list side-rows">
-              <details className="row-disclosure">
-                <summary>
-                  Label parts of your sketch
-                  <OptionalMark />
-                </summary>
-                <div className="row-body">
+              <div className="side-opts">
+                <span className="subtle tiny">Optional</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost side-opt"
+                  aria-expanded={labelOpen}
+                  aria-controls="label-parts"
+                  onClick={toggleLabel}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  {labeled > 0 ? `Label parts (${labeled})` : "Label parts"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost side-opt"
+                  aria-expanded={notesOpen}
+                  aria-controls="notes-part"
+                  onClick={() => setNotesOpen((old) => !old)}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  {pastedText.trim() === "" ? "Notes" : "Notes (added)"}
+                </button>
+              </div>
+              {labelOpen ? (
+                <section
+                  id="label-parts"
+                  className="side-part"
+                  aria-label="Label parts of your sketch"
+                >
                   <GroupControls
                     doc={doc}
                     mode={mode}
@@ -838,15 +900,14 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
                       )}
                     </>
                   )}
-                </div>
-              </details>
-
-              <details className="row-disclosure">
-                <summary>
-                  Notes
-                  <OptionalMark />
-                </summary>
-                <div className="row-body">
+                </section>
+              ) : null}
+              {notesOpen ? (
+                <section
+                  id="notes-part"
+                  className="side-part"
+                  aria-label="Longer notes"
+                >
                   <textarea
                     className="input"
                     aria-label="Notes"
@@ -854,97 +915,93 @@ function OpenWorkspace(props: { view: DayView }): React.JSX.Element {
                     value={pastedText}
                     onChange={(event) => setPastedText(event.target.value)}
                   />
-                </div>
-              </details>
+                </section>
+              ) : null}
             </div>
-          </div>
-          <section
-            className={
-              reviewing
-                ? "action-bar send-bar is-reviewing"
-                : "action-bar send-bar"
-            }
-            aria-label="Send"
-          >
-            <p className="send-bar-facts">
-              <span>{summaryParts.join(", ")}</span>
-              <span className="send-bar-note">{barNote}</span>
-            </p>
-            {reviewing ? (
-              <ReviewPanel
-                words={impressions}
-                strokes={doc.strokes.length}
-                labeled={labeled}
-                notes={pastedText.trim() !== ""}
-                typed={typed}
-                includeTyped={includeTyped}
-                onIncludeTyped={setIncludeTyped}
-              />
-            ) : null}
-            {reviewing ? (
-              <div className="stack-sm send-bar-buttons">
+            <section
+              className={
+                reviewing
+                  ? "action-bar send-bar is-reviewing"
+                  : "action-bar send-bar"
+              }
+              aria-label="Send"
+            >
+              <p className="send-bar-facts">
+                <span>{summaryParts.join(", ")}</span>
+                <span className="send-bar-note">{barNote}</span>
+              </p>
+              {reviewing ? (
+                <ReviewPanel
+                  words={impressions}
+                  strokes={doc.strokes.length}
+                  labeled={labeled}
+                  notes={pastedText.trim() !== ""}
+                  typed={typed}
+                  includeTyped={includeTyped}
+                  onIncludeTyped={setIncludeTyped}
+                />
+              ) : null}
+              {reviewing ? (
+                <div className="stack-sm send-bar-buttons">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-large btn-block"
+                    disabled={!sendReady || send.isPending || dayMoved}
+                    onClick={() => {
+                      if (sendingRef.current) {
+                        return;
+                      }
+                      sendingRef.current = true;
+                      send.mutate({
+                        day: view.day,
+                        record: serialize(doc, sendWords, pastedText),
+                      });
+                    }}
+                  >
+                    {send.isPending ? "Sending…" : "Send my sketch"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-block"
+                    disabled={send.isPending}
+                    onClick={() => setReviewing(false)}
+                  >
+                    Keep editing
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
-                  className="btn btn-primary btn-large btn-block"
-                  disabled={!sendReady || send.isPending || dayMoved}
+                  className="btn btn-primary btn-large btn-block send-bar-buttons"
+                  disabled={!scoreable || dayMoved}
                   onClick={() => {
-                    if (sendingRef.current) {
-                      return;
-                    }
-                    sendingRef.current = true;
-                    send.mutate({
-                      day: view.day,
-                      record: serialize(doc, sendWords, pastedText),
-                    });
+                    setIncludeTyped(true);
+                    send.reset();
+                    setReviewing(true);
                   }}
                 >
-                  {send.isPending ? "Sending…" : "Send my sketch"}
+                  Review and send
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-block"
-                  disabled={send.isPending}
-                  onClick={() => setReviewing(false)}
-                >
-                  Keep editing
-                </button>
+              )}
+              {/* Under the button: on a wide screen this part stands in the
+                row under the canvas, so the foot of the button is level
+                with the foot of the canvas (styles/play.css). */}
+              <div className="send-bar-after">
+                <p className="subtle tiny send-bar-hint">
+                  You get one send, and you can't change it after.
+                </p>
+                <PlayHow />
+                {send.isError && !sent ? (
+                  <div className="notice notice-bad" role="alert">
+                    {sendMessage(send.error)}
+                  </div>
+                ) : null}
               </div>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary btn-large btn-block send-bar-buttons"
-                disabled={!scoreable || dayMoved}
-                onClick={() => {
-                  setIncludeTyped(true);
-                  send.reset();
-                  setReviewing(true);
-                }}
-              >
-                Review and send
-              </button>
-            )}
-            <p className="subtle tiny send-bar-hint">
-              You get one send, and you can't change it after.
-            </p>
-            {send.isError && !sent ? (
-              <div className="notice notice-bad" role="alert">
-                {sendMessage(send.error)}
-              </div>
-            ) : null}
-          </section>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-/** The mark of a part the player can skip, with the row's chevron. */
-function OptionalMark(): React.JSX.Element {
-  return (
-    <span className="row-meta">
-      Optional
-      <CaretRight size={16} aria-hidden="true" className="row-chevron" />
-    </span>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </>
   );
 }
 

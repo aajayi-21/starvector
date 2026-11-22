@@ -107,7 +107,7 @@ test("the daily flow: draw, label, send, lock", async ({ page }) => {
   await expect(page.getByText("1 word, 2 lines")).toBeVisible();
 
   // Label the first stroke as a part of the sketch.
-  await page.getByText("Label parts of your sketch").click();
+  await page.getByRole("button", { name: "Label parts" }).click();
   await page.getByRole("button", { name: "Pick lines" }).click();
   const [x, y] = await canvasPoint(page, [0.225, 0.45]);
   await page.mouse.click(x, y);

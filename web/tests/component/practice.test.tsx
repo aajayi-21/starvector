@@ -1,9 +1,10 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "../../src/api/client";
 import { makeMockApi } from "../../src/api/mock";
 import { ApiError } from "../../src/api/types";
+import { makeDayNames } from "../../src/ui/day-names";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
 beforeEach(() => {
@@ -39,16 +40,28 @@ function drawOnCanvas(container: HTMLElement): void {
 }
 
 describe("the Practice screen", () => {
-  it("lists revealed days newest first and gates the score button", async () => {
+  it("opens on the newest day and gates the score button", async () => {
     const { container } = renderAt("/practice");
-    const picker = (await screen.findByLabelText(
-      "Photo from",
-    )) as HTMLSelectElement;
     const mockDays = (
       await makeMockApi({ today: HARNESS_TODAY }).getPracticeDays()
     ).days;
-    expect(picker.options.length).toBe(mockDays.length);
-    expect(picker.options[0]?.value).toBe(mockDays[0]?.day);
+    const names = makeDayNames("22:00");
+    const newest = names.long(mockDays[0]?.day ?? "");
+    // The row of days names the newest day, and a step on is today.
+    const date = await screen.findByRole("button", {
+      name: `Practice · ${newest}`,
+    });
+    expect(
+      (screen.getByLabelText("The day after") as HTMLButtonElement).disabled,
+    ).toBe(false);
+    // The date opens a calendar with that day pressed.
+    fireEvent.click(date);
+    const calendar = screen.getByRole("dialog", { name: "Pick a day" });
+    expect(
+      within(calendar)
+        .getByRole("button", { name: newest })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     const scoreButton = screen.getByText(
       "Check my practice",
     ) as HTMLButtonElement;
@@ -57,9 +70,58 @@ describe("the Practice screen", () => {
     expect(scoreButton.disabled).toBe(false);
   });
 
+  it("goes to the day that the calendar gives", async () => {
+    renderAt("/practice");
+    const mockDays = (
+      await makeMockApi({ today: HARNESS_TODAY }).getPracticeDays()
+    ).days;
+    const names = makeDayNames("22:00");
+    const second = names.long(mockDays[1]?.day ?? "");
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: `Practice · ${names.long(mockDays[0]?.day ?? "")}`,
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Pick a day" })).getByRole(
+        "button",
+        { name: second },
+      ),
+    );
+    expect(
+      await screen.findByRole("button", { name: `Practice · ${second}` }),
+    ).toBeDefined();
+    // The calendar closes, and the path holds the day.
+    expect(screen.queryByRole("dialog", { name: "Pick a day" })).toBeNull();
+  });
+
+  it("steps back a day, and forward to today", async () => {
+    renderAt("/practice");
+    const mockDays = (
+      await makeMockApi({ today: HARNESS_TODAY }).getPracticeDays()
+    ).days;
+    const names = makeDayNames("22:00");
+    await screen.findByRole("button", {
+      name: `Practice · ${names.long(mockDays[0]?.day ?? "")}`,
+    });
+    fireEvent.click(screen.getByLabelText("The day before"));
+    expect(
+      await screen.findByRole("button", {
+        name: `Practice · ${names.long(mockDays[1]?.day ?? "")}`,
+      }),
+    ).toBeDefined();
+    fireEvent.click(screen.getByLabelText("The day after"));
+    await screen.findByRole("button", {
+      name: `Practice · ${names.long(mockDays[0]?.day ?? "")}`,
+    });
+    fireEvent.click(screen.getByLabelText("The day after"));
+    // Today is the last day of the row.
+    expect(await screen.findByText("Review and send")).toBeDefined();
+  });
+
   it("scores a sketch and renders the result panel", async () => {
     const { container } = renderAt("/practice");
-    await screen.findByLabelText("Photo from");
+    await screen.findByText("Check my practice");
     drawOnCanvas(container);
     fireEvent.click(screen.getByText("Check my practice"));
     expect(
@@ -105,7 +167,7 @@ describe("the Practice screen", () => {
       },
     };
     renderAt("/practice", api);
-    await screen.findByLabelText("Photo from");
+    await screen.findByText("Check my practice");
     const scoreButton = screen.getByText(
       "Check my practice",
     ) as HTMLButtonElement;
@@ -132,7 +194,7 @@ describe("the Practice screen", () => {
       },
     };
     const { container } = renderAt("/practice", api);
-    await screen.findByLabelText("Photo from");
+    await screen.findByText("Check my practice");
     // jsdom rects are 0x0 and the hit-test is geometric, so the
     // live layer gets a real 300x300 box for this test alone.
     const live = container.querySelectorAll("canvas")[1];
@@ -151,6 +213,7 @@ describe("the Practice screen", () => {
       toJSON: () => ({}),
     } as DOMRect);
     drawOnCanvas(container);
+    fireEvent.click(screen.getByRole("button", { name: "Label parts" }));
     fireEvent.click(screen.getByText("Pick lines"));
     // The committed stroke passes below the drag's midpoint.
     const pick = new MouseEvent("pointerdown", {
