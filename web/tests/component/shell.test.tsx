@@ -37,7 +37,7 @@ describe("the shell", () => {
       ["/today", /Review and send/],
       ["/practice", /Nothing here is saved or counted/],
       ["/history", /Each day you've played/],
-      ["/leaderboard", /The latest day's results/],
+      ["/leaderboard", /players · code/],
       ["/reveal", /You beat \d+% of the photos/],
       ["/how", /How Starvector works/],
       ["/account", /Your data/],

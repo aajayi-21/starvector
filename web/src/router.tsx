@@ -165,10 +165,20 @@ const historyRoute = createRoute({
   component: HistoryScreen,
 });
 
+/** The part of the leaderboard, and the revealed day of its day board. */
+export interface LeaderboardSearch {
+  day?: string;
+  board?: "skill";
+}
+
 const leaderboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/leaderboard",
   component: LeaderboardScreen,
+  validateSearch: (search: Record<string, unknown>): LeaderboardSearch => ({
+    ...(typeof search.day === "string" ? { day: search.day } : {}),
+    ...(search.board === "skill" ? { board: "skill" } : {}),
+  }),
 });
 
 const accountRoute = createRoute({

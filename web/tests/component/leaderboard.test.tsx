@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import { makeMockApi } from "../../src/api/mock";
 import type { SkillBoardView } from "../../src/api/types";
 import { evidenceSentence } from "../../src/screens/leaderboard";
+import { makeDayNames } from "../../src/ui/day-names";
 import { HARNESS_TODAY, renderAt } from "./harness";
+
+/** The skill ranking: the second tab of the screen. */
+const SKILL = "/leaderboard?board=skill";
 
 function api() {
   return makeMockApi({ today: HARNESS_TODAY });
@@ -35,23 +39,31 @@ describe("the leaderboard screen", () => {
       },
     };
     const view = renderAt("/leaderboard", withAvatar);
-    await screen.findByText("Latest day");
-    // One picture for the row with a hash; the others fall back to
-    // initials and render no image. A row with a streak ring draws a
-    // smaller picture inside the same 24 px circle (spec H1 §4).
+    // One picture for the row with a hash, which leads the podium; the
+    // others fall back to initials and render no image. A row with a
+    // streak ring draws a smaller picture inside the same circle (spec
+    // H1 §4).
     await waitFor(() =>
       expect(
-        view.container.querySelectorAll("table img").length,
+        view.container.querySelectorAll(".podium-place img").length,
       ).toBeGreaterThanOrEqual(1),
     );
   });
 
-  it("serves the day's board and the ranked skill board", async () => {
+  it("serves the day's board, and the skill board behind its tab", async () => {
     const board = await api().getSkillLeaderboard();
     renderAt("/leaderboard");
-    expect(await screen.findByText("Latest day")).toBeDefined();
-    expect(await screen.findByText("Skill ranking")).toBeDefined();
+    expect(
+      await screen.findByRole("list", { name: "The first three" }),
+    ).toBeDefined();
+    expect(screen.queryByText("Ranked players")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Skill ranking" }));
     expect(await screen.findByText("Ranked players")).toBeDefined();
+    expect(
+      screen
+        .getByRole("tab", { name: "Skill ranking" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
     // The cut is stated, never silent.
     expect(
       await screen.findByText(
@@ -62,7 +74,7 @@ describe("the leaderboard screen", () => {
 
   it("shows more ranked players on request", async () => {
     const board = await api().getSkillLeaderboard();
-    renderAt("/leaderboard");
+    renderAt(SKILL);
     const table = await screen.findByTestId("ranked-table");
     const rows = (): number => table.querySelectorAll("tbody tr").length;
     const before = rows();
@@ -74,7 +86,7 @@ describe("the leaderboard screen", () => {
   it("draws the likely range of each ranked row and hides the drawing", async () => {
     // The drawing repeats the numbers of the row, so assistive
     // technology reads the numbers and skips the drawing.
-    renderAt("/leaderboard");
+    renderAt(SKILL);
     const table = await screen.findByTestId("ranked-table");
     const bars = table.querySelectorAll(".board-range-bar");
     expect(bars.length).toBeGreaterThan(0);
@@ -85,7 +97,7 @@ describe("the leaderboard screen", () => {
 
   it("shows the hit number beside the steadied skill (spec AG1 §7)", async () => {
     const board = await api().getSkillLeaderboard();
-    renderAt("/leaderboard");
+    renderAt(SKILL);
     const table = await screen.findByTestId("ranked-table");
     expect(
       within(table).getByRole("columnheader", { name: "Hit number" }),
@@ -99,8 +111,8 @@ describe("the leaderboard screen", () => {
 
   it("draws one star for every player, ranked or not", async () => {
     const board = await api().getSkillLeaderboard();
-    const view = renderAt("/leaderboard");
-    await screen.findByText("Skill ranking");
+    const view = renderAt(SKILL);
+    await screen.findByText("Ranked players");
     const chart = view.container.querySelector("svg[role='img']");
     expect(chart).not.toBeNull();
     expect(chart?.querySelectorAll(".board-star")).toHaveLength(
@@ -112,7 +124,7 @@ describe("the leaderboard screen", () => {
     // Spec M1 §9 and ARCHITECTURE §17. The uncertainty and the
     // trial count must not be set as a footnote, so no cell in the
     // ranked table carries the muted class or a smaller size.
-    renderAt("/leaderboard");
+    renderAt(SKILL);
     const table = await screen.findByTestId("ranked-table");
     for (const cell of table.querySelectorAll("td")) {
       expect(cell.className).not.toMatch(/muted|subtle|small|tiny/);
@@ -122,7 +134,7 @@ describe("the leaderboard screen", () => {
   });
 
   it("renders the rank as a fraction, not a position", async () => {
-    renderAt("/leaderboard");
+    renderAt(SKILL);
     const table = await screen.findByTestId("ranked-table");
     const first = table.querySelector("tbody tr td");
     // A posterior expectation: 1.4, not 1.
@@ -145,7 +157,7 @@ describe("the leaderboard screen", () => {
           }
         : row,
     );
-    renderAt("/leaderboard", serving({ ...board, rows }));
+    renderAt(SKILL, serving({ ...board, rows }));
     expect(
       await screen.findByText(/You've sent 12 of the 30 results/),
     ).toBeDefined();
@@ -155,7 +167,7 @@ describe("the leaderboard screen", () => {
   it("gates itself with the two floors from the wire", async () => {
     const board = await api().getSkillLeaderboard();
     renderAt(
-      "/leaderboard",
+      SKILL,
       serving({
         ...board,
         active: false,
@@ -178,7 +190,7 @@ describe("the leaderboard screen", () => {
   it("publishes a fitted spread of zero as a real answer", async () => {
     const board = await api().getSkillLeaderboard();
     renderAt(
-      "/leaderboard",
+      SKILL,
       serving({
         ...board,
         population: {
@@ -202,7 +214,7 @@ describe("the leaderboard screen", () => {
     // copy must not say it is.
     const board = await api().getSkillLeaderboard();
     renderAt(
-      "/leaderboard",
+      SKILL,
       serving({
         ...board,
         variation: {
@@ -218,7 +230,7 @@ describe("the leaderboard screen", () => {
 
   it("says the site-wide claim as a natural frequency", async () => {
     const board = await api().getSkillLeaderboard();
-    renderAt("/leaderboard");
+    renderAt(SKILL);
     const claim = await screen.findByText(/stand out by luck alone/);
     expect(claim.textContent).toContain(
       `of ${board.discovery?.tested} players stand out above chance`,
@@ -229,10 +241,169 @@ describe("the leaderboard screen", () => {
     // The username is the key and the one name (spec A2 ruling 3).
     // A screen that compares on a label lights up strangers.
     const board = await api().getSkillLeaderboard();
-    renderAt("/leaderboard");
+    renderAt(SKILL);
     const table = await screen.findByTestId("ranked-table");
     expect(within(table).queryAllByText("You").length).toBeLessThanOrEqual(1);
     expect(board.rows.filter((row) => row.player === "ade")).toHaveLength(1);
+  });
+});
+
+describe("the day: the photo, the podium, and the river", () => {
+  /** The mock with one player's result raised to the top of the day. */
+  function leading(player: string) {
+    const base = api();
+    return {
+      ...base,
+      getLeaderboard: async (day?: string) => {
+        const board = await base.getLeaderboard(day);
+        const rows = board.rows
+          .map((row) => (row.player === player ? { ...row, p: 0.99 } : row))
+          .sort((a, b) => b.p - a.p);
+        return { ...board, rows };
+      },
+    };
+  }
+
+  it("sets the first three on the podium in the order of the board", async () => {
+    const board = await api().getLeaderboard();
+    const open = board.rows.filter((row) => row.public);
+    renderAt("/leaderboard");
+    const podium = await screen.findByRole("list", { name: "The first three" });
+    const places = within(podium).getAllByRole("listitem");
+    // The first stands first in the reading order, wherever it stands
+    // on the screen.
+    expect(places.map((place) => place.dataset.player)).toEqual(
+      open.slice(0, 3).map((row) => row.player),
+    );
+    expect(places[0]?.textContent).toMatch(/^1st/);
+    // Each place says the result and the place of the photo, and no
+    // medal or grade.
+    const first = open[0];
+    expect(places[0]?.textContent).toContain(
+      `${Math.floor((first?.p ?? 0) * 100)}%`,
+    );
+    expect(places[0]?.textContent).toContain(
+      `of ${(first?.decoy_count ?? 0) + 1} photos`,
+    );
+    expect(podium.textContent).not.toMatch(/gold|silver|bronze|medal|winner/i);
+  });
+
+  it("shows the photo with its credit, and the code once, under the title", async () => {
+    const mock = api();
+    const board = await mock.getLeaderboard();
+    const reveal = await mock.getReveal(board.day);
+    const code = (await mock.getPracticeDays()).days.find(
+      (row) => row.day === board.day,
+    )?.trial_code;
+    renderAt("/leaderboard");
+    const photo = await screen.findByAltText(reveal.credit?.title ?? "");
+    const figure = photo.closest("figure") as HTMLElement;
+    expect(within(figure).getByText(/Wikimedia Commons/)).toBeDefined();
+    expect(code).toBeDefined();
+    expect(figure.textContent).not.toContain(code);
+    expect(
+      (await screen.findByText(code ?? "")).closest(".board-sub"),
+    ).not.toBeNull();
+  });
+
+  it("draws each sketch of the day, with a result only where the board shows one", async () => {
+    // The sends hold each player, and the board hides a row below its
+    // floor (spec A2 §9.5): a player with no row gets the name alone.
+    const board = await api().getLeaderboard();
+    const view = renderAt("/leaderboard");
+    await waitFor(() =>
+      expect(
+        [...view.container.querySelectorAll(".river-name")].map(
+          (name) => name.textContent,
+        ),
+      ).toContain("nightjar"),
+    );
+    const labels = [...view.container.querySelectorAll(".river-name")].map(
+      (name) => name.textContent ?? "",
+    );
+    const tallgrass = board.rows.find((row) => row.player === "tallgrass");
+    expect(labels).toContain(
+      `tallgrass · ${Math.floor((tallgrass?.p ?? 0) * 100)}%`,
+    );
+    expect(labels.some((label) => label.startsWith("nightjar ·"))).toBe(false);
+    // A send with no sketch is not in the river.
+    expect(labels.some((label) => label.startsWith("hollis-r"))).toBe(false);
+    // The river is a picture: a reader of the page gets the board.
+    expect(
+      view.container.querySelector(".river")?.getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+
+  it("reads each page of the sends for the sketches of the podium", async () => {
+    // The mock pages its sends five at a time, the newest first, and
+    // marlow sent first: the sketch is on the last page.
+    const view = renderAt("/leaderboard", leading("marlow"));
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(
+          '.podium-place[data-player="marlow"] .podium-sketch',
+        ),
+      ).not.toBeNull(),
+    );
+  });
+
+  it("says so where a podium send holds no sketch", async () => {
+    renderAt("/leaderboard", leading("hollis-r"));
+    const podium = await screen.findByRole("list", { name: "The first three" });
+    expect(await within(podium).findByText("Words only")).toBeDefined();
+  });
+
+  it("steps to the day before, and opens a calendar of revealed days", async () => {
+    const days = (await api().getPracticeDays()).days;
+    const names = makeDayNames("22:00");
+    renderAt("/leaderboard");
+    await screen.findByRole("list", { name: "The first three" });
+    expect(
+      (screen.getByLabelText("The day after") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByLabelText("The day before"));
+    const second = names.long(days[1]?.day ?? "");
+    const date = await screen.findByRole("button", { name: second });
+    fireEvent.click(date);
+    const calendar = screen.getByRole("dialog", { name: "Pick a day" });
+    expect(
+      within(calendar)
+        .getByRole("button", { name: second })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(within(calendar).queryByText("Surprise me")).toBeNull();
+    fireEvent.click(
+      within(calendar).getByRole("button", {
+        name: names.long(days[0]?.day ?? ""),
+      }),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: names.long(days[0]?.day ?? ""),
+      }),
+    ).toBeDefined();
+    expect(screen.queryByRole("dialog", { name: "Pick a day" })).toBeNull();
+  });
+
+  it("brings the caller's own row into view with Find me", async () => {
+    // jsdom has no scrolling: the test stands in for it.
+    const original = Element.prototype.scrollIntoView;
+    const scrolled: Element[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const view = renderAt("/leaderboard");
+      await screen.findByRole("table");
+      fireEvent.click(screen.getByRole("button", { name: "Find me" }));
+      // The own row is a place on the podium or a row of the table.
+      expect(scrolled).toHaveLength(1);
+      expect(scrolled[0]).toBe(
+        view.container.querySelector('[data-player="ade"]'),
+      );
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 });
 
@@ -255,23 +426,26 @@ describe("the daily board after spec A2 (ruling 3, §9.5)", () => {
     };
   }
 
+  /** The day's board: the podium, the river, and the table. */
   async function dailyCard(): Promise<HTMLElement> {
-    const card = (await screen.findByText("Latest day")).closest(
-      "section",
-    ) as HTMLElement;
+    const card = await screen.findByRole("tabpanel");
     await within(card).findByRole("table");
     return card;
   }
 
-  it("shows the username on each row", async () => {
+  it("shows the username on each row, on the podium or in the table", async () => {
     const board = await api().getLeaderboard();
     renderAt("/leaderboard");
     const card = await dailyCard();
     for (const row of board.rows.filter((one) => one.player !== "ade")) {
-      expect(within(card).getByText(row.player)).toBeDefined();
+      expect(within(card).getAllByText(row.player).length).toBeGreaterThan(0);
     }
+    // Each row once: three on the podium, and the rest in the table
+    // under its head row.
+    const podium = within(card).getAllByRole("listitem");
+    expect(podium).toHaveLength(3);
     expect(within(card).getAllByRole("row")).toHaveLength(
-      board.rows.length + 1,
+      board.rows.length - podium.length + 1,
     );
   });
 

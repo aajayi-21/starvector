@@ -21,15 +21,23 @@ test("the leaderboard serves the day's board and gates the skill board", async (
     "page",
   );
 
-  await expect(page.getByRole("heading", { name: "Latest day" })).toBeVisible();
+  // The day: the photo of the day beside the podium of its first
+  // three, then the rest of the board in a table.
   const wire = await (
     await page.request.get(`${SERVER}/api/leaderboard`)
   ).json();
-  const board = page.locator("section").filter({ hasText: "Latest day" });
-  await expect(board.locator("tbody tr")).toHaveCount(wire.rows.length);
+  const panel = page.getByRole("tabpanel");
+  const podium = panel.getByRole("list", { name: "The first three" });
+  const shown = Math.min(
+    3,
+    wire.rows.filter((row: { public: boolean }) => row.public).length,
+  );
+  await expect(podium.getByRole("listitem")).toHaveCount(shown);
+  await expect(panel.locator("tbody tr")).toHaveCount(wire.rows.length - shown);
+  await expect(panel.getByText(/^The photo of /)).toBeVisible();
   // A row with a streak mark adds a hidden "N-day streak" label to the
   // name (spec H1 §4), so the match starts at "You" and does not end there.
-  await expect(board.getByText(/^You/)).toBeVisible();
+  await expect(panel.getByText(/^You/).first()).toBeVisible();
 
   // One revealed day means nobody is near the 30-trial floor, so
   // the skill board gates itself with no operator step. That is
@@ -39,6 +47,8 @@ test("the leaderboard serves the day's board and gates the skill board", async (
     await page.request.get(`${SERVER}/api/leaderboard/skill`)
   ).json();
   expect(skill.active).toBe(false);
+  await page.getByRole("tab", { name: "Skill ranking" }).click();
+  await expect(page).toHaveURL(/board=skill/);
   await expect(
     page.getByText(/starts once a player has sent 30 results/),
   ).toBeVisible();

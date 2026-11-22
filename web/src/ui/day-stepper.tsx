@@ -41,7 +41,7 @@ const MONTH_NAME = new Intl.DateTimeFormat(undefined, {
 });
 
 /** What a cell of the calendar holds: an earlier day, or the day in play. */
-interface CalendarDay {
+export interface CalendarDay {
   /** The label of an earlier day, or null for the day in play. */
   day: string | null;
   date: CalendarDate;
@@ -67,14 +67,20 @@ function calendarDays(
   return found;
 }
 
-function Calendar(props: {
+/**
+ * A month of days in a dialog. The leaderboard has one too, for its
+ * row of revealed days (screens/leaderboard.tsx).
+ */
+export function Calendar(props: {
   days: ReadonlyMap<string, CalendarDay>;
   /** The key of the day on the screen now. */
   shown: string | null;
   start: Month;
-  canSurprise: boolean;
+  /** The line under the month. */
+  note: string;
   onPick: (day: string | null) => void;
-  onSurprise: () => void;
+  /** Absent: no "Surprise me". */
+  onSurprise?: () => void;
 }): React.JSX.Element {
   const [month, setMonth] = useState(props.start);
   const all = [...props.days.values()].map((each) => monthOf(each.date));
@@ -151,8 +157,8 @@ function Calendar(props: {
         })}
       </div>
       <div className="day-calendar-foot">
-        <span className="subtle tiny">An earlier day is practice.</span>
-        {props.canSurprise ? (
+        <span className="subtle tiny">{props.note}</span>
+        {props.onSurprise === undefined ? null : (
           <button
             type="button"
             className="btn btn-ghost"
@@ -160,10 +166,48 @@ function Calendar(props: {
           >
             Surprise me
           </button>
-        ) : null}
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * A press outside the frame of a row of days, or Escape, closes its
+ * calendar. Escape gives the focus back to the date that opened it.
+ */
+export function useCalendarClose(
+  open: boolean,
+  setOpen: (open: boolean) => void,
+  frame: React.RefObject<HTMLElement | null>,
+  opener: React.RefObject<HTMLElement | null>,
+): void {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPress = (event: PointerEvent): void => {
+      if (
+        frame.current !== null &&
+        event.target instanceof Node &&
+        !frame.current.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        opener.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPress);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPress);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, setOpen, frame, opener]);
 }
 
 export function DayStepper(props: {
@@ -216,33 +260,7 @@ export function DayStepper(props: {
     }
   };
 
-  // A press outside the calendar, or Escape, closes it.
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onPress = (event: PointerEvent): void => {
-      if (
-        frame.current !== null &&
-        event.target instanceof Node &&
-        !frame.current.contains(event.target)
-      ) {
-        setOpen(false);
-      }
-    };
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        dateButton.current?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", onPress);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPress);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useCalendarClose(open, setOpen, frame, dateButton);
 
   const todayLabel = today.data?.day;
   const days = calendarDays(earlier, todayLabel, names);
@@ -318,15 +336,19 @@ export function DayStepper(props: {
             days={days}
             shown={shownDate === null ? null : dateKey(shownDate)}
             start={monthOf(startDate)}
-            canSurprise={earlier.length > 0}
+            note="An earlier day is practice."
             onPick={go}
-            onSurprise={() => {
-              const picked =
-                earlier[Math.floor(Math.random() * earlier.length)];
-              if (picked !== undefined) {
-                go(picked);
-              }
-            }}
+            onSurprise={
+              earlier.length === 0
+                ? undefined
+                : () => {
+                    const picked =
+                      earlier[Math.floor(Math.random() * earlier.length)];
+                    if (picked !== undefined) {
+                      go(picked);
+                    }
+                  }
+            }
           />
         </div>
       ) : null}
