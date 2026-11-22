@@ -78,6 +78,14 @@ const Sizers = memo(function Sizers(props: {
             <span>
               {each.author}, <cite>{each.work}</cite>
             </span>
+            {/* Room for the pause and next controls, so a long
+                citation wraps here as it does on the figure. Two
+                spaces even when one control shows: too tall is safe,
+                too short moves the page. */}
+            <span className="epigraph-controls">
+              <span className="btn btn-icon" />
+              <span className="btn btn-icon" />
+            </span>
           </div>
         </div>
       ))}

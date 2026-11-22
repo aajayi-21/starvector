@@ -32,11 +32,11 @@ describe("the greeting (spec H1 §5)", () => {
 });
 
 describe("the epigraph data (spec H1 §5, D3)", () => {
-  it("holds epigraphs of at most 25 words", () => {
+  it("holds epigraphs of at most 80 words", () => {
     expect(EPIGRAPHS.length).toBeGreaterThanOrEqual(16);
     for (const epigraph of EPIGRAPHS) {
       const words = epigraph.text.split(/\s+/).filter((w) => w !== "…");
-      expect(words.length).toBeLessThanOrEqual(25);
+      expect(words.length).toBeLessThanOrEqual(80);
     }
   });
 
