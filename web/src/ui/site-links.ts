@@ -26,8 +26,8 @@ export const NO_FOOTER_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The screens that reach the edges of the window: Your results opens
- * as a sky. The page gives such a screen no side margin and no space
- * over it, and the screen sets its own.
+ * The screens that reach the edges of the window: the home screen and
+ * Your results each stand on a sky. The page gives such a screen no
+ * side margin and no space over it, and the screen sets its own.
  */
-export const BLEED_PATHS: ReadonlySet<string> = new Set(["/history"]);
+export const BLEED_PATHS: ReadonlySet<string> = new Set(["/", "/history"]);

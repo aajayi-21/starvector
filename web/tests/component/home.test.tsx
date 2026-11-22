@@ -1,10 +1,11 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Api } from "../../src/api/client";
 import { makeMockApi } from "../../src/api/mock";
 import type { DayStatus } from "../../src/api/types";
 import { ApiError } from "../../src/api/types";
+import { CROWN_DAYS } from "../../src/sky/home";
 import { makeDayNames } from "../../src/ui/day-names";
 import { HARNESS_TODAY, renderAt } from "./harness";
 
@@ -95,59 +96,87 @@ describe("the home screen (spec BR1 §6)", () => {
     expect(await screen.findByText("No day is open right now")).toBeDefined();
   });
 
-  it("shows the last result against chance", async () => {
-    const history = await makeMockApi({ today: HARNESS_TODAY }).getHistory();
-    const latest = history.days[0];
-    renderAt("/");
-    expect(
-      await screen.findByText(`${Math.floor((latest?.p ?? 0) * 100 + 1e-9)}%`),
-    ).toBeDefined();
-    expect(
-      screen.getByRole("img", { name: /Guessing averages 50%/ }),
-    ).toBeDefined();
-  });
-
-  it("ends each lower card with one link", async () => {
-    renderAt("/");
-    const card = (heading: string): HTMLElement =>
-      screen
-        .getByRole("heading", { name: heading })
-        .closest("section") as HTMLElement;
-    await screen.findByRole("link", { name: "See details" });
-    const links: ReadonlyArray<[string, string, string]> = [
-      ["Your last result", "See details", "/reveal?day="],
-      ["Streak", "Your results", "/history"],
-      ["Practice", "Practice now", "/practice"],
-    ];
-    for (const [heading, name, href] of links) {
-      const inCard = within(card(heading)).getAllByRole("link");
-      expect(inCard).toHaveLength(1);
-      expect(inCard[0]?.textContent).toBe(name);
-      expect(inCard[0]?.getAttribute("href")).toContain(href);
-    }
-  });
-
-  it("counts the revealed days of the last week from the history", async () => {
+  it("shows the streak as a crown: one star for each day in a row", async () => {
     const base = makeMockApi({ today: HARNESS_TODAY });
-    const [history, day] = await Promise.all([
-      base.getHistory(),
-      base.getDay(),
-    ]);
-    const played = new Set(history.days.map((row) => row.day));
-    let count = 0;
-    for (let back = 1; back <= 7; back += 1) {
-      const date = new Date(`${day.day}T12:00:00Z`);
-      date.setUTCDate(date.getUTCDate() - back);
-      if (played.has(date.toISOString().slice(0, 10))) {
-        count += 1;
-      }
-    }
-    renderAt("/");
-    expect(
-      await screen.findByText(
-        `You have a result on ${count} of the last 7 days.`,
+    const me = await base.getMe();
+    expect(me.streak).toBeGreaterThan(0);
+    const view = renderAt("/");
+    const label = await screen.findByTestId("streak-label");
+    expect(label.textContent).toBe(`${me.streak}-day streak`);
+    const crown = screen.getByRole("group", { name: "Your streak" });
+    // The stars follow the history, which answers after the streak does.
+    await waitFor(() =>
+      expect(view.container.querySelectorAll(".crown-star")).toHaveLength(
+        Math.min(me.streak, CROWN_DAYS),
       ),
-    ).toBeDefined();
+    );
+    // Each star of a day with a result opens that day.
+    const stars = within(crown).getAllByRole("link");
+    expect(stars[0]?.getAttribute("href")).toContain("/reveal?day=");
+    expect(stars[0]?.getAttribute("aria-label")).toMatch(
+      /you beat \d+% of the photos$/,
+    );
+  });
+
+  it("says the streak and nothing after it", async () => {
+    renderAt("/");
+    const label = await screen.findByTestId("streak-label");
+    expect(label.textContent).toMatch(/^\d+-day streak$/);
+  });
+
+  it("says when there is no streak", async () => {
+    const base = makeMockApi({ today: HARNESS_TODAY });
+    const api: Api = {
+      ...base,
+      getMe: async () => ({ ...(await base.getMe()), streak: 0 }),
+    };
+    const view = renderAt("/", api);
+    const label = await screen.findByTestId("streak-label");
+    expect(label.textContent).toBe("No streak yet");
+    expect(view.container.querySelectorAll(".crown-star")).toHaveLength(0);
+  });
+
+  it.each([
+    [{ submitted: false }, "Today: not sent yet"],
+    [{ submitted: true }, "Today: your sketch is in"],
+    [{ status: "closed" as const, submitted: false }, "Today: not sent"],
+  ])("keeps a place for today on the crown: %o", async (overrides, name) => {
+    renderAt("/", withDay(overrides));
+    await screen.findByTestId("streak-label");
+    expect(await screen.findByRole("img", { name })).toBeDefined();
+  });
+
+  it("has no place for today when the day is revealed", async () => {
+    const view = renderAt(
+      "/",
+      withDay({ status: "revealed", submitted: true }),
+    );
+    await screen.findByTestId("streak-label");
+    await screen.findByRole("link", { name: "See your result" });
+    expect(view.container.querySelector(".crown-today")).toBeNull();
+  });
+
+  it("shows the code of the day in each state of the day", async () => {
+    const day = await makeMockApi({ today: HARNESS_TODAY }).getDay();
+    const code = `Code ${[...day.trial_code].join(" ")}`;
+    for (const overrides of [
+      {},
+      { submitted: true },
+      { status: "closing" as const, submitted: true },
+      { status: "revealed" as const, submitted: true },
+    ]) {
+      const view = renderAt("/", withDay(overrides));
+      expect(await screen.findByRole("img", { name: code })).toBeDefined();
+      view.unmount();
+    }
+  });
+
+  it("has nothing after the first screen", async () => {
+    renderAt("/");
+    await screen.findByRole("link", { name: "Start today's sketch" });
+    for (const heading of ["Your last result", "Streak", "Practice"]) {
+      expect(screen.queryByRole("heading", { name: heading })).toBeNull();
+    }
   });
 
   it("counts down in the line under the greeting", async () => {
