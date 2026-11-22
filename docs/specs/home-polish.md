@@ -151,8 +151,10 @@ records the cause.
 - A change fades in the epigraph with the same resolve effect as the
   heading.
 - The epigraphs are in `web/src/screens/epigraphs.ts`: text, author or
-  agency, work, and the source address. Each epigraph has a maximum of 25
-  words.
+  agency, work, and the source address. Each epigraph has a maximum of 80
+  words. (Changed on 2026-11-21 by the owner: the limit was 25 words, and
+  the owner added epigraphs with a maximum of 77 words. The frame is as tall as the
+  longest epigraph, so a short epigraph has an empty area below it.)
 - **Sources.** Each epigraph has a `rights` field. A `public-domain` or
   `us-government` entry has its wording checked against the source page. An
   `owner-supplied` entry comes from a work with a copyright, and the owner
