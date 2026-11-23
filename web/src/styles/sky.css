@@ -1,0 +1,465 @@
+/*
+ * The results sky (ui/results-sky.tsx): the first window of Your
+ * results. Each day's sketch stands in it as a constellation. The page
+ * scrolls out of the sky: the stage holds still while the drawings fold
+ * into their stars and the stars go to the chart, and then the stage
+ * goes up with the page.
+ *
+ * The rule of the look holds here too (theme.css): an edge or a fill
+ * means you can type in it or press it. The words of an opened day sit
+ * on the sky with no box; the sky dims behind them. A sketch in those
+ * words is a picture, the one fill.
+ *
+ * sky/engine.ts sets the places of the stars, the drawings, and the
+ * frame of the chart. No rule here sets a place that the engine sets.
+ */
+
+.sky-space {
+  /* The height of the top bar, and of the window under it. */
+  --sky-top: 60px;
+  --sky-h: max(520px, calc(100vh - var(--sky-top)));
+  position: relative;
+  /* The stage holds for the last 0.9 of its own height: the way out. */
+  height: calc(var(--sky-h) * 1.9);
+}
+@supports (height: 100dvh) {
+  .sky-space {
+    --sky-h: max(520px, calc(100dvh - var(--sky-top)));
+  }
+}
+.sky-stage {
+  position: sticky;
+  top: var(--sky-top);
+  height: var(--sky-h);
+  overflow: hidden;
+  /* A finger on the sky still scrolls the page. */
+  touch-action: pan-y;
+}
+.sky-field,
+.sky-lines {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.sky-figs,
+.sky-stars {
+  position: absolute;
+  inset: 0;
+}
+/* The layers, from the back: the faint stars, the lines of the chart,
+   the drawings, the stars, the words over a day, the shade behind an
+   opened day, the shade under the title, and then the words. The title
+   is the first node for a reader of the page, so the order is set here
+   and not by the order of the nodes. */
+.sky-lines {
+  z-index: 1;
+}
+.sky-figs {
+  z-index: 2;
+}
+.sky-stars {
+  z-index: 3;
+}
+.sky-label {
+  z-index: 4;
+}
+.sky-scrim {
+  z-index: 5;
+}
+.sky-veil {
+  z-index: 6;
+}
+.sky-head,
+.sky-cue {
+  z-index: 7;
+}
+.sky-dock {
+  z-index: 8;
+}
+
+/* — a day's drawing — */
+.sky-fig {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  opacity: var(--sky-o, 0.5);
+  stroke-width: 1.15px;
+}
+.sky-fig polyline {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* The line keeps its width at each size of drawing. */
+  vector-effect: non-scaling-stroke;
+}
+.sky-fig circle {
+  fill: var(--text);
+}
+.sky-fig.is-small circle {
+  display: none;
+}
+.sky-fig.is-on {
+  opacity: 1;
+}
+/* With a day open, the other drawings step back. */
+.sky-figs.has-pick .sky-fig:not(.is-on) {
+  opacity: calc(var(--sky-o, 0.5) * 0.45);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sky-fig {
+    transition: opacity 0.2s;
+  }
+}
+
+/* — a day's star: the one thing in the sky that you press — */
+.sky-star {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  /* The stage reads the pointer, so a press near a drawing counts. */
+  pointer-events: none;
+}
+.sky-star-dot {
+  display: block;
+  width: calc(var(--sky-r, 3px) * 2);
+  height: calc(var(--sky-r, 3px) * 2);
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 calc(var(--sky-r, 3px) * 2.4) rgba(196, 210, 255, 0.5);
+}
+/* The best result of the sky has the halo, as on the home screen. */
+.sky-star.is-best::after {
+  content: "";
+  position: absolute;
+  width: calc(var(--sky-r, 3px) * 4.6);
+  height: calc(var(--sky-r, 3px) * 4.6);
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.22;
+}
+.sky-star::before {
+  content: "";
+  position: absolute;
+  width: calc(var(--sky-r, 3px) * 2 + 14px);
+  height: calc(var(--sky-r, 3px) * 2 + 14px);
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+}
+.sky-star.is-hover::before {
+  opacity: 0.6;
+}
+.sky-star.is-picked::before {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sky-star::before {
+    transition: opacity 0.15s;
+  }
+}
+
+/* — the words over a day, and the labels of the chart — */
+.sky-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  color: var(--text);
+  font-family: var(--atlas);
+  font-size: 16px;
+  font-style: italic;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sky-lines text {
+  fill: var(--text-2);
+  font-family: var(--font);
+  font-size: 13.5px;
+}
+.sky-lines text.sky-atlas {
+  fill: var(--text-3);
+  font-family: var(--atlas);
+  font-size: 15px;
+  font-style: italic;
+}
+.sky-frame,
+.sky-chance {
+  opacity: 0;
+}
+.sky-frame line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.sky-chance line {
+  stroke: var(--chance);
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+}
+.sky-thread {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0;
+}
+.sky-leader {
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0;
+}
+
+/* — the title, on the sky — */
+/* The sky dims under the title, so a star that passes there does not
+   cross the words. */
+.sky-veil {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 190px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 90%, transparent) 30%,
+    transparent
+  );
+  pointer-events: none;
+}
+.sky-head {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 var(--gutter);
+  pointer-events: none;
+}
+/* The two captions share one cell: one for the sky, one for the chart. */
+.sky-caps {
+  display: grid;
+  max-width: 600px;
+  color: var(--text-2);
+  font-size: 19px;
+}
+.sky-caps > p {
+  grid-area: 1 / 1;
+  text-wrap: balance;
+}
+.sky-caps > p + p {
+  opacity: 0;
+}
+.sky-cue {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  margin: 0;
+  color: var(--text-3);
+  font-family: var(--atlas);
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.3;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sky-cue svg {
+    animation: sky-nudge 2.4s ease-in-out infinite;
+  }
+}
+@keyframes sky-nudge {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(5px);
+  }
+}
+
+/* — an opened day: words on the sky, with no box — */
+.sky-scrim {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  --sky-shade: color-mix(in srgb, var(--bg) 92%, transparent);
+}
+.sky-stage[data-side] .sky-scrim {
+  opacity: 1;
+}
+.sky-stage[data-side="right"] .sky-scrim {
+  background: linear-gradient(90deg, transparent 46%, var(--sky-shade) 76%);
+}
+.sky-stage[data-side="left"] .sky-scrim {
+  background: linear-gradient(270deg, transparent 46%, var(--sky-shade) 76%);
+}
+.sky-stage[data-side="bottom"] .sky-scrim {
+  background: linear-gradient(180deg, transparent 34%, var(--sky-shade) 60%);
+}
+.sky-stage[data-side="top"] .sky-scrim {
+  background: linear-gradient(0deg, transparent 32%, var(--sky-shade) 48%);
+}
+.sky-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 150px;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--gutter);
+  pointer-events: none;
+}
+/* On the left the words start under the title. */
+.sky-stage[data-side="left"] .sky-dock {
+  justify-content: flex-start;
+  top: 196px;
+}
+.sky-plate {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 340px;
+  max-width: 100%;
+  opacity: 0;
+  visibility: hidden;
+}
+.sky-stage[data-side] .sky-plate {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sky-scrim,
+  .sky-plate {
+    transition:
+      opacity 0.2s,
+      visibility 0.2s;
+  }
+}
+.sky-plate-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sky-code {
+  margin-left: 10px;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.sky-plate-lead {
+  font-family: var(--display);
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.sky-plate-lead strong {
+  font-weight: 700;
+}
+.sky-plate-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.sky-plate-sketch {
+  flex: none;
+  width: 132px;
+}
+.sky-plate-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 15px;
+}
+.sky-plate-side .foot-link {
+  min-height: 44px;
+  font-size: 17px;
+}
+.sky-plate-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -12px;
+}
+
+@media (max-width: 760px) {
+  .sky-space {
+    /* The top bar, and the tab bar at the foot of a phone. */
+    --sky-top: 56px;
+    --sky-h: max(
+      480px,
+      calc(
+        100vh -
+        var(--sky-top) -
+        var(--tabbar-height) -
+        env(safe-area-inset-bottom)
+      )
+    );
+  }
+  @supports (height: 100dvh) {
+    .sky-space {
+      --sky-h: max(
+        480px,
+        calc(
+          100dvh -
+          var(--sky-top) -
+          var(--tabbar-height) -
+          env(safe-area-inset-bottom)
+        )
+      );
+    }
+  }
+  .sky-head {
+    top: 26px;
+  }
+  .sky-veil {
+    height: 170px;
+  }
+  .sky-caps {
+    font-size: 17px;
+  }
+  .sky-cue {
+    bottom: 18px;
+    font-size: 15.5px;
+  }
+  /* No room for a word at the end of the chance line, nor for a third
+     date under the chart. */
+  .sky-lines text.sky-wide {
+    display: none;
+  }
+  .sky-dock,
+  .sky-stage[data-side="left"] .sky-dock {
+    top: auto;
+    bottom: 22px;
+  }
+  .sky-stage[data-side="top"] .sky-dock {
+    top: 150px;
+    bottom: auto;
+  }
+  .sky-plate {
+    width: 100%;
+    gap: 10px;
+  }
+  .sky-plate-lead {
+    font-size: 21px;
+  }
+  .sky-plate-sketch {
+    width: 104px;
+  }
+}

@@ -234,6 +234,14 @@ details.row-disclosure.fair-values {
 }
 
 /* — your results — */
+/* The screen reaches the edges of the window, for the sky
+   (ui/site-links.ts). Each other part of it sets the page's margin. */
+.results-plain {
+  padding: 40px var(--gutter) 0;
+}
+.results-numbers {
+  padding: 56px var(--gutter) 0;
+}
 .results .page-header {
   margin-bottom: 36px;
 }
@@ -338,51 +346,10 @@ details.row-disclosure.skill-more > summary {
   min-width: 0;
 }
 
-/* — the chart of the days (ui/results-chart.tsx) — */
-.results-chart {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin-top: 6px;
-}
-.results-chart-scale text {
-  fill: var(--text-2);
-  font-family: var(--font);
-  font-size: 13.5px;
-}
-.results-chart-edge {
-  stroke: var(--border);
-  stroke-width: 1;
-}
-.results-chart-chance {
-  stroke: var(--chance);
-  stroke-width: 1;
-  stroke-dasharray: 2 7;
-  opacity: 0.8;
-}
-.results-chart-label,
-.results-chart-label text {
-  fill: var(--text-3);
-  font-family: var(--atlas);
-  font-size: 15px;
-  font-style: italic;
-}
-.results-chart-line {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1;
-  opacity: 0.5;
-}
-.results-chart-halo {
-  fill: var(--accent);
-  opacity: 0.2;
-}
-.results-chart-star {
-  fill: var(--text);
-}
+/* The chart of the days is the sky after a scroll (styles/sky.css). */
 
 .days-table {
-  margin-top: 22px;
+  margin-top: 8px;
 }
 .results-code {
   font-family: var(--mono);
@@ -552,6 +519,12 @@ details.row-disclosure.skill-more > summary {
     border-bottom: 0;
   }
 
+  .results-plain {
+    padding-top: 26px;
+  }
+  .results-numbers {
+    padding-top: 30px;
+  }
   .results .page-header {
     margin-bottom: 26px;
   }

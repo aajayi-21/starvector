@@ -51,6 +51,8 @@ export interface SketchCanvasProps {
   nextStrokeId: () => number;
   onPickStroke: (strokeId: number | null) => void;
   disabled?: boolean;
+  /** The eraser's size, as a multiple of its radius. The default is 1. */
+  eraserScale?: number;
 }
 
 interface CssSize {
@@ -375,7 +377,10 @@ export function SketchCanvas(props: SketchCanvasProps): React.JSX.Element {
         (event.buttons & PEN_ERASER_BUTTON) !== 0;
       if (latest.mode === "erase" || penEraser) {
         const at = cssPoint(event);
-        const ringRadius = eraserRadius(event.pointerType);
+        const ringRadius = eraserRadius(
+          event.pointerType,
+          latest.eraserScale ?? 1,
+        );
         activeRef.current = {
           kind: "erase",
           pointerId: event.pointerId,
@@ -411,7 +416,7 @@ export function SketchCanvas(props: SketchCanvasProps): React.JSX.Element {
         ) {
           ringRef.current = {
             at: cssPoint(event),
-            radius: eraserRadius(event.pointerType),
+            radius: eraserRadius(event.pointerType, latest.eraserScale ?? 1),
           };
           scheduleFlush();
         }
@@ -543,7 +548,9 @@ export function SketchCanvas(props: SketchCanvasProps): React.JSX.Element {
         aspectRatio: "1 / 1",
         width: "100%",
         background: "var(--canvas, #1f2430)",
-        border: "1px solid var(--canvas-border, #2e3544)",
+        // The panel can ask for another edge: a dashed one while erasing.
+        border:
+          "1px var(--canvas-border-style, solid) var(--canvas-border, #2e3544)",
         borderRadius: 2,
         overflow: "hidden",
         cursor: props.mode === "select" ? "pointer" : "crosshair",

@@ -130,6 +130,17 @@
   width: 100%;
   padding: 40px var(--gutter) 64px;
 }
+/* A screen that reaches the edges of the window (ui/site-links.ts): the
+   page gives it no side margin and no space over it. The line that
+   stands before the first answer keeps the margin. */
+.page.page-bleed {
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+.page-bleed > .subtle {
+  padding: 40px var(--gutter) 0;
+}
 /* A page of running text keeps a readable line, from the same left
    edge as each other page. */
 .page-narrow {

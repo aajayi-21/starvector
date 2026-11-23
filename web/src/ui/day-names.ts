@@ -26,6 +26,18 @@ export interface DayNames {
   short(label: string): string;
   /** "2026-11-21" → "F", the first letter of the weekday. */
   weekdayLetter(label: string): string;
+  /**
+   * The calendar date on which the day started, in the reader's zone:
+   * the date its names say. Null for text that is not a label.
+   */
+  calendarDate(label: string): CalendarDate | null;
+}
+
+/** A date of a calendar: the month counts from 0, as in `Date`. */
+export interface CalendarDate {
+  year: number;
+  month: number;
+  date: number;
 }
 
 export interface DayNameOptions {
@@ -64,7 +76,37 @@ export function makeDayNames(
     weekday: "narrow",
     timeZone: "UTC",
   });
+  const numbers = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    ...zone,
+  });
+  const utcNumbers = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    timeZone: "UTC",
+  });
   return {
+    calendarDate(label) {
+      const start = dayStart(label, closesAtUtc);
+      const midnight = labelMidnight(label);
+      if (start === null && midnight === null) {
+        return null;
+      }
+      // With no rollover hour, the date is the UTC date of the label.
+      const parts = (start === null ? utcNumbers : numbers).formatToParts(
+        start ?? new Date(midnight as number),
+      );
+      const read = (type: string): number =>
+        Number(parts.find((part) => part.type === type)?.value);
+      return {
+        year: read("year"),
+        month: read("month") - 1,
+        date: read("day"),
+      };
+    },
     long(label) {
       const start = dayStart(label, closesAtUtc);
       return start === null ? formatDay(label) : long.format(start);

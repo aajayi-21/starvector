@@ -1,12 +1,19 @@
 /**
- * The leaderboard screen (spec M1 §9): the day's board and the
- * skill board, with the funnel chart as the skill board's primary
- * shape. The chart is a star chart: each player is a star, on the
- * band where players with no skill land.
+ * The leaderboard screen (spec M1 §9), in two parts behind two tabs.
  *
- * Two columns share the width: the chart and the caller's own
- * evidence, then the latest day and the facts of all players. The
- * ranked table follows at the full width. Nothing here has a box.
+ * - **The day** (the owner's design of 2026-11-22): the photo of a
+ *   revealed day beside the podium of its first three, the river of
+ *   the day's sketches, and the rest of that day's board as a plain
+ *   table (screens/leaderboard-day.tsx). A row of days steps through
+ *   each revealed day.
+ * - **Skill ranking**: the funnel chart as the primary shape, with the
+ *   caller's own evidence and the facts of all players, then the
+ *   ranked table at the full width. The chart is a star chart: each
+ *   player is a star, on the band where players with no skill land.
+ *
+ * The tab and the day live in the path (`?board=skill`, `?day=…`), so
+ * a reload and the back button keep them. A quiet sky of stars stands
+ * behind the head of the page. Nothing here has a box.
  *
  * Copy rules this screen is held to, each of them a decision and
  * none of them styling:
@@ -24,7 +31,9 @@
  * - A variation statistic that misses its level is not evidence
  *   that the players are the same, and no sentence here says it
  *   is (spec M1 §6).
- * - No medals, no podium, no "good match" language.
+ * - No medals and no "good match" language. The podium of the day
+ *   sets the first three apart by the order the board gives them,
+ *   with no medal and no color for a place (ui/podium.tsx).
  *
  * §6 asks for four numbers in its variation report. The fourth is
  * the population goodness-of-fit check, which ruling 5 of
@@ -32,9 +41,10 @@
  * the operator reads the fourth in the board artifact.
  */
 
-import { CaretRight } from "@phosphor-icons/react";
+import { CalendarBlank, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "../api/client";
 import type {
@@ -46,19 +56,20 @@ import type {
   VariationReport,
 } from "../api/types";
 import { friendlyMessage, isRefusal } from "../api/types";
-import {
-  type AxisTick,
-  boardSlice,
-  floorSentence,
-  funnelGeometry,
-  privateOwnRow,
-} from "../board/core";
+import { type AxisTick, boardSlice, funnelGeometry } from "../board/core";
+import { seedOf } from "../sky/core";
+import { createQuietSky } from "../sky/quiet";
 import { AvatarCircle } from "../ui/avatar";
 import { useDayNames } from "../ui/day-names";
-import { ordinal, percentBeaten } from "../ui/format";
+import {
+  Calendar,
+  type CalendarDay,
+  useCalendarClose,
+} from "../ui/day-stepper";
+import { dateKey, monthOf } from "../ui/month-grid";
 import { useNarrow } from "../ui/narrow";
-import { PrivateRowBadge } from "../ui/private-row-badge";
 import { StreakName } from "../ui/streak-name";
+import { DayBoard } from "./leaderboard-day";
 
 /**
  * How many ranked rows the table shows before the caller's own, and
@@ -90,156 +101,372 @@ const NARROW_PLOT = {
   bottom: 46,
 };
 
+/** The two parts of the screen. */
+type Board = "day" | "skill";
+
+const TABS: ReadonlyArray<readonly [Board, string]> = [
+  ["day", "The day"],
+  ["skill", "Skill ranking"],
+];
+
+/** The id of the tab of a part, for the panel to name. */
+function tabId(board: Board): string {
+  return `board-tab-${board}`;
+}
+
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
 export function LeaderboardScreen(): React.JSX.Element {
   const api = useApi();
+  const navigate = useNavigate();
+  const names = useDayNames();
+  const search = useSearch({ from: "/leaderboard" });
+  const board: Board = search.board === "skill" ? "skill" : "day";
+  // No day names the newest revealed one, as the server reads it.
   const daily = useQuery({
-    queryKey: ["leaderboard", "newest"],
-    queryFn: () => api.getLeaderboard(),
+    queryKey: ["leaderboard", search.day ?? "newest"],
+    queryFn: () => api.getLeaderboard(search.day),
   });
   const skill = useQuery({
     queryKey: ["skill-board"],
     queryFn: () => api.getSkillLeaderboard(),
   });
+  // The list of revealed days, the newest first, with the code of each.
+  // The key and the request of the practice screen: one read serves both.
+  const days = useQuery({
+    queryKey: ["practice-days"],
+    queryFn: () => api.getPracticeDays(),
+    retry: false,
+  });
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
   const self = me.data?.player ?? "";
+  const panel = useRef<HTMLDivElement | null>(null);
+
+  const day = daily.data?.day ?? search.day;
+  const revealed = (days.data?.days ?? []).map((row) => row.day);
+  const code = days.data?.days.find((row) => row.day === day)?.trial_code;
+  const count = daily.data?.rows.length;
+  const findable =
+    board === "day"
+      ? (daily.data?.rows.some((row) => row.player === self) ?? false)
+      : (skill.data?.rows.some((row) => row.player === self && row.eligible) ??
+        false);
+
+  const pick = (next: Board): void => {
+    void navigate({
+      to: "/leaderboard",
+      search:
+        next === "skill"
+          ? { ...search, board: "skill" }
+          : search.day === undefined
+            ? {}
+            : { day: search.day },
+      replace: true,
+    });
+  };
+  const goDay = (next: string): void => {
+    // The newest day is the board with no day in the path.
+    void navigate({
+      to: "/leaderboard",
+      search: next === revealed[0] ? {} : { day: next },
+      replace: true,
+    });
+  };
+
   return (
     <div className="board">
-      <header className="page-header">
-        <h1 className="h-display">Leaderboard</h1>
-        <p className="muted board-lead">
-          The latest day's results, and the skill ranking across many days.
-        </p>
-      </header>
-      {/* Two columns on a wide screen. On a phone the two wrappers let
-          go, and each section takes its place by its order
-          (styles/board.css): the latest day leads. */}
-      <div className="board-grid">
-        <div className="board-main">
-          {skill.isPending ? (
-            <p className="subtle">Loading…</p>
-          ) : skill.isError || skill.data === undefined ? (
-            <div className="notice notice-bad" role="alert">
-              {friendlyMessage(skill.error)}
-            </div>
-          ) : (
-            <SkillBoard view={skill.data} self={self} />
+      <BoardSky />
+      <header className="board-head">
+        <div className="board-title">
+          <h1 className="h-display">Leaderboard</h1>
+          {board === "skill" ? (
+            <p className="board-sub">The skill ranking across many days.</p>
+          ) : day === undefined ? null : (
+            <p className="board-sub">
+              <time dateTime={day}>{names.long(day)}</time>
+              {count === undefined
+                ? null
+                : ` · ${count} ${count === 1 ? "player" : "players"}`}
+              {code === undefined ? null : (
+                <>
+                  {" · code "}
+                  <span className="code board-code">{code}</span>
+                </>
+              )}
+            </p>
           )}
         </div>
-        <div className="board-side">
-          <DailyBoard
+        <div className="board-bar">
+          {board === "day" && day !== undefined ? (
+            <BoardDays day={day} days={revealed} onGo={goDay} />
+          ) : null}
+          <div className="board-tabs" role="tablist" aria-label="Which board">
+            {TABS.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                id={tabId(key)}
+                className="board-tab"
+                aria-selected={board === key}
+                aria-controls="board-panel"
+                tabIndex={board === key ? 0 : -1}
+                onClick={() => pick(key)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                    const next: Board = key === "day" ? "skill" : "day";
+                    pick(next);
+                    document.getElementById(tabId(next))?.focus();
+                  }
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {findable ? (
+            <button
+              type="button"
+              className="board-find"
+              onClick={() => findOwnRow(panel.current, self)}
+            >
+              Find me
+            </button>
+          ) : null}
+        </div>
+      </header>
+      <div
+        id="board-panel"
+        className="board-panel"
+        role="tabpanel"
+        aria-labelledby={tabId(board)}
+        ref={panel}
+      >
+        {board === "day" ? (
+          <DayPanel
             view={daily.data}
+            named={search.day !== undefined}
             self={self}
             pending={daily.isPending}
             error={daily.isError ? daily.error : null}
           />
-          {skill.data === undefined ? null : (
-            <Population
-              population={skill.data.population}
-              variation={skill.data.variation}
-              discovery={skill.data.discovery}
-            />
-          )}
-        </div>
+        ) : (
+          <SkillPanel
+            view={skill.data}
+            self={self}
+            pending={skill.isPending}
+            error={skill.isError ? skill.error : null}
+          />
+        )}
       </div>
-      {skill.data === undefined || !skill.data.active ? null : (
-        <RankedPlayers view={skill.data} self={self} />
-      )}
     </div>
   );
 }
 
-function DailyBoard(props: {
+/**
+ * Brings the caller's own row into view, and lights it for a moment.
+ * The row is the place on the podium, a row of the table, or a row of
+ * the ranked table: each carries the player in `data-player`.
+ */
+function findOwnRow(panel: HTMLElement | null, self: string): void {
+  const own = [
+    ...(panel?.querySelectorAll<HTMLElement>("[data-player]") ?? []),
+  ].find((each) => each.dataset.player === self);
+  if (own === undefined) {
+    return;
+  }
+  const still =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(REDUCED_MOTION).matches;
+  own.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+  // An animation and not a class: React owns the class of the row.
+  if (typeof own.animate === "function") {
+    own.animate(
+      [
+        { backgroundColor: "rgba(143, 174, 255, 0.24)", offset: 0 },
+        { backgroundColor: "rgba(143, 174, 255, 0.24)", offset: 0.4 },
+        { backgroundColor: "transparent", offset: 1 },
+      ],
+      { duration: 1600, easing: "ease-out" },
+    );
+  }
+}
+
+/** The quiet sky behind the head of the page: a picture of stars. */
+function BoardSky(): React.JSX.Element {
+  const canvas = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (canvas.current === null) {
+      return;
+    }
+    const sky = createQuietSky(canvas.current, seedOf("leaderboard"));
+    return () => sky.dispose();
+  }, []);
+  return (
+    <div className="board-sky" aria-hidden="true">
+      <canvas className="board-sky-field" ref={canvas} />
+    </div>
+  );
+}
+
+/**
+ * The row of revealed days: the arrows step one day, and the date
+ * opens a calendar of each revealed day, as on the Play screen.
+ */
+function BoardDays(props: {
+  day: string;
+  /** The revealed days, the newest first. */
+  days: ReadonlyArray<string>;
+  onGo: (day: string) => void;
+}): React.JSX.Element {
+  const { day, days } = props;
+  const names = useDayNames();
+  const [open, setOpen] = useState(false);
+  const frame = useRef<HTMLDivElement | null>(null);
+  const dateButton = useRef<HTMLButtonElement | null>(null);
+  const calendarId = useId();
+  useCalendarClose(open, setOpen, frame, dateButton);
+
+  const at = days.indexOf(day);
+  const before = at < 0 ? undefined : days[at + 1];
+  const after = at > 0 ? days[at - 1] : undefined;
+  const go = (next: string): void => {
+    setOpen(false);
+    props.onGo(next);
+  };
+  const cells = new Map<string, CalendarDay>();
+  for (const each of days) {
+    const date = names.calendarDate(each);
+    if (date !== null) {
+      cells.set(dateKey(date), { day: each, date, name: names.long(each) });
+    }
+  }
+  const shown = names.calendarDate(day);
+
+  return (
+    <div className="day-stepper board-days" ref={frame}>
+      <button
+        type="button"
+        className="btn btn-secondary day-step"
+        aria-label="The day before"
+        disabled={before === undefined}
+        onClick={() => {
+          if (before !== undefined) {
+            go(before);
+          }
+        }}
+      >
+        <CaretLeft size={18} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        ref={dateButton}
+        className="day-date"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? calendarId : undefined}
+        disabled={shown === null || at < 0}
+        onClick={() => setOpen((old) => !old)}
+      >
+        <strong>{names.long(day)}</strong>
+        <CalendarBlank size={16} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="btn btn-secondary day-step"
+        aria-label="The day after"
+        disabled={after === undefined}
+        onClick={() => {
+          if (after !== undefined) {
+            go(after);
+          }
+        }}
+      >
+        <CaretRight size={18} aria-hidden="true" />
+      </button>
+      {open && shown !== null ? (
+        <div id={calendarId}>
+          <Calendar
+            days={cells}
+            shown={dateKey(shown)}
+            start={monthOf(shown)}
+            note="Each revealed day has a board."
+            onPick={(picked) => {
+              if (picked !== null) {
+                go(picked);
+              }
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DayPanel(props: {
   view: LeaderboardView | undefined;
+  /** True when the path names the day. */
+  named: boolean;
+  self: string;
+  pending: boolean;
+  error: unknown;
+}): React.JSX.Element {
+  const { view, pending, error } = props;
+  if (pending) {
+    return <p className="subtle">Loading…</p>;
+  }
+  if (view === undefined) {
+    return isRefusal(error) ? (
+      <p className="muted board-empty">
+        {props.named
+          ? "That day isn't revealed, so it has no board yet."
+          : "No day has been revealed yet. This board fills in after the first one."}
+      </p>
+    ) : (
+      <div className="notice notice-bad" role="alert">
+        {friendlyMessage(error)}
+      </div>
+    );
+  }
+  return <DayBoard view={view} self={props.self} />;
+}
+
+function SkillPanel(props: {
+  view: SkillBoardView | undefined;
   self: string;
   pending: boolean;
   error: unknown;
 }): React.JSX.Element {
   const { view, self, pending, error } = props;
-  const names = useDayNames();
-  // The caller's own row while it is below the floor of spec A2 §9.5.
-  const hidden = view === undefined ? null : privateOwnRow(view.rows, self);
-  // The photos of one day are one set, so the count stands one time
-  // under the table. Rows that disagree keep their own count.
-  const totals = new Set(view?.rows.map((row) => row.decoy_count + 1) ?? []);
-  const [total] = totals;
-  const shared = totals.size === 1 && total !== undefined ? total : null;
-  return (
-    <section className="card board-daily" aria-labelledby="daily-heading">
-      <div className="board-heading">
-        <h2 id="daily-heading">Latest day</h2>
-        {view === undefined ? null : (
-          <time className="muted" dateTime={view.day}>
-            {names.long(view.day)}
-          </time>
-        )}
+  if (pending) {
+    return <p className="subtle">Loading…</p>;
+  }
+  if (view === undefined) {
+    return (
+      <div className="notice notice-bad" role="alert">
+        {friendlyMessage(error)}
       </div>
-      {pending ? (
-        <p className="subtle">Loading…</p>
-      ) : view === undefined ? (
-        isRefusal(error) ? (
-          <p className="muted">
-            No day has been revealed yet. This board fills in after the first
-            one.
-          </p>
-        ) : (
-          <div className="notice notice-bad" role="alert">
-            {friendlyMessage(error)}
-          </div>
-        )
-      ) : (
-        <div className="table-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th scope="col">Player</th>
-                <th scope="col" className="num">
-                  Result
-                </th>
-                <th scope="col" className="num">
-                  Place
-                </th>
-                <th scope="col" className="num">
-                  Streak
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.rows.map((row) => (
-                <tr
-                  key={row.player}
-                  className={row.player === self ? "is-you" : undefined}
-                >
-                  <td>
-                    <PlayerCell
-                      player={row.player}
-                      avatarHash={row.avatar_hash}
-                      streak={row.streak}
-                      self={self}
-                    />
-                    {row === hidden ? <PrivateRowBadge /> : null}
-                  </td>
-                  <td className="num">{percentBeaten(row.p)}%</td>
-                  <td className="num muted">
-                    {shared === null
-                      ? `${ordinal(row.target_rank)} of ${row.decoy_count + 1}`
-                      : ordinal(row.target_rank)}
-                  </td>
-                  <td className="num muted">{row.streak}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    );
+  }
+  return (
+    <>
+      {/* Two columns on a wide screen. On a phone the two wrappers let
+          go, and each section takes its place by its order
+          (styles/board.css). */}
+      <div className="board-grid">
+        <div className="board-main">
+          <SkillBoard view={view} self={self} />
         </div>
-      )}
-      {shared === null ? null : (
-        <p className="subtle tiny">Place is out of {shared} photos.</p>
-      )}
-      {view === undefined || hidden === null ? null : (
-        <p className="hint" data-testid="board-floor">
-          {floorSentence(view.floor)}
-        </p>
-      )}
-    </section>
+        <div className="board-side">
+          <Population
+            population={view.population}
+            variation={view.variation}
+            discovery={view.discovery}
+          />
+        </div>
+      </div>
+      {view.active ? <RankedPlayers view={view} self={self} /> : null}
+    </>
   );
 }
 
@@ -370,7 +597,7 @@ function GatedBoard(props: { view: SkillBoardView }): React.JSX.Element {
       </p>
       <p className="muted">
         A ranking needs that many results behind each number to mean anything.
-        Until then, each day's results are on the right. After {view.fit_floor}{" "}
+        Until then, each day's results are under The day. After {view.fit_floor}{" "}
         players reach {view.eligibility_floor} results, the ranking stops being
         provisional.
       </p>
@@ -767,7 +994,7 @@ function RankedRow(props: {
   // The rank, the range, and the result count carry equal weight
   // (spec M1 §9): no muted colour and no smaller size on any of them.
   return (
-    <tr className={mine ? "is-you" : undefined}>
+    <tr className={mine ? "is-you" : undefined} data-player={row.player}>
       {/* Fractional: a posterior expectation, not a position. */}
       <td className="num">{row.expected_rank?.toFixed(1) ?? "—"}</td>
       <td>

@@ -110,6 +110,7 @@ describe("the Today screen", () => {
     firePointer(live, "pointermove", 280, 30);
     firePointer(live, "pointerup", 280, 30);
     await typeWord("tall vertical structure");
+    fireEvent.click(screen.getByRole("button", { name: "Label parts" }));
     fireEvent.click(screen.getByText("Pick lines"));
     firePointer(live, "pointerdown", 90, 90);
     fireEvent.change(screen.getByLabelText("Name the picked lines"), {
@@ -287,8 +288,67 @@ describe("the Today screen", () => {
     renderAt("/today", api);
     expect(await screen.findByText("No day is open right now")).toBeDefined();
     expect(
-      within(screen.getByRole("main")).getByRole("link", { name: "Practice" }),
+      within(screen.getByRole("main")).getByRole("link", {
+        name: "Practice now",
+      }),
     ).toBeDefined();
+  });
+});
+
+describe("the Studio layout", () => {
+  it("says what to draw in the empty canvas, until the first line", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    expect(
+      screen.getByText(/Sketch and describe whatever comes to mind/),
+    ).toBeDefined();
+    drawTwoStrokes(view.container);
+    await screen.findByText(/2 lines/);
+    expect(
+      screen.queryByText(/Sketch and describe whatever comes to mind/),
+    ).toBeNull();
+  });
+
+  it("opens the two parts a player can skip from two buttons", async () => {
+    renderAt("/today");
+    await screen.findByText(REVIEW);
+    const label = screen.getByRole("button", { name: "Label parts" });
+    const notes = screen.getByRole("button", { name: "Notes" });
+    expect(label.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Pick lines")).toBeNull();
+    fireEvent.click(label);
+    expect(label.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Pick lines")).toBeDefined();
+    fireEvent.click(notes);
+    fireEvent.change(screen.getByRole("textbox", { name: "Notes" }), {
+      target: { value: "a long note" },
+    });
+    // The button says that a note is in, when its part is closed.
+    fireEvent.click(notes);
+    expect(screen.getByRole("button", { name: "Notes (added)" })).toBeDefined();
+  });
+
+  it("steps back from today to practice", async () => {
+    renderAt("/today");
+    await screen.findByText(REVIEW);
+    expect(
+      (screen.getByLabelText("The day after") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // The step back is ready when the list of earlier days is in.
+    const before = screen.getByLabelText("The day before") as HTMLButtonElement;
+    await waitFor(() => expect(before.disabled).toBe(false));
+    fireEvent.click(before);
+    expect(await screen.findByText("Check my practice")).toBeDefined();
+  });
+
+  it("has the way to how it works", async () => {
+    renderAt("/today");
+    await screen.findByText(REVIEW);
+    expect(
+      within(screen.getByRole("main"))
+        .getByRole("link", { name: "How it works" })
+        .getAttribute("href"),
+    ).toBe("/how");
   });
 });
 
@@ -356,6 +416,44 @@ function drawOneStroke(live: HTMLCanvasElement, y: number): void {
 }
 
 describe("the eraser", () => {
+  it("shares the pointer with the pen: one of the two is lit", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    const pen = screen.getByRole("button", { name: "Pen" });
+    const eraser = screen.getByRole("button", { name: "Eraser" });
+    expect(pen.getAttribute("aria-pressed")).toBe("true");
+    drawTwoStrokes(view.container);
+    await screen.findByText(/2 lines/);
+    fireEvent.click(eraser);
+    expect(eraser.getAttribute("aria-pressed")).toBe("true");
+    expect(pen.getAttribute("aria-pressed")).toBe("false");
+    expect(view.container.querySelector(".canvas-panel.is-erasing")).not.toBe(
+      null,
+    );
+    // The pen gives the pointer back.
+    fireEvent.click(pen);
+    expect(pen.getAttribute("aria-pressed")).toBe("true");
+    expect(eraser.getAttribute("aria-pressed")).toBe("false");
+    expect(view.container.querySelector(".canvas-panel.is-erasing")).toBe(null);
+  });
+
+  it("has three sizes while it is the tool, the middle one first", async () => {
+    const view = renderAt("/today");
+    await screen.findByText(REVIEW);
+    expect(screen.queryByRole("group", { name: "Eraser size" })).toBeNull();
+    drawTwoStrokes(view.container);
+    await screen.findByText(/2 lines/);
+    fireEvent.click(screen.getByRole("button", { name: "Eraser" }));
+    const sizes = within(screen.getByRole("group", { name: "Eraser size" }));
+    expect(sizes.getAllByRole("button")).toHaveLength(3);
+    const middle = sizes.getByRole("button", { name: "Middle" });
+    const large = sizes.getByRole("button", { name: "Large" });
+    expect(middle.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(large);
+    expect(large.getAttribute("aria-pressed")).toBe("true");
+    expect(middle.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("is off until there is a line to erase", async () => {
     const view = renderAt("/today");
     await screen.findByText(REVIEW);

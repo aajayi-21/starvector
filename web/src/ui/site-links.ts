@@ -24,3 +24,10 @@ export const NO_FOOTER_PATHS: ReadonlySet<string> = new Set([
   "/today",
   "/practice",
 ]);
+
+/**
+ * The screens that reach the edges of the window: the home screen and
+ * Your results each stand on a sky. The page gives such a screen no
+ * side margin and no space over it, and the screen sets its own.
+ */
+export const BLEED_PATHS: ReadonlySet<string> = new Set(["/", "/history"]);
