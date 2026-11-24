@@ -471,7 +471,9 @@ the changed prose.
 - **Account deletion.** Workstream F. §8 fixes what a snapshot does
   with such an account.
 - **Practice.** The practice screen says that nothing is saved, and
-  nothing is.
+  nothing is. *Note, 2026-11-23 (spec IM1 §13):* practice goes. The
+  store keeps each instant trial, and the file holds it in tables of
+  its own.
 - **Drafts.** The store keeps the send alone. A record of each draft
   is a different decision of the owner.
 - **A public query server.** A file that each reader downloads has no

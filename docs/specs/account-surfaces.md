@@ -286,6 +286,10 @@ The asked-for growth: typed `impressions` and labeled groups in
 practice. The server accepts them today, thus each piece is in
 `web/`.
 
+*Note, 2026-11-23 (spec IM1 §15):* the instant trial replaces the
+practice screen. The intake cards of this section stay, and the instant
+screen uses them.
+
 - **Extract the intake cards.** The impressions card and the
   group card live inline in `screens/today.tsx`. They move to
   shared components (`web/src/intake/`), and the daily screen

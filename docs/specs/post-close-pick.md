@@ -378,6 +378,9 @@ The owner ruled each value below as proposed on 2026-11-14.
 - **Hiding the pool count.** `N` is in the root and public from the open.
   It says how many photos the pool holds and nothing about which.
 - **The practice screen.** It replays revealed days and does not change.
+  *Note, 2026-11-23 (spec IM1 §15):* the practice screen goes. The
+  instant trial has a pulse for each send, with the functions of this
+  spec.
 
 ## 15. Changes at build time
 
