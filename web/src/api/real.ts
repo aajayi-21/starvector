@@ -16,15 +16,19 @@ import type {
   DeviceCodeView,
   DoorAck,
   DoorView,
+  GuestAck,
   HistoryView,
+  InstantOpen,
+  InstantReceipt,
+  InstantTrial,
+  InstantView,
   LeaderboardView,
   MeView,
   PasswordAck,
-  PracticeDays,
-  PracticeScore,
   RecoveryAck,
   RecoveryCodeAck,
   RefusalBody,
+  RevealedDays,
   RevealView,
   SendsPage,
   SessionsView,
@@ -92,11 +96,38 @@ export function makeRealApi(): Api {
       // R1 §4).
       return request<{ ok: boolean }>("/api/day/start", { method: "POST" });
     },
-    getPracticeDays(): Promise<PracticeDays> {
-      return request<PracticeDays>("/api/practice");
+    getRevealedDays(): Promise<RevealedDays> {
+      return request<RevealedDays>("/api/days");
     },
-    scorePractice(day: string, record: WireRecord): Promise<PracticeScore> {
-      return postJson<PracticeScore>("/api/practice/score", { day, record });
+    getInstant(): Promise<InstantView> {
+      return request<InstantView>("/api/instant");
+    },
+    startInstant(): Promise<InstantOpen> {
+      return request<InstantOpen>("/api/instant/start", { method: "POST" });
+    },
+    sendInstant(
+      date: string,
+      trialId: string,
+      record: WireRecord,
+    ): Promise<InstantReceipt> {
+      return postJson<InstantReceipt>(
+        `/api/instant/${encodeURIComponent(date)}/${encodeURIComponent(trialId)}/send`,
+        record,
+      );
+    },
+    getInstantTrial(date: string, trialId: string): Promise<InstantTrial> {
+      return request<InstantTrial>(
+        `/api/instant/${encodeURIComponent(date)}/${encodeURIComponent(trialId)}`,
+      );
+    },
+    guestChallengeUrl(): string | null {
+      return "/api/guest/challenge";
+    },
+    makeGuest(agreesPublic: boolean, proof?: string): Promise<GuestAck> {
+      return postJson<GuestAck>("/api/guest", {
+        agrees_public: agreesPublic,
+        ...(proof === undefined ? {} : { proof }),
+      });
     },
     getHistory(): Promise<HistoryView> {
       return request<HistoryView>("/api/history");

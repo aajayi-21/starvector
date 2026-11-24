@@ -9,6 +9,10 @@
  * screen on each path (spec R1 §3). The two public paths are the one
  * exception (spec F1 §3): the About page and the Releases page hold
  * fixed text alone, and each browser can open them.
+ *
+ * A guest (spec IM1 §7) has no session and a guest cookie. The shell
+ * of a guest shows the instant trial, the closed door of the daily
+ * challenge, and the way to the gate screen.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -22,6 +26,8 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 
+import { useState } from "react";
+
 import { useApi } from "./api/client";
 import { isUnauthorized } from "./api/types";
 import { AboutScreen } from "./screens/about";
@@ -29,20 +35,22 @@ import { AccountScreen } from "./screens/account";
 import { HistoryScreen } from "./screens/history";
 import { HomeScreen } from "./screens/home";
 import { HowItWorksScreen } from "./screens/how";
+import { InstantScreen } from "./screens/instant";
 import { LeaderboardScreen } from "./screens/leaderboard";
 import { NoticeScreen, needsAgreement } from "./screens/notice";
-import { PracticeScreen } from "./screens/practice";
 import { ReleasesScreen } from "./screens/releases";
 import { RevealScreen } from "./screens/reveal";
 import { SendsScreen } from "./screens/sends";
 import { TodayScreen } from "./screens/today";
 import { WelcomeScreen } from "./screens/welcome";
 import { SiteFooter } from "./ui/footer";
+import { GuestGateContext } from "./ui/guest-gate-context";
 import { InstallHint } from "./ui/install-hint";
 import { LogoMark } from "./ui/logo";
 import { TabBar, TopBar } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
 import { OperatorCodeNotice } from "./ui/operator-code-notice";
+import { PlayFrame, PlayHow, PlaySwitch } from "./ui/play-switch";
 import { BLEED_PATHS, NO_FOOTER_PATHS, PUBLIC_PATHS } from "./ui/site-links";
 
 /**
@@ -73,6 +81,82 @@ function PublicShell(props: { signedOut: boolean }): React.JSX.Element {
   );
 }
 
+/**
+ * The daily challenge for a guest: a closed door (spec IM1 §8). One
+ * sentence says what it is, and the control goes to the gate screen.
+ * The screen sends no daily read for a guest.
+ */
+function ClosedDoor(props: { onGate: () => void }): React.JSX.Element {
+  return (
+    <PlayFrame>
+      <div className="play-head">
+        <PlaySwitch view="today" />
+        <PlayHow />
+      </div>
+      <section className="play-message">
+        <h1>Daily challenge</h1>
+        <p className="muted">
+          One shared photo each day, one send, and a leaderboard. The photo is
+          picked after the day closes. The daily challenge needs an account.
+        </p>
+        <div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={props.onGate}
+          >
+            Make an account
+          </button>
+        </div>
+        <p className="subtle tiny">Your instant trials come with you.</p>
+      </section>
+    </PlayFrame>
+  );
+}
+
+/**
+ * The app of a guest (spec IM1 §7.3): the instant trial on each path,
+ * the closed door on the path of the daily challenge, and how it
+ * works. No route component is here: each of them reads an account.
+ */
+function GuestShell(props: {
+  pathname: string;
+  onGate: () => void;
+}): React.JSX.Element {
+  const footer = !NO_FOOTER_PATHS.has(props.pathname);
+  return (
+    <GuestGateContext.Provider value={{ openGate: props.onGate }}>
+      <header className="topbar">
+        <Link to="/instant" className="brand" aria-label="Starvector home">
+          <LogoMark />
+          Starvector
+        </Link>
+        <div className="topbar-end">
+          <span className="subtle">Playing as a guest</span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={props.onGate}
+          >
+            Sign in or make an account
+          </button>
+        </div>
+      </header>
+      <OfflineBanner />
+      <main className={footer ? "page page-has-footer" : "page"}>
+        {props.pathname === "/today" ? (
+          <ClosedDoor onGate={props.onGate} />
+        ) : props.pathname === "/how" ? (
+          <HowItWorksScreen />
+        ) : (
+          <InstantScreen />
+        )}
+      </main>
+      {footer ? <SiteFooter /> : null}
+    </GuestGateContext.Provider>
+  );
+}
+
 function Shell(): React.JSX.Element {
   const api = useApi();
   const pathname = useRouterState({
@@ -83,6 +167,18 @@ function Shell(): React.JSX.Element {
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
   // 401 exactly (spec M1 §9). isUnauthorized carries that rule.
   const signedOut = isUnauthorized(me.error);
+  // A browser with no session can hold a guest (spec IM1 §7). The
+  // instant view says so: it answers a guest and gives each other
+  // signed-out browser the constant 401.
+  const guest = useQuery({
+    queryKey: ["instant"],
+    queryFn: () => api.getInstant(),
+    enabled: signedOut,
+    retry: false,
+  });
+  const isGuest = signedOut && guest.data?.kind === "guest";
+  // A guest who asked for the gate screen, to make an account.
+  const [atGate, setAtGate] = useState(false);
   const mustAgree = me.data !== undefined && needsAgreement(me.data.notice);
   // A public path does not wait for me and does not read it: the page
   // is the same for each browser (spec F1 §3).
@@ -90,7 +186,22 @@ function Shell(): React.JSX.Element {
     return <PublicShell signedOut={signedOut} />;
   }
   if (signedOut) {
-    return <WelcomeScreen />;
+    if (guest.isPending) {
+      // The gate screen does not show for a moment to a guest.
+      return (
+        <p className="subtle" aria-busy="true">
+          Loading…
+        </p>
+      );
+    }
+    if (isGuest && !atGate) {
+      return <GuestShell pathname={pathname} onGate={() => setAtGate(true)} />;
+    }
+    return (
+      <WelcomeScreen
+        {...(isGuest ? { onBackToGuest: () => setAtGate(false) } : {})}
+      />
+    );
   }
   // No send before the agreement (spec R1 §3.3): the notice screen
   // takes the place of the app, the drawing screen with it.
@@ -145,18 +256,10 @@ const todayRoute = createRoute({
   component: TodayScreen,
 });
 
-/** The day that practice replays; with none, the screen picks one. */
-interface PracticeSearch {
-  day?: string;
-}
-
-const practiceRoute = createRoute({
+const instantRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/practice",
-  component: PracticeScreen,
-  validateSearch: (search: Record<string, unknown>): PracticeSearch => {
-    return typeof search.day === "string" ? { day: search.day } : {};
-  },
+  path: "/instant",
+  component: InstantScreen,
 });
 
 const historyRoute = createRoute({
@@ -235,7 +338,7 @@ const revealRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   homeRoute,
   todayRoute,
-  practiceRoute,
+  instantRoute,
   historyRoute,
   leaderboardRoute,
   accountRoute,

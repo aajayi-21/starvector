@@ -348,3 +348,11 @@
   --altcha-shadow: none;
   --altcha-max-width: 100%;
 }
+
+/* The way in as a guest, over the gate card (spec IM1 §7.2). */
+.guest-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}

@@ -22,7 +22,7 @@ describe("mock determinism", () => {
     for (const pick of [
       (api: ReturnType<typeof makeMockApi>) => api.getHistory(),
       (api: ReturnType<typeof makeMockApi>) => api.getMe(),
-      (api: ReturnType<typeof makeMockApi>) => api.getPracticeDays(),
+      (api: ReturnType<typeof makeMockApi>) => api.getRevealedDays(),
       (api: ReturnType<typeof makeMockApi>) => api.getReveal(),
       (api: ReturnType<typeof makeMockApi>) => api.getLeaderboard(TODAY),
       (api: ReturnType<typeof makeMockApi>) => api.getSkillLeaderboard(),
@@ -119,21 +119,74 @@ describe("the full-mock day flow", () => {
     });
   });
 
-  it("scores practice deterministically by day and record", async () => {
+  it("plays an instant trial: a code, a send, a wait, a result", async () => {
     const api = makeMockApi({ today: TODAY });
-    const days = await api.getPracticeDays();
-    const day = days.days[0]?.day as string;
-    const one = await api.scorePractice(day, record);
-    const two = await api.scorePractice(day, record);
-    expect(JSON.stringify(one)).toBe(JSON.stringify(two));
-    const other = await api.scorePractice(day, {
-      ...record,
-      impressions: ["cold"],
+    const before = await api.getInstant();
+    expect(before.kind).toBe("account");
+    expect(before.left_today).toBe(20);
+    const open = await api.startInstant();
+    // A second start gives the open trial.
+    expect(await api.startInstant()).toEqual(open);
+    expect((await api.getInstant()).open?.trial_id).toBe(open.trial_id);
+    expect(await api.getInstantTrial(open.date, open.trial_id)).toMatchObject({
+      status: "started",
     });
-    expect(JSON.stringify(other)).not.toBe(JSON.stringify(one));
-    expect(one.ranking_head).toHaveLength(10);
-    const targets = one.ranking_head.filter((row) => row.is_target);
-    expect(targets.length).toBeLessThanOrEqual(1);
+    const receipt = await api.sendInstant(open.date, open.trial_id, record);
+    expect(receipt.chain_position).toBe(0);
+    await expect(
+      api.sendInstant(open.date, open.trial_id, record),
+    ).rejects.toMatchObject({ status: 409, refusalCause: "instant-sent" });
+    // Pending for the first read, then the result, with no clock.
+    expect(await api.getInstantTrial(open.date, open.trial_id)).toMatchObject({
+      status: "pending",
+      beacon_round: receipt.beacon_round,
+    });
+    const result = await api.getInstantTrial(open.date, open.trial_id);
+    expect(result.status).toBe("settled");
+    const after = await api.getInstant();
+    expect(after.open).toBeNull();
+    expect(after.left_today).toBe(19);
+    expect(after.record).toMatchObject({ sent: 1, settled: 1 });
+    expect(after.trials[0]?.status).toBe("settled");
+  });
+
+  it("gives a signed-out browser no instant trial until it is a guest", async () => {
+    const api = makeMockApi({ today: TODAY, signedIn: false });
+    await expect(api.getInstant()).rejects.toMatchObject({ status: 401 });
+    await expect(api.makeGuest(false)).rejects.toMatchObject({
+      status: 400,
+      refusalCause: "notice",
+    });
+    const guest = await api.makeGuest(true);
+    expect(guest.kind).toBe("guest");
+    const view = await api.getInstant();
+    expect(view.owner).toBe(guest.owner);
+    expect(view.day_cap).toBe(5);
+    // Each daily path stays closed to a guest.
+    await expect(api.getMe()).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("moves the trials of a guest to the account at the sign-up", async () => {
+    const api = makeMockApi({
+      today: TODAY,
+      signedIn: false,
+      instantPendingReads: 0,
+    });
+    await api.makeGuest(true);
+    const open = await api.startInstant();
+    await api.sendInstant(open.date, open.trial_id, record);
+    await api.signUp("opal", "a long mock password", true);
+    const view = await api.getInstant();
+    expect(view.kind).toBe("account");
+    expect(view.owner).toBe("opal");
+    expect(view.record.sent).toBe(1);
+    expect(view.left_today).toBe(19);
+  });
+
+  it("has no instant trial with the switch off", async () => {
+    const api = makeMockApi({ today: TODAY, instant: "off" });
+    await expect(api.getInstant()).rejects.toMatchObject({ status: 404 });
+    expect((await api.getAbout()).instant).toBe("off");
   });
 
   it("serves a deterministic stored submission for played days", async () => {

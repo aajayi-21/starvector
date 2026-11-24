@@ -16,14 +16,18 @@ import type {
   DeviceCodeView,
   DoorAck,
   DoorView,
+  GuestAck,
   HistoryView,
+  InstantOpen,
+  InstantReceipt,
+  InstantTrial,
+  InstantView,
   LeaderboardView,
   MeView,
   PasswordAck,
-  PracticeDays,
-  PracticeScore,
   RecoveryAck,
   RecoveryCodeAck,
+  RevealedDays,
   RevealView,
   SendsPage,
   SessionsView,
@@ -50,9 +54,41 @@ export interface DayApi {
   startDay(): Promise<{ ok: boolean }>;
 }
 
-export interface PracticeApi {
-  getPracticeDays(): Promise<PracticeDays>;
-  scorePractice(day: string, record: WireRecord): Promise<PracticeScore>;
+/** The revealed days: the row of days of Play and of the leaderboard. */
+export interface DaysApi {
+  getRevealedDays(): Promise<RevealedDays>;
+}
+
+/**
+ * The instant trial (spec IM1 §12.3). An account or a guest is the
+ * caller. Each other caller gets the constant 401, and a server with
+ * instant trials off gives the constant 404.
+ */
+export interface InstantApi {
+  getInstant(): Promise<InstantView>;
+  /** Makes a trial, or gives the open one of the caller. */
+  startInstant(): Promise<InstantOpen>;
+  sendInstant(
+    date: string,
+    trialId: string,
+    record: WireRecord,
+  ): Promise<InstantReceipt>;
+  getInstantTrial(date: string, trialId: string): Promise<InstantTrial>;
+}
+
+/** Guest play (spec IM1 §7): a cookie of the browser is the identity. */
+export interface GuestApi {
+  /**
+   * Where the guest gate reads its proof-of-work challenge, or `null`
+   * in a world with no server to sign one.
+   */
+  guestChallengeUrl(): string | null;
+  /**
+   * Makes a guest, or records the agreement of the guest of this
+   * browser to the current notice. `proof` is the payload of the
+   * solved challenge; a browser with a guest needs none.
+   */
+  makeGuest(agreesPublic: boolean, proof?: string): Promise<GuestAck>;
 }
 
 export interface HistoryApi {
@@ -171,7 +207,9 @@ export interface CredentialApi {
 }
 
 export type Api = DayApi &
-  PracticeApi &
+  DaysApi &
+  InstantApi &
+  GuestApi &
   HistoryApi &
   LeaderboardApi &
   ArchiveApi &

@@ -220,7 +220,7 @@ def test_the_constant_time_compare_holds_odd_input() -> None:
 
 _PLAYER_SURFACES = ("/api/day", "/api/reveal", "/api/history",
                     "/api/submission", "/api/leaderboard", "/api/me",
-                    "/api/practice", "/api/avatar/ade", "/api/sends")
+                    "/api/days", "/api/avatar/ade", "/api/sends")
 
 
 def test_an_unknown_cookie_meets_the_constant_401(tmp_path) -> None:

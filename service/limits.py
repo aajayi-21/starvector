@@ -32,11 +32,6 @@ WINDOW_SECONDS = 10 * 60
 CLIENT_CAP = 10
 GLOBAL_CAP = 200
 
-# The practice limit (spec PL1 section 1).
-PRACTICE_WINDOW_SECONDS = 60 * 60
-PRACTICE_PLAYER_CAP = 30
-PRACTICE_GLOBAL_CAP = 600
-
 # The body cap: the record caps below at about 40 bytes for a point
 # fit in it, and so does the avatar cap of the store.
 BODY_BYTE_CAP = 1_048_576
@@ -155,13 +150,6 @@ def client_key(peer: str | None, forwarded_for: str | None) -> str:
         if last:
             return last
     return peer or "unknown"
-
-
-def practice_limiter() -> WindowLimiter:
-    """A limiter with the practice values of spec PL1 section 1."""
-    return WindowLimiter(window_seconds=PRACTICE_WINDOW_SECONDS,
-                         client_cap=PRACTICE_PLAYER_CAP,
-                         global_cap=PRACTICE_GLOBAL_CAP)
 
 
 def guest_limiter() -> WindowLimiter:

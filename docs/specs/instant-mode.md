@@ -987,3 +987,25 @@ IM1.2.
 - **A start with no send of a claimed guest** is the open trial of the
   account. Its send keeps the guest as the owner in the record, as its
   start does.
+- **Built on 2026-11-24, IM1.7, IM1.9, and IM1.10:** practice is gone,
+  the notice is at version 3, and the web app has the instant screen,
+  the guest gate, the guest shell with the closed door, and the switch
+  between the two modes of Play.
+- **The layout.** The owner ruled on 2026-11-24 to build in the Studio
+  layout with no mock screens first. The instant screen has the canvas
+  and the side of the practice screen.
+- **The row of days.** The owner ruled on 2026-11-24 that a step back
+  from today opens the results of that day. The row stands on the view
+  of the daily challenge alone.
+- **The listing of the revealed days stays,** with a new address:
+  `GET /api/days`. The row of days and the leaderboard read it. The two
+  practice paths give 404.
+- **`practice_score` is gone.** The result answer comes from the stored
+  records, thus no builder of a practice answer is necessary.
+- **The load tool** (`tools/load.py`) plays an instant trial where it
+  had a practice score: one start and one send for each turn.
+- **`Share` is not on the result.** It gives the address of the public
+  trial page, which is build item IM1.11.
+- **One Vitest failure is from before this branch.** The first test of
+  `web/tests/component/home.test.tsx` is red in a full run and green
+  alone, on the commit before the web changes also.

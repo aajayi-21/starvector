@@ -55,7 +55,7 @@ describe("the site footer (spec F1)", () => {
     }
     const drawing: Array<[string, RegExp]> = [
       ["/today", /Review and send/],
-      ["/practice", /Check my practice/],
+      ["/instant", /Get a code/],
     ];
     for (const [path, expected] of drawing) {
       const view = renderAt(path);

@@ -259,6 +259,7 @@ function makeStubApi(days: DevDayRow[]): DevApi & {
       Promise.resolve({
         test_season: true,
         photo_count: 40,
+        instant: "off",
         closes_at_utc: "22:00",
         public_data_url: null,
         pick_protocol: "commit-v1",

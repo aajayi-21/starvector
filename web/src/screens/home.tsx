@@ -10,7 +10,7 @@
  * player's own past sketches, faint (ui/home-sky.tsx).
  *
  * Nothing follows the first screen: the streak is here and in the bar,
- * practice is under Play, and each result is on Your results. A player
+ * the instant trial is under Play, and each result is on Your results. A player
  * with no result yet also sees how the game works.
  *
  * Nothing here has a box: the day's button is the one filled thing.
@@ -253,7 +253,7 @@ function TodayCard(props: {
           <>
             <h2>No day is open right now</h2>
             <p className="muted">
-              The next day starts soon. Meanwhile, practice on a past photo.
+              The next day starts soon. Meanwhile, play an instant trial.
             </p>
           </>
         ) : (
@@ -306,8 +306,8 @@ function TodayCard(props: {
         <DayCode code={day.trial_code} large />
         <h2>You're in for today</h2>
         <div className="home-cta">
-          <Link to="/practice" className="btn btn-secondary">
-            Practice while you wait
+          <Link to="/instant" className="btn btn-secondary">
+            Play an instant trial while you wait
           </Link>
           <ShareSketchButton
             day={day.day}

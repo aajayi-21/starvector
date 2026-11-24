@@ -1,19 +1,18 @@
 /**
  * The days of the Play place, in a row (owner design of 2026-11-21):
- * today is the last day, and each earlier day is practice on that day's
- * photo. The arrows step one day at a time; the date between them opens
- * a calendar, and a press on a day goes there. This takes the place of
- * the switch between Today and Practice and of the list of days in
- * practice.
+ * today is the last day, and each earlier day opens its results. The
+ * arrow steps back one day; the date opens a calendar, and a press on
+ * a day goes there. The row stands on the daily challenge view.
  *
- * Each view keeps its own path, so the browser's back button works:
- * today is `/today`, and an earlier day is `/practice?day=…`.
+ * Until spec IM1 an earlier day was practice on that day's photo. The
+ * instant trial replaced practice (owner ruling of 2026-11-24), and an
+ * earlier day is now `/reveal?day=…`.
  *
  * The day in play has no calendar date (ui/day-names.ts): it reads
  * "Today". An earlier day reads as the local date on which it started,
  * and the calendar puts it on that date. Only days that are over are in
  * the calendar, with the day in play: the list is the server's list of
- * practice days.
+ * revealed days.
  */
 
 import { CalendarBlank, CaretLeft, CaretRight } from "@phosphor-icons/react";
@@ -49,12 +48,12 @@ export interface CalendarDay {
 }
 
 function calendarDays(
-  practice: ReadonlyArray<string>,
+  revealed: ReadonlyArray<string>,
   today: string | undefined,
   names: DayNames,
 ): Map<string, CalendarDay> {
   const found = new Map<string, CalendarDay>();
-  for (const day of practice) {
+  for (const day of revealed) {
     const date = names.calendarDate(day);
     if (date !== null) {
       found.set(dateKey(date), { day, date, name: names.long(day) });
@@ -210,12 +209,7 @@ export function useCalendarClose(
   }, [open, setOpen, frame, opener]);
 }
 
-export function DayStepper(props: {
-  /** Which view of Play holds the stepper. */
-  view: "today" | "practice";
-  /** The earlier day on the screen; null on today, or with no day yet. */
-  day: string | null;
-}): React.JSX.Element {
+export function DayStepper(): React.JSX.Element {
   const api = useApi();
   const navigate = useNavigate();
   const names = useDayNames();
@@ -230,10 +224,10 @@ export function DayStepper(props: {
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
-  // The key and the request of the practice screen: one read serves both.
-  const practice = useQuery({
-    queryKey: ["practice-days"],
-    queryFn: () => api.getPracticeDays(),
+  // The key and the request of the leaderboard: one read serves both.
+  const revealed = useQuery({
+    queryKey: ["revealed-days"],
+    queryFn: () => api.getRevealedDays(),
     retryOnMount: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
@@ -244,19 +238,13 @@ export function DayStepper(props: {
   const calendarId = useId();
 
   // The newest day first, as the server sends them.
-  const earlier = (practice.data?.days ?? []).map((row) => row.day);
-  const at = props.day === null ? -1 : earlier.indexOf(props.day);
-  const onToday = props.view === "today";
-  const before = onToday ? earlier[0] : at < 0 ? undefined : earlier[at + 1];
-  const after = onToday ? undefined : at > 0 ? earlier[at - 1] : null;
+  const earlier = (revealed.data?.days ?? []).map((row) => row.day);
+  const before = earlier[0];
 
   const go = (day: string | null): void => {
     setOpen(false);
-    if (day === null) {
-      void navigate({ to: "/today" });
-    } else {
-      // A step between two earlier days is one place in the history.
-      void navigate({ to: "/practice", search: { day }, replace: !onToday });
+    if (day !== null) {
+      void navigate({ to: "/reveal", search: { day } });
     }
   };
 
@@ -264,15 +252,9 @@ export function DayStepper(props: {
 
   const todayLabel = today.data?.day;
   const days = calendarDays(earlier, todayLabel, names);
-  const shownDate = onToday
-    ? todayLabel === undefined
-      ? null
-      : names.calendarDate(todayLabel)
-    : props.day === null
-      ? null
-      : names.calendarDate(props.day);
-  const newest = earlier[0];
-  const fallback = newest === undefined ? null : names.calendarDate(newest);
+  const shownDate =
+    todayLabel === undefined ? null : names.calendarDate(todayLabel);
+  const fallback = before === undefined ? null : names.calendarDate(before);
   const startDate = shownDate ?? fallback;
 
   return (
@@ -301,42 +283,17 @@ export function DayStepper(props: {
         onClick={() => setOpen((old) => !old)}
       >
         <span>
-          <strong>{onToday ? "Today" : "Practice"}</strong>
-          {onToday || props.day === null ? null : (
-            <> · {names.long(props.day)}</>
-          )}
+          <strong>Today</strong>
         </span>
         <CalendarBlank size={16} aria-hidden="true" />
       </button>
-      <button
-        type="button"
-        className="btn btn-secondary day-step"
-        aria-label="The day after"
-        disabled={after === undefined}
-        onClick={() => {
-          if (after !== undefined) {
-            go(after);
-          }
-        }}
-      >
-        <CaretRight size={18} aria-hidden="true" />
-      </button>
-      {onToday ? null : (
-        <button
-          type="button"
-          className="btn btn-ghost day-today"
-          onClick={() => go(null)}
-        >
-          Today
-        </button>
-      )}
       {open && startDate !== null ? (
         <div id={calendarId}>
           <Calendar
             days={days}
             shown={shownDate === null ? null : dateKey(shownDate)}
             start={monthOf(startDate)}
-            note="An earlier day is practice."
+            note="An earlier day shows its results."
             onPick={go}
             onSurprise={
               earlier.length === 0

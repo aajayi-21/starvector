@@ -83,7 +83,11 @@ describe("the Today screen", () => {
     // No jargon on the player's screen.
     expect(screen.queryByText(/commitment/i)).toBeNull();
     expect(screen.queryByText(/impression/i)).toBeNull();
-    expect(screen.queryByText(/trial/i)).toBeNull();
+    // The one use of the word is the name of the second mode of Play,
+    // which the owner ruled (spec IM1 decision D8).
+    expect(
+      screen.queryAllByText(/trial/i).map((found) => found.textContent),
+    ).toEqual(["Instant trial"]);
   });
 
   // Spec A1 §9: the extracted intake cards serialize identically
@@ -280,7 +284,7 @@ describe("the Today screen", () => {
     expect(screen.queryByText(SEND)).toBeNull();
   });
 
-  it("points at practice when no day is open", async () => {
+  it("points at the instant trial when no day is open", async () => {
     const api: Api = {
       ...makeMockApi({ today: HARNESS_TODAY }),
       getDay: () => Promise.reject(new ApiError(404, undefined, "no day open")),
@@ -289,7 +293,7 @@ describe("the Today screen", () => {
     expect(await screen.findByText("No day is open right now")).toBeDefined();
     expect(
       within(screen.getByRole("main")).getByRole("link", {
-        name: "Practice now",
+        name: "Play an instant trial",
       }),
     ).toBeDefined();
   });
@@ -328,17 +332,31 @@ describe("the Studio layout", () => {
     expect(screen.getByRole("button", { name: "Notes (added)" })).toBeDefined();
   });
 
-  it("steps back from today to practice", async () => {
+  it("steps back from today to the results of the day before", async () => {
     renderAt("/today");
     await screen.findByText(REVIEW);
-    expect(
-      (screen.getByLabelText("The day after") as HTMLButtonElement).disabled,
-    ).toBe(true);
     // The step back is ready when the list of earlier days is in.
     const before = screen.getByLabelText("The day before") as HTMLButtonElement;
     await waitFor(() => expect(before.disabled).toBe(false));
     fireEvent.click(before);
-    expect(await screen.findByText("Check my practice")).toBeDefined();
+    expect(
+      await screen.findByText(/You beat \d+% of the photos/),
+    ).toBeDefined();
+  });
+
+  it("has the switch between the two modes of Play", async () => {
+    renderAt("/today");
+    await screen.findByText(REVIEW);
+    const modes = screen.getByRole("navigation", { name: "Play modes" });
+    expect(
+      within(modes)
+        .getByRole("link", { name: "Daily challenge" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    fireEvent.click(within(modes).getByRole("link", { name: "Instant trial" }));
+    expect(
+      await screen.findByRole("button", { name: "Get a code" }),
+    ).toBeDefined();
   });
 
   it("has the way to how it works", async () => {

@@ -113,8 +113,7 @@ _BAD_CURSOR = b'{"cause":"bad-cursor"}'
 # an answer or a refusal.
 _NO_STORE = {"cache-control": "private, no-store"}
 _DEV_OFF = b'{"detail":"not found"}'
-_NO_PRACTICE = b'{"detail":"no revealed day"}'
-_NOT_PRACTICE = b'{"detail":"not a practice day"}'
+_NO_REVEALED_DAY = b'{"detail":"no revealed day"}'
 # One constant body covers a player with no picture and a name
 # with no record (spec A1 section 3) - no roster oracle.
 _NO_AVATAR = b'{"detail":"no avatar"}'
@@ -139,8 +138,6 @@ _NOTICE_VERSION = b'{"cause":"notice-version"}'
 # The one answer of the start path (spec R1 section 4).
 _STARTED = b'{"ok":true}'
 _BAD_CONTENT_TYPE = b'{"cause":"content-type"}'
-# The practice limit (spec PL1 section 1).
-_PRACTICE_LIMIT = b'{"cause":"practice-limit"}'
 # The sign-up proof (spec PW1 section 3): one body for each payload
 # that does not agree, is spent, or is not there.
 _BAD_PROOF = b'{"cause":"proof"}'
@@ -319,7 +316,6 @@ def create_app(service_config: ServiceConfig,
                dev_mode: bool = False, *,
                cookie_secure: bool = True,
                operator_token: str | None = None,
-               practice_limiter: limits.WindowLimiter | None = None,
                digester: digests.PasswordDigester | None = None,
                usual_passwords: Container[str] | None = None,
                proof_keys: proofs.ProofKeys | None = None,
@@ -345,9 +341,6 @@ def create_app(service_config: ServiceConfig,
     environment here, in the manner of open_day's secret: a
     component reads no global configuration. The start-up path
     does the environment read.
-
-    practice_limiter is an argument for the tests. The default holds
-    the values of spec PL1 section 1.
 
     digester computes the password digests (spec A2 section 5.2). It
     arrives as an argument, because the start-up path reads the pepper
@@ -445,7 +438,6 @@ def create_app(service_config: ServiceConfig,
     # The avatar path has its own stream check and its own refusal.
     app.add_middleware(limits.BodyCap, exempt=("/api/account/avatar",))
     code_limiter = limits.WindowLimiter()
-    practice_counts = practice_limiter or limits.practice_limiter()
     # The password counters (spec A2 section 9.2). Each failure counts
     # for its client address and for its username.
     address_failures = limits.WindowLimiter()
@@ -1093,7 +1085,7 @@ def create_app(service_config: ServiceConfig,
 
     # The resident scoring context (P5 R1): wired lazily one time
     # for each process from the server's config, read by the close
-    # endpoint, the dev surfaces, and practice. The lock stops a
+    # endpoint, the dev surfaces, and the instant trial. The lock stops a
     # double wire when two threadpool handlers race the first use.
     # A new start re-reads config. This supersedes the fifth 14b
     # ruling's wording: the dev surfaces score with the config the
@@ -1101,11 +1093,6 @@ def create_app(service_config: ServiceConfig,
     # the same file in usual operation.
     resident_state: dict[str, object] = {}
     resident_lock = threading.Lock()
-    # Day-start values (P5 item B4), keyed by target - targets
-    # of revealed days do not change, thus no invalidation. Its own
-    # lock: the resident lock does not nest.
-    practice_precompute: dict[str, object] = {}
-    precompute_lock = threading.Lock()
 
     def _resident():
         from service.scoring import wire_for_close
@@ -1930,8 +1917,15 @@ def create_app(service_config: ServiceConfig,
                                 status_code=400)
         return JSONResponse(answer)
 
-    @app.get("/api/practice")
-    def practice_days(request: Request) -> Response:
+    @app.get("/api/days")
+    def revealed_days(request: Request) -> Response:
+        """The revealed days, the newest first: the row of days of the
+        Play screen and of the leaderboard reads them.
+
+        This was the listing of the practice screen (spec P5). The
+        instant trial replaced practice (spec IM1 section 15), and the
+        listing stays with its shape.
+        """
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
@@ -1945,7 +1939,7 @@ def create_app(service_config: ServiceConfig,
                              "target_id": record.target_id,
                              "trial_code": record.trial_code})
         if not rows:
-            return Response(content=_NO_PRACTICE, status_code=404,
+            return Response(content=_NO_REVEALED_DAY, status_code=404,
                             media_type="application/json")
         return JSONResponse({"days": rows,
                              "min_strokes": gates.min_strokes_whole_drawing})
@@ -1987,71 +1981,6 @@ def create_app(service_config: ServiceConfig,
         thread for more than a second, and no other caller waits on
         that (spec PL1 section 1)."""
         return await asyncio.to_thread(_checked_or_refusal, wire_record)
-
-    @app.post("/api/practice/score")
-    async def practice_score_endpoint(request: Request) -> Response:
-        from starlette.concurrency import run_in_threadpool
-
-        from service.scoring import day_precompute, practice_score
-
-        # The gate stands before the work: this is the one player
-        # path that scores, thus a caller with no session does none
-        # of it.
-        caller = _caller(request)
-        if isinstance(caller, Response):
-            return caller
-        if not practice_counts.allowed(caller):
-            return Response(content=_PRACTICE_LIMIT, status_code=429,
-                            media_type="application/json")
-        try:
-            body = await _parsed_body(request)
-        except Exception:
-            return JSONResponse(
-                {"cause": "bad-shape",
-                 "detail": "bad-shape: the body is not JSON"},
-                status_code=400)
-        if not isinstance(body, dict):
-            return JSONResponse(
-                {"cause": "bad-shape",
-                 "detail": "bad-shape: the body must be an object"},
-                status_code=400)
-        day = body.get("day")
-        wire_record = body.get("record")
-        # One constant refusal for a missing, unknown, open, or
-        # unrevealed day - the distinctions tell nothing, and one
-        # body is the cheapest R4 argument.
-        try:
-            if not isinstance(day, str) \
-                    or day not in store.list_days(root):
-                raise store.StoreError("not a practice day")
-            record = store.read_day_record(root, day)
-            if record.status != "revealed":
-                raise store.StoreError("not a practice day")
-        except store.StoreError:
-            return Response(content=_NOT_PRACTICE, status_code=404,
-                            media_type="application/json")
-        checked = await _checked_submission(wire_record)
-        if isinstance(checked, Response):
-            return checked
-        practice_counts.record(caller)
-
-        def compute():
-            wired = _resident()
-            with precompute_lock:
-                pre = practice_precompute.get(record.target_id)
-                if pre is None:
-                    pre = day_precompute(wired.context, record.target_id)
-                    practice_precompute[record.target_id] = pre
-            return practice_score(wire_record, record.target_id, wired,
-                                  pre)
-
-        try:
-            value = await run_in_threadpool(compute)
-        except Exception as error:
-            return JSONResponse({"cause": "practice-score-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse({"day": day, **value,
-                             "credit": image_credits.get(record.target_id)})
 
     # The instant trial (spec IM1). The book is a cache of the store,
     # built one time here. The world needs the resident scoring

@@ -292,7 +292,7 @@ describe("the day: the photo, the podium, and the river", () => {
     const mock = api();
     const board = await mock.getLeaderboard();
     const reveal = await mock.getReveal(board.day);
-    const code = (await mock.getPracticeDays()).days.find(
+    const code = (await mock.getRevealedDays()).days.find(
       (row) => row.day === board.day,
     )?.trial_code;
     renderAt("/leaderboard");
@@ -354,7 +354,7 @@ describe("the day: the photo, the podium, and the river", () => {
   });
 
   it("steps to the day before, and opens a calendar of revealed days", async () => {
-    const days = (await api().getPracticeDays()).days;
+    const days = (await api().getRevealedDays()).days;
     const names = makeDayNames("22:00");
     renderAt("/leaderboard");
     await screen.findByRole("list", { name: "The first three" });

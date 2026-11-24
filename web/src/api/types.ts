@@ -173,31 +173,130 @@ export interface RevealView extends Partial<Omit<PulseFacts, "protocol">> {
   report: ReportRow[];
 }
 
-export interface PracticeDayRow {
+export interface RevealedDayRow {
   day: string;
   target_id: string;
   trial_code: string;
 }
 
-export interface PracticeDays {
-  days: PracticeDayRow[];
+/** GET /api/days: the revealed days, the newest first. */
+export interface RevealedDays {
+  days: RevealedDayRow[];
   min_strokes: number;
 }
 
-export interface RankingHeadRow {
-  position: number;
-  fused: number;
-  is_target: boolean;
+// ── spec IM1: the instant trial and guest play ─────────────────
+
+/** Who plays instant trials on this server (spec IM1 §12.5). */
+export type InstantMode = "off" | "accounts" | "open";
+
+/** The instant record of one owner (spec IM1 §9). */
+export interface InstantRecord {
+  sent: number;
+  settled: number;
+  /** Null with no settled trial. */
+  mean_p: number | null;
+  hit_number: number | null;
 }
 
-export interface PracticeScore {
-  day: string;
+/** One trial in the list of the owner's last trials. */
+export interface InstantTrialRow {
+  date: string;
+  trial_id: string;
+  trial_code: string;
+  received_at: string | null;
+  status: "pending" | "settled";
+  p: number | null;
+}
+
+/** A trial that has its code and no send. */
+export interface InstantOpen {
+  date: string;
+  trial_id: string;
+  trial_code: string;
+  started_at: string;
+}
+
+/** GET /api/instant: what the instant screen shows first. */
+export interface InstantView {
+  kind: "account" | "guest";
+  /** The username, or the identifier of the guest. */
+  owner: string;
+  day_cap: number;
+  sent_today: number;
+  left_today: number;
+  open: InstantOpen | null;
+  record: InstantRecord;
+  /** The last trials, the newest first. */
+  trials: InstantTrialRow[];
+  min_strokes: number;
+  /** True: a send needs the agreement to the current notice. */
+  needs_agreement: boolean;
+}
+
+/** The receipt of one send (spec IM1 §12.3). */
+export interface InstantReceipt {
+  trial_id: string;
+  received_at: string;
+  beacon_round: number;
+  /** The Unix time of the pulse that picks the target, in seconds. */
+  pulse_time: number;
+  send_digest: string;
+  commitment: string;
+  chain_position: number;
+  chain_link: string;
+}
+
+/** The pick facts of a settled trial (spec IM1 §5.5). */
+export interface InstantPick {
+  beacon_chain: string;
+  beacon_round: number;
+  pulse_time: number;
+  beacon_signature: string;
+  randomness: string;
+  nonce: string;
+  commitment: string;
+  send_digest: string;
+  target_index: number;
+  target_salt: string;
+  target_proof: string[];
+  pool_count: number;
+  pool_root: string;
+}
+
+export interface InstantStarted {
+  status: "started";
+  trial_code: string;
+  started_at: string;
+}
+
+export interface InstantPending {
+  status: "pending";
+  beacon_round: number;
+  pulse_time: number;
+}
+
+export interface InstantSettled {
+  status: "settled";
+  trial_id: string;
+  trial_code: string;
+  started_at: string;
+  received_at: string;
+  settled_at: string;
   target_id: string;
   credit: ImageCredit | null;
   trial: TrialValue;
-  target_position: number;
-  ranking_head: RankingHeadRow[];
   report: ReportRow[];
+  pick: InstantPick;
+}
+
+/** GET /api/instant/<date>/<trial_id>: one trial of the caller. */
+export type InstantTrial = InstantStarted | InstantPending | InstantSettled;
+
+/** POST /api/guest: the identity that the browser has (spec IM1 §7.2). */
+export interface GuestAck {
+  kind: "account" | "guest";
+  owner: string;
 }
 
 // ── §7: the contract spec S2 made live ─────────────────────────
@@ -341,6 +440,8 @@ export interface AboutView {
   public_data_url: string | null;
   /** When the server picks the target (spec VP1 §8). */
   pick_protocol: PickProtocol;
+  /** Who plays instant trials (spec IM1 §12.5). */
+  instant: InstantMode;
 }
 
 export interface SessionRow {
@@ -568,8 +669,19 @@ const CAUSE_COPY: Record<string, string> = {
     "That's more drawing than one send can hold. Clear some strokes and try again.",
   "body-too-large":
     "That's more than one send can hold. Clear some strokes and try again.",
-  "practice-limit":
-    "That's a lot of practice for one hour. Take a break and try again later.",
+  // Spec IM1 §6 and §12.3: the refusals of an instant trial.
+  "instant-limit":
+    "That's all your instant trials for today. More open at midnight UTC.",
+  "instant-full":
+    "Instant trials are full for today. They open again at midnight UTC.",
+  "instant-sent": "This trial was already sent. Its result is on the way.",
+  "instant-expired": "This code has expired. Get a new one and try again.",
+  clock:
+    "Instant trials are paused while the server checks its clock. Try again in a minute.",
+  encoder:
+    "Your sketch couldn't be read just now, so it wasn't sent. Try again.",
+  beacon:
+    "Instant trials are paused because the random beacon isn't answering. Try again soon.",
   "bad-shape": "Something went wrong sending your sketch. Try again.",
   "bad-code":
     "That code didn't work. A code works once and expires after 10 minutes.",

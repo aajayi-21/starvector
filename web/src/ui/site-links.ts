@@ -22,7 +22,7 @@ export const PUBLIC_PATHS: ReadonlySet<string> = new Set([
  */
 export const NO_FOOTER_PATHS: ReadonlySet<string> = new Set([
   "/today",
-  "/practice",
+  "/instant",
 ]);
 
 /**

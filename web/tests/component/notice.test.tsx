@@ -63,7 +63,7 @@ describe("the blocking notice screen (spec R1 §3.2, §3.3)", () => {
   });
 
   it("takes the place of each screen until the player agrees", async () => {
-    for (const path of ["/", "/today", "/practice", "/account"]) {
+    for (const path of ["/", "/today", "/instant", "/account"]) {
       const { api, count } = world({ noticeRequired: true });
       const view = renderAt(path, api);
       const heading = await view.findByRole("heading", { name: HEADING });

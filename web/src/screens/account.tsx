@@ -154,10 +154,15 @@ function PublicDataCard(): React.JSX.Element {
       note="Your results are published in an open database after each day closes."
     >
       <ul className="fact-list account-facts">
+        {/* Spec IM1 §14: the fact of notice version 3. */}
+        <li>
+          An instant trial is public as soon as its result comes. Anyone with
+          its address can see your sketch, your score and your name.
+        </li>
         {/* Spec SS1 §10: the fact of notice version 2. */}
         <li>
-          After you send, every player who has sent that day can see your
-          sketch. They see the sketch alone, not your words.
+          After you send to a daily challenge, every player who has sent that
+          day can see your sketch. They see the sketch alone, not your words.
         </li>
         <li>
           The database holds your username, every score, the words you typed,

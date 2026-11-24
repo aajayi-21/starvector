@@ -68,7 +68,8 @@ test("the account page says what is public", async ({ page }) => {
   });
   await expect(section).toBeVisible();
   await expect(section.getByRole("listitem")).toHaveText([
-    "After you send, every player who has sent that day can see your sketch. They see the sketch alone, not your words.",
+    "An instant trial is public as soon as its result comes. Anyone with its address can see your sketch, your score and your name.",
+    "After you send to a daily challenge, every player who has sent that day can see your sketch. They see the sketch alone, not your words.",
     "The database holds your username, every score, the words you typed, and every sketch.",
     "Anyone can download it and study it.",
     "A published snapshot stays published, with your username in it, even after your account is gone.",

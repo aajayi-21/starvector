@@ -218,7 +218,7 @@ def test_a_guest_gets_the_constant_401_on_each_daily_path(tmp_path) -> None:
              ("get", "/api/leaderboard/skill"), ("get", "/api/sends"),
              ("get", "/api/submission"), ("get", "/api/reveal"),
              ("post", "/api/submission"), ("post", "/api/day/start"),
-             ("get", "/api/sessions"), ("get", "/api/practice")]
+             ("get", "/api/sessions"), ("get", "/api/days")]
     for method, path in paths:
         answer = getattr(client, method)(path)
         assert answer.status_code == 401, path

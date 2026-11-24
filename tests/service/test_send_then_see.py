@@ -355,7 +355,7 @@ def test_a_server_that_does_not_publish_has_no_notice_rule(
 _OTHER_PATHS = ("/api/day", "/api/me", "/api/history", "/api/reveal",
                 f"/api/reveal?day={DAY}", f"/api/leaderboard?day={DAY}",
                 f"/api/submission?day={DAY}", "/api/leaderboard/skill",
-                "/api/practice", "/api/avatar/alice", "/api/avatar/bru")
+                "/api/days", "/api/avatar/alice", "/api/avatar/bru")
 
 
 def test_a_caller_with_a_send_sees_the_sends_and_no_other_answer_moves(
