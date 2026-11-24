@@ -923,3 +923,24 @@ IM1.2.
 - **The BLS check of a pulse on the server.** It stays as spec VP1 D3
   has it. `tools/check_instant.py` does the checks that
   `tools/check_day.py` does.
+
+## 24. What the build settled
+
+- **IM1.2 is not done, and it needs a network run.** The cache records
+  of the embedding slots hold the vector and no cost datum, thus the
+  cost of one send is not in the provider cache. The measurement is one
+  live encode of sample sends, and the owner does each network command.
+  D3 and D4 stay open until then.
+- **The cap of all owners is a configuration value.** D4 is the budget
+  of the owner, thus it is the field `instant_day_cap` of the server
+  configuration and not a constant of `service/limits.py`. A value of
+  `instant` other than `off` with no `instant_day_cap` does not parse.
+  No instant trial can thus start on a server before the owner sets the
+  cap.
+- **The margin and the clock bound** are constants of
+  `service/instant.py`, adjacent to the functions that read them. The
+  two day caps and the guest caps are in `service/limits.py`.
+- **Built on 2026-11-23:** IM1.1, IM1.3, IM1.4, and the configuration
+  part of IM1.5. The start-up guard is a pure function,
+  `instant.start_refusal`. The server reads it when IM1.6 adds the
+  paths.

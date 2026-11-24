@@ -177,3 +177,24 @@ def clock_refuses(offset_seconds: float | None, bound: float) -> bool:
     a clock that the public times can use.
     """
     return offset_seconds is None or abs(offset_seconds) > bound
+
+
+def start_refusal(*, mode: str, has_pool_key: bool,
+                  has_proof_key: bool) -> str | None:
+    """The start-up guard of instant mode, or None (spec IM1 12.5).
+
+    mode is the instant value of the server configuration. Each mode
+    other than "off" makes a proof of the target position, and that
+    needs the pool key. The mode "open" makes guests, and that needs
+    the key of the proof of work. The words name what is missing.
+    """
+    if mode == "off":
+        return None
+    if not has_pool_key:
+        return (f"instant is \"{mode}\" and the pool key is missing - "
+                "the result of an instant trial needs the proof of its "
+                "target position")
+    if mode == "open" and not has_proof_key:
+        return ("instant is \"open\" and the ALTCHA key is not set - "
+                "a guest is made with a proof of work")
+    return None

@@ -26,7 +26,8 @@ _FIELDS = ("config_version", "player", "scoring_config", "data_root",
 # Optional fields parse when given and default when missing, so each
 # committed config stays readable (spec S2 ruling 3).
 _OPTIONAL_FIELDS = ("closes_at_utc", "signup", "public_data_url",
-                    "pick_protocol", "beacon", "pool_roots_dir")
+                    "pick_protocol", "beacon", "pool_roots_dir",
+                    "instant", "instant_day_cap")
 
 # The pick protocols (spec VP1 section 6). "commit-v1" picks at the open
 # and publishes a commitment. "vp1" picks after the close from a beacon
@@ -37,6 +38,12 @@ PICK_PROTOCOLS = ("commit-v1", "vp1")
 # The sign-up switch (spec A2 section 10.2). A config with no field
 # reads as "closed", thus each earlier config keeps its behavior.
 SIGNUP_VALUES = ("open", "closed")
+
+# The instant switch (spec IM1 section 12.5). "off" gives no instant
+# trial, "accounts" gives them to accounts, and "open" also gives them
+# to guests. A config with no field reads as "off", thus each earlier
+# config keeps its behavior.
+INSTANT_VALUES = ("off", "accounts", "open")
 
 # The display close time: "HH:MM", 24-hour, UTC.
 _CLOSES_AT_RULE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -63,6 +70,12 @@ class ServiceConfig:
     pick_protocol "vp1" (spec VP1) needs closes_at_utc, because the
     pulse that picks the target comes from the scheduled close, and a
     beacon part. pool_roots_dir holds the committed pool roots.
+
+    instant is "off", "accounts", or "open" (spec IM1 section 12.5).
+    instant_day_cap is the cap on the instant sends of all owners on
+    one UTC date (decision D4 of that spec). It is the bound on the
+    provider cost of one date, thus a value of instant other than
+    "off" needs it, and it needs a beacon part.
     """
 
     player: str
@@ -76,6 +89,8 @@ class ServiceConfig:
     pick_protocol: str = "commit-v1"
     beacon: BeaconConfig | None = None
     pool_roots_dir: str = "configs/pool-roots"
+    instant: str = "off"
+    instant_day_cap: int | None = None
 
 
 def parse_service_config(raw: object, source: str) -> ServiceConfig:
@@ -145,6 +160,25 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
     if not isinstance(pool_roots_dir, str) or not pool_roots_dir:
         raise ServiceConfigError(
             f"{source}.pool_roots_dir: expected a non-empty string")
+    instant = raw.get("instant", "off")
+    if instant not in INSTANT_VALUES:
+        raise ServiceConfigError(
+            f"{source}.instant: expected one of {list(INSTANT_VALUES)}")
+    instant_day_cap = raw.get("instant_day_cap")
+    if instant_day_cap is not None and (
+            not isinstance(instant_day_cap, int)
+            or isinstance(instant_day_cap, bool) or instant_day_cap < 1):
+        raise ServiceConfigError(
+            f"{source}.instant_day_cap: expected an integer of 1 or more")
+    if instant != "off" and beacon is None:
+        raise ServiceConfigError(
+            f"{source}: instant \"{instant}\" needs a beacon block - a "
+            "beacon pulse picks the target of each instant trial")
+    if instant != "off" and instant_day_cap is None:
+        raise ServiceConfigError(
+            f"{source}: instant \"{instant}\" needs instant_day_cap - "
+            "the cap on the sends of one date is the bound on the "
+            "provider cost (spec IM1 decision D4)")
     return ServiceConfig(
         player=raw["player"],
         scoring_config=raw["scoring_config"],
@@ -157,6 +191,8 @@ def parse_service_config(raw: object, source: str) -> ServiceConfig:
         pick_protocol=pick_protocol,
         beacon=beacon,
         pool_roots_dir=pool_roots_dir,
+        instant=instant,
+        instant_day_cap=instant_day_cap,
     )
 
 

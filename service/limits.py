@@ -65,6 +65,20 @@ SIGNUP_CLIENT_CAP = 10
 SIGNUP_GLOBAL_CAP = 1_000
 _NAME_KEY = re.compile(r"[a-z0-9-]{1,64}")
 
+# The instant trial (spec IM1 section 6). The two day caps are ruling 5
+# of that spec: the sends of one owner on one UTC date. The server
+# counts them from the store, thus they are not window counters. The
+# cap of all owners is a value of the server configuration (decision
+# D4), because the owner sets it from a budget.
+INSTANT_GUEST_DAY_CAP = 5
+INSTANT_ACCOUNT_DAY_CAP = 20
+
+# The guests made (spec IM1 decision D5): the values of the sign-up
+# caps, with a counter of their own.
+GUEST_WINDOW_SECONDS = 24 * 60 * 60
+GUEST_CLIENT_CAP = 10
+GUEST_GLOBAL_CAP = 1_000
+
 _BODY_TOO_LARGE = b'{"cause":"body-too-large"}'
 _BODY_TOO_SLOW = b'{"cause":"body-too-slow"}'
 
@@ -148,6 +162,23 @@ def practice_limiter() -> WindowLimiter:
     return WindowLimiter(window_seconds=PRACTICE_WINDOW_SECONDS,
                          client_cap=PRACTICE_PLAYER_CAP,
                          global_cap=PRACTICE_GLOBAL_CAP)
+
+
+def guest_limiter() -> WindowLimiter:
+    """A limiter of the guests made (spec IM1 decision D5)."""
+    return WindowLimiter(window_seconds=GUEST_WINDOW_SECONDS,
+                         client_cap=GUEST_CLIENT_CAP,
+                         global_cap=GUEST_GLOBAL_CAP)
+
+
+def instant_day_cap(owner_kind: str) -> int:
+    """The sends of one owner on one UTC date (spec IM1 ruling 5)."""
+    match owner_kind:
+        case "guest":
+            return INSTANT_GUEST_DAY_CAP
+        case "account":
+            return INSTANT_ACCOUNT_DAY_CAP
+    raise ValueError(f"not an owner type: {owner_kind!r}")
 
 
 def name_failure_limiter() -> WindowLimiter:
