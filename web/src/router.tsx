@@ -42,6 +42,7 @@ import { ReleasesScreen } from "./screens/releases";
 import { RevealScreen } from "./screens/reveal";
 import { SendsScreen } from "./screens/sends";
 import { TodayScreen } from "./screens/today";
+import { TrialScreen } from "./screens/trial";
 import { WelcomeScreen } from "./screens/welcome";
 import { SiteFooter } from "./ui/footer";
 import { GuestGateContext } from "./ui/guest-gate-context";
@@ -51,7 +52,7 @@ import { TabBar, TopBar } from "./ui/nav";
 import { OfflineBanner } from "./ui/offline-banner";
 import { OperatorCodeNotice } from "./ui/operator-code-notice";
 import { PlayFrame, PlayHow, PlaySwitch } from "./ui/play-switch";
-import { BLEED_PATHS, NO_FOOTER_PATHS, PUBLIC_PATHS } from "./ui/site-links";
+import { BLEED_PATHS, isPublicPath, NO_FOOTER_PATHS } from "./ui/site-links";
 
 /**
  * The chrome of a public path for a browser that is not in the app: a
@@ -182,7 +183,7 @@ function Shell(): React.JSX.Element {
   const mustAgree = me.data !== undefined && needsAgreement(me.data.notice);
   // A public path does not wait for me and does not read it: the page
   // is the same for each browser (spec F1 §3).
-  if (PUBLIC_PATHS.has(pathname) && (signedOut || mustAgree || me.isPending)) {
+  if (isPublicPath(pathname) && (signedOut || mustAgree || me.isPending)) {
     return <PublicShell signedOut={signedOut} />;
   }
   if (signedOut) {
@@ -262,6 +263,13 @@ const instantRoute = createRoute({
   component: InstantScreen,
 });
 
+/** The public page of one instant trial (spec IM1 §10). */
+const trialRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/t/$date/$trialId",
+  component: TrialScreen,
+});
+
 const historyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/history",
@@ -339,6 +347,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   todayRoute,
   instantRoute,
+  trialRoute,
   historyRoute,
   leaderboardRoute,
   accountRoute,

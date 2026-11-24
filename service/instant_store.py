@@ -17,7 +17,8 @@ from pathlib import Path
 from core.canonical import JsonValue
 from service import instant
 from service.pick_rule import instant_commitment
-from service.store import StoreError, read_json_or_none, write_once_json
+from service.store import (WITHHELD_NOTE_LIMIT, StoreError, read_json_or_none,
+                           replace_json, write_once_json)
 
 _DATE_RULE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _TRIAL_RULE = re.compile(r"[0-9a-f]{32}")
@@ -364,3 +365,76 @@ def instant_write_lock(store: Path) -> Iterator[None]:
     finally:
         fcntl.flock(handle, fcntl.LOCK_UN)
         os.close(handle)
+
+
+@dataclass(frozen=True, slots=True)
+class WithheldTrial:
+    """One instant trial that shows with no sketch and no words (spec
+    IM1 section 10, with the rule of spec R1 section 9). note is for
+    the operator alone. The stored send does not change."""
+
+    date: str
+    trial_id: str
+    withheld_at: str
+    note: str
+
+
+def withheld_path(store: Path, date: str, trial_id: str) -> Path:
+    check_date(date, "date")
+    check_trial_id(trial_id, "trial_id")
+    return store / "public" / "withheld-instant" / date / f"{trial_id}.json"
+
+
+def write_withheld(store: Path, record: WithheldTrial) -> None:
+    """Withhold the response of one instant trial, or change the note
+    of a withheld one. The operator can put it back, thus this record
+    is not a one-write file."""
+    if not record.withheld_at:
+        raise StoreError("withheld_at: expected a non-empty string")
+    if not isinstance(record.note, str) \
+            or not 1 <= len(record.note) <= WITHHELD_NOTE_LIMIT \
+            or not record.note.isprintable():
+        raise StoreError(
+            f"note: expected 1 to {WITHHELD_NOTE_LIMIT} printable characters")
+    replace_json(withheld_path(store, record.date, record.trial_id),
+                 asdict(record))
+
+
+def remove_withheld(store: Path, date: str, trial_id: str) -> bool:
+    """Put the response of one instant trial back, and say if it was
+    withheld."""
+    try:
+        withheld_path(store, date, trial_id).unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def read_withheld_or_none(store: Path, date: str,
+                          trial_id: str) -> WithheldTrial | None:
+    path = withheld_path(store, date, trial_id)
+    raw = read_json_or_none(path)
+    if raw is None:
+        return None
+    if set(raw) != set(_names(WithheldTrial)) or raw["date"] != date \
+            or raw["trial_id"] != trial_id:
+        raise StoreError(f"{path}: not the withhold record of {trial_id}")
+    return WithheldTrial(**raw)
+
+
+def list_withheld(store: Path) -> tuple[WithheldTrial, ...]:
+    """Each withheld instant trial, by date and then by trial."""
+    root = store / "public" / "withheld-instant"
+    if not root.is_dir():
+        return ()
+    found = []
+    for directory in sorted(root.iterdir()):
+        if not (directory.is_dir() and _DATE_RULE.fullmatch(directory.name)):
+            continue
+        for entry in sorted(directory.iterdir()):
+            name = entry.name.removesuffix(".json")
+            if entry.is_file() and _TRIAL_RULE.fullmatch(name):
+                record = read_withheld_or_none(store, directory.name, name)
+                if record is not None:
+                    found.append(record)
+    return tuple(found)

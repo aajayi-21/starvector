@@ -25,6 +25,7 @@ import type {
   LeaderboardView,
   MeView,
   PasswordAck,
+  PublicTrial,
   RecoveryAck,
   RecoveryCodeAck,
   RefusalBody,
@@ -118,6 +119,11 @@ export function makeRealApi(): Api {
     getInstantTrial(date: string, trialId: string): Promise<InstantTrial> {
       return request<InstantTrial>(
         `/api/instant/${encodeURIComponent(date)}/${encodeURIComponent(trialId)}`,
+      );
+    },
+    getPublicTrial(date: string, trialId: string): Promise<PublicTrial> {
+      return request<PublicTrial>(
+        `/api/trial/${encodeURIComponent(date)}/${encodeURIComponent(trialId)}`,
       );
     },
     guestChallengeUrl(): string | null {

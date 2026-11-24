@@ -250,6 +250,8 @@ export interface InstantReceipt {
 /** The pick facts of a settled trial (spec IM1 §5.5). */
 export interface InstantPick {
   beacon_chain: string;
+  /** The chain hash: the address of the pulse at a drand relay has it. */
+  beacon_chain_hash: string;
   beacon_round: number;
   pulse_time: number;
   beacon_signature: string;
@@ -292,6 +294,41 @@ export interface InstantSettled {
 
 /** GET /api/instant/<date>/<trial_id>: one trial of the caller. */
 export type InstantTrial = InstantStarted | InstantPending | InstantSettled;
+
+/**
+ * GET /api/trial/<date>/<trial_id>: the public page of one settled
+ * trial (spec IM1 §10). It holds the sketch alone and no word of the
+ * send, and the record of the owner at the time of the read.
+ */
+export interface PublicTrial {
+  date: string;
+  trial_id: string;
+  /** The username, an anonymous identifier, or a guest identifier. */
+  owner: string;
+  kind: "account" | "guest";
+  /** False for an anonymous identifier and for a guest. */
+  named: boolean;
+  avatar_hash: string | null;
+  started_at: string;
+  received_at: string;
+  settled_at: string;
+  /** What the page shows of the send: never "after-reveal". */
+  state: SendState;
+  /** Empty when the state is not "sketch". */
+  strokes: SketchStroke[];
+  /** The count of the typed rows. The page holds no text of them. */
+  words: number;
+  target_id: string;
+  credit: ImageCredit | null;
+  trial: TrialValue;
+  pick: InstantPick;
+  /** The command that checks the pick from a saved copy of this answer. */
+  check: string;
+  record: InstantRecord & {
+    /** The number of this trial in the sends of the owner, from 1. */
+    position: number;
+  };
+}
 
 /** POST /api/guest: the identity that the browser has (spec IM1 §7.2). */
 export interface GuestAck {

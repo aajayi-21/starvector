@@ -40,6 +40,7 @@ import type {
   MeView,
   OperatorCodeView,
   PasswordAck,
+  PublicTrial,
   RecoveryAck,
   RecoveryCodeAck,
   ReportRow,
@@ -1295,6 +1296,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         ),
         pick: {
           beacon_chain: "fake",
+          beacon_chain_hash: "fake",
           beacon_round: round,
           pulse_time: trial.pulse_time,
           beacon_signature: seededHex(`instant-signature:${round}`, 96),
@@ -1311,6 +1313,82 @@ export function makeMockApi(options: MockOptions = {}): Api {
           pool_root: seededHex("instant-pool-root", 64),
         },
       });
+    },
+    async getPublicTrial(date: string, trialId: string): Promise<PublicTrial> {
+      // No identity: each reader gets a settled trial.
+      const trial = instantTrials.find(
+        (row) => row.trial_id === trialId && row.date === date,
+      );
+      if (
+        instantMode === "off" ||
+        trial === undefined ||
+        trial.record === null ||
+        trial.received_at === null ||
+        !instantSettled(trial)
+      ) {
+        throw new ApiError(404, undefined, "not found");
+      }
+      const seed = `instant:${trial.trial_id}`;
+      const target = seededHex(`instant-target:${trial.trial_id}`, 64);
+      const round = 30_000_000 + trial.position;
+      const mine = instantTrials
+        .filter((row) => row.owner === trial.owner && row.received_at !== null)
+        .sort((a, b) => a.position - b.position);
+      const settled = mine.filter(instantSettled);
+      const scores = settled.map(
+        (row) => trialFor(`instant:${row.trial_id}`).p,
+      );
+      const strokes = trial.record.canvas_strokes.map((stroke) => ({
+        points: stroke.points,
+        ...(stroke.color === undefined ? {} : { color: stroke.color }),
+      }));
+      const guestOwner = trial.owner.startsWith("guest-");
+      return {
+        date: trial.date,
+        trial_id: trial.trial_id,
+        owner: trial.owner,
+        kind: guestOwner ? "guest" : "account",
+        named: !guestOwner,
+        avatar_hash: null,
+        started_at: trial.started_at,
+        received_at: trial.received_at,
+        settled_at: `${today}T10:02:06+00:00`,
+        state: strokes.length > 0 ? "sketch" : "words-only",
+        strokes,
+        words: trial.record.impressions.length,
+        target_id: target,
+        credit: creditFor(target),
+        trial: trialFor(seed),
+        pick: {
+          beacon_chain: "fake",
+          beacon_chain_hash: "fake",
+          beacon_round: round,
+          pulse_time: trial.pulse_time,
+          beacon_signature: seededHex(`instant-signature:${round}`, 96),
+          randomness: seededHex(`instant-randomness:${round}`, 64),
+          nonce: seededHex(`instant-nonce:${trial.trial_id}`, 64),
+          commitment: seededHex(`instant-commitment:${trial.trial_id}`, 64),
+          send_digest: seededHex(`instant-digest:${trial.trial_id}`, 64),
+          target_index: Math.floor(draw(`${seed}:index`) * (DECOY_COUNT + 1)),
+          target_salt: seededHex(`instant-salt:${trial.trial_id}`, 64),
+          target_proof: [
+            `R:${seededHex(`instant-proof:${trial.trial_id}`, 64)}`,
+          ],
+          pool_count: DECOY_COUNT + 1,
+          pool_root: seededHex("instant-pool-root", 64),
+        },
+        check: "uv run python tools/check_instant.py --trial trial.json",
+        record: {
+          position: mine.indexOf(trial) + 1,
+          sent: mine.length,
+          settled: settled.length,
+          mean_p:
+            scores.length === 0
+              ? null
+              : round4(scores.reduce((sum, p) => sum + p, 0) / scores.length),
+          hit_number: scores.length === 0 ? null : 1,
+        },
+      };
     },
     guestChallengeUrl(): string | null {
       // No server signs a challenge in the mock world.

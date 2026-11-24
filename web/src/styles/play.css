@@ -892,3 +892,75 @@ button.day-calendar-day:hover {
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
+
+/* — the public page of one instant trial (spec IM1 §10) — */
+.trial-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 920px;
+}
+.trial-head h1 {
+  margin: 4px 0 8px;
+}
+.trial-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.trial-pair figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.trial-sketch .sketch-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--canvas);
+  border: 1px solid var(--canvas-border);
+}
+.trial-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  color: var(--text-2);
+  background: var(--canvas);
+  border: 1px solid var(--canvas-border);
+}
+.trial-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trial-record {
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.trial-check summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.trial-check dd {
+  margin: 0 0 8px;
+}
+.trial-command {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+@media (max-width: 700px) {
+  .trial-pair {
+    grid-template-columns: 1fr;
+  }
+}

@@ -42,7 +42,7 @@ from core.intake import IntakeError, validate_submission
 from pipeline.config import intake_gates, load_scoring_config
 from pipeline.context import PreparationRecord, load_preparation_record
 from pool.preparation.config import load_preparation_config
-from service import credits, day_scores, notice, store
+from service import credits, day_scores, instant_store, notice, store
 from service.config import ServiceConfigError, load_service_config
 from service.day import day_commitment
 from service.pick_rule import vp1_faults
@@ -1043,6 +1043,14 @@ def main(argv: list[str] | None = None) -> int:
     release_parser.add_argument("day")
     release_parser.add_argument("player")
     commands.add_parser("withheld")
+    # The response of one instant trial (spec IM1 section 10).
+    instant_withhold = commands.add_parser("withhold-instant")
+    instant_withhold.add_argument("date")
+    instant_withhold.add_argument("trial_id")
+    instant_withhold.add_argument("--note", required=True)
+    instant_release = commands.add_parser("release-instant")
+    instant_release.add_argument("date")
+    instant_release.add_argument("trial_id")
     commands.add_parser("identifiers")
     arguments = parser.parse_args(argv)
     instant = datetime.datetime.now(datetime.UTC)
@@ -1093,6 +1101,27 @@ def main(argv: list[str] | None = None) -> int:
             for record in store.list_withheld(root):
                 print(f"{record.day}  {record.player}  {record.withheld_at}  "
                       f"{record.note}")
+            for trial in instant_store.list_withheld(root):
+                print(f"instant {trial.date}  {trial.trial_id}  "
+                      f"{trial.withheld_at}  {trial.note}")
+        elif arguments.command == "withhold-instant":
+            if instant_store.read_send_or_none(
+                    root, arguments.date, arguments.trial_id) is None:
+                raise store.StoreError(
+                    f"no send of the instant trial {arguments.date} "
+                    f"{arguments.trial_id}")
+            instant_store.write_withheld(root, instant_store.WithheldTrial(
+                date=arguments.date, trial_id=arguments.trial_id,
+                withheld_at=instant.isoformat(), note=arguments.note))
+            print(f"withheld the instant trial {arguments.date} "
+                  f"{arguments.trial_id} - its page shows no sketch")
+        elif arguments.command == "release-instant":
+            removed = instant_store.remove_withheld(
+                root, arguments.date, arguments.trial_id)
+            print(f"released the instant trial {arguments.date} "
+                  f"{arguments.trial_id}" if removed
+                  else f"the instant trial {arguments.date} "
+                  f"{arguments.trial_id} was not withheld")
         elif arguments.command == "identifiers":
             written = write_identifiers(root, instant)
             print(f"wrote {len(written)} identifier record(s)")

@@ -284,6 +284,13 @@ def _replace_json(path: Path, value: JsonValue) -> None:
     _write_bytes_replacing(path, text.encode("utf-8"))
 
 
+def replace_json(path: Path, value: JsonValue) -> None:
+    """Replace one JSON document atomically, for a record class of a
+    different module that an operator can change (spec IM1 section 10:
+    the withhold record of an instant trial)."""
+    _replace_json(path, value)
+
+
 @contextmanager
 def day_write_lock(store: Path, day: str) -> Iterator[None]:
     """Hold the day's write lock: an exclusive advisory file lock.

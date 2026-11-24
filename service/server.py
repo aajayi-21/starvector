@@ -2363,6 +2363,76 @@ def create_app(service_config: ServiceConfig,
         value["credit"] = image_credits.get(result.target_id)
         return JSONResponse(value, headers=_NO_STORE)
 
+    # The public page of one instant trial (spec IM1 section 10). It
+    # is for each reader, and the noindex header goes with it.
+    _TRIAL_HEADERS = {"cache-control": "no-store",
+                      "x-robots-tag": "noindex"}
+
+    def _public_owner(owner: instant.Owner) -> tuple[instant.Owner, dict]:
+        """The owner that a reader sees for a trial, with its label.
+
+        The trials of a claimed guest are trials of the account (spec
+        IM1 section 7.4). A deleted account shows by its anonymous
+        identifier, as it does on the boards.
+        """
+        if owner.kind == instant.GUEST:
+            claim = guests.read_claim_or_none(root, owner.key)
+            if claim is None:
+                return owner, {"owner": owner.key, "kind": instant.GUEST,
+                               "named": False, "avatar_hash": None}
+            owner = instant.Owner(instant.ACCOUNT, claim.player)
+        label = _label_of(owner.key)
+        return owner, {"owner": label, "kind": instant.ACCOUNT,
+                       "named": label == owner.key,
+                       "avatar_hash": _avatar_of(owner.key)}
+
+    @app.get("/api/trial/{date}/{trial_id}")
+    def public_trial(date: str, trial_id: str) -> Response:
+        """One settled instant trial, as each reader gets it.
+
+        No identity. One constant 404 answers a trial that is not
+        there, a trial with no result, and each trial of a pool with
+        the dev_only flag (spec P1a R13). The answer holds the sketch
+        alone and no word of the send (spec SS1 ruling 2), and the
+        record of the owner at the time of the read: a reader of one
+        good trial sees the count and the mean of all of them.
+        """
+        missing = Response(content=_DEV_OFF, status_code=404,
+                           media_type="application/json",
+                           headers=_TRIAL_HEADERS)
+        if book is None or not publishes:
+            return missing
+        entry = book.entry(trial_id)
+        if entry is None or entry.date != date or entry.p is None:
+            return missing
+        start = instant_store.read_start_or_none(root, date, trial_id)
+        send = instant_store.read_send_or_none(root, date, trial_id)
+        result = instant_store.read_result_or_none(root, date, trial_id)
+        if start is None or send is None or result is None:
+            return missing
+        shown, label = _public_owner(entry.owner)
+        owners = _owners_of(shown)
+        positions = [row.trial_id for row in book.sends_of(owners)]
+        sketch = sketches.sketch_of(send.record)
+        state = sketches.entry_state(
+            has_strokes=bool(sketch),
+            withheld=instant_store.read_withheld_or_none(
+                root, date, trial_id) is not None,
+            shows=True)
+        numbers = book.record_of(owners)
+        value = settle.public_value(
+            start, send, result, **label, state=state,
+            strokes=sketch if state == sketches.SKETCH else [],
+            record=instant.RecordNumbers(
+                sent=numbers.sent, settled=numbers.settled,
+                mean_p=None if numbers.mean_p is None
+                else quantize_measured(numbers.mean_p),
+                hit_number=None if numbers.hit_number is None
+                else quantize_measured(numbers.hit_number)),
+            position=positions.index(trial_id) + 1)
+        value["credit"] = image_credits.get(result.target_id)
+        return JSONResponse(value, headers=_TRIAL_HEADERS)
+
     @app.get("/api/day")
     def day_view(request: Request) -> Response:
         caller = _caller(request)

@@ -347,6 +347,8 @@ def result_value(start: instant_store.StartRecord,
         "report": row["report"],
         "pick": {
             "beacon_chain": send.beacon_chain,
+            # The address of the pulse at the drand relays has it.
+            "beacon_chain_hash": chain.chain_hash,
             "beacon_round": send.beacon_round,
             "pulse_time": pulse_time(send.beacon_round, chain),
             "beacon_signature": result.beacon_signature,
@@ -359,6 +361,55 @@ def result_value(start: instant_store.StartRecord,
             "target_proof": list(result.target_proof),
             "pool_count": send.pool_count,
             "pool_root": send.pool_root,
+        },
+    }
+
+
+# The command that checks the pick of one trial from a saved answer
+# (spec IM1 section 10).
+INSTANT_CHECK = "uv run python tools/check_instant.py --trial trial.json"
+
+
+def public_value(start: instant_store.StartRecord,
+                 send: instant_store.SendRecord,
+                 result: instant_store.ResultRecord, *,
+                 owner: str, kind: str, named: bool,
+                 avatar_hash: str | None, state: str,
+                 strokes: Sequence[Mapping[str, JsonValue]],
+                 record: instant.RecordNumbers,
+                 position: int) -> dict[str, JsonValue]:
+    """The public page data of one settled trial (spec IM1 section 10).
+
+    owner is the label that a reader sees: the username, the anonymous
+    identifier of a deleted account, or the identifier of a guest.
+    strokes is the sketch alone (spec SS1 section 5), empty when the
+    mark of the entry is not the sketch mark. The answer holds the count of the typed
+    rows and no text of the send. record is the instant record of the
+    owner at the time of the answer, and position counts this trial in
+    the sends of the owner from 1.
+    """
+    settled = result_value(start, send, result)
+    wire: Mapping[str, JsonValue] = send.record  # type: ignore[assignment]
+    words = wire.get("impressions")
+    return {
+        "date": instant.utc_date(start.started_at),
+        "trial_id": send.trial_id,
+        "owner": owner, "kind": kind, "named": named,
+        "avatar_hash": avatar_hash,
+        "started_at": start.started_at,
+        "received_at": send.received_at,
+        "settled_at": result.settled_at,
+        "state": state,
+        "strokes": list(strokes),
+        "words": len(words) if isinstance(words, list) else 0,
+        "target_id": result.target_id,
+        "trial": settled["trial"],
+        "pick": settled["pick"],
+        "check": INSTANT_CHECK,
+        "record": {
+            "position": position,
+            "sent": record.sent, "settled": record.settled,
+            "mean_p": record.mean_p, "hit_number": record.hit_number,
         },
     }
 

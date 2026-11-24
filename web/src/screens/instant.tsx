@@ -37,6 +37,7 @@ import {
 import { GroupControls } from "../intake/groups-card";
 import { ImpressionsCard } from "../intake/impressions-card";
 import { sendBlock, sendBlockHint } from "../intake/send-gate";
+import { shareAddress, trialAddress } from "../share/address";
 import { NoticeText } from "../signin/notice-text";
 import type { DocHistory, Point, SketchDoc } from "../sketch/core";
 import {
@@ -468,6 +469,7 @@ function InstantWorkspace(props: {
         {result !== null ? (
           <InstantResult
             result={result}
+            date={trial.date}
             guest={props.view.kind === "guest"}
             canPlayAgain={props.view.left_today > 0}
             onAgain={props.onAgain}
@@ -623,8 +625,55 @@ function InstantWait(props: {
   );
 }
 
+/**
+ * `Share` gives the address of the public page of the trial (spec IM1
+ * §10 and §16). A test season has no public page, so it has no control.
+ */
+function ShareTrial(props: {
+  date: string;
+  trialId: string;
+}): React.JSX.Element | null {
+  const api = useApi();
+  const about = useQuery({
+    queryKey: ["about"],
+    queryFn: () => api.getAbout(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const [said, setSaid] = useState("");
+  if (about.data === undefined || about.data.test_season) {
+    return null;
+  }
+  const address = trialAddress(props.date, props.trialId);
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-secondary"
+        onClick={() => {
+          void shareAddress(address, "My Starvector instant trial").then(
+            (outcome) =>
+              setSaid(
+                outcome === "copied"
+                  ? "Link copied."
+                  : outcome === "failed"
+                    ? address
+                    : "",
+              ),
+          );
+        }}
+      >
+        Share
+      </button>
+      <span className="subtle tiny" role="status">
+        {said}
+      </span>
+    </>
+  );
+}
+
 function InstantResult(props: {
   result: InstantSettled;
+  date: string;
   guest: boolean;
   canPlayAgain: boolean;
   onAgain: () => void;
@@ -664,6 +713,7 @@ function InstantResult(props: {
           >
             {props.canPlayAgain ? "Again" : "Done"}
           </button>
+          <ShareTrial date={props.date} trialId={result.trial_id} />
         </div>
         <details className="instant-pick">
           <summary>How this photo was picked</summary>

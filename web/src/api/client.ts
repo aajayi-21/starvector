@@ -25,6 +25,7 @@ import type {
   LeaderboardView,
   MeView,
   PasswordAck,
+  PublicTrial,
   RecoveryAck,
   RecoveryCodeAck,
   RevealedDays,
@@ -74,6 +75,12 @@ export interface InstantApi {
     record: WireRecord,
   ): Promise<InstantReceipt>;
   getInstantTrial(date: string, trialId: string): Promise<InstantTrial>;
+  /**
+   * The public page of one settled trial (spec IM1 §10). No identity:
+   * each reader gets it, and the constant 404 for a trial that is not
+   * public.
+   */
+  getPublicTrial(date: string, trialId: string): Promise<PublicTrial>;
 }
 
 /** Guest play (spec IM1 §7): a cookie of the browser is the identity. */

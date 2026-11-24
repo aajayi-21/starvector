@@ -124,3 +124,24 @@ test("a guest plays with no account, then makes one and keeps the trial", async 
   expect(account.record.sent).toBe(1);
   expect(account.left_today).toBe(19);
 });
+
+// Spec IM1 §10: the public page of a trial needs no session. The
+// fixture world is a development pool, which has no public page, so the
+// server gives the constant 404 and the screen says so.
+test("the address of a trial opens for a browser with no session", async ({
+  page,
+}) => {
+  await blockExternalHosts(page);
+  const answer = await page.request.get(
+    `/api/trial/2026-01-01/${"f".repeat(32)}`,
+  );
+  expect(answer.status()).toBe(404);
+  expect(answer.headers()["x-robots-tag"]).toBe("noindex");
+  await page.goto(`/t/2026-01-01/${"f".repeat(32)}`);
+  await expect(page.getByText(/This trial has no public page/)).toBeVisible();
+  // The chrome of a public path, and not the gate screen.
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Try an instant trial" }),
+  ).toBeVisible();
+});

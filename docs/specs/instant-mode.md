@@ -1009,3 +1009,27 @@ IM1.2.
 - **One Vitest failure is from before this branch.** The first test of
   `web/tests/component/home.test.tsx` is red in a full run and green
   alone, on the commit before the web changes also.
+- **Built on 2026-11-24, IM1.11:** `GET /api/trial/<date>/<trial_id>`,
+  the trial page at `/t/<date>/<trial_id>`, `Share` on the instant
+  result, the withhold record of an instant trial with its two
+  commands, and `tools/check_instant.py`.
+- **The withhold record** of an instant trial is
+  `store/public/withheld-instant/<date>/<trial_id>.json`, adjacent to
+  the withhold records of the days. The operator puts a response back,
+  thus the record is not in the directory of the trial, where each file
+  is written one time.
+- **The commands** are `withhold-instant` and `release-instant` of
+  `python -m service.public`, and `withheld` shows the two types. The
+  operator command gives them as `sv public ...` (spec OC1).
+- **The page names a guest `a guest`,** and an account that is gone
+  `a player who left`. The identifiers are in the answer of the path.
+- **`Share` is not there in a test season.** A development pool has no
+  public page, thus the control has no address to give.
+- **The check reads one saved answer** (`--trial trial.json`): the
+  public page data, or the result of the owner. It also checks that the
+  pulse time is after the send time. A check of a full database file is
+  build item IM1.12.
+- **The pick facts hold the chain hash,** for the address of the pulse
+  at the drand relays.
+- **The home test of Vitest is not stable.** It is red in some full
+  runs and green in others, with no change of the code.
