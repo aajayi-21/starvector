@@ -75,6 +75,10 @@ sessions/ and device-codes/ hold sign-in credentials, not play
 records: deleting them signs devices out and loses no play.
 rollover/ holds the automatic days' pause, their run records, and
 their lock: operations records, and not play records either.
+
+instant/ holds the instant trials and guests/ holds the guests (spec
+IM1 in docs/specs/). The two are play records: keep them in every
+backup.
 """
 
 
