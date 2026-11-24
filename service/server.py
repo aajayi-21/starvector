@@ -47,8 +47,8 @@ from service import (access, auth, console, credits, digests, limits,
                      notice, operator_plan, passwords, proofs, rollover,
                      rollup, schedule, signin, sketches, store)
 from core.canonical import quantize_measured
-from service import (instant, instant_book, instant_store, pool_keys,
-                     settle)
+from service import (guests, instant, instant_book, instant_store,
+                     pool_keys, settle)
 from service.beacon import BeaconSource, clock_offset, make_source
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
@@ -751,9 +751,17 @@ def create_app(service_config: ServiceConfig,
             status = 409 if refused.cause == signin.NAME_TAKEN else 400
             return JSONResponse({"cause": refused.cause}, status_code=status)
         signup_counts.record(address)
-        return _signed_in(
+        answer = _signed_in(
             name, request, status=201,
             extra={"recovery_code": auth.display_recovery_code(code)})
+        # The guest of this browser becomes the account (spec IM1
+        # section 7.4): one claim record, and no trial file changes.
+        claimed = await asyncio.to_thread(_claim_guest, request, name)
+        if claimed:
+            answer.headers.append(
+                "set-cookie",
+                guests.clear_guest_cookie_header(secure=cookie_secure))
+        return answer
 
     @app.post("/api/signin")
     async def signin_open(request: Request) -> Response:
@@ -2093,20 +2101,81 @@ def create_app(service_config: ServiceConfig,
     # The start-up path starts the loop, and a test calls tick.
     app.state.instant = settle_loop
 
+    # Guest play (spec IM1 section 7). The map of the claims is a
+    # cache of the claim records, and a sign-up adds to it.
+    guests_on = instant_mode == "open"
+    guest_counts = limits.guest_limiter()
+    claims: dict[str, tuple[str, ...]] = \
+        guests.claims_by_player(root) if book is not None else {}
+    claims_lock = threading.Lock()
+
+    def _guest_of(request: Request) -> str | None:
+        """The guest behind the guest cookie, with guest play on."""
+        if not guests_on:
+            return None
+        return guests.resolve_guest(root,
+                                    request.cookies.get(guests.GUEST_COOKIE))
+
     def _instant_owner(request: Request) -> instant.Owner | Response:
         """The owner behind an instant path, or the constant refusal.
 
-        With instant mode off each instant path gives the constant
-        404. In this phase an owner is an account (spec IM1 section
-        7.5 adds the guest).
+        Spec IM1 section 7.5. An account session comes first. With no
+        session, a guest cookie with a correct secret and no claim
+        gives the guest. A box that plays alone keeps the configured
+        player. With instant mode off each instant path gives the
+        constant 404.
         """
         if book is None:
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
-        caller = _caller(request)
-        if isinstance(caller, Response):
-            return caller
-        return instant.Owner(instant.ACCOUNT, caller)
+        if not _access_on():
+            return instant.Owner(instant.ACCOUNT, player)
+        resolved = access.resolve_session(
+            root, request.cookies.get(auth.SESSION_COOKIE), utc_now())
+        if resolved is not None:
+            return instant.Owner(instant.ACCOUNT, resolved)
+        guest = _guest_of(request)
+        if guest is not None:
+            return instant.Owner(instant.GUEST, guest)
+        return _unauthorized()
+
+    def _owners_of(owner: instant.Owner) -> list[instant.Owner]:
+        """The owner and each guest that it claimed (spec IM1 7.4): the
+        trials of a claimed guest are trials of the account."""
+        if owner.kind != instant.ACCOUNT:
+            return [owner]
+        with claims_lock:
+            claimed = claims.get(owner.key, ())
+        return [owner] + [instant.Owner(instant.GUEST, name)
+                          for name in claimed]
+
+    def _claim_guest(request: Request, player_name: str) -> bool:
+        """Claim the guest of this browser for a new account.
+
+        The answer says if a claim was written. A browser with no
+        guest cookie, and a cookie that names no guest, write nothing.
+        """
+        if book is None:
+            return False
+        guest = guests.resolve_guest(
+            root, request.cookies.get(guests.GUEST_COOKIE))
+        if guest is None:
+            return False
+        guests.claim_guest(root, guest, player_name, utc_now())
+        with claims_lock:
+            claims[player_name] = claims.get(player_name, ()) + (guest,)
+        return True
+
+    def _instant_needs_agreement(owner: instant.Owner) -> bool:
+        """A send of this owner needs an agreement that is not there.
+
+        The rule reads the consent file of the owner and the flag of
+        the pool. It reads nothing of a day (I7).
+        """
+        if owner.kind == instant.ACCOUNT:
+            return _needs_agreement(owner.key)
+        return publishes and not guests.agreed(root, owner.key,
+                                               notice.NOTICE_VERSION)
 
     def _instant_refusal(error: settle.Refused) -> Response:
         if error.status == 404:
@@ -2132,6 +2201,70 @@ def create_app(service_config: ServiceConfig,
                 "hit_number": None if numbers.hit_number is None
                 else quantize_measured(numbers.hit_number)}
 
+    @app.get("/api/guest/challenge")
+    def guest_challenge() -> Response:
+        """One signed challenge for the guest gate (spec IM1 section
+        7.2), as the sign-up challenge of spec PW1. With guest play off
+        the answer is the constant 404."""
+        if not guests_on or proof_keys is None:
+            return _constant(_DEV_OFF, 404)
+        return JSONResponse(
+            proofs.make_challenge(proof_keys, proof_settings, utc_now()),
+            headers={"cache-control": "no-store"})
+
+    @app.post("/api/guest")
+    async def guest_make(request: Request) -> Response:
+        """Make one guest and give its cookie (spec IM1 section 7.2).
+
+        The steps, in sequence: the site and media-type checks, the
+        identity that the browser has, the caps, the proof, the
+        agreement to the notice, and the two store writes. One proof
+        makes one guest or one account: the ledger of spent proofs is
+        the one of the sign-up.
+
+        A browser with a good guest cookie gets that guest and no new
+        record. With the agreement in its body, such a guest agrees to
+        the current notice version.
+        """
+        if not guests_on or proof_keys is None:
+            return _constant(_DEV_OFF, 404)
+        body = await _credential_body(request)
+        if isinstance(body, Response):
+            return body
+        moment = utc_now()
+        if _access_on():
+            resolved = access.resolve_session(
+                root, request.cookies.get(auth.SESSION_COOKIE), moment)
+            if resolved is not None:
+                return JSONResponse(
+                    {"kind": instant.ACCOUNT, "owner": resolved},
+                    headers=_NO_STORE)
+        held = _guest_of(request)
+        if held is not None:
+            if body.get("agrees_public") is True:
+                await asyncio.to_thread(
+                    guests.write_consent, root, held, notice.NOTICE_VERSION,
+                    moment.astimezone(datetime.UTC).isoformat())
+            return JSONResponse({"kind": instant.GUEST, "owner": held},
+                                headers=_NO_STORE)
+        address = _address_key(request)
+        if not guest_counts.allowed(address):
+            return _constant(_TOO_MANY, 429)
+        proof = proofs.check_proof(body.get("proof"), proof_keys, moment)
+        if proof is None or not spent_proofs.hold(proof, moment):
+            return _constant(_BAD_PROOF, 400)
+        if body.get("agrees_public") is not True:
+            spent_proofs.give_back(proof)
+            return _constant(_NO_AGREEMENT, 400)
+        guest, value = await asyncio.to_thread(
+            guests.make_guest, root, notice=notice.NOTICE_VERSION,
+            instant=moment)
+        guest_counts.record(address)
+        headers = {"set-cookie": guests.guest_cookie_header(
+            value, secure=cookie_secure), "cache-control": "no-store"}
+        return JSONResponse({"kind": instant.GUEST, "owner": guest},
+                            status_code=201, headers=headers)
+
     @app.get("/api/instant")
     def instant_view(request: Request) -> Response:
         """What the instant screen shows first: the sends that are
@@ -2145,12 +2278,13 @@ def create_app(service_config: ServiceConfig,
             return owner
         assert book is not None
         today = _today()
+        owners = _owners_of(owner)
         day_cap = limits.instant_day_cap(owner.kind)
-        sent_today = book.sent_on([owner], today)
-        held = book.open_start(owner)
+        sent_today = book.sent_on(owners, today)
+        held = book.open_start(owners)
         if held is not None and instant.start_expired(held.date, today):
             held = None
-        sends = book.sends_of([owner])
+        sends = book.sends_of(owners)
         return JSONResponse({
             "kind": owner.kind, "owner": owner.key,
             "day_cap": day_cap, "sent_today": sent_today,
@@ -2159,7 +2293,8 @@ def create_app(service_config: ServiceConfig,
                 "date": held.date, "trial_id": held.trial_id,
                 "trial_code": held.trial_code,
                 "started_at": held.started_at},
-            "record": _record_value(book.record_of([owner])),
+            "record": _record_value(book.record_of(owners)),
+            "needs_agreement": _instant_needs_agreement(owner),
             "trials": [_entry_row(entry) for entry in
                        reversed(sends[-limits.PAGE_ENTRY_CAP:])],
             "min_strokes": gates.min_strokes_whole_drawing,
@@ -2171,7 +2306,7 @@ def create_app(service_config: ServiceConfig,
         owner = _instant_owner(request)
         if isinstance(owner, Response):
             return owner
-        if _needs_agreement(owner.key):
+        if _instant_needs_agreement(owner):
             return Response(content=_NO_AGREEMENT, status_code=409,
                             media_type="application/json")
         assert book is not None
@@ -2180,7 +2315,7 @@ def create_app(service_config: ServiceConfig,
             from service.day import make_trial_code
 
             return settle.start_trial(
-                _instant_world(), book, owner, [owner],
+                _instant_world(), book, owner, _owners_of(owner),
                 limits.instant_day_cap(owner.kind), utc_now(),
                 make_trial_code)
 
@@ -2206,15 +2341,16 @@ def create_app(service_config: ServiceConfig,
         owner = _instant_owner(request)
         if isinstance(owner, Response):
             return owner
-        if _needs_agreement(owner.key):
+        if _instant_needs_agreement(owner):
             return Response(content=_NO_AGREEMENT, status_code=409,
                             media_type="application/json")
         assert book is not None and settle_loop is not None
+        owners = _owners_of(owner)
         day_cap = limits.instant_day_cap(owner.kind)
         try:
             world = await asyncio.to_thread(_instant_world)
             entry = settle.check_send(
-                world, book, owner, [owner], day_cap, date, trial_id,
+                world, book, owners, day_cap, date, trial_id,
                 utc_now(), settle_loop.clock_offset)
         except settle.Refused as error:
             return _instant_refusal(error)
@@ -2232,7 +2368,7 @@ def create_app(service_config: ServiceConfig,
         def work() -> instant_store.SendRecord:
             wired = _resident()
             settle.encode_send(wired, checked)
-            return settle.store_send(world, book, wired, entry, [owner],
+            return settle.store_send(world, book, wired, entry, owners,
                                      day_cap, wire_record, utc_now)
 
         try:
@@ -2280,7 +2416,8 @@ def create_app(service_config: ServiceConfig,
             return owner
         assert book is not None
         entry = book.entry(trial_id)
-        if entry is None or entry.date != date or entry.owner != owner:
+        if entry is None or entry.date != date \
+                or entry.owner not in _owners_of(owner):
             return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
         start = instant_store.read_start_or_none(root, date, trial_id)

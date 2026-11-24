@@ -125,11 +125,12 @@ class InstantBook:
         with self._lock:
             return self._entries.get(trial_id)
 
-    def open_start(self, owner: Owner) -> Entry | None:
-        """The last start of the owner that has no send, or None."""
+    def open_start(self, owners: Sequence[Owner]) -> Entry | None:
+        """The last start of these owners that has no send, or None."""
+        wanted = set(owners)
         with self._lock:
             found = [entry for entry in self._entries.values()
-                     if entry.owner == owner and entry.received_at is None]
+                     if entry.owner in wanted and entry.received_at is None]
         if not found:
             return None
         return max(found, key=lambda entry: (entry.started_at,

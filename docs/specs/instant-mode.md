@@ -972,3 +972,18 @@ IM1.2.
 - **For subsequent items:** the web types of `GET /api/about` (IM1.10),
   the two-world test of the daily answers, and the frozen store
   (IM1.13).
+- **Built on 2026-11-24, IM1.8:** `service/guests.py` (the guest
+  record, the cookie, the consent, and the claim), the two guest paths,
+  the guest as an owner of an instant trial, and the claim at the
+  sign-up.
+- **The consent record of a guest** has the field `guest` where the
+  record of spec R1 §3.2 has `player`.
+- **A new notice version.** A browser with a guest sends
+  `POST /api/guest` with `agrees_public`, and the server writes the
+  agreement to the current version with no second proof.
+  `GET /api/instant` says `needs_agreement` for the caller.
+- **The map of the claims is a cache.** The server reads the claim
+  records at its start, and a sign-up adds to the map.
+- **A start with no send of a claimed guest** is the open trial of the
+  account. Its send keeps the guest as the owner in the record, as its
+  start does.

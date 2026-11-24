@@ -106,7 +106,7 @@ def start_trial(world: InstantWorld, book: InstantBook, owner: Owner,
     start with no send, thus a second start gives the same trial.
     """
     today = _utc_date(now)
-    held = book.open_start(owner)
+    held = book.open_start(owners)
     if held is not None and not instant.start_expired(held.date, today):
         return held
     _check_limits(world, book, owners, day_cap, today)
@@ -121,17 +121,18 @@ def start_trial(world: InstantWorld, book: InstantBook, owner: Owner,
     return entry
 
 
-def check_send(world: InstantWorld, book: InstantBook, owner: Owner,
+def check_send(world: InstantWorld, book: InstantBook,
                owners: Sequence[Owner], day_cap: int, date: str,
                trial_id: str, now: datetime.datetime,
                clock_offset: float | None) -> Entry:
     """Steps 3 to 5 of the send path (spec IM1 section 12.3), or Refused.
 
-    The steps read the book and the clock measurement. They read no
-    record of a day and no image.
+    owners holds the owner behind the send and each guest that it
+    claimed. The steps read the book and the clock measurement. They
+    read no record of a day and no image.
     """
     entry = book.entry(trial_id)
-    if entry is None or entry.date != date or entry.owner != owner:
+    if entry is None or entry.date != date or entry.owner not in owners:
         raise Refused(404, "not-found")
     if entry.received_at is not None:
         raise Refused(409, "instant-sent")
