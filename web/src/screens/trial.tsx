@@ -14,6 +14,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { useApi } from "../api/client";
 import type { PublicTrial } from "../api/types";
@@ -23,7 +24,24 @@ import { ordinal, percentBeaten } from "../ui/format";
 import { SketchThumb } from "../ui/sketch-thumb";
 import { Credit } from "./reveal";
 
+/**
+ * A search index does not keep a trial page (spec IM1 decision D9).
+ * The edge sends the header for `/t/*`, and this tag says the same to
+ * a reader of the page that runs its script. It goes when the screen
+ * goes, thus no other screen holds it.
+ */
+function useNoIndex(): void {
+  useEffect(() => {
+    const tag = document.createElement("meta");
+    tag.name = "robots";
+    tag.content = "noindex";
+    document.head.appendChild(tag);
+    return () => tag.remove();
+  }, []);
+}
+
 export function TrialScreen(): React.JSX.Element {
+  useNoIndex();
   const api = useApi();
   const { date, trialId } = useParams({ from: "/t/$date/$trialId" });
   const trial = useQuery({

@@ -34,6 +34,13 @@ game.example.com {
 		-Server
 	}
 
+	# The public page of one instant trial (spec IM1 section 10 and
+	# decision D9): a search index does not keep it. The page is the
+	# app shell from this edge, thus the header goes on here. The
+	# server puts the same header on the data of the page.
+	@trial path /t/*
+	header @trial X-Robots-Tag "noindex"
+
 	# The operator plane and the console never serve publicly
 	# (spec S2 ruling 2): the operator reaches them through an
 	# SSH tunnel to the on-demand dev unit on 127.0.0.1:8001.

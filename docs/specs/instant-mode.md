@@ -1070,3 +1070,17 @@ IM1.2.
 - **The private index does not see an instant trial.** Its fingerprint
   reads the daily records alone, thus an instant send does not make the
   index stale.
+- **Built on 2026-11-24, IM1.14 and the tool of IM1.2:**
+  `deploy/README.md` §10, and `tools/instant_cost.py`.
+- **IM1.2 is a command for the owner.** `python -m tools.instant_cost`
+  encodes three sample sends with the live encoders and a new, empty
+  cache, reads the token counts and the cost that the provider gives
+  with each answer, and prints the cap that a budget pays for. It needs
+  the key and the network, thus the owner does it. D3 and D4 stay open
+  until the owner has its numbers.
+- **The `noindex` header of the page comes from the edge.** The page at
+  `/t/...` is the app shell that Caddy gives, and the server does not
+  see that `GET`. `deploy/Caddyfile` has the header for `/t/*`, the
+  trial screen adds a `robots` tag while it shows, and the server keeps
+  the header on the data of the page. Build item IM1.11 had the header
+  on the data alone.

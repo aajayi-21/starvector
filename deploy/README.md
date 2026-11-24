@@ -426,3 +426,122 @@ When a pool version retires, publish its key adjacent to its root file
 - `systemctl reboot` → the site is back with no hand work.
 - `restic snapshots` shows the daily entries, and the `restore`
   drill passes.
+
+## 10. Instant trials and guest play (spec IM1)
+
+The instant trial is off until the server configuration turns it on.
+A box that updates to this code and changes no configuration keeps its
+behavior, with two differences: practice is gone, and each player sees
+the notice one time, because its text is at version 3.
+
+### What must be there first
+
+- The steps of §8: the pool key, the committed pool root, and the
+  `beacon` part of the config. An instant trial reads the three, also on a server
+  with `"pick_protocol": "commit-v1"` for its days.
+- `timedatectl` says `System clock synchronized: yes`. The server
+  refuses each instant send while its clock is more than 3 seconds from
+  the clock of the drand relays.
+- For guests: `STARVECTOR_ALTCHA_KEY` in `/etc/starvector/env`, as
+  sign-up has it (spec PW1).
+
+### The cap, from a budget
+
+One instant send is one encode at the model provider. The field
+`instant_day_cap` is the largest count of instant sends on one UTC
+date, for all players together. It is the bound on the cost of a date,
+and the server does not start with instant trials on and no cap.
+
+Measure the cost of one send on the laptop, with the key in the
+environment. The command encodes three sample sends, thus it costs
+money, and it writes nothing to a store or to the vector cache:
+
+```
+OPENROUTER_API_KEY=... uv run python -m tools.instant_cost \
+    --config configs/scoring/prod-wit-mixed.json --budget-usd 1
+```
+
+Its last line is the cap that the budget pays for. Use that number, or
+a smaller one.
+
+### The sequence: off, accounts, open
+
+1. Add the two fields to `/etc/starvector/service.json`, and load the
+   config:
+
+   ```
+   "instant": "accounts",
+   "instant_day_cap": <the number of the measurement>
+   ```
+
+   ```
+   sudo systemctl restart starvector
+   ```
+
+   Each account then has the instant trial in `Play`, with 20 sends on
+   a date. A visitor with no account sees no change.
+2. Check it:
+
+   ```
+   curl -s https://<domain>/api/about            # "instant": "accounts"
+   curl -s https://<domain>/api/instant/head     # the chain, count 0
+   ```
+
+   Play one trial with your own account. The result comes 3 to 6
+   seconds after the send.
+3. When that is good, change the value to `"open"` and load the config
+   again. The first screen then has `Try an instant trial`, and a guest
+   has 5 sends on a date. `"off"` puts the two back.
+
+### What the server does
+
+- **The loop.** One loop in the server process gets each pulse and
+  gives each send its result. It starts with the server. A send that
+  waited through a stop of the server gets its result after the start.
+- **The journal.** `journalctl -u starvector` shows a line with
+  `starvector.instant` for a pulse that did not check, for a send with
+  no result, and for a clock that was not measured.
+- **A change of the pool or of the scoring config.** A send that waits
+  for its pulse at the time of the change gets no result with the new
+  config. Make such a change at a quiet time, and read the journal after
+  it.
+- **The refusals that a player sees.** `instant-limit` is the cap of
+  one player. `instant-full` is `instant_day_cap`. `clock` is the clock
+  guard. `encoder` is the model provider, and that send is not stored.
+
+### A response that must not be public
+
+Each instant trial has a public page from the moment of its result. To
+remove a sketch from its page and from each subsequent snapshot:
+
+```
+sudo sv public withhold-instant <date> <trial_id> --note "the cause"
+sudo sv public release-instant <date> <trial_id>
+sudo sv public withheld
+```
+
+The date and the identifier are the two parts of the page address,
+`/t/<date>/<trial_id>`. The score, the photo, and the record of the
+owner stay on the page.
+
+### Backup, and the public database
+
+- `store/instant/` and `store/guests/` are play records. They are in
+  `store/`, thus the daily backup of §6 holds them with no change. The
+  drill of §6 compares them too.
+- The pool key is in `data/pool-keys/`, and the backup holds it. A
+  server with no key gives no result to an instant send.
+- A snapshot of the public database holds the instant trials in tables
+  with the prefix `instant_`. Check a snapshot before it goes out:
+
+  ```
+  uv run python tools/check_instant.py --database <the .sqlite file>
+  ```
+
+### Two lines for the smoke checklist
+
+- `curl -sI https://<domain>/t/2026-01-01/x | grep -i x-robots-tag`
+  shows `noindex`. The header for the page comes from the edge
+  configuration, thus load the new `deploy/Caddyfile` with this code.
+- `curl -s -o /dev/null -w "%{http_code}" https://<domain>/api/practice`
+  shows 404.

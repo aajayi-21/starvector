@@ -325,3 +325,12 @@ def test_the_page_does_not_follow_the_target_of_the_open_day(
     start = source.index('@app.get("/api/trial/{date}/{trial_id}")')
     body = source[start:source.index('@app.get("/api/day")', start)]
     assert "read_day_record" not in body and "list_days" not in body
+
+
+def test_the_edge_sends_noindex_for_the_page_itself() -> None:
+    """Decision D9: the page at /t/... is the app shell from the edge,
+    thus the edge configuration holds the header for it."""
+    caddy = (Path(__file__).resolve().parents[2] / "deploy"
+             / "Caddyfile").read_text(encoding="utf-8")
+    assert "@trial path /t/*" in caddy
+    assert 'header @trial X-Robots-Tag "noindex"' in caddy

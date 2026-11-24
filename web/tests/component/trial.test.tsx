@@ -152,6 +152,16 @@ describe("the public page of an instant trial (spec IM1 §10)", () => {
     ).toBeDefined();
   });
 
+  it("says noindex while the page shows, and not after it", async () => {
+    const { api, paths } = await played();
+    const view = renderAt(paths[0] ?? "", api);
+    await screen.findByRole("heading", { level: 1, name: /% by ade$/ });
+    const tag = document.head.querySelector('meta[name="robots"]');
+    expect(tag?.getAttribute("content")).toBe("noindex");
+    view.unmount();
+    expect(document.head.querySelector('meta[name="robots"]')).toBeNull();
+  });
+
   it("opens inside the app for a signed-in player", async () => {
     const { api, paths } = await played();
     renderAt(paths[0] ?? "", api);
