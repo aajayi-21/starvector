@@ -1,5 +1,5 @@
 /*
- * The Play place (screens/today.tsx, screens/practice.tsx): one screen
+ * The Play place (screens/today.tsx, screens/instant.tsx): one screen
  * with two views, and a row of days to go between them. The Studio
  * design: the canvas is as tall as the window, with one rail of tools
  * on its edge; the side holds the day, the words, and the one button,
@@ -176,7 +176,7 @@ button.day-calendar-day:hover {
   justify-content: center;
   column-gap: 12px;
 }
-/* After a check of practice the photo stands beside the sketch. */
+/* After the result of an instant trial the photo stands beside the sketch. */
 .workspace.has-result {
   grid-template-columns: 60px minmax(0, 1fr) 36px minmax(0, 1fr);
 }
@@ -530,28 +530,28 @@ button.day-calendar-day:hover {
   flex-basis: 100%;
 }
 
-/* — the result of practice, in the side — */
-.practice-result {
+/* — the result of an instant trial, in the side — */
+.instant-result {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
-.practice-photo {
+.instant-photo {
   display: flex;
   flex-direction: column;
   gap: 8px;
   max-width: var(--canvas-max);
 }
-.practice-score {
+.instant-score {
   display: flex;
   flex-direction: column;
   gap: 14px;
   max-width: var(--canvas-max);
 }
-.practice-score-label {
+.instant-score-label {
   font-size: 20px;
 }
-.practice-number {
+.instant-number {
   font-size: 64px;
 }
 /* What connected, under the sketch and the photo. */
@@ -795,7 +795,7 @@ button.day-calendar-day:hover {
   .send-bar.is-reviewing .send-bar-hint {
     display: block;
   }
-  .practice-number {
+  .instant-number {
     font-size: 52px;
   }
   /* After the send: the heading, what was sent as one row, the steps,
@@ -852,5 +852,115 @@ button.day-calendar-day:hover {
   .sent-next {
     order: 5;
     margin-top: 20px;
+  }
+}
+
+/* — the two modes of Play (spec IM1 §16) — */
+.play-modes {
+  align-self: flex-start;
+}
+.play-day .play-modes {
+  margin-bottom: 14px;
+}
+/* The wait for the pulse, in the side. */
+.instant-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.instant-pick {
+  margin-top: 6px;
+  font-size: 14px;
+}
+.instant-pick summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.instant-pick dd {
+  margin: 0 0 8px;
+}
+.mono-wrap {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.instant-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* — the public page of one instant trial (spec IM1 §10) — */
+.trial-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 920px;
+}
+.trial-head h1 {
+  margin: 4px 0 8px;
+}
+.trial-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.trial-pair figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.trial-sketch .sketch-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--canvas);
+  border: 1px solid var(--canvas-border);
+}
+.trial-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  color: var(--text-2);
+  background: var(--canvas);
+  border: 1px solid var(--canvas-border);
+}
+.trial-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trial-record {
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.trial-check summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.trial-check dd {
+  margin: 0 0 8px;
+}
+.trial-command {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+@media (max-width: 700px) {
+  .trial-pair {
+    grid-template-columns: 1fr;
   }
 }

@@ -192,36 +192,7 @@ def test_layer_zero_runs_off_the_loop_thread(tmp_path, monkeypatch) -> None:
     assert seen and seen[0] is not loop_thread[0]
 
 
-def test_practice_stops_at_the_player_cap(tmp_path) -> None:
-    fixture, config = _played_world(tmp_path)
-    limiter = limits.WindowLimiter(window_seconds=60, client_cap=2,
-                                   global_cap=100)
-    client = TestClient(create_app(config, practice_limiter=limiter))
-    body = {"day": DAY, "record": mixed_wire_record()}
-    assert client.post("/api/practice/score", json=body).status_code == 200
-    assert client.post("/api/practice/score", json=body).status_code == 200
-    third = client.post("/api/practice/score", json=body)
-    assert third.status_code == 429
-    assert third.json() == {"cause": "practice-limit"}
-
-
-def test_a_practice_refused_by_layer_zero_does_not_count(tmp_path) -> None:
-    fixture, config = _played_world(tmp_path)
-    limiter = limits.WindowLimiter(window_seconds=60, client_cap=1,
-                                   global_cap=100)
-    client = TestClient(create_app(config, practice_limiter=limiter))
-    empty = {"impressions": [], "canvas_strokes": [], "groups": [],
-             "relations": [], "pasted_text": None}
-    for _ in range(3):
-        answer = client.post("/api/practice/score",
-                             json={"day": DAY, "record": empty})
-        assert answer.status_code == 400
-    assert client.post("/api/practice/score",
-                       json={"day": DAY, "record": mixed_wire_record()
-                             }).status_code == 200
-
-
-def test_the_practice_limit_has_a_process_cap_too() -> None:
+def test_a_window_limiter_has_a_process_cap_too() -> None:
     now = [0.0]
     limiter = limits.WindowLimiter(window_seconds=60, client_cap=5,
                                    global_cap=2, clock=lambda: now[0])
@@ -230,13 +201,6 @@ def test_the_practice_limit_has_a_process_cap_too() -> None:
     assert not limiter.allowed("c")
     now[0] = 61.0
     assert limiter.allowed("c")
-
-
-def test_the_practice_values_are_the_spec_values() -> None:
-    limiter = limits.practice_limiter()
-    assert limiter.window_seconds == 3600
-    assert limiter.client_cap == 30
-    assert limiter.global_cap == 600
 
 
 # -- section 2: the stale tab -------------------------------------------
@@ -303,11 +267,11 @@ def test_a_closing_day_with_its_own_name_still_says_closed(tmp_path) -> None:
         == (409, {"cause": "day-closed"})
 
 
-def test_the_day_view_and_practice_carry_the_stroke_floor(tmp_path) -> None:
+def test_the_day_view_and_the_listing_carry_the_stroke_floor(tmp_path) -> None:
     fixture, config = _played_world(tmp_path)
     client = TestClient(create_app(config))
     assert client.get("/api/day").json()["min_strokes"] == 2
-    assert client.get("/api/practice").json()["min_strokes"] == 2
+    assert client.get("/api/days").json()["min_strokes"] == 2
 
 
 # -- section 3: close resilience ----------------------------------------
@@ -539,9 +503,9 @@ def test_a_resident_context_serves_the_open(tmp_path, monkeypatch) -> None:
 
     fixture, config = _played_world(tmp_path)
     client = TestClient(create_app(config, dev_mode=True))
-    # Practice wires the resident context.
-    assert client.post("/api/practice/score", json={
-        "day": DAY, "record": mixed_wire_record()}).status_code == 200
+    # A dev ranking wires the resident context.
+    assert client.get(
+        f"/api/dev/rankings?day={DAY}&player=ade").status_code == 200
 
     def refuses(*_arguments, **_keywords):
         raise AssertionError("the open wired a second copy of the pool")

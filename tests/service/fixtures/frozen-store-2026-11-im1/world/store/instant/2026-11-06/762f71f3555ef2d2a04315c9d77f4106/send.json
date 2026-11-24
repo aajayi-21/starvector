@@ -1,0 +1,97 @@
+{
+  "beacon_chain": "fake",
+  "beacon_round": 33722218,
+  "chain_link": "a92edca71afeede4af10cc64db8c0c0446c71c1b4f215bec6b7678b001513f01",
+  "chain_position": 0,
+  "chain_previous": "0000000000000000000000000000000000000000000000000000000000000000",
+  "commitment": "9527cc3aa2acd4d66a9035bce6ab69f9057d74b36c7b0e18c77bd59f4f5d0fbe",
+  "notice": 3,
+  "owner": "ade",
+  "owner_kind": "account",
+  "pool_count": 40,
+  "pool_root": "6dd41dc6fed043fd41fa642caa836312c4676c483a2e3faf6662c5b13bdcfa38",
+  "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "received_at": "2026-11-06T13:00:14+00:00",
+  "record": {
+    "canvas_strokes": [
+      {
+        "group_id": "g1",
+        "points": [
+          [
+            0.1,
+            0.4
+          ],
+          [
+            0.3,
+            0.4
+          ],
+          [
+            0.3,
+            0.6
+          ],
+          [
+            0.1,
+            0.6
+          ],
+          [
+            0.1,
+            0.4
+          ]
+        ]
+      },
+      {
+        "group_id": "g2",
+        "points": [
+          [
+            0.6,
+            0.4
+          ],
+          [
+            0.9,
+            0.4
+          ],
+          [
+            0.9,
+            0.6
+          ],
+          [
+            0.6,
+            0.6
+          ],
+          [
+            0.6,
+            0.4
+          ]
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "label": "tower"
+      },
+      {
+        "id": "g2",
+        "label": "sea"
+      }
+    ],
+    "impressions": [
+      "tall vertical structure",
+      "cold and exposed"
+    ],
+    "pasted_text": null,
+    "relations": [
+      {
+        "of": [
+          "g1",
+          "g2"
+        ],
+        "relation": "left-of"
+      }
+    ]
+  },
+  "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+  "scoring_config_path": "scoring-config-channels.json",
+  "send_digest": "81010404c1ae281ff6b9af0c3aad2239341c9987f58d892500abfef0acee5fa3",
+  "trial_id": "762f71f3555ef2d2a04315c9d77f4106"
+}

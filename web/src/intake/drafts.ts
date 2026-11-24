@@ -17,8 +17,10 @@ export interface Draft {
   typedWord?: string;
 }
 
-export interface PracticeDraft {
-  day: string;
+/** The draft of the open instant trial (spec IM1 §16). */
+export interface InstantDraft {
+  /** The trial that the sketch is for: a new code starts a new draft. */
+  trialId: string;
   doc: SketchDoc;
   impressions: string[];
   nextStrokeId: number;
@@ -26,7 +28,7 @@ export interface PracticeDraft {
 }
 
 const DRAFT_PREFIX = "sv:draft:";
-const PRACTICE_KEY = "sv:practice-draft";
+const INSTANT_KEY = "sv:instant-draft";
 
 export const draftKey = (day: string): string => `${DRAFT_PREFIX}${day}`;
 export const sentKey = (day: string): string => `sv:sent:${day}`;
@@ -131,14 +133,16 @@ export function removeEarlierDrafts(day: string): void {
   }
 }
 
-export function readPracticeDraft(): PracticeDraft | null {
-  return readJson<PracticeDraft>(PRACTICE_KEY);
+/** The draft of one instant trial, or null for a different trial. */
+export function readInstantDraft(trialId: string): InstantDraft | null {
+  const draft = readJson<InstantDraft>(INSTANT_KEY);
+  return draft !== null && draft.trialId === trialId ? draft : null;
 }
 
-export function writePracticeDraft(draft: PracticeDraft): void {
-  writeStorage(PRACTICE_KEY, draft);
+export function writeInstantDraft(draft: InstantDraft): void {
+  writeStorage(INSTANT_KEY, draft);
 }
 
-export function clearPracticeDraft(): void {
-  removeStorage(PRACTICE_KEY);
+export function clearInstantDraft(): void {
+  removeStorage(INSTANT_KEY);
 }

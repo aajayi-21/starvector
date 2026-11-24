@@ -4,7 +4,7 @@
  * chrome at the top and the thumb reaches the tabs. The avatar is the
  * way into the account screen (spec A1 §3).
  *
- * `Play` is one place with two views, today's sketch and practice. It
+ * `Play` is one place with two views, the daily challenge and the instant trial. It
  * leads to today's sketch, and it is the current place on each of the
  * two paths.
  */
@@ -47,7 +47,7 @@ const PLACES: ReadonlyArray<Place> = [
 /**
  * The links of the places, for the top bar and for the tab bar. The
  * router marks a link current on its own path; Play is also current
- * on the practice path, which no link here points at.
+ * on the instant path, which no link here points at.
  */
 function PlaceLinks(props: { icons: boolean }): React.JSX.Element {
   const pathname = useRouterState({
@@ -57,14 +57,14 @@ function PlaceLinks(props: { icons: boolean }): React.JSX.Element {
     <>
       {PLACES.map((place) => {
         const Icon = place.icon;
-        const onPractice = place.to === "/today" && pathname === "/practice";
+        const onInstant = place.to === "/today" && pathname === "/instant";
         return (
           <Link
             key={place.to}
             to={place.to}
             activeProps={activeProps}
             activeOptions={{ exact: place.to === "/" }}
-            {...(onPractice ? activeProps : {})}
+            {...(onInstant ? activeProps : {})}
           >
             {props.icons ? <Icon size={24} aria-hidden="true" /> : null}
             {props.icons ? place.short : place.label}

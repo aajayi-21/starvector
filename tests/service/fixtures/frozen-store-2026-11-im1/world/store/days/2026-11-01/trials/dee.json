@@ -1,0 +1,47 @@
+{
+  "beaten": 31,
+  "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+  "day": "2026-11-01",
+  "decoy_count": 39,
+  "p": 0.794872,
+  "player": "dee",
+  "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "report": [
+    {
+      "atom_id": "a1",
+      "atom_text": "tall vertical structure",
+      "element": null,
+      "rarity": 3.688879,
+      "similarity": 0.0,
+      "weight": 0.523438
+    },
+    {
+      "atom_id": "a2",
+      "atom_text": "cold and exposed",
+      "element": null,
+      "rarity": 3.688879,
+      "similarity": 0.0,
+      "weight": 0.720016
+    },
+    {
+      "atom_id": "a3",
+      "atom_text": "tower",
+      "element": "shared element",
+      "rarity": 3.688879,
+      "similarity": 0.327403,
+      "weight": 0.451274
+    },
+    {
+      "atom_id": "a4",
+      "atom_text": "sea",
+      "element": null,
+      "rarity": 3.688879,
+      "similarity": 0.0,
+      "weight": 0.404791
+    }
+  ],
+  "scoring_config_hash": "5de83ffb99a02af788970d01a8b9c1f836373e53aedb073227a96149ab0608b6",
+  "target_rank": 9,
+  "tied": 0,
+  "trial_id": "00000000000000000000000000000004"
+}

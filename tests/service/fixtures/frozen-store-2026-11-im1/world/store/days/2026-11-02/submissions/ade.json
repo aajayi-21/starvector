@@ -1,0 +1,86 @@
+{
+  "day": "2026-11-02",
+  "player": "ade",
+  "received_at": "2026-11-02T12:00:00+00:00",
+  "record": {
+    "canvas_strokes": [
+      {
+        "color": "#1a73e8",
+        "group_id": "g1",
+        "points": [
+          [
+            0.1,
+            0.4
+          ],
+          [
+            0.3,
+            0.4
+          ],
+          [
+            0.3,
+            0.6
+          ],
+          [
+            0.1,
+            0.6
+          ],
+          [
+            0.1,
+            0.4
+          ]
+        ]
+      },
+      {
+        "color": "#c5221f",
+        "group_id": "g2",
+        "points": [
+          [
+            0.6,
+            0.4
+          ],
+          [
+            0.9,
+            0.4
+          ],
+          [
+            0.9,
+            0.6
+          ],
+          [
+            0.6,
+            0.6
+          ],
+          [
+            0.6,
+            0.4
+          ]
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "label": "tower"
+      },
+      {
+        "id": "g2",
+        "label": "sea"
+      }
+    ],
+    "impressions": [
+      "tall vertical structure",
+      "cold and exposed"
+    ],
+    "pasted_text": null,
+    "relations": [
+      {
+        "of": [
+          "g1",
+          "g2"
+        ],
+        "relation": "left-of"
+      }
+    ]
+  },
+  "trial_id": "00000000000000000000000000000005"
+}

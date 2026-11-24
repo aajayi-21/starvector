@@ -75,6 +75,10 @@ sessions/ and device-codes/ hold sign-in credentials, not play
 records: deleting them signs devices out and loses no play.
 rollover/ holds the automatic days' pause, their run records, and
 their lock: operations records, and not play records either.
+
+instant/ holds the instant trials and guests/ holds the guests (spec
+IM1 in docs/specs/). The two are play records: keep them in every
+backup.
 """
 
 
@@ -278,6 +282,13 @@ def _replace_json(path: Path, value: JsonValue) -> None:
     """
     text = canonical_json_pretty(value) + "\n"
     _write_bytes_replacing(path, text.encode("utf-8"))
+
+
+def replace_json(path: Path, value: JsonValue) -> None:
+    """Replace one JSON document atomically, for a record class of a
+    different module that an operator can change (spec IM1 section 10:
+    the withhold record of an instant trial)."""
+    _replace_json(path, value)
 
 
 @contextmanager

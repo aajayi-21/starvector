@@ -1,0 +1,11 @@
+{
+  "detail": "fixture",
+  "finished_at": "2026-11-06T00:00:00+00:00",
+  "outcome": "moved",
+  "source": "timer",
+  "started_at": "2026-11-06T00:00:00+00:00",
+  "steps": [
+    "reveal",
+    "open"
+  ]
+}

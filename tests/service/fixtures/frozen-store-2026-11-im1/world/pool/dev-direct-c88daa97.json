@@ -1,0 +1,34 @@
+{
+  "artifacts": {
+    "p00-intake/records.jsonl": "c47b1db233980bdce6594b1d27aa9b5369e7878b8c8505a3dcf1f7e9c3ca3d73",
+    "p04-vocabulary/element_space_mean.npy": "48c85e7527abaebbbd8d6b385009bb3ead1071865f4f734c2939641a52f231a6",
+    "p04-vocabulary/incidence.npy": "fcbf4b6d33b2ccf2d39088ebb75adcb6ab2534a252da8e4d1f37dea6db6ff040",
+    "p04-vocabulary/vocabulary.jsonl": "4868e72404b4218a6e9846ec4ccc65b1383e06acd7f5a5080f3b5df5bf415ef4",
+    "p04-vocabulary/vocabulary_vectors.npy": "f11a3e1eadd541d232a037acc8aa2023603a370583defc0052e68e8b227c4269",
+    "p06-outline/outline_space_mean.npy": "61869b2dc49e39dac5ee52cb018a7b2ecb966d92aa69e85e6c9206340c4668b2",
+    "p06-outline/outline_vectors.npy": "ed0d0708c60ac2ddf961a887880883bd933de0aa3b4a41c3dc551fee0087038c",
+    "p07-boxes/boxes.jsonl": "c0f1f3ab4bf70ad31bb73c64fed2f307436c7b6b74692868508e3ee5a3553caa",
+    "p08-neardup/groups.jsonl": "1d3a867670080881eec9c6c79685a6969cd3a89718d688b9e70702fb222f2654"
+  },
+  "code_version": "test",
+  "config_path": "pool/prep-config.json",
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "dev_only": false,
+  "image_count": 40,
+  "label": "prod-direct-c88daa97",
+  "pool": {
+    "label": "prod-direct-pool",
+    "pool_version_id": "84a90d90ad7c969666433373eb66e671160b6ca9b2131dc028f6df24d2c21155",
+    "release_record_path": "pool-release.json"
+  },
+  "preparation_config_hash": "523db54199e67481b067534b797d6a98bb8af7073f471ea39a92199e4edbd6e8",
+  "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "provider_config_hashes": {
+    "describer": "0f2232fecbb05ebc9e9d4509db8ec9fadd152fda653cf4b3ee1d13b43ee1da06",
+    "element_boxes": "190a402a114e182b6a4f17e9f7cf4daa5ad3b2d7422ad09e3cb61191325c11eb",
+    "image_encoder": "ee378475320677a59b0bc6b5994e0140fbceb933568b8521850427768035ef1e",
+    "line_drawer": "c5227f4eb0a7be75de842ad334f264a5c7ba61b64102e7cff939052ed4f2e144",
+    "text_encoder": "d013c1532e45d1194f7504251fd93cee9e78ede0a72e615bdb96af4318e02915"
+  },
+  "provider_usage": {}
+}

@@ -18,6 +18,8 @@ RESERVED_NAMES = frozenset({
     "admin", "operator", "moderator", "staff", "support", "system",
     "root", "starvector",
     "api", "join", "me", "dev",
+    # The first word of a guest identifier (spec IM1 section 7.1).
+    "guest",
     "null", "undefined",
 })
 

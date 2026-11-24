@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-24T20:45:29.836404+00:00",
+  "command": "players delete",
+  "day": null,
+  "entry_id": "bc757c76146fa778",
+  "error_kind": null,
+  "facts": {},
+  "journal_version": 1,
+  "login": "console",
+  "login_source": "operator-token",
+  "outcome": null,
+  "phase": "start",
+  "player": "dee"
+}

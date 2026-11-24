@@ -83,7 +83,7 @@ _OPEN_DAY_PATHS = ("/", "/api/day", "/api/me", "/api/history",
                    "/api/reveal", f"/api/reveal?day={DAY}",
                    f"/api/leaderboard?day={DAY}",
                    f"/api/submission?day={DAY}",
-                   "/api/leaderboard/skill", "/api/practice",
+                   "/api/leaderboard/skill", "/api/days",
                    "/api/avatar/alice", "/api/avatar/bru",
                    # The sends of the day (spec SS1 section 7): one
                    # constant refusal for a caller with no send.
@@ -172,7 +172,7 @@ def _length_walk(fixture, seed: str, tmp_path: Path,
     paths = ("/", "/api/day", "/api/reveal",
              f"/api/reveal?day={DAY}", f"/api/leaderboard?day={DAY}",
              f"/api/submission?day={DAY}", "/api/history", "/api/me",
-             "/api/practice", "/api/leaderboard/skill",
+             "/api/days", "/api/leaderboard/skill",
              "/api/avatar/ade",
              # The caller of this walk has a send, thus this is the
              # answer with the sketches (spec SS1 section 7).

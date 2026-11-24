@@ -126,6 +126,19 @@ players, 92 files:
 
 A device code is not in it: a device code lives for 10 minutes.
 
+*Note, 2026-11-24 (spec IM1 §17):* **the second frozen store,
+`frozen-store-2026-11-im1`,** holds the record types of the first one
+and the record types of spec IM1, 114 files:
+
+- Three instant trials with a result: one of an account, one of a guest,
+  and one of a guest that an account claimed.
+- An instant send with no result, and a start with no send.
+- The secret record of each send, and a withheld instant response.
+- Two guest records, their consent records, and one claim.
+
+The first frozen store did not change. Its consent records are of
+notice version 2, and those of the second one are of version 3.
+
 `tools/freeze_store.py` makes a frozen store: `uv run python -m
 tools.freeze_store --label <label>`. It refuses a label that has a
 directory.
@@ -144,6 +157,21 @@ directory.
 | `test_no_stored_file_changes` | The store has the same manifest before and after: the read walk, each rescore, the day-score files, the boards, the results index and its check, and a public snapshot and its check. | A reader or a build that writes to the store. |
 | `test_the_frozen_store_holds_no_deployment_secret` | No pool key is in the directory. | A frozen store that copies a key. |
 | `test_a_stored_password_digest_reads` | The digester of today accepts the fixture password for a stored digest. | A change of the digest parameters that locks each player out. |
+
+*Note, 2026-11-24 (spec IM1 §17):* two more tests, for a frozen store
+with the record types of spec IM1. An earlier frozen store does not do
+them.
+
+| Test | What it proves | A change that it stops |
+|---|---|---|
+| `test_a_rescore_gives_each_stored_instant_row_again` | A second scoring of each stored instant send, with its pinned config and its stored target, gives the stored trial row byte for byte. | A change of Layers 0 to 8 or of the shape of an instant trial row. |
+| `test_the_chain_of_the_stored_instant_sends_stands` | The book of today reads each stored instant trial, and the chain of the sends has no fault. | A change of the chain rule or of a field of a send record. |
+
+`tests/service/frozen_fixture.py` holds the rows of the new record
+types in a second table, `INSTANT_READERS`. A row of `READERS` is a
+record type that each frozen store holds, and the first frozen store
+holds no instant trial. `test_no_stored_file_changes` also does the
+second scoring of the instant sends and builds the book.
 
 The rescore test compares counts. With a hash that moved, a rescore compares
 nothing, writes new rows adjacent, and raises no error. The counts make that

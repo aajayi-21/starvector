@@ -11,7 +11,9 @@ identifier and submits written impressions and/or a sketch describing an image
 (the **target**) that a public beacon picks from the pool after the submission window
 closes, so no target exists during play (spec VP1). The system ranks the target
 against each other image in a fixed **pool** and reports the fraction of decoys it
-beat.
+beat. The game has two modes (spec IM1). The **daily challenge** is the trial above,
+with its boards. In an **instant trial**, a beacon pulse some seconds after the send
+picks a target for that one send, and no board reads it.
 
 **The output is a rank, not a similarity.** With no information the target is equally
 likely to land anywhere in the sorted list, so chance is exactly 0.5 by construction —
@@ -347,7 +349,8 @@ core/                      # pure functions only, no I/O
 providers/                 # model access, see §6
 pipeline/                  # imperative shell: wiring, caching, storage, jobs
 service/                   # the trial server shell: store, day lifecycle, HTTP surface (spec S1)
-store/                     # the permanent trial store — play records, not a cache (spec S1 §5)
+store/                     # the permanent trial store — play records, not a cache (spec S1 §5);
+                           # instant/ and guests/ hold the instant trials and the guests (spec IM1)
 pool/                      # offline preparation (curation, extraction, encoding)
 validation/                # V1–V6 harnesses and the synthetic submission generator
 tests/

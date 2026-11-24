@@ -2,7 +2,7 @@
  * Labeling parts of the sketch (spec A1 §6, copy per spec BR1 §6):
  * pick the strokes that belong together, then name them. Renders as
  * a fragment — today puts it in a disclosure with the "where things
- * are" row, practice in a card of its own.
+ * are" row, the instant trial in a card of its own.
  *
  * The label line is this fragment's own state; the selection, the
  * mode, and the document stay in the screen, which owns the canvas

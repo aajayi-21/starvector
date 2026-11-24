@@ -1,5 +1,5 @@
 /**
- * The drawing panel shared by today and practice (the Studio design of
+ * The drawing panel shared by today and the instant trial (the Studio design of
  * 2026-11-21): one rail of tools on the edge of the canvas, the canvas
  * as tall as the window, and one line under it for a hint that carries
  * information. The screens own the document; this panel draws the

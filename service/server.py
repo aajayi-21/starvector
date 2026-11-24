@@ -25,7 +25,7 @@ import sqlite3
 import sys
 import threading
 import urllib.parse
-from collections.abc import Container, Mapping
+from collections.abc import Callable, Container, Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -46,6 +46,10 @@ from pool.preparation.config import load_preparation_config
 from service import (access, auth, console, credits, digests, limits,
                      notice, operator_plan, passwords, proofs, rollover,
                      rollup, schedule, signin, sketches, store)
+from core.canonical import quantize_measured
+from service import (guests, instant, instant_book, instant_store,
+                     pool_keys, settle)
+from service.beacon import BeaconSource, clock_offset, make_source
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from service.pulse import chain_named, pulse_time
@@ -109,8 +113,7 @@ _BAD_CURSOR = b'{"cause":"bad-cursor"}'
 # an answer or a refusal.
 _NO_STORE = {"cache-control": "private, no-store"}
 _DEV_OFF = b'{"detail":"not found"}'
-_NO_PRACTICE = b'{"detail":"no revealed day"}'
-_NOT_PRACTICE = b'{"detail":"not a practice day"}'
+_NO_REVEALED_DAY = b'{"detail":"no revealed day"}'
 # One constant body covers a player with no picture and a name
 # with no record (spec A1 section 3) - no roster oracle.
 _NO_AVATAR = b'{"detail":"no avatar"}'
@@ -135,8 +138,6 @@ _NOTICE_VERSION = b'{"cause":"notice-version"}'
 # The one answer of the start path (spec R1 section 4).
 _STARTED = b'{"ok":true}'
 _BAD_CONTENT_TYPE = b'{"cause":"content-type"}'
-# The practice limit (spec PL1 section 1).
-_PRACTICE_LIMIT = b'{"cause":"practice-limit"}'
 # The sign-up proof (spec PW1 section 3): one body for each payload
 # that does not agree, is spent, or is not there.
 _BAD_PROOF = b'{"cause":"proof"}'
@@ -315,11 +316,12 @@ def create_app(service_config: ServiceConfig,
                dev_mode: bool = False, *,
                cookie_secure: bool = True,
                operator_token: str | None = None,
-               practice_limiter: limits.WindowLimiter | None = None,
                digester: digests.PasswordDigester | None = None,
                usual_passwords: Container[str] | None = None,
                proof_keys: proofs.ProofKeys | None = None,
                proof_settings: proofs.ProofSettings = proofs.DEPLOYED,
+               instant_source: BeaconSource | None = None,
+               instant_clock_offset: Callable[[], float] | None = None,
                ) -> FastAPI:
     """The app factory - tests run it through TestClient.
 
@@ -340,9 +342,6 @@ def create_app(service_config: ServiceConfig,
     component reads no global configuration. The start-up path
     does the environment read.
 
-    practice_limiter is an argument for the tests. The default holds
-    the values of spec PL1 section 1.
-
     digester computes the password digests (spec A2 section 5.2). It
     arrives as an argument, because the start-up path reads the pepper
     from the environment. With None the server has no password paths:
@@ -354,6 +353,11 @@ def create_app(service_config: ServiceConfig,
     arrives as an argument, as the digester does.
     proof_settings is an argument for the tests, and the default holds
     the values of spec PW1 decision D3.
+
+    instant_source is the beacon source of the instant trials (spec
+    IM1), and instant_clock_offset measures the server clock against
+    it. The two are arguments for the tests. The defaults come from
+    the beacon part of the server configuration.
 
     Raises ServiceConfigError when the store holds player records
     and no operator token is set. A quiet hole is worse than a loud
@@ -399,6 +403,15 @@ def create_app(service_config: ServiceConfig,
         Path(scoring_config.input.preparation_record))
     canvas_px = load_preparation_config(
         Path(record.config_path)).linedraw.canvas_px
+    # The start-up guard of instant mode (spec IM1 section 12.5).
+    instant_stop = instant.start_refusal(
+        mode=service_config.instant,
+        has_pool_key=pool_keys.key_path(
+            Path(service_config.data_root),
+            record.preparation_version_id).is_file(),
+        has_proof_key=proof_keys is not None)
+    if instant_stop is not None:
+        raise ServiceConfigError(instant_stop)
     # The season facts (spec BR1 section 6): a pool with the dev_only
     # flag is a test season, and its numbers stay off each public
     # surface (spec P1a R13). The app labels them as test numbers.
@@ -408,7 +421,10 @@ def create_app(service_config: ServiceConfig,
                    "public_data_url": service_config.public_data_url,
                    # The landing page says when the photo is picked
                    # (spec VP1 section 8), before a sign-in.
-                   "pick_protocol": service_config.pick_protocol}
+                   "pick_protocol": service_config.pick_protocol,
+                   # The switch of the instant trials (spec IM1
+                   # section 12.5): the app shows the mode that is on.
+                   "instant": service_config.instant}
     # A day of this pool can be in a public snapshot (spec R1 section
     # 5), thus a send needs the agreement to the notice.
     publishes = not record.dev_only
@@ -422,7 +438,6 @@ def create_app(service_config: ServiceConfig,
     # The avatar path has its own stream check and its own refusal.
     app.add_middleware(limits.BodyCap, exempt=("/api/account/avatar",))
     code_limiter = limits.WindowLimiter()
-    practice_counts = practice_limiter or limits.practice_limiter()
     # The password counters (spec A2 section 9.2). Each failure counts
     # for its client address and for its username.
     address_failures = limits.WindowLimiter()
@@ -728,9 +743,17 @@ def create_app(service_config: ServiceConfig,
             status = 409 if refused.cause == signin.NAME_TAKEN else 400
             return JSONResponse({"cause": refused.cause}, status_code=status)
         signup_counts.record(address)
-        return _signed_in(
+        answer = _signed_in(
             name, request, status=201,
             extra={"recovery_code": auth.display_recovery_code(code)})
+        # The guest of this browser becomes the account (spec IM1
+        # section 7.4): one claim record, and no trial file changes.
+        claimed = await asyncio.to_thread(_claim_guest, request, name)
+        if claimed:
+            answer.headers.append(
+                "set-cookie",
+                guests.clear_guest_cookie_header(secure=cookie_secure))
+        return answer
 
     @app.post("/api/signin")
     async def signin_open(request: Request) -> Response:
@@ -1062,7 +1085,7 @@ def create_app(service_config: ServiceConfig,
 
     # The resident scoring context (P5 R1): wired lazily one time
     # for each process from the server's config, read by the close
-    # endpoint, the dev surfaces, and practice. The lock stops a
+    # endpoint, the dev surfaces, and the instant trial. The lock stops a
     # double wire when two threadpool handlers race the first use.
     # A new start re-reads config. This supersedes the fifth 14b
     # ruling's wording: the dev surfaces score with the config the
@@ -1070,11 +1093,6 @@ def create_app(service_config: ServiceConfig,
     # the same file in usual operation.
     resident_state: dict[str, object] = {}
     resident_lock = threading.Lock()
-    # Day-start values (P5 item B4), keyed by target - targets
-    # of revealed days do not change, thus no invalidation. Its own
-    # lock: the resident lock does not nest.
-    practice_precompute: dict[str, object] = {}
-    precompute_lock = threading.Lock()
 
     def _resident():
         from service.scoring import wire_for_close
@@ -1899,8 +1917,15 @@ def create_app(service_config: ServiceConfig,
                                 status_code=400)
         return JSONResponse(answer)
 
-    @app.get("/api/practice")
-    def practice_days(request: Request) -> Response:
+    @app.get("/api/days")
+    def revealed_days(request: Request) -> Response:
+        """The revealed days, the newest first: the row of days of the
+        Play screen and of the leaderboard reads them.
+
+        This was the listing of the practice screen (spec P5). The
+        instant trial replaced practice (spec IM1 section 15), and the
+        listing stays with its shape.
+        """
         caller = _caller(request)
         if isinstance(caller, Response):
             return caller
@@ -1914,7 +1939,7 @@ def create_app(service_config: ServiceConfig,
                              "target_id": record.target_id,
                              "trial_code": record.trial_code})
         if not rows:
-            return Response(content=_NO_PRACTICE, status_code=404,
+            return Response(content=_NO_REVEALED_DAY, status_code=404,
                             media_type="application/json")
         return JSONResponse({"days": rows,
                              "min_strokes": gates.min_strokes_whole_drawing})
@@ -1957,70 +1982,456 @@ def create_app(service_config: ServiceConfig,
         that (spec PL1 section 1)."""
         return await asyncio.to_thread(_checked_or_refusal, wire_record)
 
-    @app.post("/api/practice/score")
-    async def practice_score_endpoint(request: Request) -> Response:
-        from starlette.concurrency import run_in_threadpool
+    # The instant trial (spec IM1). The book is a cache of the store,
+    # built one time here. The world needs the resident scoring
+    # context, thus the first instant path that runs builds it.
+    instant_mode = service_config.instant
+    book = instant_book.build_book(root) if instant_mode != "off" else None
+    instant_state: dict[str, object] = {}
+    instant_lock = threading.Lock()
 
-        from service.scoring import day_precompute, practice_score
+    def _instant_source() -> BeaconSource:
+        assert service_config.beacon is not None
+        return instant_source or make_source(service_config.beacon)
 
-        # The gate stands before the work: this is the one player
-        # path that scores, thus a caller with no session does none
-        # of it.
-        caller = _caller(request)
-        if isinstance(caller, Response):
-            return caller
-        if not practice_counts.allowed(caller):
-            return Response(content=_PRACTICE_LIMIT, status_code=429,
+    def _instant_world() -> settle.InstantWorld:
+        wired = _resident()
+        with instant_lock:
+            if "world" not in instant_state:
+                assert service_config.instant_day_cap is not None
+                instant_state["world"] = settle.instant_world(
+                    root=root, data_root=data_root,
+                    roots_dir=Path(service_config.pool_roots_dir),
+                    day_cap_all=service_config.instant_day_cap,
+                    source=_instant_source(), wired=wired,
+                    scoring_config_path=service_config.scoring_config,
+                    notice=notice.NOTICE_VERSION)
+            return instant_state["world"]   # type: ignore[return-value]
+
+    def _read_clock_offset() -> float:
+        if instant_clock_offset is not None:
+            return instant_clock_offset()
+        source = _instant_source()
+        if source.chain.name == "fake":
+            # The fake source has the clock of this process.
+            return 0.0
+        return clock_offset(service_config.beacon.relays[0])
+
+    settle_loop = None
+    if book is not None:
+        settle_loop = settle.SettleLoop(
+            world=_instant_world, book=book, wired=_resident,
+            clock=lambda: utc_now(), read_offset=_read_clock_offset)
+        if instant_clock_offset is not None \
+                or _instant_source().chain.name == "fake":
+            # These measurements use no network, thus the first send
+            # does not wait for the first tick of the loop.
+            settle_loop.measure()
+    # The start-up path starts the loop, and a test calls tick.
+    app.state.instant = settle_loop
+
+    # Guest play (spec IM1 section 7). The map of the claims is a
+    # cache of the claim records, and a sign-up adds to it.
+    guests_on = instant_mode == "open"
+    guest_counts = limits.guest_limiter()
+    claims: dict[str, tuple[str, ...]] = \
+        guests.claims_by_player(root) if book is not None else {}
+    claims_lock = threading.Lock()
+
+    def _guest_of(request: Request) -> str | None:
+        """The guest behind the guest cookie, with guest play on."""
+        if not guests_on:
+            return None
+        return guests.resolve_guest(root,
+                                    request.cookies.get(guests.GUEST_COOKIE))
+
+    def _instant_owner(request: Request) -> instant.Owner | Response:
+        """The owner behind an instant path, or the constant refusal.
+
+        Spec IM1 section 7.5. An account session comes first. With no
+        session, a guest cookie with a correct secret and no claim
+        gives the guest. A box that plays alone keeps the configured
+        player. With instant mode off each instant path gives the
+        constant 404.
+        """
+        if book is None:
+            return Response(content=_DEV_OFF, status_code=404,
                             media_type="application/json")
+        if not _access_on():
+            return instant.Owner(instant.ACCOUNT, player)
+        resolved = access.resolve_session(
+            root, request.cookies.get(auth.SESSION_COOKIE), utc_now())
+        if resolved is not None:
+            return instant.Owner(instant.ACCOUNT, resolved)
+        guest = _guest_of(request)
+        if guest is not None:
+            return instant.Owner(instant.GUEST, guest)
+        return _unauthorized()
+
+    def _owners_of(owner: instant.Owner) -> list[instant.Owner]:
+        """The owner and each guest that it claimed (spec IM1 7.4): the
+        trials of a claimed guest are trials of the account."""
+        if owner.kind != instant.ACCOUNT:
+            return [owner]
+        with claims_lock:
+            claimed = claims.get(owner.key, ())
+        return [owner] + [instant.Owner(instant.GUEST, name)
+                          for name in claimed]
+
+    def _claim_guest(request: Request, player_name: str) -> bool:
+        """Claim the guest of this browser for a new account.
+
+        The answer says if a claim was written. A browser with no
+        guest cookie, and a cookie that names no guest, write nothing.
+        """
+        if book is None:
+            return False
+        guest = guests.resolve_guest(
+            root, request.cookies.get(guests.GUEST_COOKIE))
+        if guest is None:
+            return False
+        guests.claim_guest(root, guest, player_name, utc_now())
+        with claims_lock:
+            claims[player_name] = claims.get(player_name, ()) + (guest,)
+        return True
+
+    def _instant_needs_agreement(owner: instant.Owner) -> bool:
+        """A send of this owner needs an agreement that is not there.
+
+        The rule reads the consent file of the owner and the flag of
+        the pool. It reads nothing of a day (I7).
+        """
+        if owner.kind == instant.ACCOUNT:
+            return _needs_agreement(owner.key)
+        return publishes and not guests.agreed(root, owner.key,
+                                               notice.NOTICE_VERSION)
+
+    def _instant_refusal(error: settle.Refused) -> Response:
+        if error.status == 404:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        return JSONResponse({"cause": error.cause},
+                            status_code=error.status, headers=_NO_STORE)
+
+    def _today() -> str:
+        return utc_now().astimezone(datetime.UTC).date().isoformat()
+
+    def _entry_row(entry: instant_book.Entry) -> dict:
+        return {"date": entry.date, "trial_id": entry.trial_id,
+                "trial_code": entry.trial_code,
+                "received_at": entry.received_at,
+                "status": "pending" if entry.p is None else "settled",
+                "p": entry.p}
+
+    def _record_value(numbers: instant.RecordNumbers) -> dict:
+        return {"sent": numbers.sent, "settled": numbers.settled,
+                "mean_p": None if numbers.mean_p is None
+                else quantize_measured(numbers.mean_p),
+                "hit_number": None if numbers.hit_number is None
+                else quantize_measured(numbers.hit_number)}
+
+    @app.get("/api/guest/challenge")
+    def guest_challenge() -> Response:
+        """One signed challenge for the guest gate (spec IM1 section
+        7.2), as the sign-up challenge of spec PW1. With guest play off
+        the answer is the constant 404."""
+        if not guests_on or proof_keys is None:
+            return _constant(_DEV_OFF, 404)
+        return JSONResponse(
+            proofs.make_challenge(proof_keys, proof_settings, utc_now()),
+            headers={"cache-control": "no-store"})
+
+    @app.post("/api/guest")
+    async def guest_make(request: Request) -> Response:
+        """Make one guest and give its cookie (spec IM1 section 7.2).
+
+        The steps, in sequence: the site and media-type checks, the
+        identity that the browser has, the caps, the proof, the
+        agreement to the notice, and the two store writes. One proof
+        makes one guest or one account: the ledger of spent proofs is
+        the one of the sign-up.
+
+        A browser with a good guest cookie gets that guest and no new
+        record. With the agreement in its body, such a guest agrees to
+        the current notice version.
+        """
+        if not guests_on or proof_keys is None:
+            return _constant(_DEV_OFF, 404)
+        body = await _credential_body(request)
+        if isinstance(body, Response):
+            return body
+        moment = utc_now()
+        if _access_on():
+            resolved = access.resolve_session(
+                root, request.cookies.get(auth.SESSION_COOKIE), moment)
+            if resolved is not None:
+                return JSONResponse(
+                    {"kind": instant.ACCOUNT, "owner": resolved},
+                    headers=_NO_STORE)
+        held = _guest_of(request)
+        if held is not None:
+            if body.get("agrees_public") is True:
+                await asyncio.to_thread(
+                    guests.write_consent, root, held, notice.NOTICE_VERSION,
+                    moment.astimezone(datetime.UTC).isoformat())
+            return JSONResponse({"kind": instant.GUEST, "owner": held},
+                                headers=_NO_STORE)
+        address = _address_key(request)
+        if not guest_counts.allowed(address):
+            return _constant(_TOO_MANY, 429)
+        proof = proofs.check_proof(body.get("proof"), proof_keys, moment)
+        if proof is None or not spent_proofs.hold(proof, moment):
+            return _constant(_BAD_PROOF, 400)
+        if body.get("agrees_public") is not True:
+            spent_proofs.give_back(proof)
+            return _constant(_NO_AGREEMENT, 400)
+        guest, value = await asyncio.to_thread(
+            guests.make_guest, root, notice=notice.NOTICE_VERSION,
+            instant=moment)
+        guest_counts.record(address)
+        headers = {"set-cookie": guests.guest_cookie_header(
+            value, secure=cookie_secure), "cache-control": "no-store"}
+        return JSONResponse({"kind": instant.GUEST, "owner": guest},
+                            status_code=201, headers=headers)
+
+    @app.get("/api/instant")
+    def instant_view(request: Request) -> Response:
+        """What the instant screen shows first: the sends that are
+        left today, the open trial, the record, and the last trials.
+
+        A function of the instant records of the caller alone. It
+        reads no day record (spec IM1 section 4).
+        """
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        assert book is not None
+        today = _today()
+        owners = _owners_of(owner)
+        day_cap = limits.instant_day_cap(owner.kind)
+        sent_today = book.sent_on(owners, today)
+        held = book.open_start(owners)
+        if held is not None and instant.start_expired(held.date, today):
+            held = None
+        sends = book.sends_of(owners)
+        return JSONResponse({
+            "kind": owner.kind, "owner": owner.key,
+            "day_cap": day_cap, "sent_today": sent_today,
+            "left_today": instant.sends_left(sent_today, day_cap),
+            "open": None if held is None else {
+                "date": held.date, "trial_id": held.trial_id,
+                "trial_code": held.trial_code,
+                "started_at": held.started_at},
+            "record": _record_value(book.record_of(owners)),
+            "needs_agreement": _instant_needs_agreement(owner),
+            "trials": [_entry_row(entry) for entry in
+                       reversed(sends[-limits.PAGE_ENTRY_CAP:])],
+            "min_strokes": gates.min_strokes_whole_drawing,
+        }, headers=_NO_STORE)
+
+    @app.post("/api/instant/start")
+    async def instant_start(request: Request) -> Response:
+        """Make an instant trial, or give the open one of the caller."""
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        if _instant_needs_agreement(owner):
+            return Response(content=_NO_AGREEMENT, status_code=409,
+                            media_type="application/json")
+        assert book is not None
+
+        def work() -> instant_book.Entry:
+            from service.day import make_trial_code
+
+            return settle.start_trial(
+                _instant_world(), book, owner, _owners_of(owner),
+                limits.instant_day_cap(owner.kind), utc_now(),
+                make_trial_code)
+
         try:
-            body = await _parsed_body(request)
+            entry = await asyncio.to_thread(work)
+        except settle.Refused as error:
+            return _instant_refusal(error)
+        return JSONResponse({
+            "date": entry.date, "trial_id": entry.trial_id,
+            "trial_code": entry.trial_code,
+            "started_at": entry.started_at}, headers=_NO_STORE)
+
+    @app.post("/api/instant/{date}/{trial_id}/send")
+    async def instant_send(request: Request, date: str,
+                           trial_id: str) -> Response:
+        """Store the one send of an instant trial, and give its receipt.
+
+        The steps are the eight of spec IM1 section 12.3. No target is
+        there before the pulse of the send, thus no step reads one.
+        The encode comes before the write: a provider that refuses
+        stores nothing.
+        """
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        if _instant_needs_agreement(owner):
+            return Response(content=_NO_AGREEMENT, status_code=409,
+                            media_type="application/json")
+        assert book is not None and settle_loop is not None
+        owners = _owners_of(owner)
+        day_cap = limits.instant_day_cap(owner.kind)
+        try:
+            world = await asyncio.to_thread(_instant_world)
+            entry = settle.check_send(
+                world, book, owners, day_cap, date, trial_id,
+                utc_now(), settle_loop.clock_offset)
+        except settle.Refused as error:
+            return _instant_refusal(error)
+        try:
+            wire_record = await _parsed_body(request)
         except Exception:
             return JSONResponse(
                 {"cause": "bad-shape",
                  "detail": "bad-shape: the body is not JSON"},
                 status_code=400)
-        if not isinstance(body, dict):
-            return JSONResponse(
-                {"cause": "bad-shape",
-                 "detail": "bad-shape: the body must be an object"},
-                status_code=400)
-        day = body.get("day")
-        wire_record = body.get("record")
-        # One constant refusal for a missing, unknown, open, or
-        # unrevealed day - the distinctions tell nothing, and one
-        # body is the cheapest R4 argument.
-        try:
-            if not isinstance(day, str) \
-                    or day not in store.list_days(root):
-                raise store.StoreError("not a practice day")
-            record = store.read_day_record(root, day)
-            if record.status != "revealed":
-                raise store.StoreError("not a practice day")
-        except store.StoreError:
-            return Response(content=_NOT_PRACTICE, status_code=404,
-                            media_type="application/json")
         checked = await _checked_submission(wire_record)
         if isinstance(checked, Response):
             return checked
-        practice_counts.record(caller)
 
-        def compute():
+        def work() -> instant_store.SendRecord:
             wired = _resident()
-            with precompute_lock:
-                pre = practice_precompute.get(record.target_id)
-                if pre is None:
-                    pre = day_precompute(wired.context, record.target_id)
-                    practice_precompute[record.target_id] = pre
-            return practice_score(wire_record, record.target_id, wired,
-                                  pre)
+            settle.encode_send(wired, checked)
+            return settle.store_send(world, book, wired, entry, owners,
+                                     day_cap, wire_record, utc_now)
 
         try:
-            value = await run_in_threadpool(compute)
-        except Exception as error:
-            return JSONResponse({"cause": "practice-score-failed",
-                                 "detail": str(error)}, status_code=400)
-        return JSONResponse({"day": day, **value,
-                             "credit": image_credits.get(record.target_id)})
+            send = await asyncio.to_thread(work)
+        except settle.Refused as error:
+            return _instant_refusal(error)
+        except store.StoreError:
+            # Two sends of one trial at one moment: the one-write file
+            # took the first.
+            return JSONResponse({"cause": "instant-sent"}, status_code=409,
+                                headers=_NO_STORE)
+        return JSONResponse(settle.receipt_value(send), headers=_NO_STORE)
+
+    @app.get("/api/instant/head")
+    def instant_head() -> Response:
+        """The head of the chain of the sends (spec IM1 section 11).
+
+        No identity: each reader can keep a head and compare it with a
+        subsequent chain.
+        """
+        if book is None:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        head = book.head()
+        if head is None:
+            return JSONResponse({"count": 0, "position": None,
+                                 "chain_link": instant.CHAIN_START,
+                                 "received_at": None})
+        return JSONResponse({"count": head.position + 1,
+                             "position": head.position,
+                             "chain_link": head.chain_link,
+                             "received_at": head.received_at})
+
+    @app.get("/api/instant/{date}/{trial_id}")
+    def instant_trial(request: Request, date: str,
+                      trial_id: str) -> Response:
+        """One trial of the caller: started, pending, or its result.
+
+        Each value comes from the stored records of the trial, thus
+        this read scores nothing. Before the result the body is a
+        function of the pulse of the send alone.
+        """
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        assert book is not None
+        entry = book.entry(trial_id)
+        if entry is None or entry.date != date \
+                or entry.owner not in _owners_of(owner):
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        start = instant_store.read_start_or_none(root, date, trial_id)
+        send = instant_store.read_send_or_none(root, date, trial_id)
+        if start is None or send is None:
+            return JSONResponse({
+                "status": "started", "trial_code": entry.trial_code,
+                "started_at": entry.started_at}, headers=_NO_STORE)
+        result = instant_store.read_result_or_none(root, date, trial_id)
+        if result is None:
+            return JSONResponse(settle.pending_value(send),
+                                headers=_NO_STORE)
+        value = settle.result_value(start, send, result)
+        value["credit"] = image_credits.get(result.target_id)
+        return JSONResponse(value, headers=_NO_STORE)
+
+    # The public page of one instant trial (spec IM1 section 10). It
+    # is for each reader, and the noindex header goes with it.
+    _TRIAL_HEADERS = {"cache-control": "no-store",
+                      "x-robots-tag": "noindex"}
+
+    def _public_owner(owner: instant.Owner) -> tuple[instant.Owner, dict]:
+        """The owner that a reader sees for a trial, with its label.
+
+        The trials of a claimed guest are trials of the account (spec
+        IM1 section 7.4). A deleted account shows by its anonymous
+        identifier, as it does on the boards.
+        """
+        if owner.kind == instant.GUEST:
+            claim = guests.read_claim_or_none(root, owner.key)
+            if claim is None:
+                return owner, {"owner": owner.key, "kind": instant.GUEST,
+                               "named": False, "avatar_hash": None}
+            owner = instant.Owner(instant.ACCOUNT, claim.player)
+        label = _label_of(owner.key)
+        return owner, {"owner": label, "kind": instant.ACCOUNT,
+                       "named": label == owner.key,
+                       "avatar_hash": _avatar_of(owner.key)}
+
+    @app.get("/api/trial/{date}/{trial_id}")
+    def public_trial(date: str, trial_id: str) -> Response:
+        """One settled instant trial, as each reader gets it.
+
+        No identity. One constant 404 answers a trial that is not
+        there, a trial with no result, and each trial of a pool with
+        the dev_only flag (spec P1a R13). The answer holds the sketch
+        alone and no word of the send (spec SS1 ruling 2), and the
+        record of the owner at the time of the read: a reader of one
+        good trial sees the count and the mean of all of them.
+        """
+        missing = Response(content=_DEV_OFF, status_code=404,
+                           media_type="application/json",
+                           headers=_TRIAL_HEADERS)
+        if book is None or not publishes:
+            return missing
+        entry = book.entry(trial_id)
+        if entry is None or entry.date != date or entry.p is None:
+            return missing
+        start = instant_store.read_start_or_none(root, date, trial_id)
+        send = instant_store.read_send_or_none(root, date, trial_id)
+        result = instant_store.read_result_or_none(root, date, trial_id)
+        if start is None or send is None or result is None:
+            return missing
+        shown, label = _public_owner(entry.owner)
+        owners = _owners_of(shown)
+        positions = [row.trial_id for row in book.sends_of(owners)]
+        sketch = sketches.sketch_of(send.record)
+        state = sketches.entry_state(
+            has_strokes=bool(sketch),
+            withheld=instant_store.read_withheld_or_none(
+                root, date, trial_id) is not None,
+            shows=True)
+        numbers = book.record_of(owners)
+        value = settle.public_value(
+            start, send, result, **label, state=state,
+            strokes=sketch if state == sketches.SKETCH else [],
+            record=instant.RecordNumbers(
+                sent=numbers.sent, settled=numbers.settled,
+                mean_p=None if numbers.mean_p is None
+                else quantize_measured(numbers.mean_p),
+                hit_number=None if numbers.hit_number is None
+                else quantize_measured(numbers.hit_number)),
+            position=positions.index(trial_id) + 1)
+        value["credit"] = image_credits.get(result.target_id)
+        return JSONResponse(value, headers=_TRIAL_HEADERS)
 
     @app.get("/api/day")
     def day_view(request: Request) -> Response:
@@ -2902,7 +3313,10 @@ def create_app(service_config: ServiceConfig,
     def image(request: Request, image_id: str) -> Response:
         if not (dev_mode and _operator_ok(request)):
             targets = _revealed_targets(root)
-            if image_id not in targets:
+            # The target of an instant trial with a result is public
+            # too (spec IM1 section 12.4).
+            if image_id not in targets and not (
+                    book is not None and book.has_target(image_id)):
                 return Response(content=_NOT_REVEALED, status_code=404,
                                 media_type="application/json")
         try:
@@ -3035,6 +3449,9 @@ def main(argv: list[str] | None = None) -> int:
     # An invite of before spec A2 was a credential, and earlier lines
     # hold such paths. The filter stays (spec A2 section 10.1).
     logging.getLogger("uvicorn.access").addFilter(limits.RedactInvitePaths())
+    if app.state.instant is not None:
+        # The loop that settles the instant sends (spec IM1 section 5.5).
+        app.state.instant.start()
     uvicorn.run(app, host="127.0.0.1",
                 port=arguments.port or service_config.port)
     return 0

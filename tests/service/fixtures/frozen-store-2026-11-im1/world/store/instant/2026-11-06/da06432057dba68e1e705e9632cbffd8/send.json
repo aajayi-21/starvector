@@ -1,0 +1,29 @@
+{
+  "beacon_chain": "fake",
+  "beacon_round": 33722230,
+  "chain_link": "d524e7d6702cd69104a72870f4e570eac561b05ba8792ba769f7ce8f52eac08c",
+  "chain_position": 1,
+  "chain_previous": "a92edca71afeede4af10cc64db8c0c0446c71c1b4f215bec6b7678b001513f01",
+  "commitment": "f0ff7b72b07a6c3f6e78db31e54e923e0d9ef9c44dae941487edd0c14f9e9501",
+  "notice": 3,
+  "owner": "guest-6dd81d76de965936",
+  "owner_kind": "guest",
+  "pool_count": 40,
+  "pool_root": "6dd41dc6fed043fd41fa642caa836312c4676c483a2e3faf6662c5b13bdcfa38",
+  "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "received_at": "2026-11-06T13:00:49+00:00",
+  "record": {
+    "canvas_strokes": [],
+    "groups": [],
+    "impressions": [
+      "a narrow street",
+      "wet stone"
+    ],
+    "pasted_text": "the air is cold and still",
+    "relations": []
+  },
+  "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+  "scoring_config_path": "scoring-config-channels.json",
+  "send_digest": "07dd8662d648943c19b5f7e1825fc08b66917ef493dc124bf3cc57dbd431c153",
+  "trial_id": "da06432057dba68e1e705e9632cbffd8"
+}

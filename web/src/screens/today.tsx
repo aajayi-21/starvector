@@ -1,7 +1,7 @@
 /**
  * Today's sketch (mock 1a, spec W1 B6; layout and copy per spec
  * BR1 §6): the Today view of the Play place, under the switch it
- * shares with practice (ui/play-switch.tsx). The eye goes to two
+ * shares with the instant trial (ui/play-switch.tsx). The eye goes to two
  * places: the canvas, and the one Send button. Views: no day, open,
  * sent, closing or closed, and revealed (hand-off to the results
  * screen).
@@ -79,7 +79,7 @@ import {
   formatRemaining,
 } from "../ui/format";
 import { isPostClose } from "../ui/pick-copy";
-import { PlayFrame, PlayHow, PlayMessage } from "../ui/play-switch";
+import { PlayFrame, PlayHow, PlayMessage, PlaySwitch } from "../ui/play-switch";
 import { SendCount } from "../ui/send-count";
 import { ShareSketchButton } from "../ui/share-button";
 
@@ -143,11 +143,11 @@ function TodayView(): React.JSX.Element {
     return (
       <PlayMessage title="No day is open right now" view="today">
         <p className="muted">
-          The next day starts soon. Meanwhile, you can practice on a past photo.
+          The next day starts soon. Meanwhile, you can play an instant trial.
         </p>
         <div>
-          <Link to="/practice" className="btn btn-secondary">
-            Practice now
+          <Link to="/instant" className="btn btn-secondary">
+            Play an instant trial
           </Link>
         </div>
       </PlayMessage>
@@ -209,7 +209,8 @@ function PlayDay(props: { view: DayView }): React.JSX.Element {
   const close = closeLine(view, remaining);
   return (
     <section className="play-day" aria-label="Today">
-      <DayStepper view="today" day={null} />
+      <PlaySwitch view="today" />
+      <DayStepper />
       <DayCode code={view.trial_code} />
       <div className="play-day-meta">
         {close === null ? (
@@ -239,7 +240,8 @@ function DayBrief(props: { view: DayView }): React.JSX.Element {
   const close = closeLine(view, remaining);
   return (
     <section className="play-brief" aria-label="Today">
-      <DayStepper view="today" day={null} />
+      <PlaySwitch view="today" />
+      <DayStepper />
       <DayCode code={view.trial_code} />
       {close === null ? (
         <p className="play-brief-date">{names.long(view.day)}</p>
@@ -320,8 +322,8 @@ function SentView(props: { view: DayView }): React.JSX.Element {
         </ol>
 
         <div className="sent-next">
-          <Link to="/practice" className="btn btn-secondary">
-            Practice while you wait
+          <Link to="/instant" className="btn btn-secondary">
+            Play an instant trial while you wait
           </Link>
           {/* The player's own sketch, as an image for friends, before
               the reveal (spec SS1 §6). */}

@@ -7,6 +7,9 @@ the number of the web app and stops if the two are not equal.
 
 Version 2 is the text of spec SS1 section 10. It tells a player that
 each player who sent on a day sees the sketch after the send.
+
+Version 3 is the text of spec IM1 section 14. It tells a player that
+an instant trial is public when its result comes.
 """
 
 import datetime
@@ -15,7 +18,7 @@ from pathlib import Path
 from service import store
 
 # The version of the notice text that the sign-up screen shows.
-NOTICE_VERSION = 2
+NOTICE_VERSION = 3
 
 # The first version with the sentence on the sketch after the send
 # (spec SS1 section 10). An agreement to an earlier version is not an

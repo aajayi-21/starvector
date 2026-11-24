@@ -27,19 +27,24 @@ import type {
   DayView,
   DeletedAck,
   DeviceCodeView,
+  GuestAck,
   HistoryDayRow,
   HistoryView,
+  InstantMode,
+  InstantOpen,
+  InstantReceipt,
+  InstantTrial,
+  InstantView,
   LeaderboardRow,
   LeaderboardView,
   MeView,
   OperatorCodeView,
   PasswordAck,
-  PracticeDays,
-  PracticeScore,
-  RankingHeadRow,
+  PublicTrial,
   RecoveryAck,
   RecoveryCodeAck,
   ReportRow,
+  RevealedDays,
   RevealView,
   SendEntry,
   SendsPage,
@@ -375,6 +380,39 @@ export interface MockOptions {
   serveClose?: boolean;
   /** True: the mock player has sent the open day at the start. */
   submittedToday?: boolean;
+  /** Who plays instant trials (spec IM1 §12.5). The default is "open". */
+  instant?: InstantMode;
+  /**
+   * True: this browser holds a guest (spec IM1 §7). With `signedIn`
+   * false, the guest is the caller of the instant paths.
+   */
+  guest?: boolean;
+  /**
+   * The reads of a sent trial that answer `pending` before its result.
+   * The default is 1. The mock reads no clock for it.
+   */
+  instantPendingReads?: number;
+}
+
+/** The identifier of the mock guest. */
+export const MOCK_GUEST = "guest-0123456789abcdef";
+
+/** The day caps of spec IM1 ruling 5. */
+const MOCK_GUEST_CAP = 5;
+const MOCK_ACCOUNT_CAP = 20;
+
+interface MockTrial {
+  date: string;
+  trial_id: string;
+  trial_code: string;
+  started_at: string;
+  owner: string;
+  record: WireRecord | null;
+  received_at: string | null;
+  pulse_time: number;
+  position: number;
+  /** The reads of the trial after its send. */
+  reads: number;
 }
 
 /**
@@ -690,6 +728,46 @@ export function makeMockApi(options: MockOptions = {}): Api {
   /** True when the signed-in player agreed to the current notice. */
   function agreed(): boolean {
     return accounts.get(player)?.agreedNotice === noticeVersion;
+  }
+
+  // The instant trial and guest play (spec IM1): in memory for the
+  // session. A trial answers `pending` for its first reads and then
+  // its result, with no clock.
+  const instantMode: InstantMode = options.instant ?? "open";
+  const pendingReads = options.instantPendingReads ?? 1;
+  let guest: string | null = options.guest === true ? MOCK_GUEST : null;
+  let guestNotice: number | null = guest === null ? null : noticeVersion;
+  const instantTrials: MockTrial[] = [];
+  let sentCount = 0;
+
+  /** The owner behind an instant call, or null for the constant 401. */
+  function instantOwner(): { kind: "account" | "guest"; owner: string } | null {
+    if (signedIn) {
+      return { kind: "account", owner: player };
+    }
+    return guest === null || instantMode !== "open"
+      ? null
+      : { kind: "guest", owner: guest };
+  }
+
+  function instantRefusal<T>(): Promise<T> | null {
+    if (instantMode === "off") {
+      return Promise.reject(new ApiError(404, undefined, "not found"));
+    }
+    if (instantOwner() === null) {
+      return Promise.reject(new ApiError(401, undefined, "unauthorized"));
+    }
+    return null;
+  }
+
+  function instantSettled(trial: MockTrial): boolean {
+    return trial.received_at !== null && trial.reads >= pendingReads;
+  }
+
+  function instantNeedsAgreement(kind: "account" | "guest"): boolean {
+    return kind === "guest"
+      ? guestNotice !== noticeVersion
+      : noticeRequired && !agreed();
   }
   let recoveryCount = 0;
 
@@ -1019,7 +1097,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
       // keeps no start record: it reads no clock.
       return Promise.resolve({ ok: true });
     },
-    getPracticeDays(): Promise<PracticeDays> {
+    getRevealedDays(): Promise<RevealedDays> {
       if (playedDays.length === 0) {
         return Promise.reject(new ApiError(404, undefined, "no revealed day"));
       }
@@ -1032,34 +1110,309 @@ export function makeMockApi(options: MockOptions = {}): Api {
         min_strokes: 2,
       });
     },
-    scorePractice(day: string, record: WireRecord): Promise<PracticeScore> {
-      if (!playedSet.has(day)) {
-        return Promise.reject(
-          new ApiError(404, undefined, "not a practice day"),
-        );
+    getInstant(): Promise<InstantView> {
+      const refusal = instantRefusal<InstantView>();
+      const caller = instantOwner();
+      if (refusal !== null || caller === null) {
+        return refusal ?? Promise.reject(new ApiError(401));
       }
-      const seed = `practice:${day}:${fnv1a(JSON.stringify(record))}`;
-      const trial = trialFor(seed);
-      const targetPosition = trial.target_rank;
-      const head: RankingHeadRow[] = [];
-      for (let position = 1; position <= 10; position += 1) {
-        head.push({
-          position,
-          fused: round4(
-            1.2 - 0.07 * position - 0.05 * draw(`${seed}:f:${position}`),
-          ),
-          is_target: position === targetPosition,
-        });
+      const mine = instantTrials.filter((row) => row.owner === caller.owner);
+      const sent = mine.filter((row) => row.received_at !== null);
+      const settled = sent.filter(instantSettled);
+      const scores = settled.map((row) => trialFor(`instant:${row.trial_id}`));
+      const cap = caller.kind === "guest" ? MOCK_GUEST_CAP : MOCK_ACCOUNT_CAP;
+      const open = mine.find((row) => row.received_at === null);
+      return Promise.resolve({
+        kind: caller.kind,
+        owner: caller.owner,
+        day_cap: cap,
+        sent_today: sent.length,
+        left_today: Math.max(0, cap - sent.length),
+        open:
+          open === undefined
+            ? null
+            : {
+                date: open.date,
+                trial_id: open.trial_id,
+                trial_code: open.trial_code,
+                started_at: open.started_at,
+              },
+        record: {
+          sent: sent.length,
+          settled: settled.length,
+          mean_p:
+            scores.length === 0
+              ? null
+              : round4(
+                  scores.reduce((sum, row) => sum + row.p, 0) / scores.length,
+                ),
+          hit_number: scores.length === 0 ? null : 1,
+        },
+        trials: [...sent]
+          .sort((a, b) => b.position - a.position)
+          .map((row) => ({
+            date: row.date,
+            trial_id: row.trial_id,
+            trial_code: row.trial_code,
+            received_at: row.received_at,
+            status: instantSettled(row) ? "settled" : "pending",
+            p: instantSettled(row)
+              ? trialFor(`instant:${row.trial_id}`).p
+              : null,
+          })),
+        min_strokes: 2,
+        needs_agreement: instantNeedsAgreement(caller.kind),
+      });
+    },
+    startInstant(): Promise<InstantOpen> {
+      const refusal = instantRefusal<InstantOpen>();
+      const caller = instantOwner();
+      if (refusal !== null || caller === null) {
+        return refusal ?? Promise.reject(new ApiError(401));
+      }
+      if (instantNeedsAgreement(caller.kind)) {
+        return refused(409, "notice");
+      }
+      const mine = instantTrials.filter((row) => row.owner === caller.owner);
+      const held = mine.find((row) => row.received_at === null);
+      const cap = caller.kind === "guest" ? MOCK_GUEST_CAP : MOCK_ACCOUNT_CAP;
+      if (held === undefined && mine.length >= cap) {
+        return refused(429, "instant-limit");
+      }
+      const trial: MockTrial = held ?? {
+        date: today,
+        trial_id: seededHex(`instant-trial:${instantTrials.length}`, 32),
+        trial_code: seededCode(`instant-code:${instantTrials.length}`),
+        started_at: `${today}T10:00:00+00:00`,
+        owner: caller.owner,
+        record: null,
+        received_at: null,
+        pulse_time: 0,
+        position: -1,
+        reads: 0,
+      };
+      if (held === undefined) {
+        instantTrials.push(trial);
       }
       return Promise.resolve({
-        day,
-        target_id: targetId(day),
-        credit: creditFor(targetId(day)),
-        trial,
-        target_position: targetPosition,
-        ranking_head: head,
-        report: reportFor(seed, Math.min(4, 1 + record.impressions.length)),
+        date: trial.date,
+        trial_id: trial.trial_id,
+        trial_code: trial.trial_code,
+        started_at: trial.started_at,
       });
+    },
+    sendInstant(
+      date: string,
+      trialId: string,
+      record: WireRecord,
+    ): Promise<InstantReceipt> {
+      const refusal = instantRefusal<InstantReceipt>();
+      const caller = instantOwner();
+      if (refusal !== null || caller === null) {
+        return refusal ?? Promise.reject(new ApiError(401));
+      }
+      const trial = instantTrials.find(
+        (row) =>
+          row.trial_id === trialId &&
+          row.date === date &&
+          row.owner === caller.owner,
+      );
+      if (trial === undefined) {
+        return Promise.reject(new ApiError(404, undefined, "not found"));
+      }
+      if (trial.received_at !== null) {
+        return refused(409, "instant-sent");
+      }
+      if (
+        record.impressions.length === 0 &&
+        record.canvas_strokes.length === 0
+      ) {
+        return refused(400, "no-scoreable-atom");
+      }
+      trial.record = record;
+      trial.received_at = `${today}T10:02:00+00:00`;
+      trial.position = sentCount;
+      sentCount += 1;
+      // The one clock read of the instant mock: the screen counts the
+      // seconds to the pulse, and a fixed instant reads as over.
+      trial.pulse_time = Math.floor(Date.now() / 1000) + 4;
+      return Promise.resolve({
+        trial_id: trial.trial_id,
+        received_at: trial.received_at,
+        beacon_round: 30_000_000 + trial.position,
+        pulse_time: trial.pulse_time,
+        send_digest: seededHex(`instant-digest:${trial.trial_id}`, 64),
+        commitment: seededHex(`instant-commitment:${trial.trial_id}`, 64),
+        chain_position: trial.position,
+        chain_link: seededHex(`instant-chain:${trial.position}`, 64),
+      });
+    },
+    getInstantTrial(date: string, trialId: string): Promise<InstantTrial> {
+      const refusal = instantRefusal<InstantTrial>();
+      const caller = instantOwner();
+      if (refusal !== null || caller === null) {
+        return refusal ?? Promise.reject(new ApiError(401));
+      }
+      const trial = instantTrials.find(
+        (row) =>
+          row.trial_id === trialId &&
+          row.date === date &&
+          row.owner === caller.owner,
+      );
+      if (trial === undefined) {
+        return Promise.reject(new ApiError(404, undefined, "not found"));
+      }
+      if (trial.received_at === null || trial.record === null) {
+        return Promise.resolve({
+          status: "started",
+          trial_code: trial.trial_code,
+          started_at: trial.started_at,
+        });
+      }
+      const round = 30_000_000 + trial.position;
+      if (!instantSettled(trial)) {
+        trial.reads += 1;
+        return Promise.resolve({
+          status: "pending",
+          beacon_round: round,
+          pulse_time: trial.pulse_time,
+        });
+      }
+      const seed = `instant:${trial.trial_id}`;
+      const target = seededHex(`instant-target:${trial.trial_id}`, 64);
+      return Promise.resolve({
+        status: "settled",
+        trial_id: trial.trial_id,
+        trial_code: trial.trial_code,
+        started_at: trial.started_at,
+        received_at: trial.received_at,
+        settled_at: `${today}T10:02:06+00:00`,
+        target_id: target,
+        credit: creditFor(target),
+        trial: trialFor(seed),
+        report: reportFor(
+          seed,
+          Math.min(4, 1 + trial.record.impressions.length),
+        ),
+        pick: {
+          beacon_chain: "fake",
+          beacon_chain_hash: "fake",
+          beacon_round: round,
+          pulse_time: trial.pulse_time,
+          beacon_signature: seededHex(`instant-signature:${round}`, 96),
+          randomness: seededHex(`instant-randomness:${round}`, 64),
+          nonce: seededHex(`instant-nonce:${trial.trial_id}`, 64),
+          commitment: seededHex(`instant-commitment:${trial.trial_id}`, 64),
+          send_digest: seededHex(`instant-digest:${trial.trial_id}`, 64),
+          target_index: Math.floor(draw(`${seed}:index`) * (DECOY_COUNT + 1)),
+          target_salt: seededHex(`instant-salt:${trial.trial_id}`, 64),
+          target_proof: [
+            `R:${seededHex(`instant-proof:${trial.trial_id}`, 64)}`,
+          ],
+          pool_count: DECOY_COUNT + 1,
+          pool_root: seededHex("instant-pool-root", 64),
+        },
+      });
+    },
+    async getPublicTrial(date: string, trialId: string): Promise<PublicTrial> {
+      // No identity: each reader gets a settled trial.
+      const trial = instantTrials.find(
+        (row) => row.trial_id === trialId && row.date === date,
+      );
+      if (
+        instantMode === "off" ||
+        trial === undefined ||
+        trial.record === null ||
+        trial.received_at === null ||
+        !instantSettled(trial)
+      ) {
+        throw new ApiError(404, undefined, "not found");
+      }
+      const seed = `instant:${trial.trial_id}`;
+      const target = seededHex(`instant-target:${trial.trial_id}`, 64);
+      const round = 30_000_000 + trial.position;
+      const mine = instantTrials
+        .filter((row) => row.owner === trial.owner && row.received_at !== null)
+        .sort((a, b) => a.position - b.position);
+      const settled = mine.filter(instantSettled);
+      const scores = settled.map(
+        (row) => trialFor(`instant:${row.trial_id}`).p,
+      );
+      const strokes = trial.record.canvas_strokes.map((stroke) => ({
+        points: stroke.points,
+        ...(stroke.color === undefined ? {} : { color: stroke.color }),
+      }));
+      const guestOwner = trial.owner.startsWith("guest-");
+      return {
+        date: trial.date,
+        trial_id: trial.trial_id,
+        owner: trial.owner,
+        kind: guestOwner ? "guest" : "account",
+        named: !guestOwner,
+        avatar_hash: null,
+        started_at: trial.started_at,
+        received_at: trial.received_at,
+        settled_at: `${today}T10:02:06+00:00`,
+        state: strokes.length > 0 ? "sketch" : "words-only",
+        strokes,
+        words: trial.record.impressions.length,
+        target_id: target,
+        credit: creditFor(target),
+        trial: trialFor(seed),
+        pick: {
+          beacon_chain: "fake",
+          beacon_chain_hash: "fake",
+          beacon_round: round,
+          pulse_time: trial.pulse_time,
+          beacon_signature: seededHex(`instant-signature:${round}`, 96),
+          randomness: seededHex(`instant-randomness:${round}`, 64),
+          nonce: seededHex(`instant-nonce:${trial.trial_id}`, 64),
+          commitment: seededHex(`instant-commitment:${trial.trial_id}`, 64),
+          send_digest: seededHex(`instant-digest:${trial.trial_id}`, 64),
+          target_index: Math.floor(draw(`${seed}:index`) * (DECOY_COUNT + 1)),
+          target_salt: seededHex(`instant-salt:${trial.trial_id}`, 64),
+          target_proof: [
+            `R:${seededHex(`instant-proof:${trial.trial_id}`, 64)}`,
+          ],
+          pool_count: DECOY_COUNT + 1,
+          pool_root: seededHex("instant-pool-root", 64),
+        },
+        check: "uv run python tools/check_instant.py --trial trial.json",
+        record: {
+          position: mine.indexOf(trial) + 1,
+          sent: mine.length,
+          settled: settled.length,
+          mean_p:
+            scores.length === 0
+              ? null
+              : round4(scores.reduce((sum, p) => sum + p, 0) / scores.length),
+          hit_number: scores.length === 0 ? null : 1,
+        },
+      };
+    },
+    guestChallengeUrl(): string | null {
+      // No server signs a challenge in the mock world.
+      return null;
+    },
+    makeGuest(agreesPublic: boolean): Promise<GuestAck> {
+      if (instantMode !== "open") {
+        return Promise.reject(new ApiError(404, undefined, "not found"));
+      }
+      if (signedIn) {
+        return Promise.resolve({ kind: "account", owner: player });
+      }
+      if (guest !== null) {
+        if (agreesPublic) {
+          guestNotice = noticeVersion;
+        }
+        return Promise.resolve({ kind: "guest", owner: guest });
+      }
+      if (agreesPublic !== true) {
+        return refused(400, "notice");
+      }
+      guest = MOCK_GUEST;
+      guestNotice = noticeVersion;
+      return Promise.resolve({ kind: "guest", owner: guest });
     },
 
     // ── §7 surfaces: the contract, mock-served this phase ──────
@@ -1255,6 +1608,7 @@ export function makeMockApi(options: MockOptions = {}): Api {
         closes_at_utc: closesAtUtc,
         public_data_url: options.publicDataUrl ?? null,
         pick_protocol: "commit-v1",
+        instant: instantMode,
       });
     },
     getSessions(): Promise<SessionsView> {
@@ -1368,6 +1722,16 @@ export function makeMockApi(options: MockOptions = {}): Api {
         recovery: code,
         agreedNotice: noticeVersion,
       });
+      // The guest of this browser becomes the account (spec IM1 §7.4).
+      if (guest !== null) {
+        for (const trial of instantTrials) {
+          if (trial.owner === guest) {
+            trial.owner = name;
+          }
+        }
+        guest = null;
+        guestNotice = null;
+      }
       enter(name);
       return Promise.resolve({
         player: name,

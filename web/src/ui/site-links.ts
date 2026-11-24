@@ -16,13 +16,25 @@ export const PUBLIC_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The public page of one instant trial (spec IM1 §10) is open to each
+ * browser too. Its path holds the trial, so it is a prefix and not one
+ * of the fixed paths.
+ */
+export const TRIAL_PATH_PREFIX = "/t/";
+
+/** True for a path that a browser with no session can open. */
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.has(pathname) || pathname.startsWith(TRIAL_PATH_PREFIX);
+}
+
+/**
  * The screens with no footer (spec F1 §2): the two drawing screens,
  * where the canvas takes the window height and a phone pins the send
  * bar above the tab bar.
  */
 export const NO_FOOTER_PATHS: ReadonlySet<string> = new Set([
   "/today",
-  "/practice",
+  "/instant",
 ]);
 
 /**

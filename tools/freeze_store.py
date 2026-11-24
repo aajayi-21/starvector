@@ -12,6 +12,9 @@ a release changes what a store can hold, make a new frozen store with a
 new label, and keep the earlier ones.
 
     uv run python -m tools.freeze_store --label 2026-11
+
+The world also holds the instant trials and the guests of spec IM1,
+from the second frozen store on (label 2026-11-im1).
 """
 
 import argparse
@@ -48,6 +51,10 @@ LEFT_OUT = ("pool-keys", "images", "day-scores", "index", "cache",
 
 DAYS = ("2026-11-01", "2026-11-02", "2026-11-04", "2026-11-05",
         "2026-11-06")
+
+# The cap of all owners on one date, for the instant trials of the
+# world (spec IM1 decision D4). The world has six starts.
+INSTANT_DAY_CAP = 100
 
 
 def _clock(day: str, hour: int) -> str:
@@ -143,6 +150,72 @@ def _records() -> dict[str, dict]:
         "refused": {**mixed,
                     "impressions": [f"{REFUSAL_MARKER} one", "cold air"]},
     }
+
+
+def _instant_part(root: Path, data: Path, config: object,
+                  config_path: str, providers: dict,
+                  records: dict[str, dict]) -> None:
+    """Write the instant trials and the guests of the world (spec IM1).
+
+    One trial of an account, one of a guest with a withheld response,
+    one of a guest that an account claims, one send with no result, and
+    one start with no send. The engine writes each record, as the server
+    does. The world has no network, thus the beacon is the fake chain.
+    """
+    from core.intake import validate_submission
+    from pipeline.config import load_scoring_config
+    from service import (guests, instant, instant_book, instant_store,
+                         limits, notice, scoring, settle)
+    from service.beacon import make_source
+    from service.day import make_trial_code
+
+    wired = scoring.wire_for_close(
+        load_scoring_config(Path(config_path)), config_path, data, providers)
+    world = settle.instant_world(
+        root=root, data_root=data, roots_dir=Path(config.pool_roots_dir),
+        day_cap_all=INSTANT_DAY_CAP, source=make_source(config.beacon),
+        wired=wired, scoring_config_path=config_path,
+        notice=notice.NOTICE_VERSION)
+    book = instant_book.InstantBook()
+    moment = [datetime.datetime.fromisoformat(_clock(DAYS[4], 13))]
+
+    def now() -> datetime.datetime:
+        moment[0] += datetime.timedelta(seconds=7)
+        return moment[0]
+
+    def play(owner: object, variety: str | None,
+             result: bool = True) -> object:
+        cap = limits.instant_day_cap(owner.kind)
+        entry = settle.start_trial(world, book, owner, [owner], cap, now(),
+                                   make_trial_code)
+        if variety is None:
+            return entry
+        wire = records[variety]
+        settle.encode_send(wired, validate_submission(
+            wire, wired.context.gates, wired.context.render.canvas_px))
+        settle.store_send(world, book, wired, entry, [owner], cap, wire, now)
+        if result and settle.settle_due(world, book, lambda: wired,
+                                        now().timestamp(), now) != 1:
+            raise RuntimeError("an instant trial of the world got no result")
+        return entry
+
+    account = instant.Owner(instant.ACCOUNT, "ade")
+    play(account, "mixed")
+    first, _ = guests.make_guest(root, notice=notice.NOTICE_VERSION,
+                                 instant=now())
+    held = play(instant.Owner(instant.GUEST, first), "text")
+    instant_store.write_withheld(root, instant_store.WithheldTrial(
+        date=held.date, trial_id=held.trial_id,
+        withheld_at=_clock(DAYS[4], 14),
+        note="fixture: a withheld instant response"))
+    second, _ = guests.make_guest(root, notice=notice.NOTICE_VERSION,
+                                  instant=now())
+    play(instant.Owner(instant.GUEST, second), "sketch")
+    guests.claim_guest(root, second, "bru", now())
+    # The last two have no result: a send that waits for its pulse, and
+    # a start with no send.
+    play(account, "colored", result=False)
+    play(instant.Owner(instant.GUEST, first), None)
 
 
 def _build_world() -> dict:
@@ -275,6 +348,11 @@ def _build_world() -> dict:
     play(vp1_config, DAYS[4], {"ade": "colored"},
          now=lambda: before(DAYS[4]))
     store.write_start(root, DAYS[4], "ade", _clock(DAYS[4], 11))
+
+    # The instant trials and the guests (spec IM1), with the config of
+    # the channel scores and the pool key of the vp1 world.
+    _instant_part(root, data, vp1_config, str(channels_path), providers,
+                  records)
 
     # A revoked player, a deleted account, and the identifiers that a
     # public snapshot shows for them.

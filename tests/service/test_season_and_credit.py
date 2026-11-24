@@ -101,7 +101,9 @@ def test_the_season_facts_need_no_session(tmp_path) -> None:
     assert answer.json() == {"test_season": True, "photo_count": 40,
                              "closes_at_utc": "22:00",
                              "public_data_url": None,
-                             "pick_protocol": "commit-v1"}
+                             "pick_protocol": "commit-v1",
+                             # Spec IM1 section 12.5.
+                             "instant": "off"}
 
 
 def test_a_revealed_target_carries_its_credit(tmp_path,

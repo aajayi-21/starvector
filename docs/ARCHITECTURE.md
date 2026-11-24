@@ -60,6 +60,10 @@ Every specialized term used in this document, defined once. Terms are used consi
 
 **Trial** — One player's attempt at one day's target.
 
+**Daily challenge** — The trial of one day: one send for each account, with a target that the pulse after the scheduled close picks (§22). The boards and the skill number read the daily challenge alone. *Added 2026-11-23 (`docs/specs/instant-mode.md`).*
+
+**Instant trial** — A trial with its own target, which a beacon pulse picks some seconds after the send (§22). A guest or an account plays it. No board and no skill number reads it. *Added 2026-11-23 (`docs/specs/instant-mode.md`).*
+
 **Submission** — Everything a player sends for one trial. Written `q`.
 
 **Atom** — One unit of a submission. Either a written impression ("tall metallic structure"), a group of sketch strokes, or a stated relationship between two other atoms. A submission is a set of atoms.
@@ -915,6 +919,8 @@ Section 22 requires that no score feedback of any kind reaches the player before
 
 Practice mode — replaying past targets for immediate feedback — is the only place the scoring path is genuinely interactive. Build for it anyway: it makes practice mode possible, it makes rescoring your entire history cheap, and it costs almost nothing extra.
 
+**Note, 2026-11-23 — the instant trial replaces practice mode.** Spec IM1 (`docs/specs/instant-mode.md`) removes the practice screen and adds the instant trial, which is the interactive use of the scoring path from that date. The server encodes at the send, and it ranks when the beacon pulse of the trial comes. The budget of the fast path applies to that scoring. The player waits 3 to 6 seconds for the pulse, and the scoring time is a small part of that wait.
+
 ### The fast path budget
 
 Target: **under 50 ms** for Layers 0 through 8, with a pool of 20,000. (The production pool is 7,500 — spec PP1 records the measurement at that count. The 20,000 numbers below stay as the sizing ceiling.)
@@ -1125,7 +1131,11 @@ Failures here invalidate results no matter how good the scoring is.
 
 **The pick after the close.** The target comes from a public randomness beacon (drand quicknet) at a pulse after the scheduled close, from a pool fixed by a salted Merkle root committed to the public repository before the day opens. No target exists during play, so there is nothing to commit to, leak, or select. The open names the pulse. The reveal publishes the pulse, the target's position, and its proof, and anyone can recompute the pick. Sends are refused by the clock at the scheduled close, and the pulse comes from the scheduled instant plus a margin, not from the moment the operator closes. Spec VP1 (`docs/specs/post-close-pick.md`) defines it. This replaces the earlier commitment (a hash of the target and a secret published at open). That commitment proved the target did not change, but not that it was picked fairly. Days opened with it keep that check.
 
+**Note, 2026-11-23 — the instant trial.** Spec IM1 (`docs/specs/instant-mode.md`) adds a trial with no daily window. The player sends, and the first beacon pulse at or after the send time plus 3 seconds picks the target of that one trial. The pick reads the pulse, the digest of the stored send, and a secret value of the server. The receipt of the send holds a commitment to that value. No target is there at the time of the send, thus the rule on feedback holds: the result comes after the one send of the trial. The pick reads the full pool each time. An instant trial is in no board and in no Layer 9 number of the daily challenge, and no weight is fitted on it (§19).
+
 **Autocomplete leakage.** If the impressions field offers autocomplete built from pool element lists, **it reveals the pool's composition to the player.** This is an integrity bug independent of scoring. Either build the suggestion list from an external dictionary, or drop autocomplete — do not build it from the pool and still call the trial blind.
+
+**Note, 2026-11-23 — instant results show pool images.** Each result of an instant trial shows one pool image, thus a player learns the pool composition with time (spec IM1 §17). This is accepted. For one fixed submission, an image that is picked with equal chance from the pool, after the send, is equally likely at each rank. That holds for a player who knows each image of the pool, thus pool knowledge gives no expected advantage. The rule on suggestions stays as it is: this note changes nothing of the intake.
 
 ---
 

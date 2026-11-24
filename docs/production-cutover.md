@@ -32,7 +32,10 @@ out of each transcript. `<box>` is your SSH address of the box, and
   player score 30 practice sketches an hour, and let all players together
   score 600 an hour. That is 14,400 practice sketches a day at the limit.
   Set the OpenRouter spend cap to a value that you accept for that
-  day.
+  day. *Note, 2026-11-24 (spec IM1):* practice is gone. The instant
+  trial takes its position, and `instant_day_cap` in the server
+  configuration is the bound on its sends for one date
+  (`deploy/README.md` §10).
 - **The cutover time.** Select a day. The last test day closes at
   `closes_at_utc`, and the cutover starts after its reveal. Plan two
   hours. The first production day opens at the end of the cutover and

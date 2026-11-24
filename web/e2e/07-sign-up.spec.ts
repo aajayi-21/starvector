@@ -23,7 +23,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   );
   // The server names the notice version this build holds (spec R1
   // §3.2): with a different number the gate offers no account.
-  expect((await probe.json()).notice_version).toBe(2);
+  expect((await probe.json()).notice_version).toBe(3);
   // One name for each run of this spec: a claimed name stays claimed.
   const username = `e2e-${Date.now().toString(36)}`;
 
@@ -67,7 +67,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   ).toBeVisible();
   await expect(
     page.getByText(
-      /After you send, each player who sent that day can see your sketch\. After each day closes, each person can see your username, score and sketches on your public page, and your words in an open database\. Do not sketch or type anything private\./,
+      /An instant trial is public when its result comes: each person with its address can see your sketch, your score and your name\. After you send to a daily challenge, each player who sent that day can see your sketch\. After each day closes, each person can see your username, score and sketches on your public page, and your words in an open database\. Do not sketch or type anything private\./,
     ),
   ).toBeVisible();
   await expect(
@@ -127,7 +127,7 @@ test("a new player signs up, signs in, and recovers", async ({ page }) => {
   expect(me.operator_code).toBeNull();
   // The sign-up wrote the agreement to the current notice with the
   // account, thus no notice screen came before the app.
-  expect(me.notice.version).toBe(2);
+  expect(me.notice.version).toBe(3);
   expect(me.notice.agreed).toBe(true);
 
   // Sign out, then sign in with the pair.

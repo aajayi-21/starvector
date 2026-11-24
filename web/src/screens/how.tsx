@@ -2,7 +2,7 @@
  * How it works (spec BR1 §6): the game in plain words. Each sentence
  * here is a claim about the scoring, so each one says what the
  * system does and no more — the result is a rank among the photos,
- * 50% is what guessing averages, and practice stores nothing. The
+ * 50% is what guessing averages, and an instant trial has no board. The
  * premise is stated as a question, because the game tests it and does
  * not assume an answer (spec PL1 §8).
  */
@@ -134,7 +134,7 @@ export function HowItWorksScreen(): React.JSX.Element {
       </section>
 
       <section>
-        <h2>Days and practice</h2>
+        <h2>The daily challenge and instant trials</h2>
         <p>
           You can send once each day, and you can't change it after.
           {hour === null
@@ -142,8 +142,10 @@ export function HowItWorksScreen(): React.JSX.Element {
             : ` A new day starts at ${localTimeOfUtc(hour)} your time, when the last one closes and its photo is revealed.`}
         </p>
         <p>
-          In <Link to="/practice">Practice</Link> you can replay past photos, up
-          to an hourly limit. Practice results are never saved and never count.
+          In an <Link to="/instant">instant trial</Link> you sketch first, and a
+          photo is picked a few seconds after you send. Instant trials are saved
+          and public, with a daily limit, and they never count on the
+          leaderboard.
         </p>
       </section>
 

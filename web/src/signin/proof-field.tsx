@@ -28,9 +28,18 @@ type StateDetail = { state: string; payload?: string };
 export function ProofField(props: {
   /** The payload when the widget is done; `undefined` until then. */
   onProof: (payload: string | undefined) => void;
+  /**
+   * Where the widget reads its challenge. With none given, it is the
+   * challenge of the sign-up form. The guest gate gives its own (spec
+   * IM1 §7.2). `null` is the mock world.
+   */
+  challengeUrl?: string | null;
 }): React.JSX.Element | null {
   const api = useApi();
-  const challengeUrl = api.signupChallengeUrl();
+  const challengeUrl =
+    props.challengeUrl === undefined
+      ? api.signupChallengeUrl()
+      : props.challengeUrl;
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const widget = useRef<HTMLElement>(null);

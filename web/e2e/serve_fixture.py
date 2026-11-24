@@ -1,8 +1,10 @@
 """The e2e fixture server (spec W1 B11, grown by spec M1 B9).
 
 Runs the live trial server on a throwaway store: fake providers,
-warm commonness tables, one revealed day for practice and one open
-day to play. No network and no API key — the fixture config wires
+warm commonness tables, one revealed day and one open day to play.
+Instant trials are open to accounts and guests (spec IM1), with the
+fake beacon and a pool key, and the loop that gives each send its
+result runs in this process. No network and no API key — the fixture config wires
 the fake encoder slots. Playwright's webServer starts this script
 and waits on the port.
 
@@ -84,11 +86,15 @@ def main() -> None:
     # Its days are dated from today, because a vp1 day refuses each send
     # after its close by the clock. The Playwright suite runs the default.
     vp1 = os.environ.get("SV_E2E_PROTOCOL") == "vp1"
-    if vp1:
-        fixture = make_vp1(fixture, root, closes_at_utc="22:00")
+    # The instant trial needs the pool key, the committed pool root,
+    # and the beacon part of a vp1 world (spec IM1 section 12.5). The
+    # days of the default world keep the pick at the open.
+    fixture = make_vp1(fixture, root, closes_at_utc="22:00")
     # The close time lights the countdown field (spec S2 B8).
-    config = dataclasses.replace(fixture["service_config"],
-                                 closes_at_utc="22:00", signup="open")
+    config = dataclasses.replace(
+        fixture["service_config"], closes_at_utc="22:00", signup="open",
+        pick_protocol="vp1" if vp1 else "commit-v1",
+        instant="open", instant_day_cap=1_000_000)
 
     def clock() -> str:
         return FIXED_CLOCK
@@ -152,12 +158,15 @@ def main() -> None:
     # console, and the console reads the dev surfaces.
     # The browser solves the challenges of the sign-up card with the
     # cheap settings of the tests (spec PW1 section 7).
-    uvicorn.run(create_app(config, dev_mode=True, cookie_secure=False,
-                           operator_token=OPERATOR_TOKEN,
-                           digester=Argon2Digester(pepper=PEPPER),
-                           proof_keys=QUICK_PROOF_KEYS,
-                           proof_settings=QUICK_PROOF),
-                host="127.0.0.1", port=port, log_level="warning")
+    app = create_app(config, dev_mode=True, cookie_secure=False,
+                     operator_token=OPERATOR_TOKEN,
+                     digester=Argon2Digester(pepper=PEPPER),
+                     proof_keys=QUICK_PROOF_KEYS,
+                     proof_settings=QUICK_PROOF)
+    # The loop that gives each instant send its result (spec IM1
+    # section 5.5), as the start-up path of the server does.
+    app.state.instant.start()
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
 if __name__ == "__main__":

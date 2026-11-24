@@ -35,7 +35,7 @@ describe("the shell", () => {
     const paths: Array<[string, RegExp]> = [
       ["/", /Today's photo is hidden behind this code/],
       ["/today", /Review and send/],
-      ["/practice", /Nothing here is saved or counted/],
+      ["/instant", /Every trial is saved and public/],
       ["/history", /Each day you've played/],
       ["/leaderboard", /players · code/],
       ["/reveal", /You beat \d+% of the photos/],
@@ -76,6 +76,7 @@ describe("the shell", () => {
           closes_at_utc: "22:00",
           public_data_url: null,
           pick_protocol: "commit-v1",
+          instant: "open",
         }),
     };
     renderAt("/", api);

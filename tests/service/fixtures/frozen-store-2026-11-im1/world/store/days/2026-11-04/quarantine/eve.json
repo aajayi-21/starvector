@@ -1,0 +1,12 @@
+{
+  "cause": "input-refused",
+  "day": "2026-11-04",
+  "decided_by": "operator",
+  "error": "fake text encoder: refused 1 input(s) of 4",
+  "note": "fixture: the provider refuses this text",
+  "player": "eve",
+  "quarantined_at": "2026-11-04T23:00:00+00:00",
+  "submission_digest": "35d1e91c27888351125e0eb24d8ab5c6f7435a28e2236c978c9b7a4793d2aee3",
+  "trial_id": "0000000000000000000000000000000b",
+  "tries": 1
+}

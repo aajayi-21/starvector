@@ -13,6 +13,9 @@
  *   password to type (spec A2 §3.5);
  * - on a dev server, the open door (spec A1 §4).
  *
+ * With guest play on, the screen also has `Try an instant trial`, which
+ * opens the guest gate (spec IM1 §7.2): no name and no password.
+ *
  * A sign-up and a recovery answer with a recovery code. The screen
  * shows it one time and reads `me` again only after the player clicks
  * `I've saved my code`, thus the app does not replace the code before
@@ -25,6 +28,7 @@ import { useState } from "react";
 import { useApi } from "../api/client";
 import { isRefusal } from "../api/types";
 import { GateCard } from "../signin/gate-card";
+import { GuestCard } from "../signin/guest-card";
 import { RecoveryCodeStep } from "../signin/recovery-code-step";
 import { SignupProgress } from "../signin/signup-progress";
 import { SiteFooter } from "../ui/footer";
@@ -42,7 +46,13 @@ interface ShownCode {
   replaces: boolean;
 }
 
-export function WelcomeScreen(): React.JSX.Element {
+export function WelcomeScreen(props: {
+  /**
+   * A guest who came here to make an account goes back to guest play
+   * with this (spec IM1 §16). A browser with no guest has none.
+   */
+  onBackToGuest?: () => void;
+}): React.JSX.Element {
   const api = useApi();
   const queryClient = useQueryClient();
   const about = useQuery({
@@ -64,6 +74,10 @@ export function WelcomeScreen(): React.JSX.Element {
     staleTime: Number.POSITIVE_INFINITY,
   });
   const [shown, setShown] = useState<ShownCode | null>(null);
+  // The guest gate takes the position of the gate card (spec IM1 §7.2).
+  const [guestOpen, setGuestOpen] = useState(false);
+  const guestsOn =
+    about.data?.instant === "open" && props.onBackToGuest === undefined;
   // The cookie came with the answer. Each query of the app starts
   // again, thus the shell reads me and renders signed in, and no
   // screen shows a cached answer of an account that was signed in
@@ -115,17 +129,49 @@ export function WelcomeScreen(): React.JSX.Element {
             ) : null}
           </div>
           <div className="welcome-signin">
-            {shown === null ? (
-              <GateCard
-                signupOpen={signup.data?.open === true}
-                signupClosed={isRefusal(signup.error)}
-                noticeVersion={signup.data?.notice_version}
-                doorOpen={door.data?.open === true}
-                onSignedIn={enter}
-                onRecoveryCode={(code, replaces) =>
-                  setShown({ code, replaces })
-                }
-              />
+            {guestOpen ? (
+              <GuestCard onDone={enter} onBack={() => setGuestOpen(false)} />
+            ) : shown === null ? (
+              <>
+                {guestsOn ? (
+                  <div className="guest-entry">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-large btn-block"
+                      onClick={() => setGuestOpen(true)}
+                    >
+                      Try an instant trial
+                    </button>
+                    <p className="subtle tiny">
+                      No account needed. Or sign in below.
+                    </p>
+                  </div>
+                ) : null}
+                {props.onBackToGuest === undefined ? null : (
+                  <div className="guest-entry">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={props.onBackToGuest}
+                    >
+                      Back to your instant trials
+                    </button>
+                    <p className="subtle tiny">
+                      Make an account and your instant trials come with you.
+                    </p>
+                  </div>
+                )}
+                <GateCard
+                  signupOpen={signup.data?.open === true}
+                  signupClosed={isRefusal(signup.error)}
+                  noticeVersion={signup.data?.notice_version}
+                  doorOpen={door.data?.open === true}
+                  onSignedIn={enter}
+                  onRecoveryCode={(code, replaces) =>
+                    setShown({ code, replaces })
+                  }
+                />
+              </>
             ) : (
               <>
                 {/* A sign-up is at its second part; a recovery has no

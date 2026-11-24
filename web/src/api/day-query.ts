@@ -51,7 +51,7 @@ const RESULT_QUERIES = [
   "me",
   "leaderboard",
   "skill-board",
-  "practice-days",
+  "revealed-days",
   "reveal",
   // The sketches of a day open to each player at its reveal (spec SS1).
   "day-sends",

@@ -131,11 +131,12 @@ test("the built app obeys the Caddyfile's content policy", async ({ page }) => {
   await signIn(page);
   await blockExternalHosts(page);
   const violations = await withCaddyPolicy(page);
-  for (const screen of ["/", "/today", "/practice", "/history", "/how"]) {
+  for (const screen of ["/", "/today", "/instant", "/history", "/how"]) {
     await page.goto(screen);
     await expect(page.locator("#root")).not.toBeEmpty();
   }
-  await page.goto("/practice");
+  await page.goto("/instant");
+  await page.getByRole("button", { name: "Get a code" }).click();
   await expect(page.getByTestId("sketch-canvas")).toBeVisible();
   expect(violations).toEqual([]);
 });

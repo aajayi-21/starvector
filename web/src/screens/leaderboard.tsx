@@ -132,10 +132,10 @@ export function LeaderboardScreen(): React.JSX.Element {
     queryFn: () => api.getSkillLeaderboard(),
   });
   // The list of revealed days, the newest first, with the code of each.
-  // The key and the request of the practice screen: one read serves both.
+  // The key and the request of the row of days in Play: one read serves both.
   const days = useQuery({
-    queryKey: ["practice-days"],
-    queryFn: () => api.getPracticeDays(),
+    queryKey: ["revealed-days"],
+    queryFn: () => api.getRevealedDays(),
     retry: false,
   });
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });

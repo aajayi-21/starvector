@@ -37,11 +37,12 @@ LIVE_DAY = "2026-08-31"
 
 # One active player in the busiest ten minutes of a day: an open tab
 # across the close polls each 20 s (web/src/api/day-query.ts), one app
-# load reads three paths, and the player sends one time and practices
-# one time. The busiest ten minutes set the capacity, because the mean
-# rate of a day is far below this.
+# load reads three paths, and the player sends one time and plays one
+# instant trial (spec IM1 section 15: the instant trial replaced the
+# practice score). The busiest ten minutes set the capacity, because
+# the mean rate of a day is far below this.
 MODEL_WINDOW_SECONDS = 600.0
-PLAYER_MODEL = {"day": 30 + 1, "me": 1, "history": 1, "send": 1, "practice": 1}
+PLAYER_MODEL = {"day": 30 + 1, "me": 1, "history": 1, "send": 1, "instant": 1}
 
 
 def player_rate() -> float:
@@ -116,13 +117,20 @@ def _build_world(root: Path, *, players: int, pool: int,
     """
     sys.path.insert(0, str(REPO / "tests"))
     sys.path.insert(0, str(REPO / "tests" / "service"))
-    from svc_fixture import FIXED_CLOCK, build_service_fixture, mixed_wire_record
+    from dataclasses import replace
+
+    from svc_fixture import (FIXED_CLOCK, build_service_fixture, make_vp1,
+                             mixed_wire_record)
 
     from service import access, players as player_commands, store
     from service.day import close_day, open_day, reveal_day
 
-    fixture = build_service_fixture(root, count=pool)
-    config = fixture["service_config"]
+    # The days keep the pick at the open. The instant trials get the
+    # pool key, the committed root, and the fake beacon of a vp1 world,
+    # with a cap far above the count of this measurement.
+    fixture = make_vp1(build_service_fixture(root, count=pool), root)
+    config = replace(fixture["service_config"], pick_protocol="commit-v1",
+                     instant="accounts", instant_day_cap=10**9)
 
     def clock() -> str:
         return FIXED_CLOCK
@@ -158,24 +166,23 @@ def _build_world(root: Path, *, players: int, pool: int,
 
 
 def serve(root: Path, port: int) -> None:
-    """The server process: the app of the deployment, with no practice
-    limit, because this measures the scoring path and not the limiter.
-    The limiter stands in front of that path in production."""
+    """The server process: the app of the deployment, with the loop
+    that gives each instant send its result."""
     from dataclasses import replace
 
     import uvicorn
 
-    from service import limits
+    from service.beacon import parse_beacon_config
     from service.config import ServiceConfig
     from service.server import create_app
 
     document = json.loads((root / "load-config.json").read_text())
-    config = replace(ServiceConfig(**document))
-    open_limiter = limits.WindowLimiter(window_seconds=1.0,
-                                        client_cap=10**9, global_cap=10**9)
+    document.pop("beacon")
+    config = replace(ServiceConfig(**document), beacon=parse_beacon_config(
+        {"kind": "fake"}, "load.beacon"))
     app = create_app(config, dev_mode=False, cookie_secure=False,
-                     operator_token=OPERATOR_TOKEN,
-                     practice_limiter=open_limiter)
+                     operator_token=OPERATOR_TOKEN)
+    app.state.instant.start()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning",
                 access_log=False)
 
@@ -229,17 +236,33 @@ async def _client_loop(client, *, stop_at: float, names: list[str],
                     name = unsent.popleft()
                     method, path = "POST", f"/api/submission?day={LIVE_DAY}"
                     body = world["record"]
-            case "practice":
-                method, path = "POST", "/api/practice/score"
-                body = {"day": world["seeded"][-1], "record": world["record"]}
+            case "instant":
+                method, path = "POST", "/api/instant/start"
+        cookie = {"cookie": f"sv_session={sessions[name]}"}
         started = time.perf_counter()
-        answer = await client.request(
-            method, path, json=body,
-            headers={"cookie": f"sv_session={sessions[name]}"})
+        answer = await client.request(method, path, json=body,
+                                      headers=cookie)
         elapsed = (time.perf_counter() - started) * 1000.0
         latencies.setdefault(kind, []).append(elapsed)
+        if kind == "instant" and answer.status_code == 429:
+            # The day cap of this player: the designed answer.
+            continue
         if answer.status_code != 200:
             errors.append(f"{kind} HTTP {answer.status_code} {answer.text[:80]}")
+            continue
+        if kind == "instant":
+            # The send of the trial: the encode and the store write.
+            trial = answer.json()
+            started = time.perf_counter()
+            sent = await client.post(
+                f"/api/instant/{trial['date']}/{trial['trial_id']}/send",
+                json=world["record"], headers=cookie)
+            elapsed = (time.perf_counter() - started) * 1000.0
+            latencies.setdefault("instant-send", []).append(elapsed)
+            # 409: a second client of this player sent the open trial.
+            if sent.status_code not in (200, 409):
+                errors.append(
+                    f"instant-send HTTP {sent.status_code} {sent.text[:80]}")
 
 
 async def _run_level(base_url: str, world: dict, unsent: deque,
@@ -314,7 +337,7 @@ def run_load(*, players: int, pool: int, seeded_days: int,
         process = _start_server(root, port)
         try:
             # Warm the resident context, as the first close or the
-            # first practice does on a live box.
+            # first instant trial does on a live box.
             unsent = deque(world["sessions"])
             asyncio.run(_run_level(base_url, world, deque(), 1, 2.0, 0))
             results: list[LevelResult] = []

@@ -1,0 +1,73 @@
+{
+  "beacon_signature": "66dc76bc46f6732232291cc902a88aa9c01fb04ea3bb9e7bc2a6c7546f492132",
+  "nonce": "f104594f1f2378a970fdb0299e5c23deb0a0a1baa92cd3d214cb6a0d0d0a2865",
+  "randomness": "cab77f65ae5d98bb4938a4dd2ab6a3dc6b1bc57b87ac1fae633d6ebd16c82878",
+  "row": {
+    "beaten": 3,
+    "channel_scores": {
+      "element": {
+        "p": 0.615385,
+        "standardized": 0.223118
+      },
+      "outline": {
+        "p": 0.0,
+        "standardized": -2.126135
+      }
+    },
+    "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+    "decoy_count": 39,
+    "p": 0.076923,
+    "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+    "report": [
+      {
+        "atom_id": "a1",
+        "atom_text": "tall vertical structure",
+        "element": null,
+        "rarity": 3.688879,
+        "similarity": 0.0,
+        "weight": 0.78157
+      },
+      {
+        "atom_id": "a2",
+        "atom_text": "cold and exposed",
+        "element": "place 0",
+        "rarity": 3.688879,
+        "similarity": 0.231985,
+        "weight": 0.55854
+      },
+      {
+        "atom_id": "a3",
+        "atom_text": "tower",
+        "element": "shared element",
+        "rarity": 3.688879,
+        "similarity": 0.327403,
+        "weight": 0.649547
+      },
+      {
+        "atom_id": "a4",
+        "atom_text": "sea",
+        "element": null,
+        "rarity": 3.688879,
+        "similarity": 0.0,
+        "weight": 0.488377
+      }
+    ],
+    "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+    "target_rank": 37,
+    "tied": 0,
+    "trial_id": "762f71f3555ef2d2a04315c9d77f4106"
+  },
+  "settled_at": "2026-11-06T13:00:28+00:00",
+  "target_id": "08ff4db318eddc19cc93743d3d714a1646565bd0823a034094ce87604380b20e",
+  "target_index": 0,
+  "target_proof": [
+    "R:977ae56b84d7ef64c28e8535a86dcd6bdc5b9067866dfc776ed71d30ffde79db",
+    "R:5219e6d9f8432809b0be9a6d890ccaff33fd0d02059349ad25c6bb7152984697",
+    "R:6f4317916cc85806eac489aa9ce32a6bcbd162467b74b81a8d9126ac61a065df",
+    "R:21bfaea0260a204064192f8b659b2bdf3c17368b3aeaca5986ba91b1edb11bdd",
+    "R:0dfac4c6f0940e08ab8540cec9e39e66e83400b810a33710e30db807b5966cac",
+    "R:1dd8b37f59d7cb29cd23dad7c26bf0073a30432741655503f52cca4ea358c3e2"
+  ],
+  "target_salt": "a3d1daec4de91bded6e9a5a99edfb58ed7d0f1d00c33798558d4da23e003382f",
+  "trial_id": "762f71f3555ef2d2a04315c9d77f4106"
+}

@@ -34,6 +34,10 @@ These values are mine and not from an earlier spec. Each one is a named
 constant in `service/limits.py`, and the owner can move each one with one
 edit.
 
+*Note, 2026-11-23 (spec IM1 §6 and §15):* practice goes, and its two
+limits go with it. The instant trial has the limits of spec IM1 §6, and
+the load test of §6 gets an instant trial where it has a practice score.
+
 **The caps sit at the server and not in `core/intake.py`.** Layer 0 is
 frozen, and a stored submission must validate forever. A close and a
 rescore read stored submissions with Layer 0 alone, thus a cap cannot
