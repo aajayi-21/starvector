@@ -13,7 +13,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
 
+from core.aggregate import trial_terms
 from core.canonical import JsonValue, canonical_json, sha256_hex
+from core.types import TrialCounts
 from service.pulse import BeaconChain, pulse_number
 
 # The two types of owner (spec IM1 section 4).
@@ -198,3 +200,39 @@ def start_refusal(*, mode: str, has_pool_key: bool,
         return ("instant is \"open\" and the ALTCHA key is not set - "
                 "a guest is made with a proof of work")
     return None
+
+
+class RecordNumbers(NamedTuple):
+    """The instant record of one owner (spec IM1 section 9).
+
+    sent counts each stored send, and settled counts the sends with a
+    result. mean_p is the mean of the trial scores of the settled
+    trials. hit_number is the hit number of spec AG1 section 4 on those
+    trials alone: 1.0 is the baseline. The two are None with no
+    settled trial.
+    """
+
+    sent: int
+    settled: int
+    mean_p: float | None
+    hit_number: float | None
+
+
+def record_numbers(sent: int, scores: Sequence[float],
+                   counts: Sequence[TrialCounts]) -> RecordNumbers:
+    """The instant record from the stored rows of one owner.
+
+    scores holds the trial score of each settled trial, and counts
+    holds the three counts of the same trials. Layer 9 gives the hit
+    term of each trial, thus no new statistic is made here.
+    """
+    settled = len(scores)
+    if settled != len(counts) or settled > sent:
+        raise InstantError("the rows of the record do not agree")
+    if settled == 0:
+        return RecordNumbers(sent=sent, settled=0, mean_p=None,
+                             hit_number=None)
+    hit_sum = math.fsum(trial_terms(row)[1] for row in counts)
+    return RecordNumbers(sent=sent, settled=settled,
+                         mean_p=math.fsum(scores) / settled,
+                         hit_number=hit_sum / settled)

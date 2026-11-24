@@ -188,6 +188,30 @@ def channel_score_values(record: JsonValue, target_id: TargetId,
     }
 
 
+def instant_row_value(trial_id: str, trial: TrialScore,
+                      report: tuple[MatchRow, ...], wired: WiredScoring,
+                      channel_scores: dict[str, JsonValue] | None = None,
+                      ) -> dict[str, JsonValue]:
+    """The stored trial row of one instant trial (spec IM1 section 5.5).
+
+    The row of trial_row_value with no day and no player: an instant
+    trial has its owner in its start record. One function shapes the
+    row for the result and for a second scoring, thus the two are
+    byte-equal.
+    """
+    extra = {} if channel_scores is None \
+        else {"channel_scores": channel_scores}
+    return {
+        "trial_id": trial_id,
+        **_trial_value(trial),
+        "report": _report_rows(report),
+        "scoring_config_hash": wired.scoring_hash,
+        "commonness_config_hash": wired.commonness_hash,
+        "preparation_version_id": wired.preparation_version_id,
+        **extra,
+    }
+
+
 class DayPrecompute(NamedTuple):
     """The section 18 day-start values for one target (P5 item B4)."""
 

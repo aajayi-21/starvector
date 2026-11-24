@@ -944,3 +944,31 @@ IM1.2.
   part of IM1.5. The start-up guard is a pure function,
   `instant.start_refusal`. The server reads it when IM1.6 adds the
   paths.
+- **Built on 2026-11-23, IM1.6:** `service/instant_book.py` (the
+  instant records in memory), `service/settle.py` (the start, the send,
+  the result, and the loop), and the five paths of an account in
+  `service/server.py`.
+- **A read scores nothing.** The result answer of §5.5 has no head of
+  the ranking. Each of its values comes from the three stored records
+  of the trial, thus a `GET` does no encode and costs no money. The
+  trial numbers hold `target_rank`.
+- **The caps are also read at the start,** thus a player at a cap gets
+  no code for a send that the server then refuses.
+- **The loop.** One turn each second settles the sends that are due.
+  The start-up path of the server starts it, and a test asks for one
+  turn. A clock measurement that does not come is tried again after 30
+  seconds, the largest pause of the beacon reads.
+- **The last trials** of `GET /api/instant` are 24, the page count of
+  spec SS1 D2.
+- **Faults go to the process journal** with the name
+  `starvector.instant`. A line in the operator journal for two relays
+  that do not agree (§5.6) is not built.
+- **The beacon guard of §5.6 is not built.** D3 is open. The cap of
+  all owners is the bound on the pending sends until then.
+- **A pending send holds its configuration.** A server that changes the
+  pool or the scoring configuration with a send pending gives that send
+  no result, and writes a journal line. Make such a change when no send
+  is pending.
+- **For subsequent items:** the web types of `GET /api/about` (IM1.10),
+  the two-world test of the daily answers, and the frozen store
+  (IM1.13).

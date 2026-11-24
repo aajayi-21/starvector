@@ -25,7 +25,7 @@ import sqlite3
 import sys
 import threading
 import urllib.parse
-from collections.abc import Container, Mapping
+from collections.abc import Callable, Container, Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -46,6 +46,10 @@ from pool.preparation.config import load_preparation_config
 from service import (access, auth, console, credits, digests, limits,
                      notice, operator_plan, passwords, proofs, rollover,
                      rollup, schedule, signin, sketches, store)
+from core.canonical import quantize_measured
+from service import (instant, instant_book, instant_store, pool_keys,
+                     settle)
+from service.beacon import BeaconSource, clock_offset, make_source
 from service.config import (ServiceConfig, ServiceConfigError,
                             load_service_config)
 from service.pulse import chain_named, pulse_time
@@ -320,6 +324,8 @@ def create_app(service_config: ServiceConfig,
                usual_passwords: Container[str] | None = None,
                proof_keys: proofs.ProofKeys | None = None,
                proof_settings: proofs.ProofSettings = proofs.DEPLOYED,
+               instant_source: BeaconSource | None = None,
+               instant_clock_offset: Callable[[], float] | None = None,
                ) -> FastAPI:
     """The app factory - tests run it through TestClient.
 
@@ -354,6 +360,11 @@ def create_app(service_config: ServiceConfig,
     arrives as an argument, as the digester does.
     proof_settings is an argument for the tests, and the default holds
     the values of spec PW1 decision D3.
+
+    instant_source is the beacon source of the instant trials (spec
+    IM1), and instant_clock_offset measures the server clock against
+    it. The two are arguments for the tests. The defaults come from
+    the beacon part of the server configuration.
 
     Raises ServiceConfigError when the store holds player records
     and no operator token is set. A quiet hole is worse than a loud
@@ -399,6 +410,15 @@ def create_app(service_config: ServiceConfig,
         Path(scoring_config.input.preparation_record))
     canvas_px = load_preparation_config(
         Path(record.config_path)).linedraw.canvas_px
+    # The start-up guard of instant mode (spec IM1 section 12.5).
+    instant_stop = instant.start_refusal(
+        mode=service_config.instant,
+        has_pool_key=pool_keys.key_path(
+            Path(service_config.data_root),
+            record.preparation_version_id).is_file(),
+        has_proof_key=proof_keys is not None)
+    if instant_stop is not None:
+        raise ServiceConfigError(instant_stop)
     # The season facts (spec BR1 section 6): a pool with the dev_only
     # flag is a test season, and its numbers stay off each public
     # surface (spec P1a R13). The app labels them as test numbers.
@@ -408,7 +428,10 @@ def create_app(service_config: ServiceConfig,
                    "public_data_url": service_config.public_data_url,
                    # The landing page says when the photo is picked
                    # (spec VP1 section 8), before a sign-in.
-                   "pick_protocol": service_config.pick_protocol}
+                   "pick_protocol": service_config.pick_protocol,
+                   # The switch of the instant trials (spec IM1
+                   # section 12.5): the app shows the mode that is on.
+                   "instant": service_config.instant}
     # A day of this pool can be in a public snapshot (spec R1 section
     # 5), thus a send needs the agreement to the notice.
     publishes = not record.dev_only
@@ -2022,6 +2045,258 @@ def create_app(service_config: ServiceConfig,
         return JSONResponse({"day": day, **value,
                              "credit": image_credits.get(record.target_id)})
 
+    # The instant trial (spec IM1). The book is a cache of the store,
+    # built one time here. The world needs the resident scoring
+    # context, thus the first instant path that runs builds it.
+    instant_mode = service_config.instant
+    book = instant_book.build_book(root) if instant_mode != "off" else None
+    instant_state: dict[str, object] = {}
+    instant_lock = threading.Lock()
+
+    def _instant_source() -> BeaconSource:
+        assert service_config.beacon is not None
+        return instant_source or make_source(service_config.beacon)
+
+    def _instant_world() -> settle.InstantWorld:
+        wired = _resident()
+        with instant_lock:
+            if "world" not in instant_state:
+                assert service_config.instant_day_cap is not None
+                instant_state["world"] = settle.instant_world(
+                    root=root, data_root=data_root,
+                    roots_dir=Path(service_config.pool_roots_dir),
+                    day_cap_all=service_config.instant_day_cap,
+                    source=_instant_source(), wired=wired,
+                    scoring_config_path=service_config.scoring_config,
+                    notice=notice.NOTICE_VERSION)
+            return instant_state["world"]   # type: ignore[return-value]
+
+    def _read_clock_offset() -> float:
+        if instant_clock_offset is not None:
+            return instant_clock_offset()
+        source = _instant_source()
+        if source.chain.name == "fake":
+            # The fake source has the clock of this process.
+            return 0.0
+        return clock_offset(service_config.beacon.relays[0])
+
+    settle_loop = None
+    if book is not None:
+        settle_loop = settle.SettleLoop(
+            world=_instant_world, book=book, wired=_resident,
+            clock=lambda: utc_now(), read_offset=_read_clock_offset)
+        if instant_clock_offset is not None \
+                or _instant_source().chain.name == "fake":
+            # These measurements use no network, thus the first send
+            # does not wait for the first tick of the loop.
+            settle_loop.measure()
+    # The start-up path starts the loop, and a test calls tick.
+    app.state.instant = settle_loop
+
+    def _instant_owner(request: Request) -> instant.Owner | Response:
+        """The owner behind an instant path, or the constant refusal.
+
+        With instant mode off each instant path gives the constant
+        404. In this phase an owner is an account (spec IM1 section
+        7.5 adds the guest).
+        """
+        if book is None:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        caller = _caller(request)
+        if isinstance(caller, Response):
+            return caller
+        return instant.Owner(instant.ACCOUNT, caller)
+
+    def _instant_refusal(error: settle.Refused) -> Response:
+        if error.status == 404:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        return JSONResponse({"cause": error.cause},
+                            status_code=error.status, headers=_NO_STORE)
+
+    def _today() -> str:
+        return utc_now().astimezone(datetime.UTC).date().isoformat()
+
+    def _entry_row(entry: instant_book.Entry) -> dict:
+        return {"date": entry.date, "trial_id": entry.trial_id,
+                "trial_code": entry.trial_code,
+                "received_at": entry.received_at,
+                "status": "pending" if entry.p is None else "settled",
+                "p": entry.p}
+
+    def _record_value(numbers: instant.RecordNumbers) -> dict:
+        return {"sent": numbers.sent, "settled": numbers.settled,
+                "mean_p": None if numbers.mean_p is None
+                else quantize_measured(numbers.mean_p),
+                "hit_number": None if numbers.hit_number is None
+                else quantize_measured(numbers.hit_number)}
+
+    @app.get("/api/instant")
+    def instant_view(request: Request) -> Response:
+        """What the instant screen shows first: the sends that are
+        left today, the open trial, the record, and the last trials.
+
+        A function of the instant records of the caller alone. It
+        reads no day record (spec IM1 section 4).
+        """
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        assert book is not None
+        today = _today()
+        day_cap = limits.instant_day_cap(owner.kind)
+        sent_today = book.sent_on([owner], today)
+        held = book.open_start(owner)
+        if held is not None and instant.start_expired(held.date, today):
+            held = None
+        sends = book.sends_of([owner])
+        return JSONResponse({
+            "kind": owner.kind, "owner": owner.key,
+            "day_cap": day_cap, "sent_today": sent_today,
+            "left_today": instant.sends_left(sent_today, day_cap),
+            "open": None if held is None else {
+                "date": held.date, "trial_id": held.trial_id,
+                "trial_code": held.trial_code,
+                "started_at": held.started_at},
+            "record": _record_value(book.record_of([owner])),
+            "trials": [_entry_row(entry) for entry in
+                       reversed(sends[-limits.PAGE_ENTRY_CAP:])],
+            "min_strokes": gates.min_strokes_whole_drawing,
+        }, headers=_NO_STORE)
+
+    @app.post("/api/instant/start")
+    async def instant_start(request: Request) -> Response:
+        """Make an instant trial, or give the open one of the caller."""
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        if _needs_agreement(owner.key):
+            return Response(content=_NO_AGREEMENT, status_code=409,
+                            media_type="application/json")
+        assert book is not None
+
+        def work() -> instant_book.Entry:
+            from service.day import make_trial_code
+
+            return settle.start_trial(
+                _instant_world(), book, owner, [owner],
+                limits.instant_day_cap(owner.kind), utc_now(),
+                make_trial_code)
+
+        try:
+            entry = await asyncio.to_thread(work)
+        except settle.Refused as error:
+            return _instant_refusal(error)
+        return JSONResponse({
+            "date": entry.date, "trial_id": entry.trial_id,
+            "trial_code": entry.trial_code,
+            "started_at": entry.started_at}, headers=_NO_STORE)
+
+    @app.post("/api/instant/{date}/{trial_id}/send")
+    async def instant_send(request: Request, date: str,
+                           trial_id: str) -> Response:
+        """Store the one send of an instant trial, and give its receipt.
+
+        The steps are the eight of spec IM1 section 12.3. No target is
+        there before the pulse of the send, thus no step reads one.
+        The encode comes before the write: a provider that refuses
+        stores nothing.
+        """
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        if _needs_agreement(owner.key):
+            return Response(content=_NO_AGREEMENT, status_code=409,
+                            media_type="application/json")
+        assert book is not None and settle_loop is not None
+        day_cap = limits.instant_day_cap(owner.kind)
+        try:
+            world = await asyncio.to_thread(_instant_world)
+            entry = settle.check_send(
+                world, book, owner, [owner], day_cap, date, trial_id,
+                utc_now(), settle_loop.clock_offset)
+        except settle.Refused as error:
+            return _instant_refusal(error)
+        try:
+            wire_record = await _parsed_body(request)
+        except Exception:
+            return JSONResponse(
+                {"cause": "bad-shape",
+                 "detail": "bad-shape: the body is not JSON"},
+                status_code=400)
+        checked = await _checked_submission(wire_record)
+        if isinstance(checked, Response):
+            return checked
+
+        def work() -> instant_store.SendRecord:
+            wired = _resident()
+            settle.encode_send(wired, checked)
+            return settle.store_send(world, book, wired, entry, [owner],
+                                     day_cap, wire_record, utc_now)
+
+        try:
+            send = await asyncio.to_thread(work)
+        except settle.Refused as error:
+            return _instant_refusal(error)
+        except store.StoreError:
+            # Two sends of one trial at one moment: the one-write file
+            # took the first.
+            return JSONResponse({"cause": "instant-sent"}, status_code=409,
+                                headers=_NO_STORE)
+        return JSONResponse(settle.receipt_value(send), headers=_NO_STORE)
+
+    @app.get("/api/instant/head")
+    def instant_head() -> Response:
+        """The head of the chain of the sends (spec IM1 section 11).
+
+        No identity: each reader can keep a head and compare it with a
+        subsequent chain.
+        """
+        if book is None:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        head = book.head()
+        if head is None:
+            return JSONResponse({"count": 0, "position": None,
+                                 "chain_link": instant.CHAIN_START,
+                                 "received_at": None})
+        return JSONResponse({"count": head.position + 1,
+                             "position": head.position,
+                             "chain_link": head.chain_link,
+                             "received_at": head.received_at})
+
+    @app.get("/api/instant/{date}/{trial_id}")
+    def instant_trial(request: Request, date: str,
+                      trial_id: str) -> Response:
+        """One trial of the caller: started, pending, or its result.
+
+        Each value comes from the stored records of the trial, thus
+        this read scores nothing. Before the result the body is a
+        function of the pulse of the send alone.
+        """
+        owner = _instant_owner(request)
+        if isinstance(owner, Response):
+            return owner
+        assert book is not None
+        entry = book.entry(trial_id)
+        if entry is None or entry.date != date or entry.owner != owner:
+            return Response(content=_DEV_OFF, status_code=404,
+                            media_type="application/json")
+        start = instant_store.read_start_or_none(root, date, trial_id)
+        send = instant_store.read_send_or_none(root, date, trial_id)
+        if start is None or send is None:
+            return JSONResponse({
+                "status": "started", "trial_code": entry.trial_code,
+                "started_at": entry.started_at}, headers=_NO_STORE)
+        result = instant_store.read_result_or_none(root, date, trial_id)
+        if result is None:
+            return JSONResponse(settle.pending_value(send),
+                                headers=_NO_STORE)
+        value = settle.result_value(start, send, result)
+        value["credit"] = image_credits.get(result.target_id)
+        return JSONResponse(value, headers=_NO_STORE)
+
     @app.get("/api/day")
     def day_view(request: Request) -> Response:
         caller = _caller(request)
@@ -2902,7 +3177,10 @@ def create_app(service_config: ServiceConfig,
     def image(request: Request, image_id: str) -> Response:
         if not (dev_mode and _operator_ok(request)):
             targets = _revealed_targets(root)
-            if image_id not in targets:
+            # The target of an instant trial with a result is public
+            # too (spec IM1 section 12.4).
+            if image_id not in targets and not (
+                    book is not None and book.has_target(image_id)):
                 return Response(content=_NOT_REVEALED, status_code=404,
                                 media_type="application/json")
         try:
@@ -3035,6 +3313,9 @@ def main(argv: list[str] | None = None) -> int:
     # An invite of before spec A2 was a credential, and earlier lines
     # hold such paths. The filter stays (spec A2 section 10.1).
     logging.getLogger("uvicorn.access").addFilter(limits.RedactInvitePaths())
+    if app.state.instant is not None:
+        # The loop that settles the instant sends (spec IM1 section 5.5).
+        app.state.instant.start()
     uvicorn.run(app, host="127.0.0.1",
                 port=arguments.port or service_config.port)
     return 0
