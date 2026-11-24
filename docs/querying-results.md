@@ -59,6 +59,33 @@ A count with no `pinned` filter counts each rescore again.
 `report.channel_scores` (spec PL1 section 7). A row of an earlier config
 has none, and it stays byte-equal.
 
+## The instant trials
+
+The private index holds the daily trials alone. An instant trial (spec
+IM1, `docs/specs/instant-mode.md`) is in the store below
+`store/instant/`, and the public database holds it in tables with the
+prefix `instant_`. The README of each snapshot names those tables.
+
+Two commands check the picks of a snapshot with no trust in the
+operator. They read the file alone:
+
+```bash
+uv run python tools/check_day.py --database starvector-public-<date>.sqlite
+uv run python tools/check_instant.py --database starvector-public-<date>.sqlite
+```
+
+The first one checks the pulse of each day with the pick after the
+close. The second one checks the pick of each instant trial, makes sure
+that each pulse came after its send, and walks the chain of the sends.
+With `--fetch`, each command also reads the pulses from two drand
+relays. For one instant trial, save the data of its public page and run
+`tools/check_instant.py --trial trial.json`.
+
+Read the instant trials as one set. A player has more than one instant
+trial on a date and picks which result to show, thus one high trial is
+not evidence. `instant_owner_summary` gives the count and the mean of
+each owner.
+
 ## With sqlite3
 
 Open the file read-only:

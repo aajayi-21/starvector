@@ -16,6 +16,12 @@ The fences (spec R1 section 7), each one pinned by a test:
 - A withheld response has its scores and no text and no sketch.
 - A player with no active record shows by an anonymous identifier.
 
+The instant trials (spec IM1 section 13) are in tables of their own,
+each with the prefix instant_. A trial is in when it has a result, its
+pool is a production pool, and a public beacon picked its target. The
+chain table holds each send of the store, with or without a result:
+its rows hold digests alone, and a reader walks the full chain.
+
 The store files stay the source of truth (CLAUDE.md I4). The build
 reads the store and does not read the private index file, thus a stale
 index cannot put a row of an earlier build in a public file. The build
@@ -42,14 +48,15 @@ from core.intake import IntakeError, validate_submission
 from pipeline.config import intake_gates, load_scoring_config
 from pipeline.context import PreparationRecord, load_preparation_record
 from pool.preparation.config import load_preparation_config
-from service import credits, day_scores, instant_store, notice, store
+from service import (credits, day_scores, guests, instant, instant_store,
+                     notice, store)
 from service.config import ServiceConfigError, load_service_config
 from service.day import day_commitment
-from service.pick_rule import vp1_faults
+from service.pick_rule import instant_faults, vp1_faults
 from service.pulse import chain_named, pulse_time
 from service.index import _counts, _trial_files
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 LICENSE_NAME = "CC BY 4.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
 
@@ -182,6 +189,120 @@ CREATE TABLE trial_channels (
   p REAL NOT NULL,
   PRIMARY KEY (day, player, channel)
 );
+CREATE TABLE instant_owners (
+  owner TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  named INTEGER NOT NULL,
+  first_date TEXT NOT NULL,
+  trial_count INTEGER NOT NULL
+);
+CREATE TABLE instant_chain (
+  chain_position INTEGER PRIMARY KEY,
+  trial_id TEXT NOT NULL UNIQUE,
+  chain_previous TEXT NOT NULL,
+  chain_link TEXT NOT NULL,
+  send_digest TEXT NOT NULL,
+  commitment TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  beacon_chain TEXT NOT NULL,
+  beacon_round INTEGER NOT NULL,
+  settled INTEGER NOT NULL
+);
+CREATE TABLE instant_trials (
+  trial_id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  owner TEXT NOT NULL REFERENCES instant_owners (owner),
+  trial_code TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  settled_at TEXT NOT NULL,
+  seconds_from_start REAL NOT NULL,
+  target_id TEXT NOT NULL,
+  p REAL NOT NULL,
+  target_rank INTEGER NOT NULL,
+  decoy_count INTEGER NOT NULL,
+  beaten INTEGER NOT NULL,
+  tied INTEGER NOT NULL,
+  scoring_config_hash TEXT NOT NULL,
+  preparation_version_id TEXT NOT NULL,
+  pool_label TEXT NOT NULL,
+  pool_image_count INTEGER NOT NULL,
+  pool_root TEXT NOT NULL,
+  beacon_chain TEXT NOT NULL,
+  beacon_round INTEGER NOT NULL,
+  round_time TEXT NOT NULL,
+  beacon_signature TEXT NOT NULL,
+  randomness TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  commitment TEXT NOT NULL,
+  send_digest TEXT NOT NULL,
+  target_index INTEGER NOT NULL,
+  target_salt TEXT NOT NULL,
+  target_proof TEXT NOT NULL,
+  chain_position INTEGER NOT NULL
+);
+CREATE TABLE instant_submissions (
+  trial_id TEXT PRIMARY KEY REFERENCES instant_trials (trial_id),
+  impression_count INTEGER NOT NULL,
+  stroke_count INTEGER NOT NULL,
+  group_count INTEGER NOT NULL,
+  relation_count INTEGER NOT NULL,
+  has_pasted_text INTEGER NOT NULL,
+  withheld INTEGER NOT NULL,
+  pasted_text TEXT,
+  record_json TEXT
+);
+CREATE TABLE instant_impressions (
+  trial_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  PRIMARY KEY (trial_id, position)
+);
+CREATE TABLE instant_strokes (
+  trial_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  group_id TEXT,
+  color TEXT,
+  point_count INTEGER NOT NULL,
+  points_json TEXT NOT NULL,
+  PRIMARY KEY (trial_id, position)
+);
+CREATE TABLE instant_groups (
+  trial_id TEXT NOT NULL,
+  group_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  PRIMARY KEY (trial_id, group_id)
+);
+CREATE TABLE instant_relations (
+  trial_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  relation TEXT NOT NULL,
+  first_group TEXT NOT NULL,
+  second_group TEXT NOT NULL,
+  PRIMARY KEY (trial_id, position)
+);
+CREATE TABLE instant_trial_atoms (
+  trial_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  atom_text TEXT,
+  element TEXT,
+  weight REAL,
+  similarity REAL,
+  rarity REAL,
+  PRIMARY KEY (trial_id, position)
+);
+CREATE TABLE instant_trial_channels (
+  trial_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  standardized REAL NOT NULL,
+  p REAL NOT NULL,
+  PRIMARY KEY (trial_id, channel)
+);
+CREATE VIEW instant_owner_summary AS
+  SELECT t.owner, COUNT(*) AS trial_count, AVG(t.p) AS mean_p,
+         MIN(t.date) AS first_date, MAX(t.date) AS last_date
+  FROM instant_trials AS t GROUP BY t.owner;
+CREATE INDEX instant_trials_by_owner ON instant_trials (owner, chain_position);
 CREATE VIEW trial_facts AS
   SELECT t.day, t.player, t.p, t.target_rank, t.decoy_count, t.beaten,
          t.tied, t.scoring_config_hash, d.trial_code, d.target_id,
@@ -227,7 +348,43 @@ _TABLES: dict[str, tuple[str, ...]] = {
     "trial_atoms": ("day", "player", "position", "atom_text", "element",
                     "weight", "similarity", "rarity"),
     "trial_channels": ("day", "player", "channel", "standardized", "p"),
+    "instant_owners": ("owner", "kind", "named", "first_date",
+                       "trial_count"),
+    "instant_chain": ("chain_position", "trial_id", "chain_previous",
+                      "chain_link", "send_digest", "commitment",
+                      "received_at", "beacon_chain", "beacon_round",
+                      "settled"),
+    "instant_trials": ("trial_id", "date", "owner", "trial_code",
+                       "started_at", "received_at", "settled_at",
+                       "seconds_from_start", "target_id", "p", "target_rank",
+                       "decoy_count", "beaten", "tied", "scoring_config_hash",
+                       "preparation_version_id", "pool_label",
+                       "pool_image_count", "pool_root", "beacon_chain",
+                       "beacon_round", "round_time", "beacon_signature",
+                       "randomness", "nonce", "commitment", "send_digest",
+                       "target_index", "target_salt", "target_proof",
+                       "chain_position"),
+    "instant_submissions": ("trial_id", "impression_count", "stroke_count",
+                            "group_count", "relation_count",
+                            "has_pasted_text", "withheld", "pasted_text",
+                            "record_json"),
+    "instant_impressions": ("trial_id", "position", "text"),
+    "instant_strokes": ("trial_id", "position", "group_id", "color",
+                        "point_count", "points_json"),
+    "instant_groups": ("trial_id", "group_id", "label"),
+    "instant_relations": ("trial_id", "position", "relation", "first_group",
+                          "second_group"),
+    "instant_trial_atoms": ("trial_id", "position", "atom_text", "element",
+                            "weight", "similarity", "rarity"),
+    "instant_trial_channels": ("trial_id", "channel", "standardized", "p"),
 }
+
+# The instant tables that hold rows of a response, with the count column
+# of instant_submissions that each one must agree with.
+_INSTANT_RESPONSE_TABLES = (("impression_count", "instant_impressions"),
+                            ("stroke_count", "instant_strokes"),
+                            ("group_count", "instant_groups"),
+                            ("relation_count", "instant_relations"))
 
 # Text that a public file must not hold: the marks of a credential and
 # of the pool pick (spec R1 section 7).
@@ -253,26 +410,30 @@ def _json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def _preparation_of(record: store.DayRecord) -> PreparationRecord:
-    """The preparation record that one day names, checked.
+def _preparation_of(record: store.DayRecord | instant_store.SendRecord,
+                    ) -> PreparationRecord:
+    """The preparation record that one day or one instant send names,
+    checked.
 
-    The day record names its scoring config, and the config names the
+    The record names its scoring config, and the config names the
     preparation record. Raises when one of them does not read or when
-    the record is not the preparation of the day: a day with a pool
-    that the build cannot name is not a day that the build can put in a
-    public file.
+    the record is not the preparation of the day or of the send: a
+    trial with a pool that the build cannot name is not a trial that
+    the build can put in a public file.
     """
+    where = f"day {record.day}" if isinstance(record, store.DayRecord) \
+        else f"instant trial {record.trial_id}"
     try:
         config = load_scoring_config(Path(record.scoring_config_path))
         preparation = load_preparation_record(
             Path(config.input.preparation_record))
     except Exception as error:
         raise PublicBuildError(
-            f"day {record.day}: cannot read the preparation record of "
+            f"{where}: cannot read the preparation record of "
             f"{record.scoring_config_path}: {error}") from error
     if preparation.preparation_version_id != record.preparation_version_id:
         raise PublicBuildError(
-            f"day {record.day}: the day names the preparation "
+            f"{where}: it names the preparation "
             f"{record.preparation_version_id[:8]} and its scoring config "
             f"names {preparation.preparation_version_id[:8]}")
     return preparation
@@ -355,6 +516,102 @@ def public_days(root: Path) -> list[PublicDay]:
     return found
 
 
+@dataclass(frozen=True, slots=True)
+class PublicInstant:
+    """One instant trial that a snapshot holds, with its pool facts.
+
+    owner is the store key that the trial counts for: the account, the
+    account that claimed the guest of the trial, or a guest with no
+    claim. The last field is the type of that owner.
+    """
+
+    date: str
+    start: instant_store.StartRecord
+    send: instant_store.SendRecord
+    result: instant_store.ResultRecord
+    preparation: PreparationRecord
+    owner: str
+    kind: str
+
+
+def _instant_owner(root: Path,
+                   start: instant_store.StartRecord) -> tuple[str, str]:
+    """The owner that a trial counts for, and its type (spec IM1 7.4):
+    the trials of a claimed guest are trials of the account."""
+    if start.owner_kind == instant.GUEST:
+        claim = guests.read_claim_or_none(root, start.owner)
+        if claim is None:
+            return start.owner, instant.GUEST
+        return claim.player, instant.ACCOUNT
+    return start.owner, instant.ACCOUNT
+
+
+def _chain_row(send: instant_store.SendRecord) -> instant.ChainRow:
+    return instant.ChainRow(
+        position=send.chain_position, previous=send.chain_previous,
+        digest=send.chain_link, trial_id=send.trial_id,
+        send_digest=send.send_digest, commitment=send.commitment,
+        received_at=send.received_at, beacon_round=send.beacon_round)
+
+
+def instant_sends(root: Path) -> list[tuple[str, instant_store.SendRecord]]:
+    """Each stored instant send with its date, in the sequence of the
+    chain. A chain with a fault raises: a store with a removed or a
+    changed send does not make a public file."""
+    found = []
+    for date in instant_store.list_dates(root):
+        for trial_id in instant_store.list_trials(root, date):
+            send = instant_store.read_send_or_none(root, date, trial_id)
+            if send is not None:
+                found.append((date, send))
+    found.sort(key=lambda entry: entry[1].chain_position)
+    faults = instant.chain_faults([_chain_row(send) for _, send in found])
+    if faults:
+        raise PublicBuildError("the chain of the instant sends: "
+                               + faults[0])
+    return found
+
+
+def public_instant(root: Path) -> list[PublicInstant]:
+    """The instant trials that a snapshot holds (spec IM1 section 13),
+    in the sequence of the chain.
+
+    A trial is in when it has a result, its pool is not a development
+    pool, and a public beacon picked its target. The pick of each one
+    is calculated again, and a difference raises.
+    """
+    found = []
+    preparations: dict[str, PreparationRecord] = {}
+    for date, send in instant_sends(root):
+        result = instant_store.read_result_or_none(root, date, send.trial_id)
+        start = instant_store.read_start_or_none(root, date, send.trial_id)
+        if result is None:
+            continue
+        if start is None:
+            raise PublicBuildError(
+                f"instant trial {send.trial_id}: a result with no start")
+        if send.scoring_config_path not in preparations:
+            preparations[send.scoring_config_path] = _preparation_of(send)
+        preparation = preparations[send.scoring_config_path]
+        if preparation.dev_only or send.beacon_chain not in PUBLIC_CHAINS:
+            continue
+        faults = instant_faults(
+            trial_id=send.trial_id, send_digest=send.send_digest,
+            commitment=send.commitment, nonce=result.nonce,
+            signature=result.beacon_signature, randomness=result.randomness,
+            target_id=result.target_id, target_index=result.target_index,
+            target_salt=result.target_salt,
+            target_proof=result.target_proof, pool_count=send.pool_count,
+            pool_root=send.pool_root)
+        if faults:
+            raise PublicBuildError("; ".join(faults))
+        owner, kind = _instant_owner(root, start)
+        found.append(PublicInstant(
+            date=date, start=start, send=send, result=result,
+            preparation=preparation, owner=owner, kind=kind))
+    return found
+
+
 def _needs_identifier(root: Path, player: str) -> bool:
     """A snapshot shows this player with no username: the record is
     revoked, or there is no record (spec R1 section 8)."""
@@ -362,12 +619,17 @@ def _needs_identifier(root: Path, player: str) -> bool:
     return record is None or record.status != "active"
 
 
-def _players_of(root: Path, days: list[PublicDay]) -> list[str]:
+def _players_of(root: Path, days: list[PublicDay],
+                trials: list[PublicInstant] | None = None) -> list[str]:
+    """Each account with a row in the snapshot: the players of the days,
+    and the accounts of the instant trials. A guest is not an account."""
     names: set[str] = set()
     for day in days:
         names.update(store.list_submissions(root, day.record.day))
         names.update(player for player, pinned, _row
                      in _trial_files(root, day.record.day) if pinned)
+    names.update(trial.owner for trial in trials or ()
+                 if trial.kind == instant.ACCOUNT)
     return sorted(names)
 
 
@@ -377,7 +639,8 @@ def write_identifiers(root: Path, instant: datetime.datetime) -> list[str]:
     for."""
     written = []
     stamp = instant.astimezone(datetime.UTC).isoformat()
-    for player in _players_of(root, public_days(root)):
+    for player in _players_of(root, public_days(root),
+                              public_instant(root)):
         if _needs_identifier(root, player) \
                 and store.read_identifier_or_none(root, player) is None:
             store.ensure_identifier(root, player, stamp)
@@ -409,10 +672,163 @@ def _seconds_between(started_at: str | None, received_at: str) -> float | None:
     return (end - start).total_seconds()
 
 
+def _credit_of(credit_cache: dict[str, dict], data_root: Path,
+               preparation: PreparationRecord, target_id: str,
+               where: str) -> dict:
+    """The source page of one target, or a stop: a public file names
+    where each of its photographs comes from."""
+    release_path = preparation.pool_release_record_path
+    if release_path not in credit_cache:
+        credit_cache[release_path] = credits.load_credits(
+            Path(release_path), data_root)
+    credit = credit_cache[release_path].get(target_id)
+    if credit is None:
+        raise PublicBuildError(
+            f"{where}: no source page for the target - the release "
+            f"manifest of {release_path} must be below the data root")
+    return credit
+
+
+def _fill_instant(connection: sqlite3.Connection, root: Path,
+                  data_root: Path, trials: list[PublicInstant],
+                  names: dict[str, str],
+                  credit_cache: dict[str, dict]) -> dict[str, int]:
+    """Write the instant tables (spec IM1 section 13), and answer the
+    facts for the meta table.
+
+    The chain table gets each send of the store. Each other table gets
+    the rows of the public trials alone.
+    """
+    public_ids = {trial.send.trial_id for trial in trials}
+    sends = instant_sends(root)
+    for _date, send in sends:
+        connection.execute(
+            "INSERT INTO instant_chain VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (send.chain_position, send.trial_id, send.chain_previous,
+             send.chain_link, send.send_digest, send.commitment,
+             send.received_at, send.beacon_chain, send.beacon_round,
+             1 if send.trial_id in public_ids else 0))
+
+    first_date: dict[str, str] = {}
+    kinds: dict[str, str] = {}
+    trial_count: dict[str, int] = {}
+    withheld_count = 0
+    gate_cache: dict[str, tuple] = {}
+    for trial in trials:
+        send, result, start = trial.send, trial.result, trial.start
+        shown = names[trial.owner] if trial.kind == instant.ACCOUNT \
+            else trial.owner
+        first_date.setdefault(shown, trial.date)
+        kinds[shown] = trial.kind
+        trial_count[shown] = trial_count.get(shown, 0) + 1
+        where = f"instant trial {send.trial_id}"
+        credit = _credit_of(credit_cache, data_root, trial.preparation,
+                            result.target_id, where)
+        connection.execute(
+            "INSERT OR IGNORE INTO targets VALUES (?, ?, ?, ?)",
+            (result.target_id, credit["source"], credit["title"],
+             credit["page"]))
+        config_path = Path(send.scoring_config_path)
+        config_text = config_path.read_text(encoding="utf-8")
+        connection.execute(
+            "INSERT OR IGNORE INTO configs VALUES (?, ?, ?, ?)",
+            (send.scoring_config_hash, send.scoring_config_path, config_text,
+             _json(json.loads(config_text)["fusion"]["weights"])))
+        if send.scoring_config_path not in gate_cache:
+            gate_cache[send.scoring_config_path] = (
+                intake_gates(load_scoring_config(config_path)),
+                load_preparation_config(
+                    Path(trial.preparation.config_path)).linedraw.canvas_px)
+        gates, canvas_px = gate_cache[send.scoring_config_path]
+        wire = send.record
+        try:
+            validate_submission(wire, gates, canvas_px)
+        except (IntakeError, ValueError) as error:
+            raise PublicBuildError(
+                f"{where}: Layer 0 does not read the send: {error}"
+                ) from error
+        row = result.row
+        moment = pulse_time(send.beacon_round,
+                            chain_named(send.beacon_chain))
+        connection.execute(
+            "INSERT INTO instant_trials VALUES ("
+            + ", ".join("?" * 31) + ")",
+            (send.trial_id, trial.date, shown, start.trial_code,
+             start.started_at, send.received_at, result.settled_at,
+             _seconds_between(start.started_at, send.received_at),
+             result.target_id, float(row["p"]), int(row["target_rank"]),
+             int(row["decoy_count"]), int(row["beaten"]), int(row["tied"]),
+             send.scoring_config_hash, send.preparation_version_id,
+             trial.preparation.pool_label, send.pool_count, send.pool_root,
+             send.beacon_chain, send.beacon_round,
+             datetime.datetime.fromtimestamp(moment, datetime.UTC)
+             .isoformat().replace("+00:00", "Z"),
+             result.beacon_signature, result.randomness, result.nonce,
+             send.commitment, send.send_digest, result.target_index,
+             result.target_salt, json.dumps(list(result.target_proof)),
+             send.chain_position))
+        withheld = instant_store.read_withheld_or_none(
+            root, trial.date, send.trial_id) is not None
+        counts = _counts(wire)
+        connection.execute(
+            "INSERT INTO instant_submissions VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (send.trial_id, *counts, 1 if withheld else 0,
+             None if withheld or not counts[4] else wire.get("pasted_text"),
+             None if withheld else _json(wire)))
+        for position, atom in enumerate(row.get("report") or []):
+            connection.execute(
+                "INSERT INTO instant_trial_atoms VALUES "
+                "(?, ?, ?, ?, ?, ?, ?)",
+                (send.trial_id, position,
+                 None if withheld else atom.get("atom_text"),
+                 atom.get("element"), atom.get("weight"),
+                 atom.get("similarity"), atom.get("rarity")))
+        for channel, value in (row.get("channel_scores") or {}).items():
+            connection.execute(
+                "INSERT INTO instant_trial_channels VALUES (?, ?, ?, ?)",
+                (send.trial_id, channel, float(value["standardized"]),
+                 float(value["p"])))
+        if withheld:
+            withheld_count += 1
+            continue
+        for position, text in enumerate(wire.get("impressions") or []):
+            connection.execute(
+                "INSERT INTO instant_impressions VALUES (?, ?, ?)",
+                (send.trial_id, position, text))
+        for position, stroke in enumerate(wire.get("canvas_strokes") or []):
+            points = stroke["points"]
+            connection.execute(
+                "INSERT INTO instant_strokes VALUES (?, ?, ?, ?, ?, ?)",
+                (send.trial_id, position, stroke.get("group_id"),
+                 stroke.get("color"), len(points), _json(points)))
+        for group in wire.get("groups") or []:
+            connection.execute(
+                "INSERT INTO instant_groups VALUES (?, ?, ?)",
+                (send.trial_id, group["id"], group["label"]))
+        for position, relation in enumerate(wire.get("relations") or []):
+            connection.execute(
+                "INSERT INTO instant_relations VALUES (?, ?, ?, ?, ?)",
+                (send.trial_id, position, relation["relation"],
+                 relation["of"][0], relation["of"][1]))
+    for shown in sorted(first_date):
+        named = kinds[shown] == instant.ACCOUNT \
+            and not _ANONYMOUS_RULE.fullmatch(shown)
+        connection.execute(
+            "INSERT INTO instant_owners VALUES (?, ?, ?, ?, ?)",
+            (shown, kinds[shown], 1 if named else 0, first_date[shown],
+             trial_count[shown]))
+    return {"instant_trial_count": len(trials),
+            "instant_send_count": len(sends),
+            "instant_withheld_count": withheld_count}
+
+
 def _fill(connection: sqlite3.Connection, root: Path, data_root: Path,
-          days: list[PublicDay]) -> dict[str, int]:
+          days: list[PublicDay],
+          trials: list[PublicInstant] | None = None) -> dict[str, int]:
     """Write each public row, and answer the facts for the meta table."""
-    names = _public_names(root, _players_of(root, days))
+    trials = trials or []
+    names = _public_names(root, _players_of(root, days, trials))
     credit_cache: dict[str, dict] = {}
     gate_cache: dict[str, tuple] = {}
     first_day: dict[str, str] = {}
@@ -554,7 +970,9 @@ def _fill(connection: sqlite3.Connection, root: Path, data_root: Path,
             "INSERT INTO players VALUES (?, ?, ?, ?)",
             (shown, 0 if _ANONYMOUS_RULE.fullmatch(shown) else 1,
              first_day[shown], trial_count.get(shown, 0)))
-    return {"withheld_count": withheld_count}
+    return {"withheld_count": withheld_count,
+            **_fill_instant(connection, root, data_root, trials, names,
+                            credit_cache)}
 
 
 def code_version() -> str:
@@ -592,6 +1010,7 @@ def build(root: Path, data_root: Path, out_dir: Path, *,
         raise PublicBuildError(
             f"the snapshot date must be YYYY-MM-DD, got {snapshot_date!r}")
     days = public_days(root)
+    trials = public_instant(root)
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / f"starvector-public-{snapshot_date}.sqlite"
     handle, temporary = tempfile.mkstemp(dir=out_dir, suffix=".tmp")
@@ -601,7 +1020,7 @@ def build(root: Path, data_root: Path, out_dir: Path, *,
         connection = sqlite3.connect(temporary)
         try:
             connection.executescript(_SCHEMA)
-            facts = _fill(connection, root, data_root, days)
+            facts = _fill(connection, root, data_root, days, trials)
             counts = _row_counts(connection)
             meta = {
                 "schema_version": str(SCHEMA_VERSION),
@@ -615,6 +1034,10 @@ def build(root: Path, data_root: Path, out_dir: Path, *,
                 "last_day": days[-1].record.day if days else "",
                 "day_count": str(len(days)),
                 "withheld_count": str(facts["withheld_count"]),
+                "instant_trial_count": str(facts["instant_trial_count"]),
+                "instant_send_count": str(facts["instant_send_count"]),
+                "instant_withheld_count":
+                    str(facts["instant_withheld_count"]),
                 **{f"rows_{table}": str(count)
                    for table, count in counts.items()},
             }
@@ -635,7 +1058,11 @@ def build(root: Path, data_root: Path, out_dir: Path, *,
         "code_version": version, "built_at": built_at,
         "license": LICENSE_NAME, "first_day": meta["first_day"],
         "last_day": meta["last_day"], "day_count": len(days),
-        "withheld_count": facts["withheld_count"], "rows": counts,
+        "withheld_count": facts["withheld_count"],
+        "instant_trial_count": facts["instant_trial_count"],
+        "instant_send_count": facts["instant_send_count"],
+        "instant_withheld_count": facts["instant_withheld_count"],
+        "rows": counts,
     }
     (out_dir / "release.json").write_text(
         json.dumps(release, indent=2, sort_keys=True) + "\n",
@@ -708,6 +1135,26 @@ README_EXAMPLES: tuple[tuple[str, str], ...] = (
      "SELECT day, beacon_round, round_time, randomness, target_index,\n"
      "       pool_image_count, pool_root FROM days\n"
      "WHERE protocol = 'vp1' ORDER BY day;"),
+    ("The instant record of each owner: the count and the mean of each "
+     "trial with a result. With no information the expected mean is 0.5.",
+     "SELECT o.owner, o.kind, s.trial_count, ROUND(s.mean_p, 4) AS mean_p\n"
+     "FROM instant_owner_summary AS s\n"
+     "JOIN instant_owners AS o ON o.owner = s.owner\n"
+     "ORDER BY s.trial_count DESC;"),
+    ("The mean of all the instant trials, by the number of the trial in "
+     "the record of its owner. A selected result does not show here: "
+     "each trial is in.",
+     "SELECT n, COUNT(*) AS trials, ROUND(AVG(p), 4) AS mean_p FROM (\n"
+     "  SELECT p, ROW_NUMBER() OVER (PARTITION BY owner\n"
+     "                               ORDER BY chain_position) AS n\n"
+     "  FROM instant_trials)\n"
+     "GROUP BY n ORDER BY n;"),
+    ("Check the chain of the instant sends and the pick of each instant "
+     "trial: `uv run python tools/check_instant.py --database <file>` "
+     "does it. This query shows that the pulse of each trial came after "
+     "its send.",
+     "SELECT trial_id, received_at, round_time, beacon_round\n"
+     "FROM instant_trials ORDER BY chain_position;"),
 )
 
 
@@ -725,7 +1172,9 @@ def readme_text(meta: dict[str, str], counts: dict[str, int]) -> str:
 Snapshot date: {meta["snapshot_date"]}. Schema version:
 {meta["schema_version"]}. Days: {meta["day_count"]}, from
 {meta["first_day"] or "none"} to {meta["last_day"] or "none"}.
-Withheld responses: {meta["withheld_count"]}.
+Withheld responses: {meta["withheld_count"]}. Instant trials:
+{meta["instant_trial_count"]} of {meta["instant_send_count"]} sends,
+with {meta["instant_withheld_count"]} withheld.
 
 Starvector is a daily game. Each day one photograph, the target, is
 hidden. A player sees a short code alone and sends typed impressions,
@@ -742,6 +1191,8 @@ it with no other tool.
 
 A trial is in the file when its day is revealed, the day is a day of a
 production pool, and the trial row is the one that the day published.
+An instant trial is in the file when it has a result, its pool is a
+production pool, and the public beacon picked its target.
 No other rule removes a trial: a player with one trial is in the file,
 and so is a player below the floors of the game's boards.
 
@@ -765,8 +1216,50 @@ and so is a player below the floors of the game's boards.
 | `trial_atoms` | one atom of a trial report | the typed text, the element of the target that it agreed with most, and three numbers |
 | `trial_channels` | one channel of a trial | the standardized score at the target, and the trial score of that channel alone |
 
-Two views: `trial_facts` is one row for each trial with the day and the
-response facts, and `player_summary` is one row for each player.
+| `instant_owners` | an owner of an instant trial in the file | `kind` is `account` or `guest`. `named` is 0 for a guest and for an account that is gone |
+| `instant_chain` | one instant send of the store | each send, with or without a result. The row holds digests alone. `settled` is 1 for a send with a trial in this file |
+| `instant_trials` | an instant trial with a result | the owner, the times, the target, the trial score, and the pick: see below |
+| `instant_submissions` | the response of an instant trial | as `submissions`, with `trial_id` as the key |
+| `instant_impressions`, `instant_strokes`, `instant_groups`, `instant_relations` | the parts of an instant response | as the four tables of a daily response |
+| `instant_trial_atoms`, `instant_trial_channels` | the report of an instant trial | as the two tables of a daily trial |
+
+Three views: `trial_facts` is one row for each trial with the day and
+the response facts, `player_summary` is one row for each player, and
+`instant_owner_summary` is one row for each owner of an instant trial.
+
+**The instant trial.** An instant trial has no day. A player sends a
+response, and a pulse of the drand quicknet beacon a few seconds after
+the send picks a target for that one response. The daily tables hold no
+instant trial, and no board and no skill number of the game reads one.
+A guest plays with no account: `instant_owners.owner` is then an
+identifier that starts with `guest-`. A guest who makes an account is in
+the file as that account.
+
+**The pick of an instant trial.** `commitment` is the SHA-256 of the
+text `instant-nonce:`, `trial_id`, a colon, and `nonce`. The player gets
+`commitment` with the receipt of the send, before the pulse, and the
+`nonce` with the result. `randomness` is the SHA-256 of
+`beacon_signature`. `target_index` is the first 16 hex characters of
+SHA-256(`instant-target:` trial_id `:` send_digest `:` nonce `:`
+randomness) as a number, modulo `pool_image_count`. `send_digest` is the
+SHA-256 of the canonical JSON of the response, and `target_salt` with
+`target_proof` takes `target_id` up to `pool_root`. `round_time` is
+after `received_at`.
+
+**The chain of the instant sends.** Each send holds the digest of the
+send before it: `chain_link` is the SHA-256 of the text
+`instant-chain:`, `chain_previous`, `trial_id`, `send_digest`,
+`commitment`, `received_at`, and `beacon_round`, with a colon between
+each two. The first send has 64 zeros in `chain_previous`. A send that
+is removed, added, or changed after a snapshot does not agree with the
+`chain_link` values of that snapshot.
+`uv run python tools/check_instant.py --database <file>` walks the chain
+and checks each pick.
+
+**Read the instant trials as one set.** A player has more than one
+instant trial on a date, and a player picks which result to show. One
+high trial is thus not evidence. `instant_trials` holds each trial with
+a result, and no owner can remove one.
 
 **The start time.** `started_at` is the server's time when the player
 first opened the drawing screen of that day. It is not the first sight
@@ -824,6 +1317,9 @@ tables after `submissions`, and its `trial_atoms` rows have NULL in
 ## What is not in the file
 
 - A day that is not revealed, and a day of a development pool.
+- An instant trial with no result, and one of a development pool. Its
+  row in `instant_chain` is in the file, with no response and no
+  target.
 - The pool: the photographs that were not a target, the photographs
   that a target was ranked against, and the element vocabulary. A
   reader with the pool knows each possible target of a subsequent day.
@@ -951,9 +1447,15 @@ def check(directory: Path) -> list[str]:
                 "(SELECT target_id FROM targets)").fetchone()[0]:
             faults.append("days: a target with no row in targets")
         if connection.execute(
+                "SELECT COUNT(*) FROM instant_trials WHERE target_id NOT IN "
+                "(SELECT target_id FROM targets)").fetchone()[0]:
+            faults.append("instant_trials: a target with no row in targets")
+        if connection.execute(
                 "SELECT COUNT(*) FROM targets WHERE target_id NOT IN "
-                "(SELECT target_id FROM days)").fetchone()[0]:
+                "(SELECT target_id FROM days) AND target_id NOT IN "
+                "(SELECT target_id FROM instant_trials)").fetchone()[0]:
             faults.append("targets: a photograph that was not a target")
+        faults.extend(_instant_file_faults(connection))
 
         for player, named in connection.execute(
                 "SELECT player, named FROM players"):
@@ -998,6 +1500,111 @@ def check(directory: Path) -> list[str]:
     return faults
 
 
+def _instant_file_faults(connection: sqlite3.Connection) -> list[str]:
+    """The faults of the instant tables of one built file (spec IM1
+    section 13): the pick of each trial, the chain of the sends, the
+    owners, and the rule of a withheld response."""
+    faults: list[str] = []
+    for (trial_id, target_id, label, chain, signature, randomness, nonce,
+         commitment, digest, index, salt, proof, count, root) in \
+            connection.execute(
+                "SELECT trial_id, target_id, pool_label, beacon_chain, "
+                "beacon_signature, randomness, nonce, commitment, "
+                "send_digest, target_index, target_salt, target_proof, "
+                "pool_image_count, pool_root FROM instant_trials"):
+        faults.extend(instant_faults(
+            trial_id=trial_id, send_digest=digest, commitment=commitment,
+            nonce=nonce, signature=signature, randomness=randomness,
+            target_id=target_id, target_index=index, target_salt=salt,
+            target_proof=json.loads(proof), pool_count=count,
+            pool_root=root))
+        if label.startswith("dev-"):
+            faults.append(f"instant trial {trial_id}: a trial of a "
+                          "development pool")
+        if chain not in PUBLIC_CHAINS:
+            faults.append(f"instant trial {trial_id}: the beacon {chain!r} "
+                          "is not a public beacon")
+    rows = [instant.ChainRow(*row) for row in connection.execute(
+        "SELECT chain_position, chain_previous, chain_link, trial_id, "
+        "send_digest, commitment, received_at, beacon_round "
+        "FROM instant_chain ORDER BY chain_position")]
+    faults.extend(f"instant_chain: {fault}"
+                  for fault in instant.chain_faults(rows))
+    if connection.execute(
+            "SELECT COUNT(*) FROM instant_trials AS t LEFT JOIN "
+            "instant_chain AS c ON c.trial_id = t.trial_id WHERE "
+            "c.trial_id IS NULL OR c.settled != 1 OR "
+            "c.chain_position != t.chain_position OR "
+            "c.send_digest != t.send_digest OR "
+            "c.commitment != t.commitment OR "
+            "c.received_at != t.received_at OR "
+            "c.beacon_round != t.beacon_round").fetchone()[0]:
+        faults.append("instant_trials: a trial that does not agree with "
+                      "its row in instant_chain")
+    if connection.execute(
+            "SELECT COUNT(*) FROM instant_chain WHERE settled = 1 AND "
+            "trial_id NOT IN (SELECT trial_id FROM instant_trials)"
+            ).fetchone()[0]:
+        faults.append("instant_chain: a settled mark with no trial")
+    if connection.execute(
+            "SELECT COUNT(*) FROM instant_trials WHERE owner NOT IN "
+            "(SELECT owner FROM instant_owners)").fetchone()[0]:
+        faults.append("instant_trials: an owner that is not in "
+                      "instant_owners")
+    for owner, kind, named in connection.execute(
+            "SELECT owner, kind, named FROM instant_owners"):
+        guest = guests.is_guest_id(owner)
+        anonymous = _ANONYMOUS_RULE.fullmatch(owner) is not None
+        if guest != (kind == instant.GUEST) \
+                or bool(named) != (not guest and not anonymous):
+            faults.append(f"instant_owners: {owner!r} has kind {kind!r} "
+                          f"and named {named}")
+    for table in ("instant_submissions", "instant_impressions",
+                  "instant_strokes", "instant_groups", "instant_relations",
+                  "instant_trial_atoms", "instant_trial_channels"):
+        orphans = connection.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE trial_id NOT IN "
+            "(SELECT trial_id FROM instant_trials)").fetchone()[0]
+        if orphans:
+            faults.append(f"{table}: {orphans} row(s) of a trial that is "
+                          "not in instant_trials")
+    if connection.execute(
+            "SELECT COUNT(*) FROM instant_trials WHERE trial_id NOT IN "
+            "(SELECT trial_id FROM instant_submissions)").fetchone()[0]:
+        faults.append("instant_trials: a trial with no response row")
+    if connection.execute(
+            "SELECT COUNT(*) FROM instant_submissions WHERE withheld = 1 "
+            "AND (record_json IS NOT NULL OR pasted_text IS NOT NULL)"
+            ).fetchone()[0]:
+        faults.append("a withheld instant response has its text")
+    if connection.execute(
+            "SELECT COUNT(*) FROM instant_submissions WHERE withheld = 0 "
+            "AND record_json IS NULL").fetchone()[0]:
+        faults.append("an instant response that is not withheld has no "
+                      "record")
+    for counts, table in _INSTANT_RESPONSE_TABLES:
+        if connection.execute(
+                f"SELECT COUNT(*) FROM {table} AS c JOIN "
+                "instant_submissions AS s ON s.trial_id = c.trial_id "
+                "WHERE s.withheld = 1").fetchone()[0]:
+            faults.append(f"{table}: a row of a withheld response")
+        if connection.execute(
+                f"SELECT COUNT(*) FROM instant_submissions AS s WHERE "
+                f"s.withheld = 0 AND s.{counts} != (SELECT COUNT(*) FROM "
+                f"{table} AS c WHERE c.trial_id = s.trial_id)"
+                ).fetchone()[0]:
+            faults.append(f"{table}: the rows do not agree with "
+                          f"instant_submissions.{counts}")
+    if connection.execute(
+            "SELECT COUNT(*) FROM instant_trial_atoms AS a JOIN "
+            "instant_submissions AS s ON s.trial_id = a.trial_id "
+            "WHERE s.withheld = 1 AND a.atom_text IS NOT NULL"
+            ).fetchone()[0]:
+        faults.append("instant_trial_atoms: the text of a withheld "
+                      "response")
+    return faults
+
+
 def summary_lines(directory: Path) -> list[str]:
     """What the operator reads before a snapshot goes out: the counts,
     and the days of the withheld responses."""
@@ -1018,6 +1625,14 @@ def summary_lines(directory: Path) -> list[str]:
         anonymous = connection.execute(
             "SELECT COUNT(*) FROM players WHERE named = 0").fetchone()[0]
         lines.append(f"players with no username {anonymous}")
+        lines.append(
+            f"instant trials {meta.get('instant_trial_count')} of "
+            f"{meta.get('instant_send_count')} sends, withheld "
+            f"{meta.get('instant_withheld_count')}")
+        guests_shown = connection.execute(
+            "SELECT COUNT(*) FROM instant_owners WHERE kind = 'guest'"
+            ).fetchone()[0]
+        lines.append(f"instant owners that are guests {guests_shown}")
     finally:
         connection.close()
     return lines

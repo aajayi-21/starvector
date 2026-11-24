@@ -230,7 +230,7 @@ def test_the_rows_agree_with_the_store(world) -> None:
         assert json.loads(config[1])["fusion"]["weights"] \
             == json.loads(config[2])
         meta = dict(db.execute("SELECT key, value FROM meta"))
-        assert meta["schema_version"] == "4"
+        assert meta["schema_version"] == "5"
         assert meta["license"] == "CC BY 4.0"
         assert meta["day_count"] == "2" and meta["withheld_count"] == "1"
         assert meta["first_day"] == DAY_ONE and meta["last_day"] == DAY_TWO

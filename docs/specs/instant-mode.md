@@ -1033,3 +1033,23 @@ IM1.2.
   at the drand relays.
 - **The home test of Vitest is not stable.** It is red in some full
   runs and green in others, with no change of the code.
+- **Built on 2026-11-24, IM1.12:** the instant tables of the public
+  database (schema 5), the check of the build and of a built file, and
+  `tools/check_instant.py --database <file>`.
+- **The tables.** `instant_owners`, `instant_chain`, `instant_trials`,
+  `instant_submissions`, the four tables of a response, and the two
+  tables of a report, each with `trial_id` as its key. One view,
+  `instant_owner_summary`, gives the count and the mean of each owner.
+  The `targets` and `configs` tables are shared with the days.
+- **A trial of a beacon that is not public stays out,** and the build
+  does not stop. A day of such a beacon stops the build (spec VP1).
+  The difference: a store holds one chain of sends, and the chain table
+  stays full with such a trial out.
+- **The chain table holds each send of the store,** also a send of a
+  development pool. Its rows hold digests alone.
+- **An account of an instant trial that is gone** needs its identifier
+  record, as an account of a day does. `python -m service.public
+  identifiers` writes it for the two.
+- **The recipe of the check** is in the README of each snapshot and in
+  `docs/querying-results.md`. That document is about the private index,
+  which holds no instant trial.
