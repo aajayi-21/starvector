@@ -19,13 +19,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from frozen_fixture import (MANIFEST_NAME, READERS, enumerated, frozen_stores,
-                            manifest_of, read_lineage, read_manifest,
-                            read_walk, replay_providers)
+from frozen_fixture import (MANIFEST_NAME, enumerated, expected_labels,
+                            frozen_stores, holds_instant, manifest_of,
+                            read_lineage, read_manifest, read_walk,
+                            replay_providers)
 
 from pipeline.config import load_scoring_config
-from service import (digests, index, public, rollup, scoring, sketches,
-                     store)
+from service import (digests, index, instant_book, instant_store, public,
+                     rollup, scoring, settle, sketches, store)
 from service.config import ServiceConfig
 from service.day import build_day_scores, rescore_days
 
@@ -101,7 +102,7 @@ def test_each_stored_file_reads(world) -> None:
     counts = read_walk(world.root)
     # The frozen store holds each record type that had a reader when the
     # tool made it, thus no reader goes without a stored record.
-    assert sorted(counts) == sorted(label for label, _, _ in READERS)
+    assert sorted(counts) == expected_labels(world.frozen)
     found = enumerated(world.root)
     assert {label: counts[label] for label in found} == found
     assert len(store.list_rollover_runs(world.root, 100)) \
@@ -121,6 +122,8 @@ def test_the_lineage_stands(world) -> None:
     for day in store.list_days(world.root):
         assert store.read_day_record(world.root, day).scoring_config_hash \
             in known
+    for _date, send in public.instant_sends(world.root):
+        assert send.scoring_config_hash in known
 
 
 def test_a_rescore_gives_each_stored_row_again(world) -> None:
@@ -133,10 +136,57 @@ def test_a_rescore_gives_each_stored_row_again(world) -> None:
     assert total["written"] == 0
 
 
+def _rescore_the_instant_trials(world: SimpleNamespace) -> dict[str, int]:
+    """Score each stored instant send again with each config of the
+    lineage, and sum the counts (spec IM1 section 17, I4)."""
+    total = {"compared": 0, "equal": 0, "other": 0}
+    for path in world.lineage["configs"]:
+        wired = scoring.wire_for_close(load_scoring_config(Path(path)), path,
+                                       world.data, world.providers)
+        counts = settle.rescore_compare(world.root, wired)
+        for key in total:
+            total[key] += counts[key]
+    return total
+
+
+def test_a_rescore_gives_each_stored_instant_row_again(world) -> None:
+    """The stored instant send and its pinned config give the stored
+    trial row byte for byte (spec IM1 section 17)."""
+    if not holds_instant(world.frozen):
+        pytest.skip("this frozen store is from before the instant trial")
+    results = sum(
+        1 for date in instant_store.list_dates(world.root)
+        for trial_id in instant_store.list_trials(world.root, date)
+        if instant_store.read_result_or_none(world.root, date, trial_id)
+        is not None)
+    total = _rescore_the_instant_trials(world)
+    # The counts are necessary: with a hash that moved, each send is a
+    # send of a different config, and the walk compares nothing.
+    assert results > 0
+    assert total["compared"] == results
+    assert total["equal"] == results
+
+
+def test_the_chain_of_the_stored_instant_sends_stands(world) -> None:
+    """The book of today reads each stored instant trial and checks the
+    chain of the sends (spec IM1 section 11)."""
+    if not holds_instant(world.frozen):
+        pytest.skip("this frozen store is from before the instant trial")
+    book = instant_book.build_book(world.root)
+    sends = public.instant_sends(world.root)
+    head = book.head()
+    assert head is not None and head.position == len(sends) - 1
+    assert head.chain_link == sends[-1][1].chain_link
+    # One send waits for its pulse, and one start has no send.
+    assert len(book.pending()) == 1
+
+
 def test_no_stored_file_changes(world) -> None:
     before = manifest_of(world.root)
     read_walk(world.root)
     _rescore_each_day(world)
+    _rescore_the_instant_trials(world)
+    instant_book.build_book(world.root)
     build_day_scores(world.config, providers=world.providers)
     rollup.assemble(world.config)
     target = world.out / "index.sqlite"

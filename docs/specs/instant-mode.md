@@ -1053,3 +1053,20 @@ IM1.2.
 - **The recipe of the check** is in the README of each snapshot and in
   `docs/querying-results.md`. That document is about the private index,
   which holds no instant trial.
+- **Built on 2026-11-24, IM1.13:** the second frozen store,
+  `frozen-store-2026-11-im1`, its guard tests, and the invariant tests
+  of the two modes (`tests/service/test_instant_invariants.py`).
+- **The first frozen store did not change.** The rows of the new record
+  types are in a second reader table, thus the guard wants no record
+  type from the first store that came after it. Spec SC1 has two dated
+  notes.
+- **A second scoring of the instant sends** is the function
+  `settle.rescore_compare`. It compares and writes nothing. A command
+  that writes adjacent rows for a new scoring configuration (spec SC1
+  rule 4) is not built: no second configuration is there.
+- **The two-world test of the daily answers** reads 14 daily paths for
+  two players, before and after six instant trials. It also compares
+  the daily files, the boards, and the rows of the private index.
+- **The private index does not see an instant trial.** Its fingerprint
+  reads the daily records alone, thus an instant send does not make the
+  index stale.

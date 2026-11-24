@@ -1,0 +1,36 @@
+{
+  "beacon_signature": "4cda08148218fb2c54e5ece7ef92dac28e8fdaa670befffc6a6efc0d69289de0",
+  "nonce": "91f3ad4a11fc3a722877de51721209e14a25e55957f4beff638f889a3fd16d00",
+  "randomness": "24bed84b1eac6e8e0a1beaeac94c6a64d3005fd89f75fc7a4cc606441deb12e2",
+  "row": {
+    "beaten": 24,
+    "channel_scores": {
+      "outline": {
+        "p": 0.615385,
+        "standardized": 0.384863
+      }
+    },
+    "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+    "decoy_count": 39,
+    "p": 0.615385,
+    "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+    "report": [],
+    "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+    "target_rank": 16,
+    "tied": 0,
+    "trial_id": "9349f3e5d2a102678eb7182850598301"
+  },
+  "settled_at": "2026-11-06T13:01:38+00:00",
+  "target_id": "ce23aaaacf21795eedd1e025e019d504279a0d8947199cd14bba02b68490b1ec",
+  "target_index": 30,
+  "target_proof": [
+    "R:c4c1397f86c7ebf0b2f1755a6b76190c2c0f964d2e4fd548bf0dd8dc75c22d70",
+    "L:46e0ea984b936858f719b449b7890306921c14cdf1cccb9534321b1cb28b2e7a",
+    "L:8f849dee3db4f1277528a7939b5f5bfb83a7a7a442f332ccf929672a8ab7d9bc",
+    "L:f9e89bbbfc1cd5d75de9a35705fef0791eef726506616f33c7c2409990989a2f",
+    "L:081e5aed0fca9f3ce068132addc669d5a57b537145bda31a45cdd487aaf6e55f",
+    "R:1dd8b37f59d7cb29cd23dad7c26bf0073a30432741655503f52cca4ea358c3e2"
+  ],
+  "target_salt": "afe5480e54660c5b52d356817a36a45eb5f7286452a0c165f135ddab3c7c511e",
+  "trial_id": "9349f3e5d2a102678eb7182850598301"
+}

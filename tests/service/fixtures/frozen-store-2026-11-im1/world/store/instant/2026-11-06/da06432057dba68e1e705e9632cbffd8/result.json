@@ -1,0 +1,61 @@
+{
+  "beacon_signature": "2719300137170d2944a74692242ec21fbdb4e85ba3b333bda842d7f4446417ee",
+  "nonce": "4500f7ed6b27ffa110ea7b1948ab7b2c71c31183d7b72ec35c14a322a26b077f",
+  "randomness": "fe3267e649db6ba96fa61f2572c4a72b3629f961154314b8b8949c494585df14",
+  "row": {
+    "beaten": 28,
+    "channel_scores": {
+      "element": {
+        "p": 0.717949,
+        "standardized": 0.870019
+      }
+    },
+    "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+    "decoy_count": 39,
+    "p": 0.717949,
+    "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+    "report": [
+      {
+        "atom_id": "a1",
+        "atom_text": "a narrow street",
+        "element": null,
+        "rarity": 3.688879,
+        "similarity": 0.0,
+        "weight": 0.620474
+      },
+      {
+        "atom_id": "a2",
+        "atom_text": "wet stone",
+        "element": "thing 10",
+        "rarity": 3.688879,
+        "similarity": 0.31753,
+        "weight": 0.636795
+      },
+      {
+        "atom_id": "a3",
+        "atom_text": "the air is cold and still",
+        "element": "shared element",
+        "rarity": 3.688879,
+        "similarity": 0.205686,
+        "weight": 0.459408
+      }
+    ],
+    "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+    "target_rank": 12,
+    "tied": 0,
+    "trial_id": "da06432057dba68e1e705e9632cbffd8"
+  },
+  "settled_at": "2026-11-06T13:01:03+00:00",
+  "target_id": "44574280fa9c101adc6cbeb2317bfb8b2708a231c5b51d36a15ba5960ac52e64",
+  "target_index": 10,
+  "target_proof": [
+    "R:cd04f401a058ec2f7f9524c73f55fd8000332f493915fbcdd63daf970b23b411",
+    "L:7cb97fa350e09a2c0f1db1898928ca1845ef250aeea842758ea6d4a4f8bd9243",
+    "R:98c98a830db9376848945008aab90dc57eabf26020bf1a26dd1c62b7084445ac",
+    "L:aa8f0e941cc54e7ef5ccb832d7e6fab8e557a15df7a18e5ce504d0898c78b925",
+    "R:0dfac4c6f0940e08ab8540cec9e39e66e83400b810a33710e30db807b5966cac",
+    "R:1dd8b37f59d7cb29cd23dad7c26bf0073a30432741655503f52cca4ea358c3e2"
+  ],
+  "target_salt": "ab15c94127afb24aedb17d48b48c8284d2adae91d376eb0ab6c4a548143ca5c6",
+  "trial_id": "da06432057dba68e1e705e9632cbffd8"
+}

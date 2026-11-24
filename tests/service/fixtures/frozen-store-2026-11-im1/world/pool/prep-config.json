@@ -1,0 +1,82 @@
+{
+  "config_version": 1,
+  "elements": {
+    "counts": {
+      "ambience": 3,
+      "colors": 3,
+      "materials": 3,
+      "objects": 3,
+      "scale": 1,
+      "setting": 1,
+      "shapes": 2
+    },
+    "max_elements": 20,
+    "normalize_rule": "d7-v1"
+  },
+  "input": {
+    "release_record": "pool/unused-release-record.json"
+  },
+  "linedraw": {
+    "antialias": false,
+    "background": "white",
+    "binarize_threshold": 0.5,
+    "canvas_px": 512,
+    "line_width_px": 3,
+    "min_segment_px": 10,
+    "stroke_color": "rgb"
+  },
+  "neardup": {
+    "similarity_threshold": 0.95
+  },
+  "outline": {
+    "crop_fraction": 0.6,
+    "crop_grid": "center-corners"
+  },
+  "providers": {
+    "describer": {
+      "dimension": null,
+      "instruction_template": null,
+      "model": null,
+      "provider": "fake"
+    },
+    "element_boxes": {
+      "dimension": null,
+      "instruction_template": null,
+      "model": null,
+      "provider": "fake"
+    },
+    "image_encoder": {
+      "dimension": 32,
+      "instruction_template": null,
+      "model": null,
+      "provider": "fake"
+    },
+    "line_drawer": {
+      "dimension": null,
+      "instruction_template": null,
+      "model": null,
+      "provider": "fake"
+    },
+    "openrouter": {
+      "default_model": "test/fake-model",
+      "max_concurrency": 1,
+      "requests_per_second": 100.0,
+      "response_format_mode": "json_schema",
+      "retry_limit": 0,
+      "timeout_seconds": 5.0
+    },
+    "text_encoder": {
+      "dimension": 32,
+      "instruction_template": null,
+      "model": null,
+      "provider": "fake"
+    }
+  },
+  "release": {
+    "dev_only": false,
+    "tag": "prod-test-prep"
+  },
+  "runtime": {
+    "device": "cpu"
+  }
+}

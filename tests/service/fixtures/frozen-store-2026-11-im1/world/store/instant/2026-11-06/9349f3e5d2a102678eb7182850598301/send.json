@@ -1,0 +1,77 @@
+{
+  "beacon_chain": "fake",
+  "beacon_round": 33722241,
+  "chain_link": "3f0c65350b6ff8df17f42b5b9c316bd38ecb4d98d89ceb61f287bda9bb51fd4b",
+  "chain_position": 2,
+  "chain_previous": "d524e7d6702cd69104a72870f4e570eac561b05ba8792ba769f7ce8f52eac08c",
+  "commitment": "7f93e8b591502e160ce43fb7b7c982bec3f67b7b068a2047c2d9f0ca55ca06f5",
+  "notice": 3,
+  "owner": "guest-88aedb158f16765a",
+  "owner_kind": "guest",
+  "pool_count": 40,
+  "pool_root": "6dd41dc6fed043fd41fa642caa836312c4676c483a2e3faf6662c5b13bdcfa38",
+  "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "received_at": "2026-11-06T13:01:24+00:00",
+  "record": {
+    "canvas_strokes": [
+      {
+        "group_id": null,
+        "points": [
+          [
+            0.1,
+            0.4
+          ],
+          [
+            0.3,
+            0.4
+          ],
+          [
+            0.3,
+            0.6
+          ],
+          [
+            0.1,
+            0.6
+          ],
+          [
+            0.1,
+            0.4
+          ]
+        ]
+      },
+      {
+        "group_id": null,
+        "points": [
+          [
+            0.6,
+            0.4
+          ],
+          [
+            0.9,
+            0.4
+          ],
+          [
+            0.9,
+            0.6
+          ],
+          [
+            0.6,
+            0.6
+          ],
+          [
+            0.6,
+            0.4
+          ]
+        ]
+      }
+    ],
+    "groups": [],
+    "impressions": [],
+    "pasted_text": null,
+    "relations": []
+  },
+  "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+  "scoring_config_path": "scoring-config-channels.json",
+  "send_digest": "3d9490320ec996e7c390b017826411d9c661ad8996a8cecea175fbe94ea3caf6",
+  "trial_id": "9349f3e5d2a102678eb7182850598301"
+}

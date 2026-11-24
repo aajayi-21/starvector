@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.canonical import JsonValue
+from core.canonical import JsonValue, canonical_json
 from core.types import Submission
 from pipeline.score import encode_submission
 from service import instant, instant_store, pool_keys, scoring
@@ -297,6 +297,38 @@ def settle_due(world: InstantWorld, book: InstantBook,
             book.add_result(result)
             count += 1
     return count
+
+
+def rescore_compare(root: Path,
+                    wired: scoring.WiredScoring) -> dict[str, int]:
+    """Score each stored instant send again, and compare its stored row.
+
+    Rule I4: the stored send and the pinned configuration give the
+    stored trial row byte for byte. The answer counts the rows that
+    were compared and the rows that were equal. A send of a different
+    scoring configuration is counted as other and gets no new score.
+    No file is written.
+    """
+    counts = {"compared": 0, "equal": 0, "other": 0}
+    for date in instant_store.list_dates(root):
+        for trial_id in instant_store.list_trials(root, date):
+            send = instant_store.read_send_or_none(root, date, trial_id)
+            result = instant_store.read_result_or_none(root, date, trial_id)
+            if send is None or result is None:
+                continue
+            if send.scoring_config_hash != wired.scoring_hash:
+                counts["other"] += 1
+                continue
+            trial, report = scoring.score_stored_submission(
+                send.record, result.target_id, wired)
+            row = scoring.instant_row_value(
+                send.trial_id, trial, report, wired,
+                channel_scores=scoring.channel_score_values(
+                    send.record, result.target_id, wired))
+            counts["compared"] += 1
+            if canonical_json(row) == canonical_json(result.row):
+                counts["equal"] += 1
+    return counts
 
 
 def receipt_value(send: instant_store.SendRecord) -> dict[str, JsonValue]:

@@ -1,0 +1,57 @@
+{
+  "beaten": 15,
+  "channel_scores": {
+    "element": {
+      "p": 0.717949,
+      "standardized": 0.321613
+    },
+    "outline": {
+      "p": 0.179487,
+      "standardized": -0.824987
+    }
+  },
+  "commonness_config_hash": "d13ada837d79f9f1690949944cf5575f86f3c7ed92c8333a2d70d4c766d8f282",
+  "day": "2026-11-04",
+  "decoy_count": 39,
+  "p": 0.384615,
+  "player": "ade",
+  "preparation_version_id": "c88daa976630b8096178d40790d80adfd88ca4e00e56b0d58b1d0ced195c1c88",
+  "report": [
+    {
+      "atom_id": "a1",
+      "atom_text": "tall vertical structure",
+      "element": "thing 39",
+      "rarity": 3.688879,
+      "similarity": 0.244056,
+      "weight": 0.463817
+    },
+    {
+      "atom_id": "a2",
+      "atom_text": "cold and exposed",
+      "element": null,
+      "rarity": 3.688879,
+      "similarity": 0.0,
+      "weight": 0.570583
+    },
+    {
+      "atom_id": "a3",
+      "atom_text": "tower",
+      "element": "shared element",
+      "rarity": 3.688879,
+      "similarity": 0.327403,
+      "weight": 0.601092
+    },
+    {
+      "atom_id": "a4",
+      "atom_text": "sea",
+      "element": null,
+      "rarity": 3.688879,
+      "similarity": 0.0,
+      "weight": 0.541658
+    }
+  ],
+  "scoring_config_hash": "9c0a53145387f5cf207ce7de9d3e39f5cffb7dfd57d6272b5bc6b3a2b2cee554",
+  "target_rank": 25,
+  "tied": 0,
+  "trial_id": "00000000000000000000000000000008"
+}

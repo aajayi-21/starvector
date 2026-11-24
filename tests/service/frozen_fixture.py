@@ -18,7 +18,7 @@ import numpy as np
 
 from core.types import Vectors
 from providers.protocols import InputRefused
-from service import index, store
+from service import guests, index, instant_store, store
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 MANIFEST_NAME = "MANIFEST.sha256"
@@ -292,6 +292,62 @@ READERS: tuple[tuple[str, re.Pattern[str], Callable], ...] = tuple(
     ))
 
 
+def _read_instant(reader: Callable[[Path, str, str], object]) -> Callable:
+    return lambda root, match: reader(root, match["day"], match["trial"])
+
+
+def _read_guest_consent(root: Path, match: re.Match[str]) -> object:
+    agreed = guests.agreed(root, match["guest"], int(match["notice"]))
+    return True if agreed else None
+
+
+_TRIAL = r"(?P<trial>[0-9a-f]{32})"
+_GUEST = r"(?P<guest>guest-[0-9a-f]{16})"
+
+# The first frozen store that holds the record types of spec IM1: the
+# instant trial and the guest. An earlier frozen store has none of them,
+# and it does not get one: a frozen store is not made again.
+INSTANT_FIRST_STORE = "frozen-store-2026-11-im1"
+
+# The rows of spec IM1. They are adjacent to READERS and not in it: a
+# row of READERS is a record type that each frozen store holds.
+INSTANT_READERS: tuple[tuple[str, re.Pattern[str], Callable], ...] = tuple(
+    (label, re.compile(pattern), reader) for label, pattern, reader in (
+        ("instant start", rf"instant/{_DAY}/{_TRIAL}/start\.json",
+         _read_instant(instant_store.read_start_or_none)),
+        ("instant send", rf"instant/{_DAY}/{_TRIAL}/send\.json",
+         _read_instant(instant_store.read_send_or_none)),
+        ("instant secret", rf"instant/{_DAY}/{_TRIAL}/secret\.json",
+         _read_instant(instant_store.read_secret_or_none)),
+        ("instant result", rf"instant/{_DAY}/{_TRIAL}/result\.json",
+         _read_instant(instant_store.read_result_or_none)),
+        ("instant withheld",
+         rf"public/withheld-instant/{_DAY}/{_TRIAL}\.json",
+         _read_instant(instant_store.read_withheld_or_none)),
+        ("guest", rf"guests/{_GUEST}/guest\.json",
+         lambda root, match: guests.read_guest_or_none(root, match["guest"])),
+        ("guest consent", rf"guests/{_GUEST}/consents/(?P<notice>\d+)\.json",
+         _read_guest_consent),
+        ("guest claim", rf"guests/{_GUEST}/claim\.json",
+         lambda root, match: guests.read_claim_or_none(root, match["guest"])),
+    ))
+
+
+def holds_instant(frozen: Path) -> bool:
+    """Tell if a frozen store was made with the record types of spec
+    IM1. The names sort by the time that the tool made them."""
+    return frozen.name >= INSTANT_FIRST_STORE
+
+
+def expected_labels(frozen: Path) -> list[str]:
+    """The record types that one frozen store must hold: each type
+    that had a reader when the tool made that store."""
+    labels = [label for label, _, _ in READERS]
+    if holds_instant(frozen):
+        labels += [label for label, _, _ in INSTANT_READERS]
+    return sorted(labels)
+
+
 def read_walk(root: Path) -> dict[str, int]:
     """Read each file of a store through its reader of today.
 
@@ -306,7 +362,7 @@ def read_walk(root: Path) -> dict[str, int]:
             continue
         name = path.relative_to(root).as_posix()
         rows = [(label, pattern.fullmatch(name), reader)
-                for label, pattern, reader in READERS
+                for label, pattern, reader in (*READERS, *INSTANT_READERS)
                 if pattern.fullmatch(name) is not None]
         if len(rows) != 1:
             raise store.StoreError(
@@ -340,4 +396,29 @@ def enumerated(root: Path) -> dict[str, int]:
         "player": len(players),
         "withheld": len(store.list_withheld(root)),
         "operator entry": len(store.list_operator_entries(root)),
+        **_enumerated_instant(root),
+    }
+
+
+def _enumerated_instant(root: Path) -> dict[str, int]:
+    """The counts that the enumerators of the instant trials and of the
+    guests give. A store with none of them gives no count."""
+    trials = [(date, trial_id)
+              for date in instant_store.list_dates(root)
+              for trial_id in instant_store.list_trials(root, date)]
+    if not trials:
+        return {}
+    return {
+        "instant start": len(trials),
+        "instant send": sum(
+            1 for date, trial_id in trials
+            if instant_store.read_send_or_none(root, date, trial_id)
+            is not None),
+        "instant result": sum(
+            1 for date, trial_id in trials
+            if instant_store.read_result_or_none(root, date, trial_id)
+            is not None),
+        "instant withheld": len(instant_store.list_withheld(root)),
+        "guest claim": sum(len(names) for names in
+                           guests.claims_by_player(root).values()),
     }
